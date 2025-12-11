@@ -1,0 +1,41 @@
+# Requirements Configuration for cclv2
+# =====================================
+# This file is committed to the repo - team members see it.
+# Personal overrides go in requirements.local.yaml (gitignored)
+
+version: "1.0"
+
+# Inherit global requirements from ~/.claude/requirements.yaml
+inherit: true
+
+# Enable framework for this project
+enabled: true
+
+# Project-specific requirements
+requirements:
+  # Enable commit_plan for this project
+  commit_plan:
+    enabled: true
+    checklist:
+      - "Plan created via EnterPlanMode and planning agents/skills"
+      - "Atomic commits identified (from agent/skill analysis)"
+      - "Reviewed relevant ADRs (in /ADR/ directory)"
+      - "ADR architectural decisions understood and followed"
+      - "TDD approach implemented in todo list/plan"
+      - "Plan reviewed by appropriate agents/skills (code-reviewer, etc.)"
+      - "Linting/formatting/typecheck commands known and documented"
+      - "New branch created (not on main/master)"
+      - "Considered if new ADRs or ADR updates are required"
+
+  # Enable ADR review for cclv2 (as per your CLAUDE.md)
+  adr_reviewed:
+    enabled: true
+    scope: session
+    message: |
+      📚 **Working in cclv2 - Have you reviewed relevant ADRs?**
+
+      ADRs are in: /Users/harm/Work/cclv2/ADR/
+
+      Before making code changes, check if any ADRs are relevant to your work.
+
+      **To satisfy**: `req satisfy adr_reviewed` after reviewing

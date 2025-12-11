@@ -1,0 +1,76 @@
+# Global Requirements Framework Configuration
+# ============================================
+# This is your personal default config for all projects.
+# Projects can override these settings in their own .claude/requirements.yaml
+
+version: "1.0"
+
+# Framework enabled globally (projects can override)
+enabled: true
+
+# Default requirements (disabled by default - projects opt-in)
+requirements:
+  # Commit Plan Requirement
+  # Ensures a commit plan exists before making code changes
+  commit_plan:
+    enabled: false  # Disabled by default - projects opt-in
+    type: blocking
+    scope: session  # Resets each session (forces daily planning)
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      📋 **No commit plan found for this session**
+
+      Before making code changes, you should plan your commits.
+
+      **Required**: Create a commit plan that describes:
+      - What changes you'll make
+      - How you'll split them into atomic commits
+      - What order to make the changes
+
+      **Why this matters**:
+      - Ensures commits are atomic and reviewable
+      - Prevents "fix comments" commits
+      - Follows project conventions
+
+      **To proceed**: Run `req satisfy commit_plan` after creating a plan
+    checklist:
+      - "Identified the changes needed for this feature/fix"
+      - "Determined atomic commit boundaries (each commit is reviewable)"
+      - "Planned commit sequence and dependencies"
+      - "Considered what can be safely rolled back"
+      - "Created plan file documenting the approach"
+
+  # GitHub Ticket Requirement (example for Phase 2)
+  github_ticket:
+    enabled: false
+    type: blocking
+    scope: branch  # Once per branch
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      🎫 **No GitHub issue linked to this branch**
+
+      Please link a GitHub issue to track this work.
+
+      **To satisfy**: `req satisfy github_ticket --metadata '{"ticket":"#1234"}'`
+
+  # ADR Review Requirement (example for cclv2)
+  adr_reviewed:
+    enabled: false
+    type: blocking
+    scope: session
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      📚 **Have you reviewed relevant ADRs?**
+
+      ADRs document architectural decisions for this project.
+
+      **To satisfy**: `req satisfy adr_reviewed` after reviewing

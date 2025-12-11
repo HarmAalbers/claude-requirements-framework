@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""
+Requirements Framework - PreToolUse Hook
+
+This hook checks requirements before Edit/Write/MultiEdit operations.
+It's called by Claude Code before any file modification tool.
+
+Input (stdin):
+    JSON with tool invocation details:
+    {
+        "tool_name": "Edit",
+        "tool_input": {...}
+    }
+
+Output (stdout):
+    If requirements not satisfied:
+    {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": "Message to user"
+        }
+    }
+
+    If satisfied (or no config): Empty output, exit 0
+
+Environment:
+    CLAUDE_PROJECT_DIR: Project directory (defaults to cwd)
+    CLAUDE_SKIP_REQUIREMENTS: Set to skip all checks
+
+Design:
+    - FAIL OPEN on any error (log but don't block)
+    - Skip main/master branches
+    - Skip if no project config exists
+"""
+import json
+import os
+import sys
+import time
+import traceback
+from pathlib import Path
+
+# Add lib to path
+lib_path = Path(__file__).parent / 'lib'
+sys.path.insert(0, str(lib_path))
+
+from requirements import BranchRequirements
+from config import RequirementsConfig
+from git_utils import get_current_branch, is_git_repo
+from session import get_session_id, update_registry, get_active_sessions
+
+
+def log_error(message: str, exc_info: bool = False) -> None:
+    """
+    Log error to file for debugging.
+
+    Args:
+        message: Error message
+        exc_info: Include traceback
+    """
+    try:
+        log_file = Path.home() / '.claude' / 'requirements-errors.log'
+        with open(log_file, 'a') as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Error: {message}\n")
+            if exc_info:
+                f.write(traceback.format_exc())
+    except Exception:
+        pass  # Silent fail for logging
+
+
+def should_skip_plan_file(file_path: str) -> bool:
+    """
+    Check if a file path is a plan file that should skip requirements checks.
+
+    Plan files need to be written before requirements can be satisfied,
+    so we skip checks for them to avoid chicken-and-egg problems.
+
+    Args:
+        file_path: Path to check
+
+    Returns:
+        True if this is a plan file that should be skipped
+    """
+    try:
+        # Normalize path (expand ~, resolve symlinks, make absolute)
+        normalized = Path(file_path).expanduser().resolve()
+
+        # Skip files in global plans directory (~/.claude/plans/)
+        global_plans = Path.home() / '.claude' / 'plans'
+        try:
+            if normalized.is_relative_to(global_plans):
+                return True
+        except (ValueError, AttributeError):
+            # Python < 3.9 doesn't have is_relative_to, use string matching
+            pass
+
+        # Skip files in project .claude/plans/ directories
+        # Check if path contains .claude/plans/
+        path_str = str(normalized)
+        if '/.claude/plans/' in path_str or '\\.claude\\plans\\' in path_str:
+            return True
+
+        return False
+
+    except Exception:
+        # If anything fails, don't skip (fail safe)
+        return False
+
+
+def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str, branch: str) -> None:
+    """
+    Output 'deny' decision to block until requirement is satisfied.
+
+    We use 'deny' instead of 'ask' because 'ask' gets overridden by
+    permissions.allow entries in settings.local.json.
+
+    Args:
+        req_name: Requirement name
+        config: Requirement configuration
+        session_id: Current session ID
+        project_dir: Project directory
+        branch: Current branch
+    """
+    message = config.get('message', f'Requirement "{req_name}" not satisfied.')
+
+    # Add checklist if present
+    checklist = config.get('checklist', [])
+    if checklist:
+        message += "\n\n**Checklist**:"
+        for i, item in enumerate(checklist, 1):
+            message += f"\n⬜ {i}. {item}"
+
+    # Add session context
+    message += f"\n\n**Current session**: `{session_id}`"
+
+    active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
+    if len(active_sessions) > 1:
+        message += "\n\n**Other active sessions**:"
+        for sess in active_sessions:
+            if sess['id'] != session_id:
+                message += f"\n  • `{sess['id']}` [PID {sess['pid']}]"
+
+    # Add helper hint with session context
+    message += f"\n\n💡 **To satisfy from terminal**:"
+    message += f"\n```bash"
+    message += f"\nreq satisfy {req_name} --session {session_id}"
+    message += f"\n```"
+    message += f"\n\n💡 **Tip**: If you have multiple unsatisfied requirements, you can satisfy them all at once:"
+    message += f"\n```bash"
+    message += f"\nreq satisfy commit_plan --session {session_id} && req satisfy adr_reviewed --session {session_id}"
+    message += f"\n```"
+
+    response = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": message
+        }
+    }
+    print(json.dumps(response))
+
+
+def main() -> int:
+    """
+    Hook entry point.
+
+    Returns:
+        Exit code (always 0 - fail open)
+    """
+    try:
+        # Check skip flag
+        if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
+            return 0
+
+        # Read hook input from stdin
+        input_data = {}
+        try:
+            stdin_content = sys.stdin.read()
+            if stdin_content:
+                input_data = json.loads(stdin_content)
+        except json.JSONDecodeError:
+            pass
+
+        tool_name = input_data.get('tool_name', '')
+
+        # Only check on write operations
+        if tool_name not in ['Edit', 'Write', 'MultiEdit']:
+            return 0
+
+        # Skip plan files - plan mode needs to write plans before requirements can be satisfied
+        tool_input = input_data.get('tool_input', {})
+        if tool_input:
+            file_path = tool_input.get('file_path', '')
+            if file_path and should_skip_plan_file(file_path):
+                return 0
+
+        # Get project directory
+        project_dir = os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd())
+
+        # Check if project has requirements config
+        config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
+        config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
+
+        if not config_file.exists() and not config_file_json.exists():
+            # No config = no requirements for this project
+            return 0
+
+        # Skip if not git repo
+        if not is_git_repo(project_dir):
+            return 0
+
+        # Get current branch
+        branch = get_current_branch(project_dir)
+        if not branch:
+            return 0  # Detached HEAD
+
+        # Skip main/master
+        if branch in ['main', 'master']:
+            return 0
+
+        # Load configuration
+        config = RequirementsConfig(project_dir)
+
+        # Check if enabled for this project
+        if not config.is_enabled():
+            return 0
+
+        # Get session ID
+        session_id = get_session_id()
+
+        # Update session registry FIRST (before checking requirements)
+        # This allows CLI to find the session for bootstrapping new sessions
+        # fail-open: errors don't block
+        try:
+            update_registry(session_id, project_dir, branch)
+        except Exception as e:
+            log_error(f"Registry update failed: {e}", exc_info=True)
+
+        # Initialize requirements manager
+        reqs = BranchRequirements(branch, session_id, project_dir)
+
+        # Check all enabled requirements
+        for req_name in config.get_all_requirements():
+            if not config.is_requirement_enabled(req_name):
+                continue
+
+            req_config = config.get_requirement(req_name)
+            scope = config.get_scope(req_name)
+
+            # Check if this tool triggers this requirement
+            trigger_tools = config.get_trigger_tools(req_name)
+            if tool_name not in trigger_tools:
+                continue
+
+            # Check if satisfied
+            if not reqs.is_satisfied(req_name, scope):
+                # Not satisfied - prompt user
+                output_prompt(req_name, req_config, session_id, project_dir, branch)
+                return 0
+
+        # All requirements satisfied
+        return 0
+
+    except Exception as e:
+        # FAIL OPEN with visible warning
+        error_msg = f"Requirements check error: {e}"
+        print(f"⚠️ {error_msg}", file=sys.stderr)
+        log_error(error_msg, exc_info=True)
+        return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
