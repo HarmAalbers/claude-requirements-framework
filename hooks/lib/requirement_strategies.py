@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""
+Requirement Strategy Pattern
+
+Implements the Strategy pattern for different requirement types, following
+the Open/Closed Principle: the system is open for extension (new requirement
+types) but closed for modification (existing code doesn't change).
+
+This replaces if/elif type branching with polymorphic strategy dispatch.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Optional
+import sys
+import time
+
+# Import from sibling modules
+try:
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+    from calculator_interface import RequirementCalculator
+    from calculation_cache import CalculationCache
+except ImportError:
+    # For testing, allow imports to fail gracefully
+    pass
+
+
+def log_error(message: str, exc_info: bool = False) -> None:
+    """
+    Log error message to stderr and error log file.
+
+    Args:
+        message: Error message
+        exc_info: Whether to include traceback
+    """
+    print(f"⚠️ {message}", file=sys.stderr)
+
+    if exc_info:
+        import traceback
+        from pathlib import Path
+
+        try:
+            log_file = Path.home() / '.claude' / 'requirements-errors.log'
+            with open(log_file, 'a') as f:
+                f.write(f"\n{'='*60}\n")
+                f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Error: {message}\n")
+                f.write(traceback.format_exc())
+        except Exception:
+            pass  # Silent fail for logging
+
+
+def log_warning(message: str) -> None:
+    """Log warning message."""
+    print(f"⚠️ {message}", file=sys.stderr)
+
+
+class RequirementStrategy(ABC):
+    """
+    Abstract base class for requirement checking strategies.
+
+    Each requirement type (blocking, dynamic, etc.) has its own strategy class
+    that implements the check() method.
+    """
+
+    @abstractmethod
+    def check(self, req_name: str, config: RequirementsConfig,
+              reqs: BranchRequirements, context: dict) -> Optional[dict]:
+        """
+        Check if requirement is satisfied.
+
+        Args:
+            req_name: Requirement name
+            config: Requirements configuration
+            reqs: Branch requirements state manager
+            context: Context dict with project_dir, branch, session_id, tool_name
+
+        Returns:
+            None if satisfied (allow operation)
+            Dict with hookSpecificOutput if blocked/denied
+
+        Raises:
+            Never - all strategies must fail-open on errors
+        """
+        pass
+
+
+class BlockingRequirementStrategy(RequirementStrategy):
+    """
+    Strategy for blocking (manually satisfied) requirements.
+
+    These requirements must be manually satisfied via the CLI using
+    'req satisfy <name>' before file modifications are allowed.
+
+    Examples: commit_plan, adr_reviewed, github_ticket
+    """
+
+    def check(self, req_name: str, config: RequirementsConfig,
+              reqs: BranchRequirements, context: dict) -> Optional[dict]:
+        """
+        Check if blocking requirement is satisfied.
+
+        Returns:
+            None if satisfied
+            Dict with denial message if not satisfied
+        """
+        scope = config.get_scope(req_name)
+
+        if not reqs.is_satisfied(req_name, scope):
+            # Not satisfied - create denial response
+            return self._create_denial_response(req_name, config, context)
+
+        return None  # Satisfied, allow
+
+    def _create_denial_response(self, req_name: str, config: RequirementsConfig,
+                                context: dict) -> dict:
+        """
+        Create denial response with formatted message.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            context: Context dict
+
+        Returns:
+            Hook response dict
+        """
+        req_config = config.get_requirement(req_name)
+        message = req_config.get('message', f'Requirement "{req_name}" not satisfied.')
+
+        # Add checklist if present
+        checklist = req_config.get('checklist', [])
+        if checklist:
+            message += "\n\n**Checklist**:"
+            for i, item in enumerate(checklist, 1):
+                message += f"\n⬜ {i}. {item}"
+
+        # Add session context
+        session_id = context['session_id']
+        message += f"\n\n**Current session**: `{session_id}`"
+
+        # Add helper hint
+        message += f"\n\n💡 **To satisfy from terminal**:"
+        message += f"\n```bash"
+        message += f"\nreq satisfy {req_name} --session {session_id}"
+        message += f"\n```"
+
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": message
+            }
+        }
+
+
+class DynamicRequirementStrategy(RequirementStrategy):
+    """
+    Strategy for dynamic (calculated) requirements.
+
+    These requirements are automatically calculated on each file operation
+    rather than being manually satisfied. Examples: branch_size_limit,
+    test_coverage, complexity_check.
+
+    Features:
+    - Automatic calculation via calculator modules
+    - Threshold-based evaluation (warn, block)
+    - Approval mechanism with TTL
+    - Calculation caching for performance
+    """
+
+    def __init__(self):
+        """Initialize dynamic strategy with calculator cache."""
+        self.calculators = {}  # Cache loaded calculator instances
+        self.cache = CalculationCache()  # Calculation result cache
+
+    def check(self, req_name: str, config: RequirementsConfig,
+              reqs: BranchRequirements, context: dict) -> Optional[dict]:
+        """
+        Check dynamic requirement with automatic calculation.
+
+        Flow:
+        1. Check if approved (TTL-based) → allow
+        2. Get cached or calculate fresh result
+        3. Evaluate thresholds (warn vs block)
+        4. Return appropriate response
+
+        Returns:
+            None if passes or approved
+            Dict with denial if blocked
+        """
+        # 1. Check if approved (short-circuit)
+        if reqs.is_approved(req_name):
+            return None  # Approved, allow
+
+        # 2. Get or calculate result
+        result = self._get_result(req_name, config, context)
+        if result is None:
+            return None  # Skip check (e.g., main branch, error)
+
+        # 3. Evaluate thresholds
+        return self._evaluate_thresholds(req_name, config, reqs, result, context)
+
+    def _get_result(self, req_name: str, config: RequirementsConfig,
+                   context: dict) -> Optional[dict]:
+        """
+        Get cached or fresh calculation result.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            context: Context dict
+
+        Returns:
+            Calculator result dict or None
+        """
+        project_dir = context['project_dir']
+        branch = context['branch']
+
+        # Check cache (60s TTL, separate from state)
+        cache_key = f"{project_dir}:{branch}:{req_name}"
+        cache_ttl = config.get_attribute(req_name, 'cache_ttl', 60)
+
+        cached = self.cache.get(cache_key, cache_ttl)
+        if cached:
+            return cached
+
+        # Load and run calculator
+        calculator = self._load_calculator(req_name, config)
+        if not calculator:
+            return None  # Fail open
+
+        try:
+            result = calculator.calculate(project_dir, branch)
+            if result:
+                self.cache.set(cache_key, result)
+            return result
+
+        except Exception as e:
+            log_error(f"Calculator failed for '{req_name}': {e}", exc_info=True)
+            return None  # Fail open
+
+    def _load_calculator(self, req_name: str,
+                        config: RequirementsConfig) -> Optional[RequirementCalculator]:
+        """
+        Load and validate calculator instance.
+
+        Implements lazy loading with instance caching.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+
+        Returns:
+            Calculator instance or None on error
+        """
+        # Return cached instance if available
+        if req_name in self.calculators:
+            return self.calculators[req_name]
+
+        # Get calculator module name from config
+        module_name = config.get_attribute(req_name, 'calculator')
+        if not module_name:
+            log_error(f"No calculator configured for '{req_name}'")
+            return None
+
+        try:
+            # Import calculator module
+            module = __import__(f'lib.{module_name}', fromlist=[module_name])
+
+            # Get Calculator class
+            if not hasattr(module, 'Calculator'):
+                log_error(f"Calculator '{module_name}' missing Calculator class")
+                return None
+
+            # Instantiate calculator
+            calculator = module.Calculator()
+
+            # Validate implements interface
+            if not isinstance(calculator, RequirementCalculator):
+                log_error(f"Calculator '{module_name}' doesn't implement RequirementCalculator interface")
+                return None
+
+            # Cache for future use
+            self.calculators[req_name] = calculator
+            return calculator
+
+        except ImportError as e:
+            log_error(f"Failed to import calculator '{module_name}': {e}")
+            return None
+        except Exception as e:
+            log_error(f"Failed to load calculator '{module_name}': {e}")
+            return None
+
+    def _evaluate_thresholds(self, req_name: str, config: RequirementsConfig,
+                            reqs: BranchRequirements, result: dict,
+                            context: dict) -> Optional[dict]:
+        """
+        Evaluate calculation result against thresholds.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            reqs: Requirements state
+            result: Calculator result
+            context: Context dict
+
+        Returns:
+            None if passes
+            Dict with denial response if blocked
+        """
+        thresholds = config.get_attribute(req_name, 'thresholds', {})
+        value = result.get('value', 0)
+
+        # Check block threshold first (most severe)
+        if value >= thresholds.get('block', float('inf')):
+            # BLOCK - require manual approval via CLI
+            # Note: We use "deny" not "ask" because "ask" gets overridden by
+            # permissions.allow entries in settings.local.json
+            message = self._format_block_message(req_name, config, result, context)
+
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": message
+                }
+            }
+
+        # Check warn threshold
+        elif value >= thresholds.get('warn', float('inf')):
+            # WARN - log but allow operation
+            log_warning(f"{req_name}: {result.get('summary', value)}")
+            return None
+
+        # Under threshold - allow
+        return None
+
+    def _format_block_message(self, req_name: str, config: RequirementsConfig,
+                              result: dict, context: dict) -> str:
+        """
+        Format blocking message with template variable substitution.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            result: Calculator result
+            context: Context dict
+
+        Returns:
+            Formatted message string
+        """
+        template = config.get_attribute(req_name, 'blocking_message',
+                                       'Requirement {req_name} not satisfied')
+
+        # Prepare template variables
+        thresholds = config.get_attribute(req_name, 'thresholds', {})
+        template_vars = {
+            'req_name': req_name,
+            'total': result.get('value', 0),
+            'value': result.get('value', 0),
+            'summary': result.get('summary', ''),
+            'base_branch': result.get('base_branch', ''),
+            'warn_threshold': thresholds.get('warn', 0),
+            'block_threshold': thresholds.get('block', 0),
+        }
+
+        # Add all result fields as potential template variables
+        template_vars.update(result)
+
+        # Replace template variables
+        try:
+            message = template.format(**template_vars)
+        except KeyError as e:
+            # Template has undefined variable - use as-is
+            message = template
+
+        # Add CLI approval instructions
+        session_id = context['session_id']
+        message += f"\n\n💡 **To approve and continue**:"
+        message += f"\n```bash"
+        message += f"\nreq satisfy {req_name} --session {session_id}"
+        message += f"\n```"
+
+        return message
+
+
+# Strategy registry - maps requirement type to strategy instance
+STRATEGIES = {
+    'blocking': BlockingRequirementStrategy(),
+    'dynamic': DynamicRequirementStrategy(),
+}

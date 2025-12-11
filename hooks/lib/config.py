@@ -103,8 +103,10 @@ class RequirementsConfig:
         """
         Load configuration cascade: global → project → local.
 
+        Also validates dynamic requirements to catch configuration errors early.
+
         Returns:
-            Merged configuration dictionary
+            Merged and validated configuration dictionary
         """
         config = {'requirements': {}}
 
@@ -136,7 +138,94 @@ class RequirementsConfig:
             if local_config:
                 deep_merge(config, local_config)
 
+        # 4. Validate dynamic requirements (fail-safe: remove invalid ones)
+        requirements = config.get('requirements', {})
+        invalid_requirements = []
+
+        for req_name in list(requirements.keys()):
+            try:
+                self._validate_requirement_config(req_name, requirements[req_name])
+            except ValueError as e:
+                print(f"⚠️ Config validation error: {e}", file=sys.stderr)
+                invalid_requirements.append(req_name)
+
+        # Remove invalid requirements (fail-safe approach)
+        for req_name in invalid_requirements:
+            del config['requirements'][req_name]
+            print(f"⚠️ Disabled invalid requirement: {req_name}", file=sys.stderr)
+
         return config
+
+    def _validate_requirement_config(self, req_name: str, req_config: dict) -> None:
+        """
+        Validate requirement configuration.
+
+        Args:
+            req_name: Requirement name
+            req_config: Requirement configuration dict
+
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        req_type = req_config.get('type', 'blocking')
+
+        if req_type == 'dynamic':
+            # Validate dynamic requirement fields
+            self._validate_dynamic_fields(req_name, req_config)
+        elif req_type == 'blocking':
+            # Blocking requirements are simple - just check enabled is bool
+            enabled = req_config.get('enabled')
+            if enabled is not None and not isinstance(enabled, bool):
+                raise ValueError(
+                    f"Requirement '{req_name}' enabled must be boolean, got {type(enabled).__name__}"
+                )
+        else:
+            raise ValueError(
+                f"Requirement '{req_name}' has unknown type '{req_type}'. "
+                f"Valid types: 'blocking', 'dynamic'"
+            )
+
+    def _validate_dynamic_fields(self, req_name: str, req_config: dict) -> None:
+        """
+        Validate dynamic requirement specific fields.
+
+        Args:
+            req_name: Requirement name
+            req_config: Requirement configuration dict
+
+        Raises:
+            ValueError: If dynamic configuration is invalid
+        """
+        # Required: calculator
+        if not req_config.get('calculator'):
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required 'calculator' field"
+            )
+
+        # Required: thresholds.block
+        thresholds = req_config.get('thresholds', {})
+        if 'block' not in thresholds:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required 'thresholds.block' field"
+            )
+
+        # Validate thresholds are positive numbers
+        for key, value in thresholds.items():
+            if not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(
+                    f"Dynamic requirement '{req_name}' threshold '{key}' "
+                    f"must be a positive number, got: {value} ({type(value).__name__})"
+                )
+
+        # Validate calculator module exists (try import)
+        calculator = req_config['calculator']
+        try:
+            __import__(f'lib.{calculator}')
+        except ImportError:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
+                f"Expected file: ~/.claude/hooks/lib/{calculator}.py"
+            )
 
     def is_enabled(self) -> bool:
         """
@@ -247,6 +336,87 @@ class RequirementsConfig:
             Full config dictionary
         """
         return self._config.copy()
+
+    def get_attribute(self, req_name: str, attr: str, default=None):
+        """
+        Get any attribute from requirement config with default fallback.
+
+        Generic accessor prevents method explosion (ISP compliance).
+        New requirement attributes don't require new methods.
+
+        Args:
+            req_name: Requirement name
+            attr: Attribute name to retrieve
+            default: Default value if attribute not found
+
+        Returns:
+            Attribute value or default
+        """
+        req = self.get_requirement(req_name)
+        if req is None:
+            return default
+        return req.get(attr, default)
+
+    def get_requirement_type(self, req_name: str) -> str:
+        """
+        Get requirement type.
+
+        Args:
+            req_name: Requirement name
+
+        Returns:
+            'blocking' (manually satisfied) or 'dynamic' (calculated)
+            Default: 'blocking' for backwards compatibility
+        """
+        return self.get_attribute(req_name, 'type', 'blocking')
+
+    def validate_dynamic_requirement(self, req_name: str) -> None:
+        """
+        Validate dynamic requirement configuration.
+
+        Checks that required fields are present and valid for dynamic requirements.
+        Invalid requirements are logged and can be removed from config.
+
+        Args:
+            req_name: Requirement name to validate
+
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        req = self.get_requirement(req_name)
+        if not req or req.get('type') != 'dynamic':
+            return  # Not dynamic, skip validation
+
+        # Required: calculator
+        if not req.get('calculator'):
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required 'calculator' field"
+            )
+
+        # Required: thresholds.block
+        thresholds = req.get('thresholds', {})
+        if 'block' not in thresholds:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required 'thresholds.block' field"
+            )
+
+        # Validate thresholds are positive numbers
+        for key, value in thresholds.items():
+            if not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(
+                    f"Dynamic requirement '{req_name}' threshold '{key}' "
+                    f"must be a positive number, got: {value} ({type(value).__name__})"
+                )
+
+        # Validate calculator module exists (try import)
+        calculator = req['calculator']
+        try:
+            __import__(f'lib.{calculator}')
+        except ImportError:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
+                f"Expected file: ~/.claude/hooks/lib/{calculator}.py"
+            )
 
 
 if __name__ == "__main__":

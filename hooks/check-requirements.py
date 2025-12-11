@@ -48,6 +48,7 @@ from requirements import BranchRequirements
 from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo
 from session import get_session_id, update_registry, get_active_sessions
+from requirement_strategies import STRATEGIES
 
 
 def log_error(message: str, exc_info: bool = False) -> None:
@@ -241,26 +242,45 @@ def main() -> int:
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)
 
-        # Check all enabled requirements
+        # Check all enabled requirements using strategy pattern
         for req_name in config.get_all_requirements():
             if not config.is_requirement_enabled(req_name):
                 continue
-
-            req_config = config.get_requirement(req_name)
-            scope = config.get_scope(req_name)
 
             # Check if this tool triggers this requirement
             trigger_tools = config.get_trigger_tools(req_name)
             if tool_name not in trigger_tools:
                 continue
 
-            # Check if satisfied
-            if not reqs.is_satisfied(req_name, scope):
-                # Not satisfied - prompt user
-                output_prompt(req_name, req_config, session_id, project_dir, branch)
-                return 0
+            # Get strategy for requirement type (blocking, dynamic, etc.)
+            req_type = config.get_requirement_type(req_name)
+            strategy = STRATEGIES.get(req_type)
 
-        # All requirements satisfied
+            if not strategy:
+                # Unknown type - log error and fail open
+                log_error(f"Unknown requirement type '{req_type}' for '{req_name}'")
+                continue
+
+            # Execute strategy to check requirement
+            context = {
+                'project_dir': project_dir,
+                'branch': branch,
+                'session_id': session_id,
+                'tool_name': tool_name,
+            }
+
+            try:
+                response = strategy.check(req_name, config, reqs, context)
+                if response:
+                    # Strategy returned a block/deny response
+                    print(json.dumps(response))
+                    return 0
+            except Exception as e:
+                # Fail open on strategy errors
+                log_error(f"Strategy error for '{req_name}': {e}", exc_info=True)
+                continue  # Try next requirement
+
+        # All requirements satisfied or passed
         return 0
 
     except Exception as e:

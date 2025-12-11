@@ -257,6 +257,91 @@ class BranchRequirements:
 
         return details
 
+    def approve_for_session(self, req_name: str, ttl: int, metadata: dict = None) -> None:
+        """
+        Record user approval for a dynamic requirement.
+
+        This is specifically for dynamic requirements where the user approves
+        continuing despite a threshold being exceeded. The approval is
+        session-scoped and expires after the TTL.
+
+        Args:
+            req_name: Requirement name
+            ttl: Time-to-live in seconds (approval duration)
+            metadata: Optional metadata (e.g., value at approval time)
+
+        Note:
+            Uses the same state structure as satisfy() but specifically
+            sets satisfied_by='approval' to distinguish from manual CLI satisfaction.
+        """
+        req_state = self._get_req_state(req_name)
+        req_state['scope'] = 'session'  # Approvals are always session-scoped
+
+        if 'sessions' not in req_state:
+            req_state['sessions'] = {}
+
+        if self.session_id not in req_state['sessions']:
+            req_state['sessions'][self.session_id] = {}
+
+        now = int(time.time())
+        session_state = req_state['sessions'][self.session_id]
+
+        session_state.update({
+            'satisfied': True,
+            'satisfied_at': now,
+            'satisfied_by': 'approval',  # Marks this as approval (vs 'cli')
+            'expires_at': now + ttl,
+            'metadata': metadata or {}
+        })
+
+        self._save()
+
+    def is_approved(self, req_name: str) -> bool:
+        """
+        Check if dynamic requirement is approved and not expired.
+
+        This specifically checks for approval-based satisfaction (not manual
+        CLI satisfaction). Used by dynamic requirement strategies to short-circuit
+        calculation when user has recently approved.
+
+        Args:
+            req_name: Requirement name
+
+        Returns:
+            True if approved and TTL not expired, False otherwise
+
+        Note:
+            This is stricter than is_satisfied() - it only returns True for
+            approvals (satisfied_by='approval'), not for manual CLI satisfaction.
+        """
+        req_state = self._get_req_state(req_name)
+        sessions = req_state.get('sessions', {})
+
+        if self.session_id not in sessions:
+            return False
+
+        session_state = sessions[self.session_id]
+
+        # Must be satisfied
+        if not session_state.get('satisfied', False):
+            return False
+
+        # Must be via approval (not manual CLI satisfy)
+        if session_state.get('satisfied_by') != 'approval':
+            return False
+
+        # Must have expiration (approvals always have TTL)
+        expires_at = session_state.get('expires_at')
+        if not expires_at:
+            return False
+
+        # Check if expired
+        now = int(time.time())
+        if now >= expires_at:
+            return False
+
+        return True
+
     @staticmethod
     def cleanup_stale_branches(project_dir: str) -> int:
         """
