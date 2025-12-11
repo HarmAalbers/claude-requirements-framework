@@ -20,6 +20,7 @@ try:
     from config import RequirementsConfig
     from calculator_interface import RequirementCalculator
     from calculation_cache import CalculationCache
+    from message_dedup_cache import MessageDedupCache
 except ImportError:
     # For testing, allow imports to fail gracefully
     pass
@@ -53,6 +54,30 @@ def log_error(message: str, exc_info: bool = False) -> None:
 def log_warning(message: str) -> None:
     """Log warning message."""
     print(f"⚠️ {message}", file=sys.stderr)
+
+
+def create_denial_response(message: str) -> dict:
+    """
+    Create standard denial response for PreToolUse hook.
+
+    Args:
+        message: The message to show to the user
+
+    Returns:
+        Hook response dict with denial decision
+
+    Note:
+        Always uses "deny" rather than "ask" because "ask" can be overridden
+        by permissions.allow entries in settings.local.json, which would bypass
+        requirement enforcement.
+    """
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": message
+        }
+    }
 
 
 class RequirementStrategy(ABC):
@@ -94,6 +119,21 @@ class BlockingRequirementStrategy(RequirementStrategy):
 
     Examples: commit_plan, adr_reviewed, github_ticket
     """
+
+    def __init__(self):
+        """
+        Initialize blocking strategy with message deduplication cache.
+
+        Note:
+            Cache initialization failures are logged but don't prevent strategy creation.
+            If cache fails, all messages will be shown (fail-open behavior).
+        """
+        try:
+            self.dedup_cache = MessageDedupCache()
+        except Exception as e:
+            log_error(f"Failed to initialize message dedup cache: {e}", exc_info=True)
+            # Create a dummy cache that always shows messages (fail-open)
+            self.dedup_cache = None
 
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -145,13 +185,17 @@ class BlockingRequirementStrategy(RequirementStrategy):
         message += f"\nreq satisfy {req_name} --session {session_id}"
         message += f"\n```"
 
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": message
-            }
-        }
+        # Deduplication check to prevent spam from parallel tool calls
+        if self.dedup_cache:
+            cache_key = f"{context['project_dir']}:{context['branch']}:{session_id}:{req_name}"
+
+            if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
+                # Suppress verbose message - show minimal indicator instead
+                minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
+                return create_denial_response(minimal_message)
+
+        # Show full message (first time or after TTL expiration)
+        return create_denial_response(message)
 
 
 class DynamicRequirementStrategy(RequirementStrategy):
@@ -170,9 +214,22 @@ class DynamicRequirementStrategy(RequirementStrategy):
     """
 
     def __init__(self):
-        """Initialize dynamic strategy with calculator cache."""
+        """
+        Initialize dynamic strategy with calculator cache.
+
+        Note:
+            Cache initialization failures are logged but don't prevent strategy creation.
+            If dedup cache fails, all messages will be shown (fail-open behavior).
+        """
         self.calculators = {}  # Cache loaded calculator instances
         self.cache = CalculationCache()  # Calculation result cache
+
+        try:
+            self.dedup_cache = MessageDedupCache()  # Message deduplication cache
+        except Exception as e:
+            log_error(f"Failed to initialize message dedup cache: {e}", exc_info=True)
+            # Create a dummy cache that always shows messages (fail-open)
+            self.dedup_cache = None
 
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -319,13 +376,18 @@ class DynamicRequirementStrategy(RequirementStrategy):
             # permissions.allow entries in settings.local.json
             message = self._format_block_message(req_name, config, result, context)
 
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": message
-                }
-            }
+            # Deduplication check to prevent spam from parallel tool calls
+            if self.dedup_cache:
+                session_id = context['session_id']
+                cache_key = f"{context['project_dir']}:{context['branch']}:{session_id}:{req_name}"
+
+                if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
+                    # Suppress verbose message - show minimal indicator instead
+                    minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
+                    return create_denial_response(minimal_message)
+
+            # Show full message (first time or after TTL expiration)
+            return create_denial_response(message)
 
         # Check warn threshold
         elif value >= thresholds.get('warn', float('inf')):
@@ -372,7 +434,8 @@ class DynamicRequirementStrategy(RequirementStrategy):
         try:
             message = template.format(**template_vars)
         except KeyError as e:
-            # Template has undefined variable - use as-is
+            # Template has undefined variable - log and use as-is
+            log_warning(f"Template for '{req_name}' references undefined variable: {e}")
             message = template
 
         # Add CLI approval instructions
