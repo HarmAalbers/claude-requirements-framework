@@ -108,18 +108,78 @@ def cmd_status(args) -> int:
     # Initialize requirements manager
     reqs = BranchRequirements(branch, session_id, project_dir)
 
-    # Show each requirement
-    print("Requirements:")
+    # Separate requirements by type
+    blocking_reqs = []
+    dynamic_reqs = []
+
     for req_name in all_reqs:
         if not config.is_requirement_enabled(req_name):
-            print(f"  ⊘ {req_name} (disabled)")
             continue
+        req_type = config.get_requirement_type(req_name)
+        if req_type == 'dynamic':
+            dynamic_reqs.append(req_name)
+        else:
+            blocking_reqs.append(req_name)
 
-        scope = config.get_scope(req_name)
-        satisfied = reqs.is_satisfied(req_name, scope)
+    # Show blocking requirements
+    if blocking_reqs:
+        print("📌 Blocking Requirements:")
+        for req_name in blocking_reqs:
+            scope = config.get_scope(req_name)
+            satisfied = reqs.is_satisfied(req_name, scope)
+            icon = "✅" if satisfied else "❌"
+            print(f"  {icon} {req_name} ({scope})")
 
-        icon = "✅" if satisfied else "❌"
-        print(f"  {icon} {req_name} ({scope})")
+    # Show dynamic requirements
+    if dynamic_reqs:
+        print("\n📊 Dynamic Requirements:")
+        for req_name in dynamic_reqs:
+            try:
+                # Load calculator
+                calculator_name = config.get_attribute(req_name, 'calculator')
+                if not calculator_name:
+                    print(f"  ⚠️  {req_name}: No calculator configured")
+                    continue
+
+                calc_module = __import__(f'lib.{calculator_name}', fromlist=[calculator_name])
+                calculator = calc_module.Calculator()
+
+                # Calculate current value
+                result = calculator.calculate(project_dir, branch)
+
+                if result:
+                    thresholds = config.get_attribute(req_name, 'thresholds', {})
+                    value = result.get('value', 0)
+
+                    # Determine status icon
+                    if value >= thresholds.get('block', float('inf')):
+                        status = "🛑"
+                    elif value >= thresholds.get('warn', float('inf')):
+                        status = "⚠️"
+                    else:
+                        status = "✅"
+
+                    print(f"  {status} {req_name}: {value} changes")
+                    print(f"      {result.get('summary', '')}")
+                    print(f"      Base: {result.get('base_branch', 'N/A')}")
+
+                    # Show approval status
+                    if reqs.is_approved(req_name):
+                        req_state = reqs._get_req_state(req_name)
+                        session_state = req_state.get('sessions', {}).get(session_id, {})
+                        expires_at = session_state.get('expires_at', 0)
+                        remaining = int(expires_at - time.time())
+                        if remaining > 0:
+                            mins = remaining // 60
+                            secs = remaining % 60
+                            print(f"      ⏰ Approved ({mins}m {secs}s remaining)")
+                else:
+                    print(f"  ℹ️  {req_name}: Not applicable (skipped)")
+            except Exception as e:
+                print(f"  ⚠️  {req_name}: Error calculating ({e})")
+
+    if not blocking_reqs and not dynamic_reqs:
+        print("ℹ️  No requirements configured.")
 
     return 0
 
@@ -200,8 +260,6 @@ def cmd_satisfy(args) -> int:
             print("   No requirements configured.")
         # Still allow satisfying (manual override)
 
-    scope = config.get_scope(req_name)
-
     # Parse metadata if provided
     metadata = {}
     if args.metadata:
@@ -211,11 +269,36 @@ def cmd_satisfy(args) -> int:
             print("❌ Invalid JSON metadata", file=sys.stderr)
             return 1
 
-    # Satisfy the requirement
+    # Initialize requirements manager
     reqs = BranchRequirements(branch, session_id, project_dir)
-    reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
 
-    print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
+    # Handle based on requirement type
+    req_type = config.get_requirement_type(req_name)
+
+    if req_type == 'dynamic':
+        # Dynamic requirement - use approval workflow with TTL
+        ttl = config.get_attribute(req_name, 'approval_ttl', 300)
+
+        # Add metadata about method
+        if metadata:
+            metadata['method'] = 'cli'
+        else:
+            metadata = {'method': 'cli'}
+
+        reqs.approve_for_session(req_name, ttl, metadata=metadata)
+
+        mins = ttl // 60
+        secs = ttl % 60
+        print(f"✅ Approved '{req_name}' for {branch}")
+        print(f"   Duration: {mins}m {secs}s (session scope)")
+        print(f"   Session: {session_id}")
+
+    else:
+        # Blocking requirement - standard satisfaction
+        scope = config.get_scope(req_name)
+        reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
+        print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
+
     return 0
 
 
