@@ -445,14 +445,59 @@ See the `examples/` directory for:
 - `global-requirements.yaml` - Global configuration template
 - `project-requirements.yaml` - Project-specific configuration example
 
+## Development Workflow
+
+### Keeping Repository and Deployed Installation in Sync
+
+The framework exists in two locations:
+- **Repository**: `~/Tools/claude-requirements-framework/` (source of truth)
+- **Deployed**: `~/.claude/hooks/` (active installation)
+
+Use the `sync.sh` script to keep them in sync:
+
+```bash
+cd ~/Tools/claude-requirements-framework
+
+# Check sync status
+./sync.sh status
+
+# Deploy changes from repo → ~/.claude/hooks
+./sync.sh deploy
+
+# Pull changes from ~/.claude/hooks → repo
+./sync.sh pull
+
+# See detailed differences
+./sync.sh diff
+```
+
+**Common workflow**:
+```bash
+# 1. Make changes in repository
+vim hooks/lib/config.py
+
+# 2. Deploy to test
+./sync.sh deploy
+
+# 3. Run tests
+python3 ~/.claude/hooks/test_requirements.py
+
+# 4. Commit when tests pass
+git add .
+git commit -m "Add feature"
+git push
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows and best practices.
+
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for your changes (TDD)
-4. Implement your feature
-5. Ensure all tests pass
-6. Submit a pull request
+4. Deploy and test: `./sync.sh deploy && python3 ~/.claude/hooks/test_requirements.py`
+5. Ensure sync status is clean: `./sync.sh status`
+6. Commit and submit a pull request
 
 ## License
 
