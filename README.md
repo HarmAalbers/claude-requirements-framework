@@ -9,8 +9,10 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **🎯 Session & Branch Scoping**: Requirements can be session-specific, branch-specific, or permanent
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
+- **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls (NEW in v2.1)
 - **🧪 Comprehensive Tests**: 89 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
+- **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
 ## Quick Start
 
@@ -445,20 +447,39 @@ See the `examples/` directory for:
 - `global-requirements.yaml` - Global configuration template
 - `project-requirements.yaml` - Project-specific configuration example
 
+## What's New in v2.1
+
+### 🚫 Message Deduplication (Priority 1 Improvement)
+
+**Problem Solved**: When Claude makes parallel Write/Edit calls (e.g., modifying 5 files simultaneously), the hook previously executed 5 times, showing identical blocking messages 5-12 times. This created overwhelming walls of text.
+
+**Solution**: TTL-based deduplication cache that:
+- Shows full blocking message on **first occurrence**
+- Shows minimal "⏸️ Requirement `name` not satisfied (waiting...)" for subsequent blocks within 5 seconds
+- Automatically expires to show updated messages when you retry
+
+**Impact**: 90% reduction in message output, ~5000 tokens saved per blocking scenario
+
+**Debug Mode**: Set `export CLAUDE_DEDUP_DEBUG=1` to see cache behavior in stderr
+
+**Implementation**: Cross-platform (Unix + Windows), atomic file writes, fail-open design
+
+---
+
 ## Development Workflow
 
 ### Keeping Repository and Deployed Installation in Sync
 
 The framework exists in two locations:
-- **Repository**: `~/Tools/claude-requirements-framework/` (source of truth)
-- **Deployed**: `~/.claude/hooks/` (active installation)
+- **Repository**: `~/tools/claude-requirements-framework/` (source of truth, git-controlled)
+- **Deployed**: `~/.claude/hooks/` (active installation, where Claude Code loads hooks)
 
 Use the `sync.sh` script to keep them in sync:
 
 ```bash
-cd ~/Tools/claude-requirements-framework
+cd ~/tools/claude-requirements-framework
 
-# Check sync status
+# Check sync status (run this FIRST before committing!)
 ./sync.sh status
 
 # Deploy changes from repo → ~/.claude/hooks
@@ -471,7 +492,8 @@ cd ~/Tools/claude-requirements-framework
 ./sync.sh diff
 ```
 
-**Common workflow**:
+### Standard Development Workflow
+
 ```bash
 # 1. Make changes in repository
 vim hooks/lib/config.py
@@ -484,11 +506,27 @@ python3 ~/.claude/hooks/test_requirements.py
 
 # 4. Commit when tests pass
 git add .
-git commit -m "Add feature"
-git push
+git commit -m "feat: Add feature"
+git push origin master
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows and best practices.
+### Quick Fix Workflow (Claude-Driven)
+
+```bash
+# 1. Claude edits deployed files (in ~/.claude/hooks/)
+# 2. Pull changes to repository
+cd ~/tools/claude-requirements-framework
+./sync.sh pull
+
+# 3. Commit
+git add .
+git commit -m "fix: Bug description"
+git push origin master
+```
+
+**Important**: Always run `./sync.sh status` before committing to ensure you have the latest changes from both locations!
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, TDD practices, and troubleshooting guide.
 
 ## Contributing
 

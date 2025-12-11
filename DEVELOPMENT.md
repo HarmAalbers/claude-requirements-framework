@@ -126,8 +126,14 @@ git push
 │   ├── requirements-cli.py            → ~/.claude/hooks/requirements-cli.py
 │   ├── test_requirements.py           → ~/.claude/hooks/test_requirements.py
 │   └── lib/
+│       ├── __init__.py                → ~/.claude/hooks/lib/__init__.py
+│       ├── branch_size_calculator.py  → ~/.claude/hooks/lib/branch_size_calculator.py
+│       ├── calculation_cache.py       → ~/.claude/hooks/lib/calculation_cache.py
+│       ├── calculator_interface.py    → ~/.claude/hooks/lib/calculator_interface.py
 │       ├── config.py                  → ~/.claude/hooks/lib/config.py
 │       ├── git_utils.py               → ~/.claude/hooks/lib/git_utils.py
+│       ├── message_dedup_cache.py     → ~/.claude/hooks/lib/message_dedup_cache.py (NEW v2.1)
+│       ├── requirement_strategies.py  → ~/.claude/hooks/lib/requirement_strategies.py
 │       ├── requirements.py            → ~/.claude/hooks/lib/requirements.py
 │       ├── session.py                 → ~/.claude/hooks/lib/session.py
 │       └── state_storage.py           → ~/.claude/hooks/lib/state_storage.py
@@ -186,6 +192,77 @@ Copies all files from `~/.claude/hooks/` → repository
 Shows detailed differences between repository and deployed versions.
 
 Uses `diff -u` to show line-by-line changes.
+
+## New in v2.1: Message Deduplication
+
+### Feature Overview
+
+**Problem**: When Claude makes parallel Write/Edit calls (5-12 files simultaneously), the hook executes repeatedly, showing identical blocking messages 5-12 times. This creates overwhelming spam.
+
+**Solution**: TTL-based message deduplication cache that:
+- Shows full blocking message on first occurrence
+- Shows minimal "⏸️ waiting..." indicator for subsequent blocks within 5 seconds
+- Automatically expires after TTL to show updated messages
+
+### Files Involved
+
+- `hooks/lib/message_dedup_cache.py` (NEW - 286 lines)
+- `hooks/lib/requirement_strategies.py` (MODIFIED - deduplication integration)
+
+### Debug Mode
+
+Enable debug logging to see deduplication behavior:
+
+```bash
+export CLAUDE_DEDUP_DEBUG=1
+
+# Now when hooks execute, you'll see:
+# [DEDUP] Showing (first time or expired): /path/to/project:branch:session:commit_plan
+# [DEDUP] Suppressing: /path/to/project:branch:session:commit_plan
+```
+
+### Testing Deduplication
+
+```bash
+# Test parallel writes
+cd ~/some-project
+git checkout -b test-dedup
+
+# This should trigger multiple hook invocations
+claude "create 5 files: a.py b.py c.py d.py e.py with hello world"
+
+# Expected behavior:
+# - First block: Full 15-line message with checklist
+# - Blocks 2-5: "⏸️ Requirement `commit_plan` not satisfied (waiting...)"
+```
+
+### Cache Location
+
+```bash
+# Unix
+/tmp/claude-message-dedup-{uid}.json
+
+# Windows
+/tmp/claude-message-dedup-{username}.json
+
+# Fallback (if /tmp issues)
+~/.claude/message-dedup.json
+```
+
+### Clear Cache (for testing)
+
+```python
+from message_dedup_cache import MessageDedupCache
+cache = MessageDedupCache()
+cache.clear()
+```
+
+Or manually:
+```bash
+rm /tmp/claude-message-dedup-$(id -u).json
+```
+
+---
 
 ## Testing
 
