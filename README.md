@@ -160,6 +160,20 @@ requirements:
     enabled: false  # Temporarily disable for myself
 ```
 
+### Logging Configuration
+
+Configure how the hook emits JSON logs:
+
+```yaml
+logging:
+  level: info               # One of: debug, info, warning, error
+  destinations: [file]      # Any of: stdout, file (can list multiple)
+  file: ~/.claude/requirements.log  # Optional custom log path
+```
+
+Defaults keep the existing fail-open behavior: level `error` with file logging to
+`~/.claude/requirements.log` so normal runs stay quiet unless something fails.
+
 ## Checklists Feature
 
 Checklists provide visual reminders of important steps when requirements block your workflow.

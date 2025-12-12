@@ -108,7 +108,13 @@ class RequirementsConfig:
         Returns:
             Merged and validated configuration dictionary
         """
-        config = {'requirements': {}}
+        config = {
+            'requirements': {},
+            'logging': {
+                'level': 'error',
+                'destinations': ['file'],
+            },
+        }
 
         # 1. Global defaults
         global_file = Path.home() / '.claude' / 'requirements.yaml'
@@ -336,6 +342,15 @@ class RequirementsConfig:
             Full config dictionary
         """
         return self._config.copy()
+
+    def get_logging_config(self) -> dict:
+        """
+        Get logging configuration.
+
+        Returns:
+            Logging config dictionary
+        """
+        return self._config.get('logging', {})
 
     def get_attribute(self, req_name: str, attr: str, default=None):
         """

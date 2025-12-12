@@ -36,8 +36,6 @@ Design:
 import json
 import os
 import sys
-import time
-import traceback
 from pathlib import Path
 
 # Add lib to path
@@ -49,26 +47,7 @@ from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo
 from session import get_session_id, update_registry, get_active_sessions
 from requirement_strategies import STRATEGIES
-
-
-def log_error(message: str, exc_info: bool = False) -> None:
-    """
-    Log error to file for debugging.
-
-    Args:
-        message: Error message
-        exc_info: Include traceback
-    """
-    try:
-        log_file = Path.home() / '.claude' / 'requirements-errors.log'
-        with open(log_file, 'a') as f:
-            f.write(f"\n{'='*60}\n")
-            f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Error: {message}\n")
-            if exc_info:
-                f.write(traceback.format_exc())
-    except Exception:
-        pass  # Silent fail for logging
+from logger import get_logger
 
 
 def should_skip_plan_file(file_path: str) -> bool:
@@ -170,9 +149,13 @@ def main() -> int:
     Returns:
         Exit code (always 0 - fail open)
     """
+    session_id = get_session_id()
+    logger = get_logger(base_context={"session": session_id})
+
     try:
         # Check skip flag
         if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
+            logger.info("Skipping requirements (env override)", reason='CLAUDE_SKIP_REQUIREMENTS')
             return 0
 
         # Read hook input from stdin
@@ -186,6 +169,8 @@ def main() -> int:
 
         tool_name = input_data.get('tool_name', '')
 
+        logger = logger.bind(tool=tool_name)
+
         # Only check on write operations
         if tool_name not in ['Edit', 'Write', 'MultiEdit']:
             return 0
@@ -195,10 +180,12 @@ def main() -> int:
         if tool_input:
             file_path = tool_input.get('file_path', '')
             if file_path and should_skip_plan_file(file_path):
+                logger.info("Skipping plan file", file_path=file_path)
                 return 0
 
         # Get project directory
         project_dir = os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd())
+        logger = logger.bind(project_dir=project_dir)
 
         # Check if project has requirements config
         config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
@@ -206,30 +193,45 @@ def main() -> int:
 
         if not config_file.exists() and not config_file_json.exists():
             # No config = no requirements for this project
+            logger.info("Skipping requirements (no config)", project_dir=project_dir)
             return 0
 
         # Skip if not git repo
         if not is_git_repo(project_dir):
+            logger.info("Skipping requirements (not a git repo)", project_dir=project_dir)
             return 0
 
         # Get current branch
         branch = get_current_branch(project_dir)
+        logger = logger.bind(branch=branch)
         if not branch:
+            logger.info("Skipping requirements (detached HEAD)")
             return 0  # Detached HEAD
 
         # Skip main/master
         if branch in ['main', 'master']:
+            logger.info("Skipping requirements (protected branch)")
             return 0
 
         # Load configuration
         config = RequirementsConfig(project_dir)
 
+        # Reconfigure logger with project settings
+        logger = get_logger(
+            config.get_logging_config(),
+            base_context={
+                "session": session_id,
+                "tool": tool_name,
+                "branch": branch,
+                "project_dir": project_dir,
+            },
+        )
+        logger.info("Loaded requirements configuration")
+
         # Check if enabled for this project
         if not config.is_enabled():
+            logger.info("Requirements disabled via config")
             return 0
-
-        # Get session ID
-        session_id = get_session_id()
 
         # Update session registry FIRST (before checking requirements)
         # This allows CLI to find the session for bootstrapping new sessions
@@ -237,7 +239,7 @@ def main() -> int:
         try:
             update_registry(session_id, project_dir, branch)
         except Exception as e:
-            log_error(f"Registry update failed: {e}", exc_info=True)
+            logger.error("Registry update failed", error=str(e))
 
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)
@@ -258,7 +260,11 @@ def main() -> int:
 
             if not strategy:
                 # Unknown type - log error and fail open
-                log_error(f"Unknown requirement type '{req_type}' for '{req_name}'")
+                logger.error(
+                    "Unknown requirement type",
+                    requirement=req_name,
+                    req_type=req_type,
+                )
                 continue
 
             # Execute strategy to check requirement
@@ -269,15 +275,31 @@ def main() -> int:
                 'tool_name': tool_name,
             }
 
+            logger.debug(
+                "Checking requirement",
+                requirement=req_name,
+                req_type=req_type,
+            )
+
             try:
                 response = strategy.check(req_name, config, reqs, context)
                 if response:
                     # Strategy returned a block/deny response
+                    logger.info(
+                        "Requirement blocked",
+                        requirement=req_name,
+                        req_type=req_type,
+                    )
                     print(json.dumps(response))
                     return 0
             except Exception as e:
                 # Fail open on strategy errors
-                log_error(f"Strategy error for '{req_name}': {e}", exc_info=True)
+                logger.error(
+                    "Strategy error",
+                    requirement=req_name,
+                    req_type=req_type,
+                    error=str(e),
+                )
                 continue  # Try next requirement
 
         # All requirements satisfied or passed
@@ -287,7 +309,7 @@ def main() -> int:
         # FAIL OPEN with visible warning
         error_msg = f"Requirements check error: {e}"
         print(f"⚠️ {error_msg}", file=sys.stderr)
-        log_error(error_msg, exc_info=True)
+        logger.error("Unhandled requirements error", error=str(e))
         return 0
 
 
