@@ -15,6 +15,7 @@ Shell Alias (add to ~/.zshrc or ~/.bashrc):
     alias req='python3 ~/.claude/hooks/requirements-cli.py'
 """
 import argparse
+import filecmp
 import json
 import os
 import sys
@@ -31,6 +32,18 @@ from session import get_session_id, get_active_sessions, cleanup_stale_sessions
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
 import time
+
+
+SYNC_FILES = [
+    "check-requirements.py",
+    "requirements-cli.py",
+    "test_requirements.py",
+    "lib/config.py",
+    "lib/git_utils.py",
+    "lib/requirements.py",
+    "lib/session.py",
+    "lib/state_storage.py",
+]
 
 
 def get_project_dir() -> str:
@@ -452,6 +465,177 @@ def cmd_prune(args) -> int:
     print(success(f"✅ Removed {count} state file(s) for deleted branches"))
 
     return 0
+
+
+def _load_settings_file(claude_dir: Path) -> tuple[Path | None, dict]:
+    """Load the first available settings file."""
+
+    for filename in ["settings.json", "settings.local.json"]:
+        path = claude_dir / filename
+        if path.exists():
+            try:
+                return path, json.loads(path.read_text())
+            except json.JSONDecodeError:
+                print(f"❌ {path} is not valid JSON", file=sys.stderr)
+                return path, {}
+    return None, {}
+
+
+def _check_hook_registration(claude_dir: Path) -> tuple[bool, str]:
+    """Verify PreToolUse hook is registered."""
+
+    settings_path, settings = _load_settings_file(claude_dir)
+    expected_path = str((claude_dir / "hooks" / "check-requirements.py").expanduser())
+
+    if not settings_path:
+        return False, "Missing ~/.claude/settings.json"
+
+    hooks = settings.get("hooks", {})
+    hook_path = hooks.get("PreToolUse")
+
+    if not hook_path:
+        return False, f"PreToolUse hook not registered in {settings_path}"
+
+    normalized = str(Path(hook_path).expanduser())
+    if normalized != expected_path:
+        return False, f"PreToolUse hook points to {hook_path} (expected {expected_path})"
+
+    return True, f"PreToolUse hook registered in {settings_path}"
+
+
+def _check_executable(path: Path) -> tuple[bool, str]:
+    """Check that a script exists and is executable."""
+
+    if not path.exists():
+        return False, f"Missing {path}"
+    if not os.access(path, os.X_OK):
+        return False, f"{path} is not executable"
+    return True, f"{path} is executable"
+
+
+def _check_project_config(project_dir: str) -> tuple[bool, str]:
+    """Ensure project has a requirements config file."""
+
+    config_path = Path(project_dir) / ".claude" / "requirements.yaml"
+    if config_path.exists():
+        return True, f"Found project config at {config_path}"
+
+    legacy_path = Path(project_dir) / ".claude" / "requirements.json"
+    if legacy_path.exists():
+        return False, "Found requirements.json; migrate to requirements.yaml"
+
+    return False, "Missing .claude/requirements.yaml in project"
+
+
+def _find_repo_dir(explicit: str | None = None) -> Path | None:
+    """Locate the hooks repository directory containing sync.sh."""
+
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+
+    script_repo = Path(__file__).resolve().parent.parent
+    candidates.append(script_repo)
+
+    default_repo = Path.home() / "Tools" / "claude-requirements-framework"
+    candidates.append(default_repo)
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if (candidate / "sync.sh").exists():
+            return candidate
+    return None
+
+
+def _compare_repo_and_deployed(repo_dir: Path, deployed_dir: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """Compare repository files to deployed files and suggest actions."""
+
+    results: list[tuple[str, str]] = []
+    actions: set[str] = set()
+
+    for relative in SYNC_FILES:
+        repo_file = repo_dir / "hooks" / relative
+        deployed_file = deployed_dir / relative
+
+        if repo_file.exists() and deployed_file.exists():
+            if filecmp.cmp(repo_file, deployed_file, shallow=False):
+                results.append((relative, "✓ In sync"))
+            else:
+                repo_newer = repo_file.stat().st_mtime > deployed_file.stat().st_mtime
+                if repo_newer:
+                    results.append((relative, "↑ Repository is newer"))
+                    actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
+                else:
+                    results.append((relative, "↓ Deployed is newer"))
+                    actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+        elif repo_file.exists():
+            results.append((relative, "⚠ Not deployed"))
+            actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
+        elif deployed_file.exists():
+            results.append((relative, "✗ Missing in repository"))
+            actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+        else:
+            results.append((relative, "✗ Missing in both locations"))
+
+    return results, sorted(actions)
+
+
+def cmd_doctor(args) -> int:
+    """Run environment diagnostics for the requirements framework."""
+
+    project_dir = get_project_dir()
+    claude_dir = Path.home() / ".claude"
+    hooks_dir = claude_dir / "hooks"
+
+    print("🩺 Running requirements doctor\n")
+
+    status_ok = True
+
+    # Hook registration check
+    hook_ok, hook_msg = _check_hook_registration(claude_dir)
+    status_ok &= hook_ok
+    icon = "✅" if hook_ok else "❌"
+    print(f"{icon} {hook_msg}")
+
+    # Executable bits
+    for script_name in ["check-requirements.py", "requirements-cli.py"]:
+        ok, msg = _check_executable(hooks_dir / script_name)
+        status_ok &= ok
+        icon = "✅" if ok else "❌"
+        print(f"{icon} {msg}")
+
+    # Project config
+    config_ok, config_msg = _check_project_config(project_dir)
+    status_ok &= config_ok
+    icon = "✅" if config_ok else "❌"
+    print(f"{icon} {config_msg}")
+
+    # Sync status
+    repo_dir = _find_repo_dir(args.repo)
+    if repo_dir:
+        print("\n📊 Repo vs Deployed")
+        results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
+        for relative, message in results:
+            if message.startswith("✓"):
+                prefix = "✅"
+            elif message.startswith(("↑", "↓", "⚠", "✗")):
+                prefix = "⚠️"
+            else:
+                prefix = "ℹ️"
+            print(f"  {prefix} {relative}: {message}")
+
+        if actions:
+            status_ok = False
+            print("\nRecommended actions:")
+            for action in actions:
+                print(f"  - {action}")
+    else:
+        print("\n⚠️ Could not locate repository copy (set --repo to specify path)")
+
+    return 0 if status_ok else 1
 
 
 def cmd_sessions(args) -> int:
@@ -1028,6 +1212,10 @@ Environment Variables:
     config_parser.add_argument('--local', action='store_true', help='Modify local config')
     config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
 
+    # doctor
+    doctor_parser = subparsers.add_parser('doctor', help='Verify hook installation and sync status')
+    doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1046,6 +1234,7 @@ Environment Variables:
         'disable': cmd_disable,
         'init': cmd_init,
         'config': cmd_config,
+        'doctor': cmd_doctor,
     }
 
     return commands[args.command](args)

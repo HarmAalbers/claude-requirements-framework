@@ -15,6 +15,7 @@ Tests all framework components:
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1003,6 +1004,79 @@ def test_cli_sessions_command(runner: TestRunner):
         finally:
             # Restore original function
             session_module.get_registry_path = original_get_registry_path
+
+
+def test_cli_doctor_command(runner: TestRunner):
+    """Test doctor command for environment checks."""
+
+    print("\n📦 Testing doctor command...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+    repo_root = Path(__file__).parent.parent
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        home_dir = Path(tmpdir)
+        claude_dir = home_dir / ".claude"
+        hooks_dir = claude_dir / "hooks"
+        hooks_dir.mkdir(parents=True)
+
+        sync_files = [
+            "check-requirements.py",
+            "requirements-cli.py",
+            "test_requirements.py",
+            "lib/config.py",
+            "lib/git_utils.py",
+            "lib/requirements.py",
+            "lib/session.py",
+            "lib/state_storage.py",
+        ]
+
+        for relative in sync_files:
+            source = Path(__file__).parent / relative
+            destination = hooks_dir / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+        # Ensure executables
+        for script in ["check-requirements.py", "requirements-cli.py"]:
+            target = hooks_dir / script
+            target.chmod(0o755)
+
+        # Settings with hook registration
+        settings_path = claude_dir / "settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {"PreToolUse": "~/.claude/hooks/check-requirements.py"}
+                },
+                indent=2,
+            )
+        )
+
+        # Project configuration
+        project_dir = home_dir / "project"
+        (project_dir / ".claude").mkdir(parents=True)
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
+        }
+        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
+
+        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        runner.test("Doctor runs", result.returncode == 0, result.stdout + result.stderr)
+        runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
+        runner.test("Reports sync status", "Repo vs Deployed" in result.stdout, result.stdout)
 
 
 def test_hook_behavior(runner: TestRunner):
@@ -2727,6 +2801,7 @@ def main():
     test_branch_level_override_with_ttl(runner)
     test_cli_commands(runner)
     test_cli_sessions_command(runner)
+    test_cli_doctor_command(runner)
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
 
