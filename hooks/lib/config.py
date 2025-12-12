@@ -97,7 +97,17 @@ class RequirementsConfig:
             project_dir: Project root directory
         """
         self.project_dir = project_dir
+        self.validation_errors: list[str] = []
         self._config = self._load_cascade()
+
+    REQUIREMENT_SCHEMA = {
+        'enabled': {'type': bool},
+        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent'}},
+        'trigger_tools': {'type': list, 'element_type': str},
+        'checklist': {'type': list, 'element_type': str},
+        'message': {'type': str},
+        'type': {'type': str, 'allowed': {'blocking', 'dynamic'}},
+    }
 
     def _load_cascade(self) -> dict:
         """
@@ -153,6 +163,7 @@ class RequirementsConfig:
                 self._validate_requirement_config(req_name, requirements[req_name])
             except ValueError as e:
                 print(f"⚠️ Config validation error: {e}", file=sys.stderr)
+                self.validation_errors.append(str(e))
                 invalid_requirements.append(req_name)
 
         # Remove invalid requirements (fail-safe approach)
@@ -161,6 +172,44 @@ class RequirementsConfig:
             print(f"⚠️ Disabled invalid requirement: {req_name}", file=sys.stderr)
 
         return config
+
+    def get_validation_errors(self) -> list[str]:
+        """Return any validation errors encountered while loading config."""
+        return list(self.validation_errors)
+
+    def _validate_requirement_schema(self, req_name: str, req_config: dict) -> None:
+        """Validate common requirement fields against schema."""
+        for field, rules in self.REQUIREMENT_SCHEMA.items():
+            if field not in req_config:
+                continue
+
+            value = req_config[field]
+            expected_type = rules['type']
+
+            if expected_type is list:
+                if not isinstance(value, list):
+                    raise ValueError(
+                        f"Requirement '{req_name}' field '{field}' must be a list of strings"
+                    )
+
+                element_type = rules.get('element_type')
+                if element_type:
+                    invalid_items = [item for item in value if not isinstance(item, element_type)]
+                    if invalid_items:
+                        raise ValueError(
+                            f"Requirement '{req_name}' field '{field}' must contain only strings"
+                        )
+            else:
+                if not isinstance(value, expected_type):
+                    raise ValueError(
+                        f"Requirement '{req_name}' field '{field}' must be {expected_type.__name__}"
+                    )
+
+            if 'allowed' in rules and value not in rules['allowed']:
+                allowed_values = ', '.join(sorted(rules['allowed']))
+                raise ValueError(
+                    f"Requirement '{req_name}' field '{field}' must be one of: {allowed_values}"
+                )
 
     def _validate_requirement_config(self, req_name: str, req_config: dict) -> None:
         """
@@ -174,6 +223,9 @@ class RequirementsConfig:
             ValueError: If configuration is invalid
         """
         req_type = req_config.get('type', 'blocking')
+
+        # Validate common fields present on all requirements
+        self._validate_requirement_schema(req_name, req_config)
 
         if req_type == 'dynamic':
             # Validate dynamic requirement fields
