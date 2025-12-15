@@ -542,6 +542,26 @@ def test_config_module(runner: TestRunner):
         nonexistent = config2.get_checklist("nonexistent")
         runner.test("get_checklist nonexistent returns []", nonexistent == [], f"Got: {nonexistent}")
 
+        # Test schema validation errors (inherit: false to isolate from global config)
+        invalid_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,  # Don't merge with ~/.claude/requirements.yaml
+            "requirements": {
+                "bad_enabled": {"enabled": "yes"},
+                "bad_scope": {"enabled": True, "scope": "always"},
+                "bad_checklist": {"enabled": True, "checklist": ["ok", 123]},
+            },
+        }
+
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(invalid_config, f)
+
+        config3 = RequirementsConfig(tmpdir)
+        errors = config3.get_validation_errors()
+        runner.test("Validation errors captured", len(errors) == 3, f"Got: {errors}")
+        runner.test("Invalid requirements removed", config3.get_all_requirements() == [])
+
 
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""
@@ -814,6 +834,35 @@ def test_cli_commands(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("List runs", result.returncode == 0, result.stderr)
+
+    # Validation errors are surfaced in status output
+    with tempfile.TemporaryDirectory() as tmpdir_invalid:
+        subprocess.run(["git", "init"], cwd=tmpdir_invalid, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "validation"], cwd=tmpdir_invalid, capture_output=True)
+
+        os.makedirs(f"{tmpdir_invalid}/.claude")
+        invalid_config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "bad_enabled": {"enabled": "yes"}
+            },
+        }
+
+        with open(f"{tmpdir_invalid}/.claude/requirements.yaml", 'w') as f:
+            json.dump(invalid_config, f)
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=tmpdir_invalid, capture_output=True, text=True
+        )
+
+        runner.test("Status reports validation errors", "Configuration validation failed" in result.stdout, result.stdout)
+        runner.test(
+            "Status includes remediation hint",
+            "Fix .claude/requirements.yaml" in result.stdout,
+            result.stdout,
+        )
 
 
 def test_cli_sessions_command(runner: TestRunner):

@@ -96,6 +96,14 @@ def cmd_status(args) -> int:
 
     config = RequirementsConfig(project_dir)
 
+    validation_errors = config.get_validation_errors()
+    if validation_errors:
+        print("⚠️  Configuration validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("   Fix .claude/requirements.yaml and rerun `req status`.")
+        print()
+
     if not config.is_enabled():
         print("⚠️  Requirements framework disabled for this project")
         return 0
