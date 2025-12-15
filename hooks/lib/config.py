@@ -531,6 +531,58 @@ class RequirementsConfig:
         """
         return self._config.get('logging', {})
 
+    def get_hook_config(self, hook_name: str, key: str, default=None):
+        """
+        Get configuration for a specific hook.
+
+        Accesses the 'hooks' section of config with sensible defaults:
+        - session_start.inject_context: True (show status at start)
+        - stop.verify_requirements: True (check before stopping)
+        - stop.verify_scopes: ['session'] (only session-scoped)
+        - session_end.clear_session_state: False (preserve state)
+
+        Args:
+            hook_name: Hook name ('session_start', 'stop', 'session_end')
+            key: Configuration key within the hook config
+            default: Default value if not configured (overrides built-in defaults)
+
+        Returns:
+            Configuration value or default
+
+        Example:
+            # Check if stop verification is enabled (default: True)
+            if config.get_hook_config('stop', 'verify_requirements', True):
+                # Check requirements before stopping
+                pass
+        """
+        # Built-in defaults (opt-out, not opt-in)
+        builtin_defaults = {
+            'session_start': {
+                'inject_context': True,
+            },
+            'stop': {
+                'verify_requirements': True,
+                'verify_scopes': ['session'],
+            },
+            'session_end': {
+                'clear_session_state': False,
+            },
+        }
+
+        # Get hooks config section
+        hooks_config = self._config.get('hooks', {})
+        hook_specific = hooks_config.get(hook_name, {})
+
+        # Priority: explicit config > provided default > built-in default
+        if key in hook_specific:
+            return hook_specific[key]
+
+        if default is not None:
+            return default
+
+        # Fall back to built-in default
+        return builtin_defaults.get(hook_name, {}).get(key)
+
     def get_attribute(self, req_name: str, attr: str, default=None):
         """
         Get any attribute from requirement config with default fallback.

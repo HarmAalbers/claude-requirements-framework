@@ -5,12 +5,15 @@ A powerful hook-based system for enforcing development workflow requirements in 
 ## Features
 
 - **🔒 PreToolUse Hook**: Blocks file modifications until requirements are satisfied
+- **🛑 Stop Hook**: Verifies all requirements before Claude finishes (prevents incomplete work)
+- **🚀 SessionStart Hook**: Injects full requirement status at session start
+- **🧹 SessionEnd Hook**: Cleans up session state when session ends
 - **📋 Customizable Checklists**: Display reminder checklists in requirement blocker messages
 - **🎯 Session & Branch Scoping**: Requirements can be session-specific, branch-specific, or permanent
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
-- **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls (NEW in v2.1)
-- **🧪 Comprehensive Tests**: 89 passing tests with full TDD coverage
+- **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
+- **🧪 Comprehensive Tests**: 148 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -30,7 +33,7 @@ cd ~/tools/claude-requirements-framework
 The installer will:
 1. Copy hooks to `~/.claude/hooks/`
 2. Install the global configuration to `~/.claude/requirements.yaml`
-3. Register the PreToolUse hook in your Claude Code settings
+3. Register all four hooks (PreToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
 
 ### Basic Usage
 
@@ -174,6 +177,85 @@ logging:
 Defaults keep the existing fail-open behavior: level `error` with file logging to
 `~/.claude/requirements.log` so normal runs stay quiet unless something fails.
 
+### Hook Configuration
+
+Configure behavior for each hook:
+
+```yaml
+hooks:
+  session_start:
+    inject_context: true       # ON by default - show full status at start
+  stop:
+    verify_requirements: true  # ON by default - enforce requirements
+    verify_scopes: [session]   # Which scopes to verify (default: session only)
+  session_end:
+    clear_session_state: false # OFF by default - preserve state for debugging
+```
+
+To disable the Stop hook verification:
+
+```yaml
+hooks:
+  stop:
+    verify_requirements: false  # Turn off requirement verification at stop
+```
+
+## Session Lifecycle
+
+The framework uses four hooks to manage the complete session lifecycle:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SESSION LIFECYCLE                     │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  🚀 SessionStart ────────────────────────────────────►  │
+│     • Clean stale sessions (prune)                      │
+│     • Inject full requirement status + instructions     │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │              WORK LOOP                          │   │
+│  │  🔒 PreToolUse (Edit/Write)                     │   │
+│  │  • Block if requirements not satisfied          │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  🛑 Stop ───────────────────────────────────────────►   │
+│     • Verify all requirements satisfied (ON by default) │
+│     • Block stop if incomplete (force continuation)     │
+│                                                         │
+│  🧹 SessionEnd ─────────────────────────────────────►   │
+│     • Clean up session-specific state                   │
+│     • Update registry (mark session inactive)           │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Hook Details
+
+| Hook | When | Can Block | Purpose |
+|------|------|-----------|---------|
+| SessionStart | Session starts/resumes | No | Inject context, clean stale sessions |
+| PreToolUse | Before Edit/Write | Yes | Block modifications until requirements satisfied |
+| Stop | Claude about to finish | Yes | Final verification before stopping |
+| SessionEnd | Session ends | No | Cleanup session state |
+
+### Stop Hook Behavior
+
+The Stop hook prevents Claude from finishing with unsatisfied requirements:
+
+1. **Enabled by default** - No configuration needed
+2. **Checks session-scoped requirements** - Branch/permanent scopes are not verified by default
+3. **Safe loop prevention** - Uses `stop_hook_active` flag to prevent infinite continuation loops
+4. **Helpful messaging** - Shows which requirements need satisfaction
+
+Example output when blocked:
+```
+⚠️ **Requirements not satisfied**: commit_plan
+
+Please satisfy these requirements before finishing, or use
+`req satisfy <name>` to mark them complete.
+```
+
 ## Checklists Feature
 
 Checklists provide visual reminders of important steps when requirements block your workflow.
@@ -278,7 +360,7 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (89 tests, 100% passing):
+The framework includes comprehensive tests (148 tests, 100% passing):
 
 ```bash
 # Run all tests
@@ -289,16 +371,23 @@ python3 test_requirements.py
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 89/89 tests passed
+# Results: 148/148 tests passed
 ```
 
 Test categories:
 - Session management (31 tests)
 - Configuration loading (13 tests)
+- Hook config (6 tests)
 - Requirements manager (9 tests)
 - CLI commands (15 tests)
-- Hook behavior (13 tests)
+- PreToolUse hook behavior (13 tests)
+- SessionStart hook (5 tests)
+- Stop hook (7 tests)
+- SessionEnd hook (5 tests)
+- Session registry removal (4 tests)
 - Checklist rendering (8 tests)
+- Message deduplication (13 tests)
+- Logging (19 tests)
 
 ## Architecture
 
@@ -308,13 +397,17 @@ Test categories:
 ~/.claude/
 ├── hooks/
 │   ├── check-requirements.py       # PreToolUse hook (blocks edits)
+│   ├── handle-session-start.py     # SessionStart hook (context injection)
+│   ├── handle-stop.py              # Stop hook (requirement verification)
+│   ├── handle-session-end.py       # SessionEnd hook (cleanup)
 │   ├── requirements-cli.py         # CLI tool (req command)
-│   ├── test_requirements.py        # Test suite
+│   ├── test_requirements.py        # Test suite (148 tests)
 │   └── lib/
-│       ├── config.py               # Configuration cascade
+│       ├── config.py               # Configuration cascade + hook config
 │       ├── git_utils.py            # Git operations
+│       ├── logger.py               # Structured JSON logging
 │       ├── requirements.py         # Core requirements manager
-│       ├── session.py              # Session tracking
+│       ├── session.py              # Session tracking + registry
 │       └── state_storage.py        # JSON state persistence
 ├── requirements.yaml               # Global configuration
 └── sessions.json                   # Active session registry
@@ -326,24 +419,55 @@ Test categories:
 ### Hook Flow
 
 ```
-1. Claude Code invokes Edit/Write tool
+SESSION START
+─────────────
+1. Claude Code session starts
    ↓
-2. PreToolUse hook triggered
+2. SessionStart hook triggered (handle-session-start.py)
+   - Cleans stale sessions from registry
+   - Loads configuration
+   - Outputs full requirement status with instructions
    ↓
-3. check-requirements.py runs:
+3. Context injected into Claude's context
+
+WORK LOOP
+─────────
+4. Claude Code invokes Edit/Write tool
+   ↓
+5. PreToolUse hook triggered (check-requirements.py)
    - Loads configuration (global → project → local)
    - Gets current session ID
    - Updates session registry
    - Checks all enabled requirements
    ↓
-4a. All requirements satisfied
+6a. All requirements satisfied
     → Hook returns empty output
     → Edit/Write proceeds
 
-4b. Requirement not satisfied
+6b. Requirement not satisfied
     → Hook returns "deny" decision
     → Shows message with checklist
     → Edit/Write blocked
+
+SESSION END
+───────────
+7. Claude about to stop
+   ↓
+8. Stop hook triggered (handle-stop.py)
+   - Checks stop_hook_active flag (prevents loops)
+   - Verifies session-scoped requirements
+   ↓
+9a. All requirements satisfied → Stop allowed
+
+9b. Requirements unsatisfied
+    → Returns {"decision": "block", "reason": "..."}
+    → Claude continues to satisfy requirements
+
+10. Session ends (user exits, clears, etc.)
+    ↓
+11. SessionEnd hook triggered (handle-session-end.py)
+    - Removes session from registry
+    - Optionally clears session-scoped state
 ```
 
 ## Development
@@ -400,12 +524,15 @@ def test_my_feature(runner: TestRunner):
 
 ### Hook Not Triggering
 
-1. Check hook is registered in `~/.claude/settings.local.json`:
+1. Check hooks are registered in `~/.claude/settings.local.json`:
 
 ```json
 {
   "hooks": {
-    "PreToolUse": "~/.claude/hooks/check-requirements.py"
+    "PreToolUse": "~/.claude/hooks/check-requirements.py",
+    "SessionStart": "~/.claude/hooks/handle-session-start.py",
+    "Stop": "~/.claude/hooks/handle-stop.py",
+    "SessionEnd": "~/.claude/hooks/handle-session-end.py"
   }
 }
 ```
@@ -461,9 +588,36 @@ See the `examples/` directory for:
 - `global-requirements.yaml` - Global configuration template
 - `project-requirements.yaml` - Project-specific configuration example
 
+## What's New in v2.2
+
+### Full Session Lifecycle Hooks
+
+The framework now supports the complete Claude Code session lifecycle with four hooks:
+
+**🚀 SessionStart Hook**
+- Fires when Claude Code session starts or resumes
+- Injects full requirement status into context automatically
+- Cleans stale sessions from registry
+- Configurable via `hooks.session_start.inject_context`
+
+**🛑 Stop Hook (Enabled by Default)**
+- Prevents Claude from finishing with unsatisfied requirements
+- **Opt-out design** - works out of the box
+- Safe infinite loop prevention via `stop_hook_active` flag
+- Configurable via `hooks.stop.verify_requirements`
+
+**🧹 SessionEnd Hook**
+- Fires when session ends (exit, clear, logout)
+- Removes session from registry
+- Optional session state cleanup (disabled by default)
+
+**Test Coverage**: 27 new tests (148 total, up from 121)
+
+---
+
 ## What's New in v2.1
 
-### 🚫 Message Deduplication (Priority 1 Improvement)
+### 🚫 Message Deduplication
 
 **Problem Solved**: When Claude makes parallel Write/Edit calls (e.g., modifying 5 files simultaneously), the hook previously executed 5 times, showing identical blocking messages 5-12 times. This created overwhelming walls of text.
 

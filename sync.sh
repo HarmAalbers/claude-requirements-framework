@@ -46,6 +46,9 @@ show_status() {
         "check-requirements.py"
         "requirements-cli.py"
         "test_requirements.py"
+        "handle-session-start.py"
+        "handle-stop.py"
+        "handle-session-end.py"
         "lib/config.py"
         "lib/git_utils.py"
         "lib/requirements.py"
@@ -85,6 +88,9 @@ show_diff() {
         "check-requirements.py"
         "requirements-cli.py"
         "test_requirements.py"
+        "handle-session-start.py"
+        "handle-stop.py"
+        "handle-session-end.py"
         "lib/config.py"
         "lib/git_utils.py"
         "lib/requirements.py"
@@ -126,6 +132,9 @@ deploy_to_hooks() {
     cp -v "$REPO_DIR/hooks/check-requirements.py" "$DEPLOY_DIR/"
     cp -v "$REPO_DIR/hooks/requirements-cli.py" "$DEPLOY_DIR/"
     cp -v "$REPO_DIR/hooks/test_requirements.py" "$DEPLOY_DIR/"
+    cp -v "$REPO_DIR/hooks/handle-session-start.py" "$DEPLOY_DIR/"
+    cp -v "$REPO_DIR/hooks/handle-stop.py" "$DEPLOY_DIR/"
+    cp -v "$REPO_DIR/hooks/handle-session-end.py" "$DEPLOY_DIR/"
 
     # Copy library files
     echo ""
@@ -135,6 +144,9 @@ deploy_to_hooks() {
     # Ensure executable permissions
     chmod +x "$DEPLOY_DIR/check-requirements.py"
     chmod +x "$DEPLOY_DIR/requirements-cli.py"
+    chmod +x "$DEPLOY_DIR/handle-session-start.py"
+    chmod +x "$DEPLOY_DIR/handle-stop.py"
+    chmod +x "$DEPLOY_DIR/handle-session-end.py"
 
     echo ""
     echo -e "${GREEN}✓ Deployment complete!${NC}"
@@ -156,6 +168,9 @@ pull_from_hooks() {
     cp -v "$DEPLOY_DIR/check-requirements.py" "$REPO_DIR/hooks/"
     cp -v "$DEPLOY_DIR/requirements-cli.py" "$REPO_DIR/hooks/"
     cp -v "$DEPLOY_DIR/test_requirements.py" "$REPO_DIR/hooks/"
+    cp -v "$DEPLOY_DIR/handle-session-start.py" "$REPO_DIR/hooks/"
+    cp -v "$DEPLOY_DIR/handle-stop.py" "$REPO_DIR/hooks/"
+    cp -v "$DEPLOY_DIR/handle-session-end.py" "$REPO_DIR/hooks/"
 
     # Copy library files
     echo ""

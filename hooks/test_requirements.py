@@ -1171,6 +1171,372 @@ def test_main_master_skip(runner: TestRunner):
         runner.test("Main branch = skip", result.stdout.strip() == "", f"Got: {result.stdout}")
 
 
+def test_hook_config(runner: TestRunner):
+    """Test hook configuration method."""
+    print("\n📦 Testing hook configuration...")
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create project config with hook settings
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "hooks": {
+                "session_start": {
+                    "inject_context": False,  # Override default
+                },
+                "stop": {
+                    "verify_requirements": False,  # Override default
+                },
+            },
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        cfg = RequirementsConfig(tmpdir)
+
+        # Test explicit config overrides default
+        runner.test(
+            "Hook config override",
+            cfg.get_hook_config('session_start', 'inject_context') is False,
+            f"Got: {cfg.get_hook_config('session_start', 'inject_context')}"
+        )
+        runner.test(
+            "Stop config override",
+            cfg.get_hook_config('stop', 'verify_requirements') is False,
+            f"Got: {cfg.get_hook_config('stop', 'verify_requirements')}"
+        )
+
+        # Test default fallback for unconfigured values
+        runner.test(
+            "Session end default",
+            cfg.get_hook_config('session_end', 'clear_session_state') is False
+        )
+
+        # Test built-in defaults when no config
+        runner.test(
+            "Stop verify_scopes default",
+            cfg.get_hook_config('stop', 'verify_scopes') == ['session']
+        )
+
+    # Test without any hooks config (should use built-in defaults)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {"version": "1.0", "enabled": True, "requirements": {}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        cfg = RequirementsConfig(tmpdir)
+
+        # Built-in defaults should apply
+        runner.test(
+            "Default inject_context=True",
+            cfg.get_hook_config('session_start', 'inject_context') is True
+        )
+        runner.test(
+            "Default verify_requirements=True",
+            cfg.get_hook_config('stop', 'verify_requirements') is True
+        )
+
+
+def test_session_start_hook(runner: TestRunner):
+    """Test SessionStart hook behavior."""
+    print("\n📦 Testing SessionStart hook...")
+
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+
+    # Skip if hook doesn't exist yet (TDD - write test before implementation)
+    if not hook_path.exists():
+        runner.test("SessionStart hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Test without config (should pass silently)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart no config = pass", result.returncode == 0)
+
+        # Create config with context injection enabled
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "session_start": {"inject_context": True}
+            },
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test outputs status when inject_context=True
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart outputs status", "Requirements" in result.stdout or "commit_plan" in result.stdout,
+                   f"Got: {result.stdout}")
+
+        # Test with inject_context=False (should be silent)
+        config["hooks"]["session_start"]["inject_context"] = False
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart silent when disabled", result.stdout.strip() == "",
+                   f"Got: {result.stdout}")
+
+    # Test non-git directory (should pass silently)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart non-git = pass", result.returncode == 0)
+        runner.test("SessionStart non-git = silent", result.stdout.strip() == "")
+
+
+def test_stop_hook(runner: TestRunner):
+    """Test Stop hook behavior."""
+    print("\n📦 Testing Stop hook...")
+
+    hook_path = Path(__file__).parent / "handle-stop.py"
+
+    # Skip if hook doesn't exist yet (TDD - write test before implementation)
+    if not hook_path.exists():
+        runner.test("Stop hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Test without config (should pass silently)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop no config = pass", result.returncode == 0)
+
+        # Create config with requirements
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "stop": {"verify_requirements": True}
+            },
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test blocks when requirements unsatisfied
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop blocks when unsatisfied", '"decision": "block"' in result.stdout,
+                   f"Got: {result.stdout}")
+        runner.test("Stop reason mentions requirement", "commit_plan" in result.stdout,
+                   f"Got: {result.stdout}")
+
+        # Test respects stop_hook_active flag (CRITICAL for infinite loop prevention)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":true}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop respects stop_hook_active", result.stdout.strip() == "",
+                   f"Got: {result.stdout}")
+
+        # Test allows when requirements satisfied
+        cli_path = Path(__file__).parent / "requirements-cli.py"
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            cwd=tmpdir, capture_output=True
+        )
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop allows when satisfied", result.stdout.strip() == "",
+                   f"Got: {result.stdout}")
+
+        # Test disabled by config
+        config["hooks"]["stop"]["verify_requirements"] = False
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Clear requirement to test that disabled config skips check
+        subprocess.run(
+            ["python3", str(cli_path), "clear", "commit_plan"],
+            cwd=tmpdir, capture_output=True
+        )
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop disabled by config", result.stdout.strip() == "",
+                   f"Got: {result.stdout}")
+
+    # Test non-git directory (should pass silently)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop non-git = pass", result.returncode == 0)
+
+
+def test_session_end_hook(runner: TestRunner):
+    """Test SessionEnd hook behavior."""
+    print("\n📦 Testing SessionEnd hook...")
+
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+
+    # Skip if hook doesn't exist yet (TDD - write test before implementation)
+    if not hook_path.exists():
+        runner.test("SessionEnd hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Test without config (should pass silently)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionEnd","reason":"clear"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd no config = pass", result.returncode == 0)
+
+        # Create config
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "session_end": {"clear_session_state": False}
+            },
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # First satisfy the requirement to create state
+        cli_path = Path(__file__).parent / "requirements-cli.py"
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            cwd=tmpdir, capture_output=True
+        )
+
+        # Run session end (should preserve state by default)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionEnd","reason":"clear"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd = pass", result.returncode == 0)
+        runner.test("SessionEnd = silent", result.stdout.strip() == "")
+
+        # Check state is preserved (clear_session_state=False)
+        status_result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        # CLI outputs ✅ for satisfied requirements
+        runner.test("SessionEnd preserves state", "✅" in status_result.stdout or
+                   "satisfied" in status_result.stdout.lower(),
+                   f"Got: {status_result.stdout}")
+
+    # Test non-git directory (should pass silently)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionEnd","reason":"logout"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd non-git = pass", result.returncode == 0)
+
+
+def test_remove_session_from_registry(runner: TestRunner):
+    """Test remove_session_from_registry function."""
+    print("\n📦 Testing remove_session_from_registry...")
+
+    # Import will fail until implemented
+    try:
+        from session import remove_session_from_registry, update_registry, get_registry_path
+    except ImportError:
+        runner.test("remove_session_from_registry exists", False, "Function not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_registry = Path(tmpdir) / "test-sessions.json"
+
+        # Mock get_registry_path for testing
+        import session
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            # Add a session
+            update_registry("test1234", "/test/project", "main")
+
+            # Verify it exists
+            with open(test_registry) as f:
+                registry = json.load(f)
+            runner.test("Session added before removal", "test1234" in registry["sessions"])
+
+            # Remove the session
+            removed = remove_session_from_registry("test1234")
+            runner.test("remove returns True when found", removed is True)
+
+            # Verify it's gone
+            with open(test_registry) as f:
+                registry = json.load(f)
+            runner.test("Session removed", "test1234" not in registry["sessions"])
+
+            # Test removing non-existent session
+            removed = remove_session_from_registry("nonexistent")
+            runner.test("remove returns False when not found", removed is False)
+
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -1195,6 +1561,13 @@ def main():
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
     test_main_master_skip(runner)
+
+    # New hook tests
+    test_hook_config(runner)
+    test_remove_session_from_registry(runner)
+    test_session_start_hook(runner)
+    test_stop_hook(runner)
+    test_session_end_hook(runner)
 
     return runner.summary()
 

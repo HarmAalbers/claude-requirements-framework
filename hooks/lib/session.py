@@ -328,6 +328,69 @@ def cleanup_stale_sessions() -> int:
     return len(stale_ids)
 
 
+def remove_session_from_registry(session_id: str) -> bool:
+    """
+    Remove a specific session from the registry.
+
+    Used by SessionEnd hook to clean up when a session ends.
+
+    Args:
+        session_id: Session ID to remove (8-character hex)
+
+    Returns:
+        True if session was found and removed, False otherwise
+    """
+    registry_path = get_registry_path()
+
+    if not registry_path.exists():
+        return False
+
+    # Read registry
+    try:
+        with open(registry_path, 'r') as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                registry = json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    except (json.JSONDecodeError, OSError, IOError):
+        return False
+
+    sessions = registry.get("sessions", {})
+
+    # Check if session exists
+    if session_id not in sessions:
+        return False
+
+    # Remove the session
+    del sessions[session_id]
+    registry["sessions"] = sessions
+
+    # Write back atomically
+    temp_path = registry_path.with_suffix('.tmp')
+
+    try:
+        with open(temp_path, 'w') as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                json.dump(registry, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        temp_path.rename(registry_path)
+        return True
+    except OSError:
+        # Fail-open
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        return False
+
+
 if __name__ == "__main__":
     # Quick test
     print(f"Session ID: {get_session_id()}")

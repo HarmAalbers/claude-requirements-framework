@@ -21,6 +21,9 @@ echo "📦 Copying hook files to ~/.claude/hooks/..."
 cp -v hooks/check-requirements.py "$HOME/.claude/hooks/"
 cp -v hooks/requirements-cli.py "$HOME/.claude/hooks/"
 cp -v hooks/test_requirements.py "$HOME/.claude/hooks/"
+cp -v hooks/handle-session-start.py "$HOME/.claude/hooks/"
+cp -v hooks/handle-stop.py "$HOME/.claude/hooks/"
+cp -v hooks/handle-session-end.py "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
@@ -29,6 +32,9 @@ cp -v hooks/lib/*.py "$HOME/.claude/hooks/lib/"
 # Make scripts executable
 chmod +x "$HOME/.claude/hooks/check-requirements.py"
 chmod +x "$HOME/.claude/hooks/requirements-cli.py"
+chmod +x "$HOME/.claude/hooks/handle-session-start.py"
+chmod +x "$HOME/.claude/hooks/handle-stop.py"
+chmod +x "$HOME/.claude/hooks/handle-session-end.py"
 
 # Install global configuration if it doesn't exist
 if [ ! -f "$HOME/.claude/requirements.yaml" ]; then
@@ -52,25 +58,18 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-# Register hook in Claude Code settings
+# Register hooks in Claude Code settings
 SETTINGS_FILE="$HOME/.claude/settings.local.json"
-HOOK_PATH="~/.claude/hooks/check-requirements.py"
 
-echo "📝 Registering PreToolUse hook..."
+echo "📝 Registering hooks (PreToolUse, SessionStart, Stop, SessionEnd)..."
 
 if [ -f "$SETTINGS_FILE" ]; then
-    # Settings file exists - check if hook is already registered
-    if grep -q "PreToolUse" "$SETTINGS_FILE"; then
-        echo "ℹ️  PreToolUse hook already registered in settings"
-    else
-        # Add hook to existing settings
-        echo "   Adding hook to existing settings file..."
-        # Note: This is a simplified approach - in production you'd want proper JSON parsing
-        python3 << EOF
+    # Settings file exists - update hooks
+    echo "   Updating existing settings file..."
+    python3 << EOF
 import json
 
 settings_file = "$SETTINGS_FILE"
-hook_path = "$HOOK_PATH"
 
 with open(settings_file, 'r') as f:
     settings = json.load(f)
@@ -78,21 +77,27 @@ with open(settings_file, 'r') as f:
 if 'hooks' not in settings:
     settings['hooks'] = {}
 
-settings['hooks']['PreToolUse'] = hook_path
+# Register all four hooks
+settings['hooks']['PreToolUse'] = "~/.claude/hooks/check-requirements.py"
+settings['hooks']['SessionStart'] = "~/.claude/hooks/handle-session-start.py"
+settings['hooks']['Stop'] = "~/.claude/hooks/handle-stop.py"
+settings['hooks']['SessionEnd'] = "~/.claude/hooks/handle-session-end.py"
 
 with open(settings_file, 'w') as f:
     json.dump(settings, f, indent=2)
 
-print(f"   ✅ Added PreToolUse hook to {settings_file}")
+print("   ✅ Registered all hooks in", settings_file)
 EOF
-    fi
 else
     # Create new settings file
     echo "   Creating new settings file..."
     cat > "$SETTINGS_FILE" << 'EOF'
 {
   "hooks": {
-    "PreToolUse": "~/.claude/hooks/check-requirements.py"
+    "PreToolUse": "~/.claude/hooks/check-requirements.py",
+    "SessionStart": "~/.claude/hooks/handle-session-start.py",
+    "Stop": "~/.claude/hooks/handle-stop.py",
+    "SessionEnd": "~/.claude/hooks/handle-session-end.py"
   }
 }
 EOF
