@@ -146,11 +146,11 @@ def update_registry(session_id: str, project_dir: str, branch: str) -> None:
             # Corrupted registry - start fresh
             registry = {"version": "1.0", "sessions": {}}
 
-    # Clean up stale entries (dead processes)
+    # Clean up stale entries (dead processes) - check ppid (Claude session) not pid (hook)
     sessions = registry.get("sessions", {})
     stale_ids = []
     for sid, sess_data in sessions.items():
-        if not is_process_alive(sess_data.get("pid", 0)):
+        if not is_process_alive(sess_data.get("ppid", 0)):
             stale_ids.append(sid)
 
     for sid in stale_ids:
@@ -241,8 +241,9 @@ def get_active_sessions(project_dir: str = None, branch: str = None) -> list[dic
     result = []
 
     for session_id, sess_data in sessions.items():
-        # Filter out dead processes
-        if not is_process_alive(sess_data.get("pid", 0)):
+        # Filter out dead processes - check ppid (Claude session) not pid (hook subprocess)
+        # The hook is a short-lived subprocess, but ppid is the actual Claude session
+        if not is_process_alive(sess_data.get("ppid", 0)):
             continue
 
         # Apply filters
@@ -285,11 +286,11 @@ def cleanup_stale_sessions() -> int:
     except (json.JSONDecodeError, OSError, IOError):
         return 0
 
-    # Find stale entries
+    # Find stale entries - check ppid (Claude session) not pid (hook subprocess)
     sessions = registry.get("sessions", {})
     stale_ids = []
     for session_id, sess_data in sessions.items():
-        if not is_process_alive(sess_data.get("pid", 0)):
+        if not is_process_alive(sess_data.get("ppid", 0)):
             stale_ids.append(session_id)
 
     if not stale_ids:

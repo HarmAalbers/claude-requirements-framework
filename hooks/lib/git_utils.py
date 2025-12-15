@@ -111,6 +111,47 @@ def get_git_root(project_dir: Optional[str] = None) -> Optional[str]:
     return root if code == 0 and root else None
 
 
+def resolve_project_root(start_dir: Optional[str] = None, verbose: bool = True) -> str:
+    """
+    Resolve the project root directory for requirements framework.
+
+    This ensures the framework works correctly even when Claude Code
+    cd's into a subdirectory of the project.
+
+    Priority:
+    1. CLAUDE_PROJECT_DIR environment variable (if set)
+    2. Git repository root (if in a git repo)
+    3. Current working directory (fallback)
+
+    Args:
+        start_dir: Starting directory (defaults to cwd)
+        verbose: If True, log when resolving to different directory
+
+    Returns:
+        Absolute path to project root directory
+    """
+    import sys
+
+    # Priority 1: Explicit CLAUDE_PROJECT_DIR
+    if 'CLAUDE_PROJECT_DIR' in os.environ:
+        return os.environ['CLAUDE_PROJECT_DIR']
+
+    # Priority 2: Git root
+    cwd = start_dir or os.getcwd()
+    git_root = get_git_root(cwd)
+
+    if git_root:
+        # Log if we resolved to a different directory than cwd
+        if verbose and os.path.realpath(git_root) != os.path.realpath(cwd):
+            print(f"📂 Resolved project root: {git_root} (from {cwd})", file=sys.stderr)
+        return git_root
+
+    # Priority 3: Fallback to cwd (not in git repo)
+    if verbose:
+        print(f"⚠️ Not in git repo, using cwd: {cwd}", file=sys.stderr)
+    return cwd
+
+
 if __name__ == "__main__":
     # Quick test
     print(f"Is git repo: {is_git_repo()}")

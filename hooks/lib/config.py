@@ -82,6 +82,63 @@ def deep_merge(base: dict, override: dict) -> dict:
     return base
 
 
+def write_local_config(project_dir: str, config_data: dict) -> str:
+    """
+    Write configuration to local override file.
+
+    Tries to write YAML if PyYAML is available, otherwise falls back to JSON.
+    The local config file is gitignored and overrides project/global config.
+
+    Args:
+        project_dir: Project directory
+        config_data: Configuration data to write
+
+    Returns:
+        Path to the file that was written (relative to cwd if possible)
+
+    Raises:
+        OSError: If write fails
+    """
+    from pathlib import Path
+
+    # Ensure .claude directory exists
+    claude_dir = Path(project_dir) / '.claude'
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    # Try to write as YAML first (preferred format)
+    local_file = claude_dir / 'requirements.local.yaml'
+    try:
+        import yaml
+        with open(local_file, 'w') as f:
+            yaml.safe_dump(
+                config_data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True
+            )
+        # Return relative path if possible
+        try:
+            return str(local_file.relative_to(Path.cwd()))
+        except ValueError:
+            return str(local_file)
+    except ImportError:
+        # PyYAML not available - fallback to JSON
+        pass
+
+    # Fallback to JSON
+    import json
+    local_file_json = claude_dir / 'requirements.local.json'
+    with open(local_file_json, 'w') as f:
+        json.dump(config_data, f, indent=2)
+
+    # Return relative path if possible
+    try:
+        return str(local_file_json.relative_to(Path.cwd()))
+    except ValueError:
+        return str(local_file_json)
+
+
 class RequirementsConfig:
     """
     Configuration manager for requirements framework.
@@ -235,6 +292,76 @@ class RequirementsConfig:
             True if enabled, False if disabled
         """
         return self._config.get('enabled', True)
+
+    def write_local_override(self, enabled: Optional[bool] = None,
+                            requirement_overrides: Optional[dict] = None) -> str:
+        """
+        Write local configuration override to .claude/requirements.local.yaml.
+
+        This creates or updates a gitignored local config file that overrides
+        project and global settings. Use this for personal preferences that
+        shouldn't affect the team.
+
+        Args:
+            enabled: Framework enabled state (None = don't change)
+            requirement_overrides: Dict of requirement names to their enabled state
+                                  e.g., {'commit_plan': False, 'github_ticket': True}
+
+        Returns:
+            Path to file that was written (relative to cwd if possible)
+
+        Raises:
+            OSError: If write fails
+
+        Example:
+            # Disable framework for this project
+            config.write_local_override(enabled=False)
+
+            # Disable specific requirement
+            config.write_local_override(
+                requirement_overrides={'commit_plan': False}
+            )
+
+            # Enable framework but disable specific requirement
+            config.write_local_override(
+                enabled=True,
+                requirement_overrides={'commit_plan': False}
+            )
+        """
+        from pathlib import Path
+
+        local_file = Path(self.project_dir) / '.claude' / 'requirements.local.yaml'
+        local_file_json = Path(self.project_dir) / '.claude' / 'requirements.local.json'
+
+        # Load existing local config if it exists
+        existing_config = {}
+        if local_file.exists():
+            existing_config = load_yaml_or_json(local_file)
+        elif local_file_json.exists():
+            existing_config = load_yaml_or_json(local_file_json)
+
+        # Update framework enabled state
+        if enabled is not None:
+            existing_config['enabled'] = enabled
+
+        # Update requirement-level overrides
+        if requirement_overrides:
+            if 'requirements' not in existing_config:
+                existing_config['requirements'] = {}
+
+            for req_name, req_enabled in requirement_overrides.items():
+                if req_name not in existing_config['requirements']:
+                    existing_config['requirements'][req_name] = {}
+                existing_config['requirements'][req_name]['enabled'] = req_enabled
+
+        # Ensure version field exists
+        if 'version' not in existing_config:
+            existing_config['version'] = '1.0'
+
+        # Write to file using the write_local_config helper
+        file_path = write_local_config(self.project_dir, existing_config)
+
+        return file_path
 
     def get_requirement(self, name: str) -> Optional[dict]:
         """

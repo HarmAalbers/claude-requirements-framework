@@ -228,6 +228,191 @@ def test_git_utils_module(runner: TestRunner):
         runner.test("Git repo detected", is_git_repo(tmpdir))
 
 
+def test_git_root_resolution(runner: TestRunner):
+    """Test that framework resolves git root from subdirectories."""
+    print("\n📦 Testing git root resolution...")
+    from git_utils import get_git_root, is_git_repo, get_current_branch, resolve_project_root
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo at root
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Create nested directory structure
+        subdir = os.path.join(tmpdir, "src", "components", "deep")
+        os.makedirs(subdir)
+
+        # Test get_git_root from subdirectory (use realpath for symlink handling on macOS)
+        root_from_subdir = get_git_root(subdir)
+        runner.test("Git root from subdir",
+                    os.path.realpath(root_from_subdir) == os.path.realpath(tmpdir),
+                    f"Expected {tmpdir}, got {root_from_subdir}")
+
+        # Test is_git_repo from subdirectory
+        runner.test("is_git_repo from subdir", is_git_repo(subdir))
+
+        # Test get_current_branch from subdirectory
+        branch = get_current_branch(subdir)
+        runner.test("Branch from subdir", branch == "feature/test", f"Got: {branch}")
+
+        # Test resolve_project_root from subdirectory
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            resolved = resolve_project_root(verbose=False)
+            runner.test("resolve_project_root from subdir",
+                        os.path.realpath(resolved) == os.path.realpath(tmpdir),
+                        f"Expected {tmpdir}, got {resolved}")
+        finally:
+            os.chdir(original_cwd)
+
+        # Test CLAUDE_PROJECT_DIR takes precedence
+        custom_dir = "/custom/project/dir"
+        env_backup = os.environ.get('CLAUDE_PROJECT_DIR')
+        try:
+            os.environ['CLAUDE_PROJECT_DIR'] = custom_dir
+            resolved = resolve_project_root(verbose=False)
+            runner.test("CLAUDE_PROJECT_DIR precedence", resolved == custom_dir,
+                        f"Expected {custom_dir}, got {resolved}")
+        finally:
+            if env_backup:
+                os.environ['CLAUDE_PROJECT_DIR'] = env_backup
+            else:
+                os.environ.pop('CLAUDE_PROJECT_DIR', None)
+
+
+def test_hook_from_subdirectory(runner: TestRunner):
+    """Test hook works correctly when called from subdirectory."""
+    print("\n📦 Testing hook from subdirectory...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/subdir-test"], cwd=tmpdir, capture_output=True)
+
+        # Create config at git root
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Create subdirectory
+        subdir = os.path.join(tmpdir, "src", "components")
+        os.makedirs(subdir)
+
+        # Test hook from subdirectory (without CLAUDE_PROJECT_DIR set)
+        # Remove CLAUDE_PROJECT_DIR if set to test auto-resolution
+        env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_PROJECT_DIR'}
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit"}',
+            cwd=subdir,  # Run from subdirectory
+            capture_output=True,
+            text=True,
+            env=env
+        )
+
+        runner.test("Hook runs from subdir", result.returncode == 0, result.stderr)
+        runner.test("Hook finds config from subdir", '"permissionDecision": "deny"' in result.stdout,
+                    f"Expected deny (config found), got: {result.stdout}")
+
+
+def test_cli_from_subdirectory(runner: TestRunner):
+    """Test CLI works correctly when called from subdirectory."""
+    print("\n📦 Testing CLI from subdirectory...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/cli-subdir"], cwd=tmpdir, capture_output=True)
+
+        # Create config at git root
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Create subdirectory
+        subdir = os.path.join(tmpdir, "src", "deep", "nested")
+        os.makedirs(subdir)
+
+        # Remove CLAUDE_PROJECT_DIR to test auto-resolution
+        env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_PROJECT_DIR'}
+
+        # Test status from subdirectory
+        result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=subdir,  # Run from subdirectory
+            capture_output=True,
+            text=True,
+            env=env
+        )
+        runner.test("CLI status from subdir runs", result.returncode == 0, result.stderr)
+        runner.test("CLI status shows branch", "feature/cli-subdir" in result.stdout, result.stdout)
+
+        # Test satisfy from subdirectory
+        result = subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            cwd=subdir,
+            capture_output=True,
+            text=True,
+            env=env
+        )
+        runner.test("CLI satisfy from subdir works", "✅" in result.stdout, result.stdout)
+
+        # Verify state was saved at git root (not subdir)
+        state_dir = Path(tmpdir) / ".git" / "requirements"
+        runner.test("State dir at git root", state_dir.exists(),
+                    f"Expected state at {state_dir}")
+
+
+def test_not_in_git_repo_fallback(runner: TestRunner):
+    """Test fallback behavior when not in a git repository."""
+    print("\n📦 Testing fallback when not in git repo...")
+
+    from git_utils import resolve_project_root
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # NO git init - just a regular directory
+
+        # Test resolve_project_root falls back to cwd
+        original_cwd = os.getcwd()
+        env_backup = os.environ.get('CLAUDE_PROJECT_DIR')
+        try:
+            # Clear CLAUDE_PROJECT_DIR
+            os.environ.pop('CLAUDE_PROJECT_DIR', None)
+            os.chdir(tmpdir)
+
+            resolved = resolve_project_root(verbose=False)
+            runner.test("Non-repo uses cwd",
+                        os.path.realpath(resolved) == os.path.realpath(tmpdir),
+                        f"Expected {tmpdir}, got {resolved}")
+        finally:
+            os.chdir(original_cwd)
+            if env_backup:
+                os.environ['CLAUDE_PROJECT_DIR'] = env_backup
+
+
 def test_state_storage_module(runner: TestRunner):
     """Test state storage."""
     print("\n📦 Testing state_storage module...")
@@ -356,6 +541,171 @@ def test_config_module(runner: TestRunner):
         # Test nonexistent requirement
         nonexistent = config2.get_checklist("nonexistent")
         runner.test("get_checklist nonexistent returns []", nonexistent == [], f"Got: {nonexistent}")
+
+
+def test_write_local_config(runner: TestRunner):
+    """Test writing local config overrides."""
+    print("\n📝 Testing write_local_config and write_local_override...")
+    from config import RequirementsConfig, load_yaml_or_json, write_local_config
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create .claude directory
+        claude_dir = Path(tmpdir) / '.claude'
+        claude_dir.mkdir()
+
+        # Create initial project config
+        project_config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session"
+                }
+            }
+        }
+        with open(claude_dir / 'requirements.yaml', 'w') as f:
+            json.dump(project_config, f)
+
+        # Test 1: Write new local config with enabled=false
+        config = RequirementsConfig(tmpdir)
+        file_path = config.write_local_override(enabled=False)
+
+        local_file = claude_dir / 'requirements.local.yaml'
+        local_file_json = claude_dir / 'requirements.local.json'
+
+        # File should exist (either YAML or JSON depending on PyYAML availability)
+        runner.test("Local config file created",
+                   local_file.exists() or local_file_json.exists())
+
+        # Read back and verify
+        if local_file.exists():
+            local_config = load_yaml_or_json(local_file)
+        else:
+            local_config = load_yaml_or_json(local_file_json)
+
+        runner.test("Enabled field set to False", local_config.get('enabled') == False)
+        runner.test("Version field added", local_config.get('version') == '1.0')
+
+        # Test 2: Update existing config
+        file_path = config.write_local_override(enabled=True)
+
+        if local_file.exists():
+            local_config = load_yaml_or_json(local_file)
+        else:
+            local_config = load_yaml_or_json(local_file_json)
+
+        runner.test("Enabled field updated to True", local_config.get('enabled') == True)
+
+        # Test 3: Write requirement-level override
+        file_path = config.write_local_override(
+            requirement_overrides={'commit_plan': False}
+        )
+
+        if local_file.exists():
+            local_config = load_yaml_or_json(local_file)
+        else:
+            local_config = load_yaml_or_json(local_file_json)
+
+        runner.test(
+            "Requirement override added",
+            local_config.get('requirements', {}).get('commit_plan', {}).get('enabled') == False
+        )
+        runner.test(
+            "Framework enabled preserved",
+            local_config.get('enabled') == True
+        )
+
+        # Test 4: Verify local override actually works in config loading
+        config_reloaded = RequirementsConfig(tmpdir)
+        runner.test(
+            "Local override affects is_enabled()",
+            config_reloaded.is_enabled() == True
+        )
+        runner.test(
+            "Requirement override affects is_requirement_enabled()",
+            config_reloaded.is_requirement_enabled('commit_plan') == False,
+            f"commit_plan enabled: {config_reloaded.is_requirement_enabled('commit_plan')}"
+        )
+
+
+def test_cli_enable_disable(runner: TestRunner):
+    """Test req enable/disable CLI commands."""
+    print("\n🔧 Testing CLI enable/disable commands...")
+    import subprocess
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True)
+        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmpdir, capture_output=True, check=True)
+        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmpdir, capture_output=True, check=True)
+
+        # Create basic project config
+        claude_dir = Path(tmpdir) / '.claude'
+        claude_dir.mkdir()
+
+        config_file = claude_dir / 'requirements.yaml'
+        config_file.write_text('''version: "1.0"
+enabled: true
+requirements:
+  commit_plan:
+    enabled: true
+    scope: session
+''')
+
+        cli_path = Path(__file__).parent / 'requirements-cli.py'
+
+        # Test disable command
+        result = subprocess.run(
+            ['python3', str(cli_path), 'disable'],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
+            env={'CLAUDE_PROJECT_DIR': tmpdir, 'PATH': os.environ.get('PATH', '')}
+        )
+
+        runner.test("Disable command succeeded", result.returncode == 0,
+                   f"Exit code: {result.returncode}, stderr: {result.stderr}")
+        runner.test("Success message shown", "✅" in result.stdout,
+                   f"Output: {result.stdout}")
+        runner.test("Local file mentioned", "requirements.local" in result.stdout,
+                   f"Output: {result.stdout}")
+
+        # Verify local config created
+        local_file = claude_dir / 'requirements.local.yaml'
+        local_file_json = claude_dir / 'requirements.local.json'
+        runner.test("Local config file created",
+                   local_file.exists() or local_file_json.exists())
+
+        # Test enable command
+        result = subprocess.run(
+            ['python3', str(cli_path), 'enable'],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
+            env={'CLAUDE_PROJECT_DIR': tmpdir, 'PATH': os.environ.get('PATH', '')}
+        )
+
+        runner.test("Enable command succeeded", result.returncode == 0,
+                   f"Exit code: {result.returncode}, stderr: {result.stderr}")
+        runner.test("Enable success message shown", "✅" in result.stdout,
+                   f"Output: {result.stdout}")
+
+        # Test error handling - not in git repo
+        with tempfile.TemporaryDirectory() as tmpdir2:
+            result = subprocess.run(
+                ['python3', str(cli_path), 'disable'],
+                cwd=tmpdir2,
+                capture_output=True,
+                text=True,
+                env={'CLAUDE_PROJECT_DIR': tmpdir2, 'PATH': os.environ.get('PATH', '')}
+            )
+            runner.test("Error when not in git repo", result.returncode == 1,
+                       f"Exit code: {result.returncode}")
+            runner.test("Error message shown", "❌" in result.stderr,
+                       f"Stderr: {result.stderr}")
 
 
 def test_requirements_manager(runner: TestRunner):
@@ -569,11 +919,12 @@ def test_hook_behavior(runner: TestRunner):
         runner.test("No config = pass", result.returncode == 0)
         runner.test("No config = no output", result.stdout.strip() == "", f"Got: {result.stdout}")
 
-        # Create config
+        # Create config (inherit: false to isolate test from global config)
         os.makedirs(f"{tmpdir}/.claude")
         config = {
             "version": "1.0",
             "enabled": True,
+            "inherit": False,  # Don't merge with ~/.claude/requirements.yaml
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -781,8 +1132,14 @@ def main():
     test_session_module(runner)
     test_session_registry(runner)
     test_git_utils_module(runner)
+    test_git_root_resolution(runner)
+    test_hook_from_subdirectory(runner)
+    test_cli_from_subdirectory(runner)
+    test_not_in_git_repo_fallback(runner)
     test_state_storage_module(runner)
     test_config_module(runner)
+    test_write_local_config(runner)
+    test_cli_enable_disable(runner)
     test_requirements_manager(runner)
     test_cli_commands(runner)
     test_cli_sessions_command(runner)

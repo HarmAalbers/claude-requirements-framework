@@ -26,15 +26,15 @@ sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
 from config import RequirementsConfig
-from git_utils import get_current_branch, is_git_repo
+from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions
 from state_storage import list_all_states
 import time
 
 
 def get_project_dir() -> str:
-    """Get current project directory."""
-    return os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd())
+    """Get current project directory (resolves to git root from subdirectories)."""
+    return resolve_project_root()
 
 
 def cmd_status(args) -> int:
@@ -443,6 +443,113 @@ def cmd_sessions(args) -> int:
     return 0
 
 
+def cmd_enable(args) -> int:
+    """
+    Enable requirements framework for current project.
+
+    Creates/updates .claude/requirements.local.yaml with enabled: true.
+    This is a local override (gitignored) that doesn't affect the team.
+
+    Usage:
+        req enable              # Enable framework
+        req enable commit_plan  # Enable specific requirement (future)
+
+    Returns:
+        Exit code (0 = success, 1 = error)
+    """
+    project_dir = get_project_dir()
+
+    # Check if in git repo
+    if not is_git_repo(project_dir):
+        print("❌ Not in a git repository", file=sys.stderr)
+        print("   Requirements framework only works in git repositories")
+        return 1
+
+    # Check if project has any config
+    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
+    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
+
+    if not config_file.exists() and not config_file_json.exists():
+        print("ℹ️  No requirements configured for this project.", file=sys.stderr)
+        print(f"   Create .claude/requirements.yaml to configure requirements.")
+        print(f"   See: ~/.claude/requirements.yaml for examples")
+        return 1
+
+    config = RequirementsConfig(project_dir)
+
+    # Phase 1: Framework-level enable/disable only
+    requirement_name = args.requirement if hasattr(args, 'requirement') and args.requirement else None
+
+    if requirement_name:
+        # Phase 2: Requirement-level enable (future enhancement)
+        print(f"❌ Requirement-level enable/disable not yet implemented", file=sys.stderr)
+        print(f"   Use: req enable  (without requirement name)")
+        return 1
+
+    # Enable framework
+    try:
+        file_path = config.write_local_override(enabled=True)
+        print(f"✅ Requirements framework enabled for this project")
+        print(f"   Modified: {file_path}")
+        print()
+        print(f"💡 Run 'req status' to see current requirements")
+        return 0
+    except Exception as e:
+        print(f"❌ Failed to enable framework: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def cmd_disable(args) -> int:
+    """
+    Disable requirements framework for current project.
+
+    Creates/updates .claude/requirements.local.yaml with enabled: false.
+    This is a local override (gitignored) that doesn't affect the team.
+
+    Usage:
+        req disable              # Disable framework
+        req disable commit_plan  # Disable specific requirement (future)
+
+    Returns:
+        Exit code (0 = success, 1 = error)
+    """
+    project_dir = get_project_dir()
+
+    # Check if in git repo
+    if not is_git_repo(project_dir):
+        print("❌ Not in a git repository", file=sys.stderr)
+        print("   Requirements framework only works in git repositories")
+        return 1
+
+    config = RequirementsConfig(project_dir)
+
+    # Phase 1: Framework-level enable/disable only
+    requirement_name = args.requirement if hasattr(args, 'requirement') and args.requirement else None
+
+    if requirement_name:
+        # Phase 2: Requirement-level disable (future enhancement)
+        print(f"❌ Requirement-level enable/disable not yet implemented", file=sys.stderr)
+        print(f"   Use: req disable  (without requirement name)")
+        return 1
+
+    # Disable framework
+    try:
+        file_path = config.write_local_override(enabled=False)
+        print(f"✅ Requirements framework disabled for this project")
+        print(f"   Modified: {file_path}")
+        print()
+        print(f"💡 This only affects your local environment (file is gitignored)")
+        print(f"💡 To re-enable: req enable")
+        return 0
+    except Exception as e:
+        print(f"❌ Failed to disable framework: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -452,7 +559,7 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(
         prog='req',
-        description='Requirements Framework CLI',
+        description='Requirements Framework CLI - Manage requirements for Claude Code',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
@@ -463,6 +570,12 @@ Examples:
     req clear --all                     # Clear all requirements
     req list                            # List tracked branches
     req prune                           # Clean up stale state
+    req sessions                        # List active Claude Code sessions
+    req enable                          # Enable framework for this project
+    req disable                         # Disable framework for this project
+
+Environment Variables:
+    CLAUDE_SKIP_REQUIREMENTS=1          # Globally disable all requirements checks
 '''
     )
 
@@ -497,6 +610,14 @@ Examples:
     sessions_parser = subparsers.add_parser('sessions', help='List active Claude Code sessions')
     sessions_parser.add_argument('--project', action='store_true', help='Only show sessions for current project')
 
+    # enable
+    enable_parser = subparsers.add_parser('enable', help='Enable requirements framework')
+    enable_parser.add_argument('requirement', nargs='?', help='Requirement name (optional, for future use)')
+
+    # disable
+    disable_parser = subparsers.add_parser('disable', help='Disable requirements framework')
+    disable_parser.add_argument('requirement', nargs='?', help='Requirement name (optional, for future use)')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -511,6 +632,8 @@ Examples:
         'list': cmd_list,
         'prune': cmd_prune,
         'sessions': cmd_sessions,
+        'enable': cmd_enable,
+        'disable': cmd_disable,
     }
 
     return commands[args.command](args)

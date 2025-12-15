@@ -46,7 +46,7 @@ sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
 from config import RequirementsConfig
-from git_utils import get_current_branch, is_git_repo
+from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, update_registry, get_active_sessions
 from requirement_strategies import STRATEGIES
 
@@ -197,8 +197,8 @@ def main() -> int:
             if file_path and should_skip_plan_file(file_path):
                 return 0
 
-        # Get project directory
-        project_dir = os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd())
+        # Get project directory (resolves to git root from subdirectories)
+        project_dir = resolve_project_root(verbose=False)
 
         # Check if project has requirements config
         config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
