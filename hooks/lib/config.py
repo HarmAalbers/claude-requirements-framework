@@ -163,7 +163,7 @@ class RequirementsConfig:
         'trigger_tools': {'type': list, 'element_type': str},
         'checklist': {'type': list, 'element_type': str},
         'message': {'type': str},
-        'type': {'type': str, 'allowed': {'blocking', 'dynamic'}},
+        'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
     }
 
     def _load_cascade(self) -> dict:
@@ -294,10 +294,23 @@ class RequirementsConfig:
                 raise ValueError(
                     f"Requirement '{req_name}' enabled must be boolean, got {type(enabled).__name__}"
                 )
+        elif req_type == 'guard':
+            # Guard requirements - validate guard_type is present
+            guard_type = req_config.get('guard_type')
+            if not guard_type:
+                raise ValueError(
+                    f"Guard requirement '{req_name}' must have 'guard_type' field"
+                )
+            # Validate protected_branches is a list if present
+            protected = req_config.get('protected_branches')
+            if protected is not None and not isinstance(protected, list):
+                raise ValueError(
+                    f"Requirement '{req_name}' protected_branches must be a list"
+                )
         else:
             raise ValueError(
                 f"Requirement '{req_name}' has unknown type '{req_type}'. "
-                f"Valid types: 'blocking', 'dynamic'"
+                f"Valid types: 'blocking', 'dynamic', 'guard'"
             )
 
     def _validate_dynamic_fields(self, req_name: str, req_config: dict) -> None:

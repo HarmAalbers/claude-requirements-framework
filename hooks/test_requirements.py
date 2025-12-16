@@ -1611,6 +1611,346 @@ def test_partial_satisfaction(runner: TestRunner):
                    f"Message: {message[:200]}")
 
 
+def test_guard_strategy_blocks_protected_branch(runner: TestRunner):
+    """Test that guard strategy blocks edits on protected branches."""
+    print("\n📦 Testing guard strategy blocks protected branch...")
+
+    # Import will fail until implemented
+    try:
+        from requirement_strategies import GuardRequirementStrategy, STRATEGIES
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    # Check strategy is registered
+    runner.test("Guard strategy registered", 'guard' in STRATEGIES,
+               f"Available: {list(STRATEGIES.keys())}")
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Setup git repo on master
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "master"], cwd=tmpdir, capture_output=True)
+
+        # Create mock config and requirements
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+
+        # Create config with protected_branch requirement
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"],
+                    "message": "Cannot edit on protected branch"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session", tmpdir)
+
+        context = {
+            'project_dir': tmpdir,
+            'branch': 'master',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+
+        # Should block on master
+        result = strategy.check("protected_branch", config, reqs, context)
+        runner.test("Blocks on master branch", result is not None,
+                   f"Expected denial, got: {result}")
+        if result:
+            runner.test("Has denial message", "message" in result or "hookSpecificOutput" in result,
+                       f"Result: {result}")
+
+
+def test_guard_strategy_allows_feature_branch(runner: TestRunner):
+    """Test that guard strategy allows edits on non-protected branches."""
+    print("\n📦 Testing guard strategy allows feature branch...")
+
+    try:
+        from requirement_strategies import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "test-session", tmpdir)
+
+        context = {
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+
+        # Should allow on feature branch
+        result = strategy.check("protected_branch", config, reqs, context)
+        runner.test("Allows on feature branch", result is None,
+                   f"Expected None, got: {result}")
+
+
+def test_guard_strategy_respects_custom_branch_list(runner: TestRunner):
+    """Test that guard strategy respects custom protected_branches list."""
+    print("\n📦 Testing guard strategy respects custom branch list...")
+
+    try:
+        from requirement_strategies import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+
+        os.makedirs(f"{tmpdir}/.claude")
+        # Custom list that protects 'develop' but NOT 'master'
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["develop", "release"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+
+        # Test 1: develop should be blocked
+        reqs1 = BranchRequirements("develop", "test-session", tmpdir)
+        context1 = {
+            'project_dir': tmpdir,
+            'branch': 'develop',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+        result1 = strategy.check("protected_branch", config, reqs1, context1)
+        runner.test("Blocks custom protected branch 'develop'", result1 is not None)
+
+        # Test 2: master should be allowed (not in custom list)
+        reqs2 = BranchRequirements("master", "test-session", tmpdir)
+        context2 = {
+            'project_dir': tmpdir,
+            'branch': 'master',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+        result2 = strategy.check("protected_branch", config, reqs2, context2)
+        runner.test("Allows master when not in custom list", result2 is None,
+                   f"Expected None, got: {result2}")
+
+
+def test_guard_strategy_approval_bypasses_check(runner: TestRunner):
+    """Test that approval bypasses the guard check."""
+    print("\n📦 Testing guard strategy approval bypass...")
+
+    try:
+        from requirement_strategies import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session", tmpdir)
+
+        context = {
+            'project_dir': tmpdir,
+            'branch': 'master',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+
+        # Initially should block
+        result1 = strategy.check("protected_branch", config, reqs, context)
+        runner.test("Blocks before approval", result1 is not None)
+
+        # Approve for session (using satisfy with session scope)
+        reqs.satisfy("protected_branch", scope="session", method="approval")
+
+        # Should now allow
+        result2 = strategy.check("protected_branch", config, reqs, context)
+        runner.test("Allows after approval", result2 is None,
+                   f"Expected None after approval, got: {result2}")
+
+
+def test_guard_strategy_unknown_guard_type_allows(runner: TestRunner):
+    """Test that unknown guard_type fails open (allows)."""
+    print("\n📦 Testing guard strategy unknown type fails open...")
+
+    try:
+        from requirement_strategies import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "unknown_guard": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "nonexistent_type"  # Unknown type
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session", tmpdir)
+
+        context = {
+            'project_dir': tmpdir,
+            'branch': 'master',
+            'session_id': 'test-session',
+            'tool_name': 'Edit'
+        }
+
+        # Should fail open (allow) for unknown guard type
+        result = strategy.check("unknown_guard", config, reqs, context)
+        runner.test("Unknown guard_type fails open", result is None,
+                   f"Expected None (fail open), got: {result}")
+
+
+def test_guard_hook_integration(runner: TestRunner):
+    """Test guard strategy integration with the hook."""
+    print("\n📦 Testing guard hook integration...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo on master
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "master"], cwd=tmpdir, capture_output=True)
+
+        # Create config with guard requirement
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"],
+                    "message": "🚫 Cannot edit on protected branch"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test hook blocks on master
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Hook runs with guard", result.returncode == 0)
+
+        # Check if hook properly blocks (will pass once strategy is implemented)
+        if '"permissionDecision": "deny"' in result.stdout:
+            runner.test("Hook blocks on protected branch", True)
+            runner.test("Hook message mentions protected", "protected" in result.stdout.lower(),
+                       f"Output: {result.stdout[:200]}")
+        else:
+            # Guard strategy not yet implemented - this is expected in TDD
+            runner.test("Hook blocks on protected branch", False,
+                       "Guard strategy not implemented - expected in TDD RED phase")
+
+
 def test_remove_session_from_registry(runner: TestRunner):
     """Test remove_session_from_registry function."""
     print("\n📦 Testing remove_session_from_registry...")
@@ -1691,6 +2031,14 @@ def main():
     test_batched_requirements_blocking(runner)
     test_cli_satisfy_multiple(runner)
     test_partial_satisfaction(runner)
+
+    # Guard strategy tests
+    test_guard_strategy_blocks_protected_branch(runner)
+    test_guard_strategy_allows_feature_branch(runner)
+    test_guard_strategy_respects_custom_branch_list(runner)
+    test_guard_strategy_approval_bypasses_check(runner)
+    test_guard_strategy_unknown_guard_type_allows(runner)
+    test_guard_hook_integration(runner)
 
     return runner.summary()
 

@@ -74,3 +74,32 @@ requirements:
       ADRs document architectural decisions for this project.
 
       **To satisfy**: `req satisfy adr_reviewed` after reviewing
+
+  # Protected Branch Guard
+  # Prevents direct edits on protected branches (e.g., main, master)
+  # Unlike blocking requirements, guards check conditions rather than requiring manual satisfaction
+  protected_branch:
+    enabled: false  # Disabled by default - projects opt-in
+    type: guard
+    guard_type: protected_branch
+    protected_branches:
+      - master
+      - main
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      🚫 **Cannot edit files on protected branch**
+
+      Direct edits on protected branches are not allowed.
+      Please create a feature branch first:
+
+      ```bash
+      git checkout -b feature/your-feature-name
+      ```
+
+      **For emergency hotfixes** (current session only):
+      ```bash
+      req approve protected_branch
+      ```

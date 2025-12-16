@@ -448,8 +448,109 @@ class DynamicRequirementStrategy(RequirementStrategy):
         return message
 
 
+class GuardRequirementStrategy(RequirementStrategy):
+    """
+    Strategy for guard requirements - boolean conditions that must be met.
+
+    Guards are different from blocking/dynamic requirements:
+    - They check a boolean condition (e.g., "not on protected branch")
+    - If the condition fails → block the operation
+    - Can be approved (session-scoped) for emergencies via `req approve`
+    - Approvals expire when the session ends
+
+    Examples: protected_branch (prevents edits on main/master)
+    """
+
+    def check(self, req_name: str, config: RequirementsConfig,
+              reqs: BranchRequirements, context: dict) -> Optional[dict]:
+        """
+        Check if guard condition is satisfied.
+
+        Returns:
+            None if condition passes or approved
+            Dict with denial message if condition fails
+        """
+        # Check if already approved for this session (emergency override)
+        if reqs.is_satisfied(req_name, scope='session'):
+            return None  # Approved, allow
+
+        # Get guard type and dispatch to handler
+        guard_type = config.get_attribute(req_name, 'guard_type', None)
+
+        if guard_type == 'protected_branch':
+            return self._check_protected_branch(req_name, config, context)
+
+        # Unknown guard type - fail open
+        return None
+
+    def _check_protected_branch(self, req_name: str, config: RequirementsConfig,
+                                context: dict) -> Optional[dict]:
+        """
+        Check if current branch is protected.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            context: Context with branch info
+
+        Returns:
+            None if not on protected branch
+            Denial response if on protected branch
+        """
+        branch = context.get('branch')
+        if not branch:
+            return None  # No branch info - fail open
+
+        # Get protected branches list (default: master, main)
+        protected_branches = config.get_attribute(
+            req_name, 'protected_branches', ['master', 'main']
+        )
+
+        if branch in protected_branches:
+            # On protected branch - create denial response
+            return self._create_denial_response(req_name, config, branch, context)
+
+        return None  # Not on protected branch - allow
+
+    def _create_denial_response(self, req_name: str, config: RequirementsConfig,
+                                branch: str, context: dict) -> dict:
+        """
+        Create denial response for protected branch violation.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            branch: Current branch name
+            context: Context dict
+
+        Returns:
+            Hook response dict with denial
+        """
+        # Get custom message or use default
+        custom_message = config.get_attribute(req_name, 'message', None)
+
+        if custom_message:
+            message = custom_message
+        else:
+            message = f"🚫 **Cannot edit files on protected branch '{branch}'**\n\n"
+            message += "Direct edits on protected branches are not allowed.\n\n"
+            message += "**Options:**\n"
+            message += "1. Create a feature branch first:\n"
+            message += f"   `git checkout -b feature/your-feature-name`\n\n"
+            message += "2. Override for emergency hotfix (current session only):\n"
+            message += f"   `req approve {req_name}`"
+
+        # Add session context
+        session_id = context.get('session_id', 'unknown')
+        message += f"\n\n**Current session**: `{session_id}`"
+        message += f"\n**Branch**: `{branch}`"
+
+        return create_denial_response(message)
+
+
 # Strategy registry - maps requirement type to strategy instance
 STRATEGIES = {
     'blocking': BlockingRequirementStrategy(),
     'dynamic': DynamicRequirementStrategy(),
+    'guard': GuardRequirementStrategy(),
 }

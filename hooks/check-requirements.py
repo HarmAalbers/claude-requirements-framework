@@ -324,6 +324,13 @@ def main() -> int:
                 if response:
                     # Strategy returned a block/deny response - collect it
                     req_config = config.get_requirement(req_name)
+                    # For guard requirements, capture the strategy's response message
+                    # since it contains condition-specific details
+                    if req_type == 'guard' and 'hookSpecificOutput' in response:
+                        guard_message = response['hookSpecificOutput'].get('permissionDecisionReason', '')
+                        if guard_message:
+                            req_config = dict(req_config)  # Make copy to avoid mutation
+                            req_config['message'] = guard_message
                     unsatisfied.append((req_name, req_config))
                     logger.debug(
                         "Requirement unsatisfied",
