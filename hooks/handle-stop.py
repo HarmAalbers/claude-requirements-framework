@@ -82,10 +82,6 @@ def main() -> int:
         if not branch:
             return 0
 
-        # Skip main/master branches (same as PreToolUse hook)
-        if branch in ('main', 'master'):
-            return 0
-
         # Load config
         config = RequirementsConfig(project_dir)
 

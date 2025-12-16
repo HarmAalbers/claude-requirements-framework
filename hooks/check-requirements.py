@@ -30,8 +30,8 @@ Environment:
 
 Design:
     - FAIL OPEN on any error (log but don't block)
-    - Skip main/master branches
     - Skip if no project config exists
+    - Register session in registry on every invocation (for CLI discovery)
 """
 import json
 import os
@@ -149,7 +149,26 @@ def main() -> int:
     Returns:
         Exit code (always 0 - fail open)
     """
-    session_id = get_session_id()
+    # Read hook input from stdin
+    input_data = {}
+    try:
+        stdin_content = sys.stdin.read()
+        if stdin_content:
+            input_data = json.loads(stdin_content)
+    except json.JSONDecodeError as e:
+        # Log parsing errors to help debug hook issues
+        debug_log = Path.home() / '.claude' / 'hook-debug.log'
+        try:
+            import time
+            with open(debug_log, 'a') as f:
+                f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} JSON PARSE ERROR ---\n")
+                f.write(f"error: {e}\n")
+                f.write(f"stdin: {stdin_content[:500] if stdin_content else 'empty'}\n")
+        except Exception:
+            pass  # Don't let debug logging break the hook
+
+    # Use Claude Code's session_id if provided, fallback to ppid-based generation
+    session_id = input_data.get('session_id') or get_session_id()
     logger = get_logger(base_context={"session": session_id})
 
     try:
@@ -157,15 +176,6 @@ def main() -> int:
         if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
             logger.info("Skipping requirements (env override)", reason='CLAUDE_SKIP_REQUIREMENTS')
             return 0
-
-        # Read hook input from stdin
-        input_data = {}
-        try:
-            stdin_content = sys.stdin.read()
-            if stdin_content:
-                input_data = json.loads(stdin_content)
-        except json.JSONDecodeError:
-            pass
 
         tool_name = input_data.get('tool_name', '')
 
@@ -208,10 +218,12 @@ def main() -> int:
             logger.info("Skipping requirements (detached HEAD)")
             return 0  # Detached HEAD
 
-        # Skip main/master
-        if branch in ['main', 'master']:
-            logger.info("Skipping requirements (protected branch)")
-            return 0
+        # Update session registry early (before other checks)
+        # This allows CLI to discover sessions on any branch
+        try:
+            update_registry(session_id, project_dir, branch)
+        except Exception as e:
+            logger.error("Registry update failed (early)", error=str(e))
 
         # Load configuration
         config = RequirementsConfig(project_dir)
@@ -232,14 +244,6 @@ def main() -> int:
         if not config.is_enabled():
             logger.info("Requirements disabled via config")
             return 0
-
-        # Update session registry FIRST (before checking requirements)
-        # This allows CLI to find the session for bootstrapping new sessions
-        # fail-open: errors don't block
-        try:
-            update_registry(session_id, project_dir, branch)
-        except Exception as e:
-            logger.error("Registry update failed", error=str(e))
 
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)

@@ -1140,37 +1140,6 @@ def test_checklist_rendering(runner: TestRunner):
         runner.test("Missing checklist no header", "**Checklist**:" not in message, f"Message: {message}")
 
 
-def test_main_master_skip(runner: TestRunner):
-    """Test that main/master branches are skipped."""
-    print("\n📦 Testing main/master branch skip...")
-
-    hook_path = Path(__file__).parent / "check-requirements.py"
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Initialize git repo on main
-        subprocess.run(["git", "init", "-b", "main"], cwd=tmpdir, capture_output=True)
-
-        # Create config
-        os.makedirs(f"{tmpdir}/.claude")
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {
-                "commit_plan": {"enabled": True, "scope": "session", "message": "Need plan!"}
-            }
-        }
-        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(config, f)
-
-        # Test on main (should skip)
-        result = subprocess.run(
-            ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
-            cwd=tmpdir, capture_output=True, text=True
-        )
-        runner.test("Main branch = skip", result.stdout.strip() == "", f"Got: {result.stdout}")
-
-
 def test_hook_config(runner: TestRunner):
     """Test hook configuration method."""
     print("\n📦 Testing hook configuration...")
@@ -1560,7 +1529,6 @@ def main():
     test_cli_sessions_command(runner)
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
-    test_main_master_skip(runner)
 
     # New hook tests
     test_hook_config(runner)

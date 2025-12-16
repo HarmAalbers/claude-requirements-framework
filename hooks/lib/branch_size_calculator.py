@@ -44,7 +44,7 @@ class BranchSizeCalculator(RequirementCalculator):
                 - 'base_branch': Base branch name (str)
         """
         try:
-            # Skip protected branches
+            # Skip base branches (can't calculate size when there's no base to compare)
             if branch in ('main', 'master'):
                 return None
 
