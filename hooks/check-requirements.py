@@ -89,9 +89,74 @@ def should_skip_plan_file(file_path: str) -> bool:
         return False
 
 
+def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, branch: str) -> dict:
+    """
+    Create batched denial message for all unsatisfied requirements.
+
+    Args:
+        unsatisfied: List of tuples (req_name, req_config)
+        session_id: Current session ID
+        project_dir: Project directory
+        branch: Current branch
+
+    Returns:
+        Hook response dict with batched denial message
+    """
+    req_names = [r[0] for r in unsatisfied]
+
+    lines = ["**Unsatisfied Requirements**", ""]
+    lines.append("The following requirements must be satisfied before making changes:")
+    lines.append("")
+
+    for req_name, req_config in unsatisfied:
+        scope = req_config.get('scope', 'session')
+        message = req_config.get('message', f'"{req_name}" not satisfied.')
+        lines.append(f"- **{req_name}** ({scope} scope)")
+        lines.append(f"  {message}")
+
+        # Add checklist if present
+        checklist = req_config.get('checklist', [])
+        if checklist:
+            lines.append("  **Checklist**:")
+            for i, item in enumerate(checklist, 1):
+                lines.append(f"  ⬜ {i}. {item}")
+        lines.append("")
+
+    # Add session context
+    lines.append(f"**Current session**: `{session_id}`")
+
+    active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
+    if len(active_sessions) > 1:
+        lines.append("")
+        lines.append("**Other active sessions**:")
+        for sess in active_sessions:
+            if sess['id'] != session_id:
+                lines.append(f"  • `{sess['id']}` [PID {sess['pid']}]")
+
+    lines.append("")
+
+    # Single command to satisfy all
+    req_list = ' '.join(req_names)
+    lines.append("💡 **To satisfy all requirements at once**:")
+    lines.append("```bash")
+    lines.append(f"req satisfy {req_list} --session {session_id}")
+    lines.append("```")
+
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "\n".join(lines)
+        }
+    }
+
+
 def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str, branch: str) -> None:
     """
     Output 'deny' decision to block until requirement is satisfied.
+
+    DEPRECATED: Use create_batched_denial() for batched blocking.
+    Kept for backwards compatibility.
 
     We use 'deny' instead of 'ask' because 'ask' gets overridden by
     permissions.allow entries in settings.local.json.
@@ -103,42 +168,8 @@ def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str
         project_dir: Project directory
         branch: Current branch
     """
-    message = config.get('message', f'Requirement "{req_name}" not satisfied.')
-
-    # Add checklist if present
-    checklist = config.get('checklist', [])
-    if checklist:
-        message += "\n\n**Checklist**:"
-        for i, item in enumerate(checklist, 1):
-            message += f"\n⬜ {i}. {item}"
-
-    # Add session context
-    message += f"\n\n**Current session**: `{session_id}`"
-
-    active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
-    if len(active_sessions) > 1:
-        message += "\n\n**Other active sessions**:"
-        for sess in active_sessions:
-            if sess['id'] != session_id:
-                message += f"\n  • `{sess['id']}` [PID {sess['pid']}]"
-
-    # Add helper hint with session context
-    message += f"\n\n💡 **To satisfy from terminal**:"
-    message += f"\n```bash"
-    message += f"\nreq satisfy {req_name} --session {session_id}"
-    message += f"\n```"
-    message += f"\n\n💡 **Tip**: If you have multiple unsatisfied requirements, you can satisfy them all at once:"
-    message += f"\n```bash"
-    message += f"\nreq satisfy commit_plan --session {session_id} && req satisfy adr_reviewed --session {session_id}"
-    message += f"\n```"
-
-    response = {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": message
-        }
-    }
+    # Use the new batched function with a single requirement
+    response = create_batched_denial([(req_name, config)], session_id, project_dir, branch)
     print(json.dumps(response))
 
 
@@ -248,6 +279,9 @@ def main() -> int:
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)
 
+        # Collect all unsatisfied requirements (batch blocking)
+        unsatisfied = []
+
         # Check all enabled requirements using strategy pattern
         for req_name in config.get_all_requirements():
             if not config.is_requirement_enabled(req_name):
@@ -288,14 +322,14 @@ def main() -> int:
             try:
                 response = strategy.check(req_name, config, reqs, context)
                 if response:
-                    # Strategy returned a block/deny response
-                    logger.info(
-                        "Requirement blocked",
+                    # Strategy returned a block/deny response - collect it
+                    req_config = config.get_requirement(req_name)
+                    unsatisfied.append((req_name, req_config))
+                    logger.debug(
+                        "Requirement unsatisfied",
                         requirement=req_name,
                         req_type=req_type,
                     )
-                    print(json.dumps(response))
-                    return 0
             except Exception as e:
                 # Fail open on strategy errors
                 logger.error(
@@ -305,6 +339,17 @@ def main() -> int:
                     error=str(e),
                 )
                 continue  # Try next requirement
+
+        # If any requirements unsatisfied, create batched denial
+        if unsatisfied:
+            logger.info(
+                "Requirements blocked (batched)",
+                requirements=[r[0] for r in unsatisfied],
+                count=len(unsatisfied),
+            )
+            response = create_batched_denial(unsatisfied, session_id, project_dir, branch)
+            print(json.dumps(response))
+            return 0
 
         # All requirements satisfied or passed
         return 0

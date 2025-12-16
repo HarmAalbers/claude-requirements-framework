@@ -256,17 +256,6 @@ def cmd_satisfy(args) -> int:
 
     # Get config for scope
     config = RequirementsConfig(project_dir)
-    req_name = args.requirement
-
-    # Check if requirement exists in config
-    if req_name not in config.get_all_requirements():
-        print(f"⚠️  Unknown requirement: {req_name}", file=sys.stderr)
-        available = config.get_all_requirements()
-        if available:
-            print(f"   Available: {', '.join(available)}")
-        else:
-            print("   No requirements configured.")
-        # Still allow satisfying (manual override)
 
     # Parse metadata if provided
     metadata = {}
@@ -280,32 +269,53 @@ def cmd_satisfy(args) -> int:
     # Initialize requirements manager
     reqs = BranchRequirements(branch, session_id, project_dir)
 
-    # Handle based on requirement type
-    req_type = config.get_requirement_type(req_name)
+    # Handle multiple requirements
+    requirements = args.requirements
+    satisfied_count = 0
 
-    if req_type == 'dynamic':
-        # Dynamic requirement - use approval workflow with TTL
-        ttl = config.get_attribute(req_name, 'approval_ttl', 300)
+    for req_name in requirements:
+        # Check if requirement exists in config
+        if req_name not in config.get_all_requirements():
+            print(f"⚠️  Unknown requirement: {req_name}", file=sys.stderr)
+            available = config.get_all_requirements()
+            if available:
+                print(f"   Available: {', '.join(available)}")
+            # Still allow satisfying (manual override)
 
-        # Add metadata about method
-        if metadata:
-            metadata['method'] = 'cli'
+        # Handle based on requirement type
+        req_type = config.get_requirement_type(req_name)
+
+        if req_type == 'dynamic':
+            # Dynamic requirement - use approval workflow with TTL
+            ttl = config.get_attribute(req_name, 'approval_ttl', 300)
+
+            # Add metadata about method
+            req_metadata = metadata.copy() if metadata else {}
+            req_metadata['method'] = 'cli'
+
+            reqs.approve_for_session(req_name, ttl, metadata=req_metadata)
+
+            mins = ttl // 60
+            secs = ttl % 60
+            if len(requirements) == 1:
+                print(f"✅ Approved '{req_name}' for {branch}")
+                print(f"   Duration: {mins}m {secs}s (session scope)")
+                print(f"   Session: {session_id}")
         else:
-            metadata = {'method': 'cli'}
+            # Blocking requirement - standard satisfaction
+            scope = config.get_scope(req_name)
+            reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
+            if len(requirements) == 1:
+                print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
 
-        reqs.approve_for_session(req_name, ttl, metadata=metadata)
+        satisfied_count += 1
 
-        mins = ttl // 60
-        secs = ttl % 60
-        print(f"✅ Approved '{req_name}' for {branch}")
-        print(f"   Duration: {mins}m {secs}s (session scope)")
-        print(f"   Session: {session_id}")
-
-    else:
-        # Blocking requirement - standard satisfaction
-        scope = config.get_scope(req_name)
-        reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
-        print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
+    # Summary for multiple requirements
+    if len(requirements) > 1:
+        print(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}")
+        for req_name in requirements:
+            scope = config.get_scope(req_name)
+            print(f"   - {req_name} ({scope} scope)")
 
     return 0
 
@@ -595,8 +605,8 @@ Environment Variables:
     status_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
 
     # satisfy
-    satisfy_parser = subparsers.add_parser('satisfy', help='Satisfy a requirement')
-    satisfy_parser.add_argument('requirement', help='Requirement name')
+    satisfy_parser = subparsers.add_parser('satisfy', help='Satisfy one or more requirements')
+    satisfy_parser.add_argument('requirements', nargs='+', help='Requirement name(s)')
     satisfy_parser.add_argument('--branch', '-b', help='Branch name (default: current)')
     satisfy_parser.add_argument('--metadata', '-m', help='JSON metadata')
     satisfy_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')

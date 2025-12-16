@@ -1461,6 +1461,156 @@ def test_session_end_hook(runner: TestRunner):
         runner.test("SessionEnd non-git = pass", result.returncode == 0)
 
 
+def test_batched_requirements_blocking(runner: TestRunner):
+    """Test that multiple unsatisfied requirements are batched into one message."""
+    print("\n📦 Testing batched requirements blocking...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/batch-test"], cwd=tmpdir, capture_output=True)
+
+        # Create config with multiple requirements (inherit: false to isolate)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                },
+                "adr_reviewed": {
+                    "enabled": True,
+                    "scope": "branch",
+                    "message": "ADR must be reviewed!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test hook output contains both requirements
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Hook returns success exit code", result.returncode == 0)
+
+        # Parse JSON output
+        try:
+            output_data = json.loads(result.stdout)
+            message = output_data.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        except (json.JSONDecodeError, KeyError):
+            message = result.stdout
+
+        runner.test("Message contains commit_plan", "commit_plan" in message, f"Message: {message[:200]}")
+        runner.test("Message contains adr_reviewed", "adr_reviewed" in message, f"Message: {message[:200]}")
+        runner.test("Message contains batch command hint",
+                   "req satisfy commit_plan adr_reviewed" in message or
+                   "req satisfy adr_reviewed commit_plan" in message,
+                   f"Message: {message[:200]}")
+
+
+def test_cli_satisfy_multiple(runner: TestRunner):
+    """Test CLI satisfy command with multiple requirements."""
+    print("\n📦 Testing CLI satisfy with multiple requirements...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"},
+                "adr_reviewed": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test satisfy with multiple requirements
+        result = subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "adr_reviewed"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Multiple satisfy succeeds", result.returncode == 0, result.stderr)
+        runner.test("Shows success message", "✅" in result.stdout, result.stdout)
+
+        # Verify both were satisfied
+        hook_path = Path(__file__).parent / "check-requirements.py"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("No blocking after multiple satisfy", result.stdout.strip() == "",
+                   f"Got: {result.stdout[:200]}")
+
+
+def test_partial_satisfaction(runner: TestRunner):
+    """Test that partial satisfaction shows remaining requirements."""
+    print("\n📦 Testing partial satisfaction...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Setup with two requirements
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/partial"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"},
+                "adr_reviewed": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Satisfy only commit_plan
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            cwd=tmpdir, capture_output=True
+        )
+
+        # Hook should only block on adr_reviewed
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        try:
+            output_data = json.loads(result.stdout)
+            message = output_data.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        except (json.JSONDecodeError, KeyError):
+            message = result.stdout
+
+        runner.test("Only shows remaining requirement",
+                   "adr_reviewed" in message and "commit_plan" not in message.replace("req satisfy commit_plan", ""),
+                   f"Message: {message[:200]}")
+
+
 def test_remove_session_from_registry(runner: TestRunner):
     """Test remove_session_from_registry function."""
     print("\n📦 Testing remove_session_from_registry...")
@@ -1536,6 +1686,11 @@ def main():
     test_session_start_hook(runner)
     test_stop_hook(runner)
     test_session_end_hook(runner)
+
+    # Batched requirements tests
+    test_batched_requirements_blocking(runner)
+    test_cli_satisfy_multiple(runner)
+    test_partial_satisfaction(runner)
 
     return runner.summary()
 
