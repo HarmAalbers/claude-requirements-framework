@@ -123,8 +123,13 @@ git push
 ~/Tools/claude-requirements-framework/    (Git Repository)
 ├── hooks/
 │   ├── check-requirements.py          → ~/.claude/hooks/check-requirements.py
+│   ├── handle-session-start.py        → ~/.claude/hooks/handle-session-start.py
+│   ├── handle-stop.py                 → ~/.claude/hooks/handle-stop.py
+│   ├── handle-session-end.py          → ~/.claude/hooks/handle-session-end.py
 │   ├── requirements-cli.py            → ~/.claude/hooks/requirements-cli.py
+│   ├── ruff_check.py                  → ~/.claude/hooks/ruff_check.py
 │   ├── test_requirements.py           → ~/.claude/hooks/test_requirements.py
+│   ├── test_branch_size_calculator.py → ~/.claude/hooks/test_branch_size_calculator.py
 │   └── lib/
 │       ├── __init__.py                → ~/.claude/hooks/lib/__init__.py
 │       ├── branch_size_calculator.py  → ~/.claude/hooks/lib/branch_size_calculator.py
@@ -132,17 +137,20 @@ git push
 │       ├── calculator_interface.py    → ~/.claude/hooks/lib/calculator_interface.py
 │       ├── config.py                  → ~/.claude/hooks/lib/config.py
 │       ├── git_utils.py               → ~/.claude/hooks/lib/git_utils.py
-│       ├── message_dedup_cache.py     → ~/.claude/hooks/lib/message_dedup_cache.py (NEW v2.1)
+│       ├── logger.py                  → ~/.claude/hooks/lib/logger.py
+│       ├── message_dedup_cache.py     → ~/.claude/hooks/lib/message_dedup_cache.py
 │       ├── requirement_strategies.py  → ~/.claude/hooks/lib/requirement_strategies.py
 │       ├── requirements.py            → ~/.claude/hooks/lib/requirements.py
 │       ├── session.py                 → ~/.claude/hooks/lib/session.py
 │       └── state_storage.py           → ~/.claude/hooks/lib/state_storage.py
 ├── examples/                           (Not deployed)
-├── docs/                               (Not deployed)
-├── sync.sh                             (Sync script)
+├── docs/                               (Not deployed, includes ADRs)
+├── sync.sh                             (Sync script - uses dynamic file discovery)
 ├── install.sh                          (Installation script)
 └── README.md                           (Documentation)
 ```
+
+Note: `sync.sh` uses dynamic file discovery - new `.py` files are automatically included in sync operations.
 
 ## Sync Script Reference
 
@@ -168,8 +176,8 @@ File Status:
 - `✓` - Files are in sync
 - `↑` - Repository is newer (deploy to update)
 - `↓` - Deployed is newer (pull to update repo)
-- `⚠` - File missing in one location
-- `✗` - File missing in repository
+- `⚠` - Not deployed (exists in repository only)
+- `✗` - Missing in repository (exists in deployed only)
 
 ### `sync.sh deploy`
 
@@ -281,7 +289,7 @@ python3 hooks/test_requirements.py
 # Expected output:
 # 🧪 Requirements Framework Test Suite
 # ==================================================
-# Results: 89/89 tests passed
+# Results: 147/147 tests passed
 ```
 
 ### Integration Testing

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-# Run test suite (148 tests)
+# Run test suite (147 tests)
 python3 hooks/test_requirements.py
 
 # Sync between repo and deployed location (~/.claude/hooks)
@@ -58,11 +58,15 @@ SessionEnd (handle-session-end.py) - session ends
 - `hooks/handle-stop.py` - Stop hook (requirement verification)
 - `hooks/handle-session-end.py` - SessionEnd hook (cleanup)
 - `hooks/requirements-cli.py` - `req` command implementation
+- `hooks/ruff_check.py` - Ruff linter hook
+- `hooks/test_requirements.py` - Comprehensive test suite (147 tests)
+- `hooks/test_branch_size_calculator.py` - Branch size calculator tests
 - `hooks/lib/requirements.py` - Core BranchRequirements API
 - `hooks/lib/config.py` - Configuration loader with cascade logic + hook config
 - `hooks/lib/requirement_strategies.py` - Strategy pattern for requirement types
 - `hooks/lib/state_storage.py` - JSON state in `.git/requirements/[branch].json`
 - `hooks/lib/session.py` - Session tracking and registry
+- `hooks/lib/branch_size_calculator.py` - Calculate branch diff size
 - `hooks/lib/message_dedup_cache.py` - TTL-based deduplication for parallel calls
 - `hooks/lib/logger.py` - Structured JSON logging
 

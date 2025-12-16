@@ -13,7 +13,7 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 148 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 147 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -360,7 +360,7 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (148 tests, 100% passing):
+The framework includes comprehensive tests (147 tests, 100% passing):
 
 ```bash
 # Run all tests
@@ -371,7 +371,7 @@ python3 test_requirements.py
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 148/148 tests passed
+# Results: 147/147 tests passed
 ```
 
 Test categories:
@@ -537,9 +537,7 @@ def test_my_feature(runner: TestRunner):
 }
 ```
 
-2. Verify you're not on `main`/`master` branch (skipped by design)
-
-3. Check the requirement is enabled:
+2. Check the requirement is enabled:
 
 ```bash
 req list
@@ -611,7 +609,7 @@ The framework now supports the complete Claude Code session lifecycle with four 
 - Removes session from registry
 - Optional session state cleanup (disabled by default)
 
-**Test Coverage**: 27 new tests (148 total, up from 121)
+**Test Coverage**: 27 new tests (147 total after removing obsolete main/master skip test)
 
 ---
 
@@ -695,6 +693,14 @@ git push origin master
 **Important**: Always run `./sync.sh status` before committing to ensure you have the latest changes from both locations!
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, TDD practices, and troubleshooting guide.
+
+### Architecture Decision Records (ADRs)
+
+Important architectural decisions are documented in `docs/adr/`:
+
+- **ADR-001**: Remove main/master branch skip - Requirements now enforced on all branches
+- **ADR-002**: Use Claude Code's native session_id - Better session correlation
+- **ADR-003**: Dynamic sync file discovery - sync.sh auto-discovers new files
 
 ## Contributing
 
