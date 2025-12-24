@@ -63,25 +63,39 @@ show_status() {
     echo ""
 
     echo "File Status:"
+    local has_issues=false
     while IFS= read -r file; do
         local repo_file="$REPO_DIR/hooks/$file"
         local deploy_file="$DEPLOY_DIR/$file"
 
         if [ ! -f "$repo_file" ]; then
             echo -e "  ${RED}✗${NC} $file - Missing in repository (exists in deployed)"
+            has_issues=true
         elif [ ! -f "$deploy_file" ]; then
             echo -e "  ${YELLOW}⚠${NC} $file - Not deployed (exists in repository)"
+            has_issues=true
         else
-            # Compare modification times
-            if [ "$repo_file" -nt "$deploy_file" ]; then
-                echo -e "  ${YELLOW}↑${NC} $file - Repository is newer"
-            elif [ "$deploy_file" -nt "$repo_file" ]; then
-                echo -e "  ${YELLOW}↓${NC} $file - Deployed is newer"
-            else
+            # Compare file contents (not timestamps)
+            if diff -q "$repo_file" "$deploy_file" > /dev/null 2>&1; then
                 echo -e "  ${GREEN}✓${NC} $file - In sync"
+            else
+                # Files differ - check git status to determine direction
+                if git -C "$REPO_DIR" diff --quiet -- "hooks/$file" 2>/dev/null; then
+                    # Repo file matches git HEAD, so deployed has changes
+                    echo -e "  ${YELLOW}↓${NC} $file - Deployed has changes (run './sync.sh pull')"
+                else
+                    # Repo file has uncommitted changes
+                    echo -e "  ${YELLOW}↑${NC} $file - Repository has changes (run './sync.sh deploy')"
+                fi
+                has_issues=true
             fi
         fi
     done < <(get_all_files)
+
+    echo ""
+    if [ "$has_issues" = false ]; then
+        echo -e "${GREEN}✓ All files in sync${NC}"
+    fi
     echo ""
 }
 
