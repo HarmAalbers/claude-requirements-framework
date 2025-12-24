@@ -2618,6 +2618,26 @@ def test_cli_config_command(runner: TestRunner):
         )
         runner.test("config --message runs", result.returncode == 0, result.stderr)
 
+        # Test --set flag for arbitrary fields
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "adr_reviewed", "--set", "adr_path=/docs/adr", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --set runs", result.returncode == 0, result.stderr)
+
+        # Verify custom field was written
+        if local_file.exists():
+            content = local_file.read_text()
+            runner.test("config --set writes custom field", "/docs/adr" in content or "adr_path" in content,
+                       content[:300])
+
+        # Test --set with JSON value
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan", "--set", "approval_ttl=600", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --set JSON value runs", result.returncode == 0, result.stderr)
+
 
 def test_init_presets_module(runner: TestRunner):
     """Test init presets module."""

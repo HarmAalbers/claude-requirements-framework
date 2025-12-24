@@ -625,7 +625,8 @@ def cmd_config(args) -> int:
     has_write_flags = (
         args.enable or args.disable or
         args.scope is not None or
-        args.message is not None
+        args.message is not None or
+        (hasattr(args, 'set') and args.set is not None)
     )
 
     # Check if requirement exists (unless we're trying to enable a new one)
@@ -699,6 +700,26 @@ def cmd_config(args) -> int:
         updates['scope'] = args.scope
     if args.message:
         updates['message'] = args.message
+
+    # Handle --set KEY=VALUE flags
+    if hasattr(args, 'set') and args.set:
+        for item in args.set:
+            if '=' not in item:
+                print(error(f"❌ Invalid --set format: {item}"), file=sys.stderr)
+                print(dim("   Use: --set KEY=VALUE"), file=sys.stderr)
+                return 1
+            key, value = item.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+
+            # Try to parse value as JSON for booleans/numbers/lists
+            try:
+                import json
+                parsed_value = json.loads(value)
+                updates[key] = parsed_value
+            except (json.JSONDecodeError, ValueError):
+                # Keep as string if not valid JSON
+                updates[key] = value
 
     # Show preview
     print()
@@ -928,6 +949,7 @@ Examples:
     req init --preview                  # Preview config without writing
     req status                          # Show current status
     req config commit_plan              # Show config for commit_plan
+    req config adr_reviewed --set adr_path=/docs/adr  # Set ADR location
     req satisfy commit_plan             # Mark commit_plan as satisfied
     req satisfy github_ticket -m '{"ticket":"#123"}'
     req clear commit_plan               # Clear commit_plan
@@ -1000,6 +1022,8 @@ Environment Variables:
     config_parser.add_argument('--scope', choices=['session', 'branch', 'permanent', 'single_use'],
                               help='Set scope')
     config_parser.add_argument('--message', help='Set custom message')
+    config_parser.add_argument('--set', action='append', metavar='KEY=VALUE',
+                              help='Set arbitrary field (e.g., --set adr_path=/docs/adr)')
     config_parser.add_argument('--project', action='store_true', help='Modify project config')
     config_parser.add_argument('--local', action='store_true', help='Modify local config')
     config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
