@@ -612,6 +612,7 @@ def cmd_init(args) -> int:
         Exit code
     """
     from init_presets import generate_config, config_to_yaml
+    from interactive import select, confirm
 
     project_dir = get_project_dir()
 
@@ -621,38 +622,118 @@ def cmd_init(args) -> int:
         print(dim("   Requirements framework only works in git repositories"))
         return 1
 
-    # Determine which files to create
-    create_project = not args.local  # Default: create project config
-    create_local = args.local
-
-    # Get preset
-    preset = args.preset or 'relaxed'
-
-    # Generate config
-    config = generate_config(preset)
-    yaml_content = config_to_yaml(config)
-
     # Paths
     claude_dir = Path(project_dir) / '.claude'
     project_config = claude_dir / 'requirements.yaml'
     local_config = claude_dir / 'requirements.local.yaml'
 
-    # Preview mode
-    if args.preview:
-        target = "local" if create_local else "project"
-        print(header(f"📋 Preview: {target} config ({preset} preset)"))
+    # Interactive mode (default) vs non-interactive (--yes)
+    if not args.yes and not args.preview:
+        # Show header
+        print(header("🚀 Requirements Framework Setup"))
         print(dim("─" * 50))
-        print(yaml_content)
-        print(dim("─" * 50))
-        print(info(f"ℹ️  Would create: {local_config if create_local else project_config}"))
-        return 0
+        print()
 
-    # Check for existing config
+        # Detection
+        print(info("Detecting project:"))
+        print(success(f"  ✓ Git repository at {project_dir}"))
+        if claude_dir.exists():
+            print(success("  ✓ .claude/ directory exists"))
+        else:
+            print(dim("  ○ .claude/ directory will be created"))
+
+        if project_config.exists():
+            print(warning(f"  ⚠ Project config exists: {project_config.name}"))
+        if local_config.exists():
+            print(warning(f"  ⚠ Local config exists: {local_config.name}"))
+        print()
+
+        # Ask config type (unless --local or --project specified)
+        if not args.local and not args.project:
+            config_choice = select(
+                "Which configuration file to create?",
+                [
+                    "Project config (.claude/requirements.yaml) - shared with team",
+                    "Local config (.claude/requirements.local.yaml) - personal only",
+                ],
+                default=0
+            )
+            create_local = "Local" in config_choice
+        else:
+            create_local = args.local
+
+        # Ask preset (unless --preset specified)
+        if not args.preset:
+            preset_choice = select(
+                "Choose a preset profile:",
+                [
+                    "relaxed - Light touch: commit_plan only (recommended)",
+                    "strict - Full enforcement: commit_plan + protected_branch",
+                    "minimal - Framework enabled, no requirements (configure later)",
+                ],
+                default=0
+            )
+            if "strict" in preset_choice:
+                preset = 'strict'
+            elif "minimal" in preset_choice:
+                preset = 'minimal'
+            else:
+                preset = 'relaxed'
+        else:
+            preset = args.preset
+
+        # Generate and preview
+        config = generate_config(preset)
+        yaml_content = config_to_yaml(config)
+
+        print()
+        print(header("Preview:"))
+        print(dim("─" * 50))
+        # Show first 20 lines of config
+        lines = yaml_content.split('\n')[:20]
+        for line in lines:
+            print(line)
+        if len(yaml_content.split('\n')) > 20:
+            print(dim("  ... (truncated)"))
+        print(dim("─" * 50))
+        print()
+
+        # Confirm
+        target_config = local_config if create_local else project_config
+        if target_config.exists() and not args.force:
+            if not confirm(f"Overwrite existing {target_config.name}?", default=False):
+                print(info("ℹ️  Cancelled"))
+                return 0
+        else:
+            if not confirm(f"Create {target_config.name}?", default=True):
+                print(info("ℹ️  Cancelled"))
+                return 0
+    else:
+        # Non-interactive mode
+        create_local = args.local
+        preset = args.preset or 'relaxed'
+        config = generate_config(preset)
+        yaml_content = config_to_yaml(config)
+
+        # Preview mode (non-interactive)
+        if args.preview:
+            target = "local" if create_local else "project"
+            print(header(f"📋 Preview: {target} config ({preset} preset)"))
+            print(dim("─" * 50))
+            print(yaml_content)
+            print(dim("─" * 50))
+            print(info(f"ℹ️  Would create: {local_config if create_local else project_config}"))
+            return 0
+
+        # Check for existing config (non-interactive mode only)
+        target_config = local_config if create_local else project_config
+        if target_config.exists() and not args.force:
+            print(warning(f"⚠️  Config already exists: {target_config}"))
+            print(hint("💡 Use --force to overwrite"))
+            return 0
+
+    # Determine target
     target_config = local_config if create_local else project_config
-    if target_config.exists() and not args.force:
-        print(warning(f"⚠️  Config already exists: {target_config}"))
-        print(hint("💡 Use --force to overwrite"))
-        return 0
 
     # Create .claude directory
     claude_dir.mkdir(parents=True, exist_ok=True)
