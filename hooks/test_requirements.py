@@ -2535,6 +2535,53 @@ def test_cli_init_command(runner: TestRunner):
                 runner.test(f"init --preset {preset} runs", result.returncode == 0, result.stderr)
 
 
+def test_cli_config_command(runner: TestRunner):
+    """Test req config command."""
+    print("\n📦 Testing CLI config command...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo and create a config
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+
+        # Create test config
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "trigger_tools": ["Edit", "Write"],
+                    "message": "Test message"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test show mode (default, no flags)
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config show runs", result.returncode == 0, result.stderr)
+        runner.test("config shows enabled", "enabled" in result.stdout, result.stdout[:200])
+        runner.test("config shows scope", "scope" in result.stdout, result.stdout[:200])
+        runner.test("config shows type", "type" in result.stdout or "blocking" in result.stdout, result.stdout[:200])
+
+        # Test unknown requirement
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "nonexistent"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config unknown requirement warns", result.returncode == 1 or "not found" in result.stdout.lower(),
+                   result.stdout[:200])
+
+
 def test_init_presets_module(runner: TestRunner):
     """Test init presets module."""
     print("\n📦 Testing init presets module...")
@@ -2660,6 +2707,9 @@ def main():
 
     # CLI init command tests
     test_cli_init_command(runner)
+
+    # CLI config command tests
+    test_cli_config_command(runner)
 
     return runner.summary()
 

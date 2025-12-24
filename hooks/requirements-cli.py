@@ -598,6 +598,74 @@ def cmd_disable(args) -> int:
         return 1
 
 
+def cmd_config(args) -> int:
+    """
+    Manage requirement configuration.
+
+    Show or modify individual requirement settings.
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    project_dir = get_project_dir()
+
+    # Check if git repo
+    if not is_git_repo(project_dir):
+        print(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+
+    # Load config
+    config = RequirementsConfig(project_dir)
+    requirement_name = args.requirement
+
+    # Check if requirement exists
+    req_config = config.get_requirement(requirement_name)
+    if not req_config:
+        print(error(f"❌ Requirement '{requirement_name}' not found"), file=sys.stderr)
+        available = config.get_all_requirements()
+        if available:
+            print(dim(f"   Available: {', '.join(available)}"))
+        return 1
+
+    # Read-only mode: show current config
+    print(header(f"📋 Configuration: {requirement_name}"))
+    print(dim("─" * 50))
+
+    # Show all fields with nice formatting
+    for key, value in req_config.items():
+        if key == 'message':
+            # Show truncated message
+            if len(str(value)) > 100:
+                lines = str(value).split('\n')
+                print(f"{bold(key)}: {lines[0][:80]}...")
+            else:
+                print(f"{bold(key)}: {value}")
+        elif isinstance(value, list):
+            print(f"{bold(key)}:")
+            for item in value:
+                print(f"  - {item}")
+        elif isinstance(value, dict):
+            print(f"{bold(key)}:")
+            for k, v in value.items():
+                print(f"  {k}: {v}")
+        else:
+            print(f"{bold(key)}: {value}")
+
+    # Show where config comes from (would need new method in config.py)
+    # For now, just show if it's enabled
+    print()
+    is_enabled = config.is_requirement_enabled(requirement_name)
+    if is_enabled:
+        print(success(f"✅ Currently enabled"))
+    else:
+        print(dim(f"⚠️  Currently disabled"))
+
+    return 0
+
+
 def cmd_init(args) -> int:
     """
     Initialize requirements framework for a project.
@@ -773,6 +841,7 @@ Examples:
     req init --local                    # Create local config only
     req init --preview                  # Preview config without writing
     req status                          # Show current status
+    req config commit_plan              # Show config for commit_plan
     req satisfy commit_plan             # Mark commit_plan as satisfied
     req satisfy github_ticket -m '{"ticket":"#123"}'
     req clear commit_plan               # Clear commit_plan
@@ -837,6 +906,18 @@ Environment Variables:
     init_parser.add_argument('--force', '-f', action='store_true', help='Overwrite existing config')
     init_parser.add_argument('--preview', '--dry-run', action='store_true', help='Preview without writing')
 
+    # config
+    config_parser = subparsers.add_parser('config', help='View or modify requirement configuration')
+    config_parser.add_argument('requirement', help='Requirement name')
+    config_parser.add_argument('--enable', action='store_true', help='Enable requirement')
+    config_parser.add_argument('--disable', action='store_true', help='Disable requirement')
+    config_parser.add_argument('--scope', choices=['session', 'branch', 'permanent', 'single_use'],
+                              help='Set scope')
+    config_parser.add_argument('--message', help='Set custom message')
+    config_parser.add_argument('--project', action='store_true', help='Modify project config')
+    config_parser.add_argument('--local', action='store_true', help='Modify local config')
+    config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -854,6 +935,7 @@ Environment Variables:
         'enable': cmd_enable,
         'disable': cmd_disable,
         'init': cmd_init,
+        'config': cmd_config,
     }
 
     return commands[args.command](args)
