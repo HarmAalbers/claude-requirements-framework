@@ -13,7 +13,7 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 147 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 275 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -35,6 +35,26 @@ The installer will:
 2. Install the global configuration to `~/.claude/requirements.yaml`
 3. Register all four hooks (PreToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
 
+### Project Setup
+
+After installation, initialize requirements for your project:
+
+```bash
+# Interactive wizard (recommended)
+cd /your/project
+req init
+
+# Or non-interactively
+req init --yes --preset relaxed
+
+# Choose a preset:
+# - relaxed: commit_plan only (default)
+# - strict: commit_plan + protected_branch
+# - minimal: framework enabled, no requirements
+```
+
+The `req init` command creates `.claude/requirements.yaml` with your chosen preset.
+
 ### Basic Usage
 
 ```bash
@@ -52,6 +72,9 @@ req list
 
 # View active sessions
 req sessions
+
+# Configure a requirement
+req config commit_plan --enable --scope branch
 ```
 
 ## Requirements Types
@@ -360,7 +383,7 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (147 tests, 100% passing):
+The framework includes comprehensive tests (275 tests, 100% passing):
 
 ```bash
 # Run all tests
@@ -371,7 +394,7 @@ python3 test_requirements.py
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 147/147 tests passed
+# Results: 275/275 tests passed
 ```
 
 Test categories:
