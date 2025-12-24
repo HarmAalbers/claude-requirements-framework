@@ -2581,6 +2581,43 @@ def test_cli_config_command(runner: TestRunner):
         runner.test("config unknown requirement warns", result.returncode == 1 or "not found" in result.stdout.lower(),
                    result.stdout[:200])
 
+        # Test --enable flag (write mode)
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "github_ticket", "--enable", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --enable runs", result.returncode == 0, result.stderr)
+
+        # Verify local config was created
+        local_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
+        runner.test("config --enable creates local", local_file.exists())
+
+        # Test --disable flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan", "--disable", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --disable runs", result.returncode == 0, result.stderr)
+
+        # Test --scope flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan", "--scope", "branch", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --scope runs", result.returncode == 0, result.stderr)
+
+        # Verify scope was changed in local config
+        if local_file.exists():
+            content = local_file.read_text()
+            runner.test("config --scope writes to local", "branch" in content, content[:200])
+
+        # Test --message flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan", "--message", "Custom message", "--local", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --message runs", result.returncode == 0, result.stderr)
+
 
 def test_init_presets_module(runner: TestRunner):
     """Test init presets module."""

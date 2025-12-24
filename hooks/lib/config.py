@@ -530,10 +530,19 @@ class RequirementsConfig:
             if 'requirements' not in existing_config:
                 existing_config['requirements'] = {}
 
-            for req_name, req_enabled in requirement_overrides.items():
+            for req_name, req_update in requirement_overrides.items():
                 if req_name not in existing_config['requirements']:
                     existing_config['requirements'][req_name] = {}
-                existing_config['requirements'][req_name]['enabled'] = req_enabled
+
+                # Handle both boolean (simple enable/disable) and dict (full config) values
+                if isinstance(req_update, bool):
+                    existing_config['requirements'][req_name]['enabled'] = req_update
+                elif isinstance(req_update, dict):
+                    # Merge dict updates (preserves existing fields not in update)
+                    for key, value in req_update.items():
+                        existing_config['requirements'][req_name][key] = value
+                else:
+                    existing_config['requirements'][req_name]['enabled'] = req_update
 
         # Ensure version field exists
         if 'version' not in existing_config:

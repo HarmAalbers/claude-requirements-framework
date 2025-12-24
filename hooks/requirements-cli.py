@@ -621,9 +621,16 @@ def cmd_config(args) -> int:
     config = RequirementsConfig(project_dir)
     requirement_name = args.requirement
 
-    # Check if requirement exists
+    # Check if any write flags present
+    has_write_flags = (
+        args.enable or args.disable or
+        args.scope is not None or
+        args.message is not None
+    )
+
+    # Check if requirement exists (unless we're trying to enable a new one)
     req_config = config.get_requirement(requirement_name)
-    if not req_config:
+    if not req_config and not has_write_flags:
         print(error(f"❌ Requirement '{requirement_name}' not found"), file=sys.stderr)
         available = config.get_all_requirements()
         if available:
@@ -631,39 +638,118 @@ def cmd_config(args) -> int:
         return 1
 
     # Read-only mode: show current config
-    print(header(f"📋 Configuration: {requirement_name}"))
-    print(dim("─" * 50))
+    if not has_write_flags:
+        print(header(f"📋 Configuration: {requirement_name}"))
+        print(dim("─" * 50))
 
-    # Show all fields with nice formatting
-    for key, value in req_config.items():
-        if key == 'message':
-            # Show truncated message
-            if len(str(value)) > 100:
-                lines = str(value).split('\n')
-                print(f"{bold(key)}: {lines[0][:80]}...")
+        # Show all fields with nice formatting
+        for key, value in req_config.items():
+            if key == 'message':
+                # Show truncated message
+                if len(str(value)) > 100:
+                    lines = str(value).split('\n')
+                    print(f"{bold(key)}: {lines[0][:80]}...")
+                else:
+                    print(f"{bold(key)}: {value}")
+            elif isinstance(value, list):
+                print(f"{bold(key)}:")
+                for item in value:
+                    print(f"  - {item}")
+            elif isinstance(value, dict):
+                print(f"{bold(key)}:")
+                for k, v in value.items():
+                    print(f"  {k}: {v}")
             else:
                 print(f"{bold(key)}: {value}")
-        elif isinstance(value, list):
-            print(f"{bold(key)}:")
-            for item in value:
-                print(f"  - {item}")
-        elif isinstance(value, dict):
-            print(f"{bold(key)}:")
-            for k, v in value.items():
-                print(f"  {k}: {v}")
+
+        # Show if it's enabled
+        print()
+        is_enabled = config.is_requirement_enabled(requirement_name)
+        if is_enabled:
+            print(success(f"✅ Currently enabled"))
         else:
-            print(f"{bold(key)}: {value}")
+            print(dim(f"⚠️  Currently disabled"))
 
-    # Show where config comes from (would need new method in config.py)
-    # For now, just show if it's enabled
-    print()
-    is_enabled = config.is_requirement_enabled(requirement_name)
-    if is_enabled:
-        print(success(f"✅ Currently enabled"))
+        return 0
+
+    # Write mode: modify configuration
+    from interactive import select, confirm
+
+    # Ask which config to modify (unless explicitly specified)
+    if not args.project and not args.local and not args.yes:
+        choice = select(
+            "Which configuration file to modify?",
+            [
+                "Local (.claude/requirements.local.yaml) - personal, gitignored",
+                "Project (.claude/requirements.yaml) - team-shared, versioned",
+            ],
+            default=0
+        )
+        modify_local = "Local" in choice
     else:
-        print(dim(f"⚠️  Currently disabled"))
+        modify_local = args.local or not args.project  # Default to local
 
-    return 0
+    # Build updates dict
+    updates = {}
+    if args.enable:
+        updates['enabled'] = True
+    if args.disable:
+        updates['enabled'] = False
+    if args.scope:
+        updates['scope'] = args.scope
+    if args.message:
+        updates['message'] = args.message
+
+    # Show preview
+    print()
+    print(header(f"Preview changes to {requirement_name}:"))
+    print(dim("─" * 50))
+
+    for key, new_value in updates.items():
+        old_value = req_config.get(key, "(not set)") if req_config else "(not set)"
+        # Truncate long values
+        if isinstance(old_value, str) and len(old_value) > 60:
+            old_value = old_value[:60] + "..."
+        if isinstance(new_value, str) and len(new_value) > 60:
+            new_value = new_value[:60] + "..."
+
+        print(f"  {bold(key)}:")
+        print(f"    {dim('Before:')} {old_value}")
+        print(f"    {success('After:')} {new_value}")
+
+    print()
+    target_file = "requirements.local.yaml" if modify_local else "requirements.yaml"
+    print(dim(f"Target: .claude/{target_file}"))
+    print()
+
+    # Confirm
+    if not args.yes:
+        if not confirm("Apply these changes?", default=True):
+            print(info("ℹ️  Cancelled"))
+            return 0
+
+    # Write changes
+    try:
+        if modify_local:
+            file_path = config.write_local_override(
+                requirement_overrides={requirement_name: updates}
+            )
+        else:
+            # For project config, need to write differently
+            # For now, only support local (will add project support later)
+            print(warning("⚠️  Project config modification not yet implemented"))
+            print(dim("   Use --local flag to modify local config"))
+            return 1
+
+        print(success(f"✅ Updated {requirement_name}"))
+        print(dim(f"   Modified: {file_path}"))
+        return 0
+
+    except Exception as e:
+        print(error(f"❌ Failed to update config: {e}"), file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 def cmd_init(args) -> int:
