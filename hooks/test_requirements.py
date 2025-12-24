@@ -1283,13 +1283,25 @@ def test_session_start_hook(runner: TestRunner):
         subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
         subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
 
-        # Test without config (should pass silently)
+        # Test without config - should suggest req init on startup
         result = subprocess.run(
             ["python3", str(hook_path)],
             input='{"hook_event_name":"SessionStart","source":"startup"}',
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart no config = pass", result.returncode == 0)
+        runner.test("SessionStart suggests init", "req init" in result.stdout,
+                   f"Expected 'req init' in output, got: {result.stdout[:200]}")
+
+        # Test without config on resume (should NOT suggest init)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"resume"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart resume = no init suggestion",
+                   "req init" not in result.stdout,
+                   f"Should not suggest init on resume: {result.stdout[:200]}")
 
         # Create config with context injection enabled
         os.makedirs(f"{tmpdir}/.claude")

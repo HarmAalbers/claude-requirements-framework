@@ -116,11 +116,29 @@ def main() -> int:
         if not branch:
             return 0
 
-        # Load config
+        # Check if project has its own config
+        project_config_yaml = Path(project_dir) / '.claude' / 'requirements.yaml'
+        project_config_json = Path(project_dir) / '.claude' / 'requirements.json'
+        has_project_config = project_config_yaml.exists() or project_config_json.exists()
+
+        # Load config (may fall back to global)
         config = RequirementsConfig(project_dir)
 
         # Skip if framework disabled
         if not config.is_enabled():
+            return 0
+
+        # Suggest init if no project config (only on startup, not resume/compact)
+        source = input_data.get('source', 'startup')
+        if not has_project_config and source == 'startup':
+            print("""💡 **No requirements config found for this project**
+
+To set up the requirements framework, run:
+  `req init`
+
+Or create `.claude/requirements.yaml` manually.
+See `req init --help` for options.
+""")
             return 0
 
         # Update logger with config
@@ -134,7 +152,6 @@ def main() -> int:
             }
         )
 
-        source = input_data.get('source', 'startup')
         logger.info("Session starting", source=source)
 
         # 1. Clean stale sessions
