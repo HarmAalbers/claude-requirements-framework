@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-# Run test suite (147 tests)
+# Run test suite
 python3 hooks/test_requirements.py
 
 # Sync between repo and deployed location (~/.claude/hooks)

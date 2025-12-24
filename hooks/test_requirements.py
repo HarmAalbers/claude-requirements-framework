@@ -2246,6 +2246,120 @@ def test_remove_session_from_registry(runner: TestRunner):
             session.get_registry_path = original_get_registry_path
 
 
+def test_colors_module(runner: TestRunner):
+    """Test terminal colors module."""
+    print("\n📦 Testing colors module...")
+
+    from colors import (
+        Colors,
+        colors_enabled,
+        success, error, warning, info, header, hint, dim, bold,
+        _supports_color,
+    )
+    import colors as colors_module
+
+    # Test Colors class has required constants
+    runner.test("Colors.RESET defined", hasattr(Colors, 'RESET'))
+    runner.test("Colors.BOLD defined", hasattr(Colors, 'BOLD'))
+    runner.test("Colors.BRIGHT_GREEN defined", hasattr(Colors, 'BRIGHT_GREEN'))
+    runner.test("Colors.BRIGHT_RED defined", hasattr(Colors, 'BRIGHT_RED'))
+    runner.test("Colors.BRIGHT_YELLOW defined", hasattr(Colors, 'BRIGHT_YELLOW'))
+    runner.test("Colors.BRIGHT_CYAN defined", hasattr(Colors, 'BRIGHT_CYAN'))
+    runner.test("Colors.BLUE defined", hasattr(Colors, 'BLUE'))
+    runner.test("Colors.CYAN defined", hasattr(Colors, 'CYAN'))
+    runner.test("Colors.GRAY defined", hasattr(Colors, 'GRAY'))
+
+    # Test ANSI escape code format
+    runner.test("RESET is valid ANSI", Colors.RESET == '\033[0m', f"Got: {repr(Colors.RESET)}")
+    runner.test("BOLD is valid ANSI", Colors.BOLD == '\033[1m', f"Got: {repr(Colors.BOLD)}")
+
+    # Test color functions return strings
+    runner.test("success returns string", isinstance(success("test"), str))
+    runner.test("error returns string", isinstance(error("test"), str))
+    runner.test("warning returns string", isinstance(warning("test"), str))
+    runner.test("info returns string", isinstance(info("test"), str))
+    runner.test("header returns string", isinstance(header("test"), str))
+    runner.test("hint returns string", isinstance(hint("test"), str))
+    runner.test("dim returns string", isinstance(dim("test"), str))
+    runner.test("bold returns string", isinstance(bold("test"), str))
+
+    # Test that functions preserve the original text
+    test_text = "Hello World"
+    runner.test("success preserves text", test_text in success(test_text))
+    runner.test("error preserves text", test_text in error(test_text))
+    runner.test("warning preserves text", test_text in warning(test_text))
+    runner.test("info preserves text", test_text in info(test_text))
+    runner.test("header preserves text", test_text in header(test_text))
+    runner.test("hint preserves text", test_text in hint(test_text))
+    runner.test("dim preserves text", test_text in dim(test_text))
+    runner.test("bold preserves text", test_text in bold(test_text))
+
+    # Test NO_COLOR environment variable
+    original_no_color = os.environ.get('NO_COLOR')
+    original_cache = colors_module._color_enabled
+
+    try:
+        # Set NO_COLOR and reset cache
+        os.environ['NO_COLOR'] = '1'
+        colors_module._color_enabled = None  # Reset cache
+
+        runner.test("NO_COLOR disables colors", not _supports_color())
+
+        # Verify output has no ANSI codes when NO_COLOR is set
+        colors_module._color_enabled = None  # Reset again for colors_enabled()
+        result = success("test")
+        has_ansi = '\033[' in result
+        runner.test("NO_COLOR: success has no ANSI", not has_ansi, f"Got: {repr(result)}")
+
+    finally:
+        # Restore original state
+        if original_no_color is None:
+            os.environ.pop('NO_COLOR', None)
+        else:
+            os.environ['NO_COLOR'] = original_no_color
+        colors_module._color_enabled = original_cache
+
+    # Test FORCE_COLOR environment variable
+    original_force_color = os.environ.get('FORCE_COLOR')
+    original_no_color = os.environ.get('NO_COLOR')
+
+    try:
+        # Clear NO_COLOR and set FORCE_COLOR
+        os.environ.pop('NO_COLOR', None)
+        os.environ['FORCE_COLOR'] = '1'
+        colors_module._color_enabled = None  # Reset cache
+
+        runner.test("FORCE_COLOR enables colors", _supports_color())
+
+    finally:
+        # Restore original state
+        if original_force_color is None:
+            os.environ.pop('FORCE_COLOR', None)
+        else:
+            os.environ['FORCE_COLOR'] = original_force_color
+        if original_no_color is not None:
+            os.environ['NO_COLOR'] = original_no_color
+        colors_module._color_enabled = original_cache
+
+    # Test TERM=dumb disables colors
+    original_term = os.environ.get('TERM')
+
+    try:
+        os.environ.pop('NO_COLOR', None)
+        os.environ.pop('FORCE_COLOR', None)
+        os.environ['TERM'] = 'dumb'
+        colors_module._color_enabled = None  # Reset cache
+
+        runner.test("TERM=dumb disables colors", not _supports_color())
+
+    finally:
+        if original_term is None:
+            os.environ.pop('TERM', None)
+        else:
+            os.environ['TERM'] = original_term
+        colors_module._color_enabled = original_cache
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -2294,6 +2408,9 @@ def main():
     test_guard_strategy_approval_bypasses_check(runner)
     test_guard_strategy_unknown_guard_type_allows(runner)
     test_guard_hook_integration(runner)
+
+    # Colors module tests
+    test_colors_module(runner)
 
     return runner.summary()
 

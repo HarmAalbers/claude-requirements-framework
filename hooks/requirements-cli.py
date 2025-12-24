@@ -29,6 +29,7 @@ from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions
 from state_storage import list_all_states
+from colors import success, error, warning, info, header, hint, dim, bold
 import time
 
 
@@ -51,13 +52,13 @@ def cmd_status(args) -> int:
 
     # Check if git repo
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
+        print(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print("❌ Not on a branch (detached HEAD?)", file=sys.stderr)
+        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Get session ID (explicit flag, env var, or PPID)
@@ -67,21 +68,21 @@ def cmd_status(args) -> int:
         session_id = get_session_id()
 
     # Header
-    print(f"📋 Requirements Status")
-    print(f"{'─' * 40}")
-    print(f"Branch:  {branch}")
-    print(f"Session: {session_id}")
-    print(f"Project: {project_dir}")
+    print(header("📋 Requirements Status"))
+    print(dim(f"{'─' * 40}"))
+    print(f"Branch:  {bold(branch)}")
+    print(f"Session: {dim(session_id)}")
+    print(f"Project: {dim(project_dir)}")
 
     # Show active Claude sessions for context
     active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
     if active_sessions:
-        print(f"\n🔍 Active Claude Sessions for {branch}:")
+        print(info(f"\n🔍 Active Claude Sessions for {branch}:"))
         for sess in active_sessions:
             marker = "→" if sess['id'] == session_id else " "
             age_mins = int((time.time() - sess['last_active']) // 60)
             age_str = f"{age_mins}m ago" if age_mins > 0 else "just now"
-            print(f"  {marker} {sess['id']} [PID {sess['pid']}, {age_str}]")
+            print(dim(f"  {marker} {sess['id']} [PID {sess['pid']}, {age_str}]"))
 
     print()
 
@@ -90,27 +91,27 @@ def cmd_status(args) -> int:
     config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
     if not config_file.exists() and not config_file_json.exists():
-        print("ℹ️  No requirements configured for this project.")
-        print(f"   Create .claude/requirements.yaml to enable.")
+        print(info("ℹ️  No requirements configured for this project."))
+        print(dim("   Create .claude/requirements.yaml to enable."))
         return 0
 
     config = RequirementsConfig(project_dir)
 
     validation_errors = config.get_validation_errors()
     if validation_errors:
-        print("⚠️  Configuration validation failed:")
-        for error in validation_errors:
-            print(f"   - {error}")
-        print("   Fix .claude/requirements.yaml and rerun `req status`.")
+        print(warning("⚠️  Configuration validation failed:"))
+        for err in validation_errors:
+            print(dim(f"   - {err}"))
+        print(dim("   Fix .claude/requirements.yaml and rerun `req status`."))
         print()
 
     if not config.is_enabled():
-        print("⚠️  Requirements framework disabled for this project")
+        print(warning("⚠️  Requirements framework disabled for this project"))
         return 0
 
     all_reqs = config.get_all_requirements()
     if not all_reqs:
-        print("ℹ️  No requirements defined in config.")
+        print(info("ℹ️  No requirements defined in config."))
         return 0
 
     # Initialize requirements manager
@@ -131,22 +132,24 @@ def cmd_status(args) -> int:
 
     # Show blocking requirements
     if blocking_reqs:
-        print("📌 Blocking Requirements:")
+        print(header("📌 Blocking Requirements:"))
         for req_name in blocking_reqs:
             scope = config.get_scope(req_name)
             satisfied = reqs.is_satisfied(req_name, scope)
-            icon = "✅" if satisfied else "❌"
-            print(f"  {icon} {req_name} ({scope})")
+            if satisfied:
+                print(success(f"  ✅ {req_name}") + dim(f" ({scope})"))
+            else:
+                print(error(f"  ❌ {req_name}") + dim(f" ({scope})"))
 
     # Show dynamic requirements
     if dynamic_reqs:
-        print("\n📊 Dynamic Requirements:")
+        print(header("\n📊 Dynamic Requirements:"))
         for req_name in dynamic_reqs:
             try:
                 # Load calculator
                 calculator_name = config.get_attribute(req_name, 'calculator')
                 if not calculator_name:
-                    print(f"  ⚠️  {req_name}: No calculator configured")
+                    print(warning(f"  ⚠️  {req_name}: No calculator configured"))
                     continue
 
                 calc_module = __import__(f'lib.{calculator_name}', fromlist=[calculator_name])
@@ -159,17 +162,16 @@ def cmd_status(args) -> int:
                     thresholds = config.get_attribute(req_name, 'thresholds', {})
                     value = result.get('value', 0)
 
-                    # Determine status icon
+                    # Determine status and color
                     if value >= thresholds.get('block', float('inf')):
-                        status = "🛑"
+                        print(error(f"  🛑 {req_name}: {value} changes"))
                     elif value >= thresholds.get('warn', float('inf')):
-                        status = "⚠️"
+                        print(warning(f"  ⚠️ {req_name}: {value} changes"))
                     else:
-                        status = "✅"
+                        print(success(f"  ✅ {req_name}: {value} changes"))
 
-                    print(f"  {status} {req_name}: {value} changes")
-                    print(f"      {result.get('summary', '')}")
-                    print(f"      Base: {result.get('base_branch', 'N/A')}")
+                    print(dim(f"      {result.get('summary', '')}"))
+                    print(dim(f"      Base: {result.get('base_branch', 'N/A')}"))
 
                     # Show approval status
                     if reqs.is_approved(req_name):
@@ -180,14 +182,14 @@ def cmd_status(args) -> int:
                         if remaining > 0:
                             mins = remaining // 60
                             secs = remaining % 60
-                            print(f"      ⏰ Approved ({mins}m {secs}s remaining)")
+                            print(info(f"      ⏰ Approved ({mins}m {secs}s remaining)"))
                 else:
-                    print(f"  ℹ️  {req_name}: Not applicable (skipped)")
+                    print(info(f"  ℹ️  {req_name}: Not applicable (skipped)"))
             except Exception as e:
-                print(f"  ⚠️  {req_name}: Error calculating ({e})")
+                print(warning(f"  ⚠️  {req_name}: Error calculating ({e})"))
 
     if not blocking_reqs and not dynamic_reqs:
-        print("ℹ️  No requirements configured.")
+        print(info("ℹ️  No requirements configured."))
 
     return 0
 
@@ -205,7 +207,7 @@ def cmd_satisfy(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
+        print(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     # Check if --branch was explicitly provided (triggers branch-level satisfaction)
@@ -214,7 +216,7 @@ def cmd_satisfy(args) -> int:
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print("❌ Not on a branch (detached HEAD?)", file=sys.stderr)
+        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Check for config
@@ -222,13 +224,13 @@ def cmd_satisfy(args) -> int:
     config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
     if not config_file.exists() and not config_file_json.exists():
-        print("⚠️  No requirements configured for this project.", file=sys.stderr)
+        print(warning("⚠️  No requirements configured for this project."), file=sys.stderr)
         # Still allow satisfying (for testing)
 
     # Branch-level mode: no session detection needed
     if branch_level_mode:
         session_id = 'branch-override'
-        print(f"🌿 Using branch-level satisfaction for: {branch}")
+        print(info(f"🌿 Using branch-level satisfaction for: {branch}"))
     else:
         # Smart session detection
         session_id = None
@@ -236,12 +238,12 @@ def cmd_satisfy(args) -> int:
         # Priority 1: Explicit --session flag
         if hasattr(args, 'session') and args.session:
             session_id = args.session
-            print(f"🎯 Using explicit session: {session_id}")
+            print(info(f"🎯 Using explicit session: {session_id}"))
 
         # Priority 2: CLAUDE_SESSION_ID env var
         elif 'CLAUDE_SESSION_ID' in os.environ:
             session_id = os.environ['CLAUDE_SESSION_ID']
-            print(f"🔍 Using env session: {session_id}")
+            print(info(f"🔍 Using env session: {session_id}"))
 
         # Priority 3: Auto-detect from registry
         else:
@@ -249,18 +251,18 @@ def cmd_satisfy(args) -> int:
 
             if len(matches) == 1:
                 session_id = matches[0]['id']
-                print(f"✨ Auto-detected Claude session: {session_id}")
+                print(success(f"✨ Auto-detected Claude session: {session_id}"))
             elif len(matches) > 1:
-                print("⚠️  Multiple Claude Code sessions found:", file=sys.stderr)
+                print(warning("⚠️  Multiple Claude Code sessions found:"), file=sys.stderr)
                 for i, sess in enumerate(matches, 1):
-                    print(f"   {i}. {sess['id']} [PID {sess['pid']}]", file=sys.stderr)
-                print("\n💡 Use --session flag, or use --branch to satisfy all sessions", file=sys.stderr)
+                    print(dim(f"   {i}. {sess['id']} [PID {sess['pid']}]"), file=sys.stderr)
+                print(hint("\n💡 Use --session flag, or use --branch to satisfy all sessions"), file=sys.stderr)
                 return 1
             else:
                 # No matches - fall back to PPID
                 session_id = get_session_id()
-                print(f"⚠️  No active Claude session detected. Using terminal session: {session_id}")
-                print(f"💡 This may not satisfy requirements in Claude Code.")
+                print(warning(f"⚠️  No active Claude session detected. Using terminal session: {session_id}"))
+                print(hint("💡 This may not satisfy requirements in Claude Code."))
 
     # Get config for scope
     config = RequirementsConfig(project_dir)
@@ -271,7 +273,7 @@ def cmd_satisfy(args) -> int:
         try:
             metadata = json.loads(args.metadata)
         except json.JSONDecodeError:
-            print("❌ Invalid JSON metadata", file=sys.stderr)
+            print(error("❌ Invalid JSON metadata"), file=sys.stderr)
             return 1
 
     # Initialize requirements manager
@@ -284,10 +286,10 @@ def cmd_satisfy(args) -> int:
     for req_name in requirements:
         # Check if requirement exists in config
         if req_name not in config.get_all_requirements():
-            print(f"⚠️  Unknown requirement: {req_name}", file=sys.stderr)
+            print(warning(f"⚠️  Unknown requirement: {req_name}"), file=sys.stderr)
             available = config.get_all_requirements()
             if available:
-                print(f"   Available: {', '.join(available)}")
+                print(dim(f"   Available: {', '.join(available)}"))
             # Still allow satisfying (manual override)
 
         # Handle based on requirement type
@@ -298,8 +300,8 @@ def cmd_satisfy(args) -> int:
                 # Branch-level mode: use branch scope for dynamic requirements too
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(f"✅ Satisfied '{req_name}' at branch level for {branch}")
-                    print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+                    print(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
+                    print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Dynamic requirement - use approval workflow with TTL
                 ttl = config.get_attribute(req_name, 'approval_ttl', 300)
@@ -313,37 +315,37 @@ def cmd_satisfy(args) -> int:
                 mins = ttl // 60
                 secs = ttl % 60
                 if len(requirements) == 1:
-                    print(f"✅ Approved '{req_name}' for {branch}")
-                    print(f"   Duration: {mins}m {secs}s (session scope)")
-                    print(f"   Session: {session_id}")
+                    print(success(f"✅ Approved '{req_name}' for {branch}"))
+                    print(dim(f"   Duration: {mins}m {secs}s (session scope)"))
+                    print(dim(f"   Session: {session_id}"))
         else:
             # Blocking requirement - standard satisfaction
             if branch_level_mode:
                 # Force branch scope when --branch is explicit
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(f"✅ Satisfied '{req_name}' at branch level for {branch}")
-                    print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+                    print(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
+                    print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Use config's scope (existing behavior)
                 scope = config.get_scope(req_name)
                 reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
+                    print(success(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)"))
 
         satisfied_count += 1
 
     # Summary for multiple requirements
     if len(requirements) > 1:
         if branch_level_mode:
-            print(f"✅ Satisfied {satisfied_count} requirement(s) at branch level")
-            print(f"   Branch: {branch}")
-            print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+            print(success(f"✅ Satisfied {satisfied_count} requirement(s) at branch level"))
+            print(dim(f"   Branch: {branch}"))
+            print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
         else:
-            print(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}")
+            print(success(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}"))
         for req_name in requirements:
             scope = 'branch' if branch_level_mode else config.get_scope(req_name)
-            print(f"   - {req_name} ({scope} scope)")
+            print(dim(f"   - {req_name} ({scope} scope)"))
 
     return 0
 
@@ -361,13 +363,13 @@ def cmd_clear(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
+        print(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print("❌ Not on a branch (detached HEAD?)", file=sys.stderr)
+        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Get session ID (explicit flag, env var, or PPID)
@@ -380,13 +382,13 @@ def cmd_clear(args) -> int:
 
     if args.all:
         reqs.clear_all()
-        print(f"✅ Cleared all requirements for {branch}")
+        print(success(f"✅ Cleared all requirements for {branch}"))
     else:
         if not args.requirement:
-            print("❌ Specify requirement name or use --all", file=sys.stderr)
+            print(error("❌ Specify requirement name or use --all"), file=sys.stderr)
             return 1
         reqs.clear(args.requirement)
-        print(f"✅ Cleared '{args.requirement}' for {branch}")
+        print(success(f"✅ Cleared '{args.requirement}' for {branch}"))
 
     return 0
 
@@ -404,17 +406,17 @@ def cmd_list(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
+        print(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     states = list_all_states(project_dir)
 
     if not states:
-        print("ℹ️  No tracked branches in this project.")
+        print(info("ℹ️  No tracked branches in this project."))
         return 0
 
-    print(f"📋 Tracked Branches ({len(states)})")
-    print(f"{'─' * 40}")
+    print(header(f"📋 Tracked Branches ({len(states)})"))
+    print(dim(f"{'─' * 40}"))
 
     for branch, path in states:
         # Load state to show requirement count
@@ -422,9 +424,9 @@ def cmd_list(args) -> int:
             with open(path) as f:
                 state = json.load(f)
                 req_count = len(state.get('requirements', {}))
-                print(f"  {branch}: {req_count} requirement(s)")
+                print(f"  {bold(branch)}: {dim(f'{req_count} requirement(s)')}")
         except Exception:
-            print(f"  {branch}: (error reading state)")
+            print(f"  {bold(branch)}: {warning('(error reading state)')}")
 
     return 0
 
@@ -442,12 +444,12 @@ def cmd_prune(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
+        print(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
-    print("🧹 Cleaning up stale state files...")
+    print(info("🧹 Cleaning up stale state files..."))
     count = BranchRequirements.cleanup_stale_branches(project_dir)
-    print(f"✅ Removed {count} state file(s) for deleted branches")
+    print(success(f"✅ Removed {count} state file(s) for deleted branches"))
 
     return 0
 
@@ -472,19 +474,19 @@ def cmd_sessions(args) -> int:
     sessions = get_active_sessions(project_dir=project_dir)
 
     if not sessions:
-        print("ℹ️  No active Claude Code sessions found.")
+        print(info("ℹ️  No active Claude Code sessions found."))
         return 0
 
     # Display sessions
-    print(f"📋 Active Claude Code Sessions ({len(sessions)})")
-    print(f"{'─' * 60}")
+    print(header(f"📋 Active Claude Code Sessions ({len(sessions)})"))
+    print(dim(f"{'─' * 60}"))
 
     for sess in sessions:
         age_mins = int((time.time() - sess['last_active']) // 60)
         age_str = f"{age_mins}m ago" if age_mins > 0 else "just now"
 
-        print(f"  {sess['id']} - {sess['project_dir']}")
-        print(f"             {sess['branch']} [PID {sess['pid']}, {age_str}]")
+        print(f"  {bold(sess['id'])} - {dim(sess['project_dir'])}")
+        print(dim(f"             {sess['branch']} [PID {sess['pid']}, {age_str}]"))
 
     return 0
 
@@ -507,8 +509,8 @@ def cmd_enable(args) -> int:
 
     # Check if in git repo
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
-        print("   Requirements framework only works in git repositories")
+        print(error("❌ Not in a git repository"), file=sys.stderr)
+        print(dim("   Requirements framework only works in git repositories"))
         return 1
 
     # Check if project has any config
@@ -516,9 +518,9 @@ def cmd_enable(args) -> int:
     config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
     if not config_file.exists() and not config_file_json.exists():
-        print("ℹ️  No requirements configured for this project.", file=sys.stderr)
-        print(f"   Create .claude/requirements.yaml to configure requirements.")
-        print(f"   See: ~/.claude/requirements.yaml for examples")
+        print(info("ℹ️  No requirements configured for this project."), file=sys.stderr)
+        print(dim("   Create .claude/requirements.yaml to configure requirements."))
+        print(dim("   See: ~/.claude/requirements.yaml for examples"))
         return 1
 
     config = RequirementsConfig(project_dir)
@@ -528,20 +530,20 @@ def cmd_enable(args) -> int:
 
     if requirement_name:
         # Phase 2: Requirement-level enable (future enhancement)
-        print(f"❌ Requirement-level enable/disable not yet implemented", file=sys.stderr)
-        print(f"   Use: req enable  (without requirement name)")
+        print(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
+        print(dim("   Use: req enable  (without requirement name)"))
         return 1
 
     # Enable framework
     try:
         file_path = config.write_local_override(enabled=True)
-        print(f"✅ Requirements framework enabled for this project")
-        print(f"   Modified: {file_path}")
+        print(success("✅ Requirements framework enabled for this project"))
+        print(dim(f"   Modified: {file_path}"))
         print()
-        print(f"💡 Run 'req status' to see current requirements")
+        print(hint("💡 Run 'req status' to see current requirements"))
         return 0
     except Exception as e:
-        print(f"❌ Failed to enable framework: {e}", file=sys.stderr)
+        print(error(f"❌ Failed to enable framework: {e}"), file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
@@ -565,8 +567,8 @@ def cmd_disable(args) -> int:
 
     # Check if in git repo
     if not is_git_repo(project_dir):
-        print("❌ Not in a git repository", file=sys.stderr)
-        print("   Requirements framework only works in git repositories")
+        print(error("❌ Not in a git repository"), file=sys.stderr)
+        print(dim("   Requirements framework only works in git repositories"))
         return 1
 
     config = RequirementsConfig(project_dir)
@@ -576,21 +578,21 @@ def cmd_disable(args) -> int:
 
     if requirement_name:
         # Phase 2: Requirement-level disable (future enhancement)
-        print(f"❌ Requirement-level enable/disable not yet implemented", file=sys.stderr)
-        print(f"   Use: req disable  (without requirement name)")
+        print(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
+        print(dim("   Use: req disable  (without requirement name)"))
         return 1
 
     # Disable framework
     try:
         file_path = config.write_local_override(enabled=False)
-        print(f"✅ Requirements framework disabled for this project")
-        print(f"   Modified: {file_path}")
+        print(success("✅ Requirements framework disabled for this project"))
+        print(dim(f"   Modified: {file_path}"))
         print()
-        print(f"💡 This only affects your local environment (file is gitignored)")
-        print(f"💡 To re-enable: req enable")
+        print(hint("💡 This only affects your local environment (file is gitignored)"))
+        print(hint("💡 To re-enable: req enable"))
         return 0
     except Exception as e:
-        print(f"❌ Failed to disable framework: {e}", file=sys.stderr)
+        print(error(f"❌ Failed to disable framework: {e}"), file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
