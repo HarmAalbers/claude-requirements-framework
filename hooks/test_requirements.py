@@ -2451,6 +2451,71 @@ def test_interactive_module(runner: TestRunner):
         builtins.input = original_input
 
 
+def test_init_presets_module(runner: TestRunner):
+    """Test init presets module."""
+    print("\n📦 Testing init presets module...")
+
+    from init_presets import (
+        PRESETS,
+        get_preset,
+        generate_config,
+        config_to_yaml
+    )
+
+    # Test PRESETS dict exists with expected presets
+    runner.test("PRESETS is dict", isinstance(PRESETS, dict))
+    runner.test("Has 'strict' preset", 'strict' in PRESETS)
+    runner.test("Has 'relaxed' preset", 'relaxed' in PRESETS)
+    runner.test("Has 'minimal' preset", 'minimal' in PRESETS)
+
+    # Test get_preset function
+    strict = get_preset('strict')
+    runner.test("get_preset returns dict", isinstance(strict, dict))
+    runner.test("strict has requirements", 'requirements' in strict)
+
+    relaxed = get_preset('relaxed')
+    runner.test("relaxed has requirements", 'requirements' in relaxed)
+    runner.test("relaxed has commit_plan", 'commit_plan' in relaxed.get('requirements', {}))
+
+    minimal = get_preset('minimal')
+    runner.test("minimal has empty requirements", len(minimal.get('requirements', {})) == 0)
+
+    # Test unknown preset returns minimal
+    unknown = get_preset('nonexistent')
+    runner.test("unknown preset returns minimal", len(unknown.get('requirements', {})) == 0)
+
+    # Test generate_config adds version and enabled
+    config = generate_config('relaxed')
+    runner.test("generate_config adds version", config.get('version') == '1.0')
+    runner.test("generate_config adds enabled", config.get('enabled') is True)
+    runner.test("generate_config preserves requirements", 'commit_plan' in config.get('requirements', {}))
+
+    # Test generate_config with customizations
+    config = generate_config('relaxed', {'requirements': {'commit_plan': {'scope': 'branch'}}})
+    scope = config.get('requirements', {}).get('commit_plan', {}).get('scope')
+    runner.test("generate_config merges customizations", scope == 'branch', f"Got: {scope}")
+
+    # Test config_to_yaml returns string
+    yaml_str = config_to_yaml(config)
+    runner.test("config_to_yaml returns string", isinstance(yaml_str, str))
+    runner.test("config_to_yaml contains version", 'version' in yaml_str)
+    runner.test("config_to_yaml contains enabled", 'enabled' in yaml_str)
+
+    # Test strict preset has expected requirements
+    strict_config = generate_config('strict')
+    strict_reqs = strict_config.get('requirements', {})
+    runner.test("strict has commit_plan", 'commit_plan' in strict_reqs)
+    runner.test("strict has protected_branch", 'protected_branch' in strict_reqs)
+
+    # Test requirement structure
+    commit_plan = strict_reqs.get('commit_plan', {})
+    runner.test("commit_plan has enabled", 'enabled' in commit_plan)
+    runner.test("commit_plan has type", 'type' in commit_plan)
+    runner.test("commit_plan has scope", 'scope' in commit_plan)
+    runner.test("commit_plan has trigger_tools", 'trigger_tools' in commit_plan)
+    runner.test("commit_plan has message", 'message' in commit_plan)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -2505,6 +2570,9 @@ def main():
 
     # Interactive prompts module tests
     test_interactive_module(runner)
+
+    # Init presets module tests
+    test_init_presets_module(runner)
 
     return runner.summary()
 
