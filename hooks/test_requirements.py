@@ -2360,6 +2360,97 @@ def test_colors_module(runner: TestRunner):
         colors_module._color_enabled = original_cache
 
 
+def test_interactive_module(runner: TestRunner):
+    """Test interactive prompt module."""
+    print("\n📦 Testing interactive module...")
+
+    from interactive import (
+        has_inquirerpy,
+        select,
+        confirm,
+        checkbox,
+        _stdlib_select,
+        _stdlib_confirm,
+        _stdlib_checkbox
+    )
+
+    # Test has_inquirerpy returns boolean
+    result = has_inquirerpy()
+    runner.test("has_inquirerpy returns bool", isinstance(result, bool))
+
+    # Test stdlib functions exist and are callable
+    runner.test("_stdlib_select is callable", callable(_stdlib_select))
+    runner.test("_stdlib_confirm is callable", callable(_stdlib_confirm))
+    runner.test("_stdlib_checkbox is callable", callable(_stdlib_checkbox))
+
+    # Test public functions exist and are callable
+    runner.test("select is callable", callable(select))
+    runner.test("confirm is callable", callable(confirm))
+    runner.test("checkbox is callable", callable(checkbox))
+
+    # Test _stdlib_select with mocked input
+    import builtins
+    original_input = builtins.input
+
+    try:
+        # Test select with default (empty input)
+        inputs = iter([""])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_select("Choose:", ["Option A", "Option B", "Option C"], default=1)
+        runner.test("_stdlib_select default works", result == "Option B", f"Got: {result}")
+
+        # Test select with number input
+        inputs = iter(["3"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_select("Choose:", ["A", "B", "C"], default=0)
+        runner.test("_stdlib_select number input works", result == "C", f"Got: {result}")
+
+        # Test confirm with default yes (empty input)
+        inputs = iter([""])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_confirm("Continue?", default=True)
+        runner.test("_stdlib_confirm default yes works", result is True)
+
+        # Test confirm with 'n' input
+        inputs = iter(["n"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_confirm("Continue?", default=True)
+        runner.test("_stdlib_confirm 'n' works", result is False)
+
+        # Test confirm with 'yes' input
+        inputs = iter(["yes"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_confirm("Continue?", default=False)
+        runner.test("_stdlib_confirm 'yes' works", result is True)
+
+        # Test checkbox with default (empty input)
+        inputs = iter([""])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_checkbox("Select:", ["A", "B", "C"], default=["B"])
+        runner.test("_stdlib_checkbox default works", result == ["B"], f"Got: {result}")
+
+        # Test checkbox with 'all' input
+        inputs = iter(["all"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_checkbox("Select:", ["A", "B", "C"], default=[])
+        runner.test("_stdlib_checkbox 'all' works", result == ["A", "B", "C"], f"Got: {result}")
+
+        # Test checkbox with 'none' input
+        inputs = iter(["none"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_checkbox("Select:", ["A", "B", "C"], default=["A", "B"])
+        runner.test("_stdlib_checkbox 'none' works", result == [], f"Got: {result}")
+
+        # Test checkbox with comma-separated input
+        inputs = iter(["1,3"])
+        builtins.input = lambda _: next(inputs)
+        result = _stdlib_checkbox("Select:", ["A", "B", "C"], default=[])
+        runner.test("_stdlib_checkbox comma input works", result == ["A", "C"], f"Got: {result}")
+
+    finally:
+        builtins.input = original_input
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -2411,6 +2502,9 @@ def main():
 
     # Colors module tests
     test_colors_module(runner)
+
+    # Interactive prompts module tests
+    test_interactive_module(runner)
 
     return runner.summary()
 
