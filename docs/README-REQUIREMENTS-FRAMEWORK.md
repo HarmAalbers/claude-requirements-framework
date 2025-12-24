@@ -73,6 +73,100 @@ Claude can now edit files - requirement is satisfied for this session.
     └── session.py                # Session ID management
 ```
 
+## Per-Project Setup
+
+### Using `req init`
+
+The `req init` command provides an interactive wizard to set up requirements for your project:
+
+```bash
+# Interactive wizard (recommended for first-time setup)
+cd /your/project
+req init
+
+# Non-interactive mode (for scripts/automation)
+req init --yes
+
+# Choose a specific preset
+req init --preset strict    # commit_plan + protected_branch
+req init --preset relaxed   # commit_plan only (default)
+req init --preset minimal   # framework enabled, no requirements
+
+# Create local config only (personal overrides)
+req init --local
+
+# Preview config without writing files
+req init --preview
+```
+
+### Presets
+
+| Preset | Requirements | Use Case |
+|--------|--------------|----------|
+| `relaxed` | commit_plan only (session scope) | Default, good for most projects |
+| `strict` | commit_plan + protected_branch guard | Teams with strict workflow policies |
+| `minimal` | Framework enabled, no requirements | "I'll configure it myself" |
+
+### Automatic Detection
+
+When you start a Claude Code session in a project without `.claude/requirements.yaml`, the SessionStart hook will suggest:
+
+```
+💡 **No requirements config found for this project**
+
+To set up the requirements framework, run:
+  `req init`
+
+Or create `.claude/requirements.yaml` manually.
+See `req init --help` for options.
+```
+
+This only appears on fresh session startup, not on resume/compact.
+
+### Interactive Flow
+
+Example of the interactive wizard:
+
+```
+$ req init
+
+🚀 Requirements Framework Setup
+──────────────────────────────────────────────────
+
+Detecting project:
+  ✓ Git repository at /Users/harm/my-project
+  ○ .claude/ directory will be created
+
+Which configuration file to create?
+  > Project config (.claude/requirements.yaml) - shared with team
+    Local config (.claude/requirements.local.yaml) - personal only
+
+Choose a preset profile:
+  > relaxed - Light touch: commit_plan only (recommended)
+    strict - Full enforcement: commit_plan + protected_branch
+    minimal - Framework enabled, no requirements (configure later)
+
+Preview:
+──────────────────────────────────────────────────
+version: "1.0"
+enabled: true
+requirements:
+  commit_plan:
+    enabled: true
+    scope: session
+    ...
+
+Create requirements.yaml? (Y/n): y
+
+✅ Created project config (relaxed preset)
+   .claude/requirements.yaml
+
+💡 Next steps:
+   • Run 'req status' to see your requirements
+   • Make changes - you'll be prompted to satisfy requirements
+   • Edit requirements.yaml to customize
+```
+
 ## Configuration
 
 ### Global Defaults (`~/.claude/requirements.yaml`)
