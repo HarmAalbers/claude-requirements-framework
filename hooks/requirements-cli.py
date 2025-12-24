@@ -598,6 +598,82 @@ def cmd_disable(args) -> int:
         return 1
 
 
+def cmd_init(args) -> int:
+    """
+    Initialize requirements framework for a project.
+
+    Creates .claude/requirements.yaml (and optionally .local.yaml) with
+    preset configurations.
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    from init_presets import generate_config, config_to_yaml
+
+    project_dir = get_project_dir()
+
+    # Check if git repo
+    if not is_git_repo(project_dir):
+        print(error("❌ Not in a git repository"), file=sys.stderr)
+        print(dim("   Requirements framework only works in git repositories"))
+        return 1
+
+    # Determine which files to create
+    create_project = not args.local  # Default: create project config
+    create_local = args.local
+
+    # Get preset
+    preset = args.preset or 'relaxed'
+
+    # Generate config
+    config = generate_config(preset)
+    yaml_content = config_to_yaml(config)
+
+    # Paths
+    claude_dir = Path(project_dir) / '.claude'
+    project_config = claude_dir / 'requirements.yaml'
+    local_config = claude_dir / 'requirements.local.yaml'
+
+    # Preview mode
+    if args.preview:
+        target = "local" if create_local else "project"
+        print(header(f"📋 Preview: {target} config ({preset} preset)"))
+        print(dim("─" * 50))
+        print(yaml_content)
+        print(dim("─" * 50))
+        print(info(f"ℹ️  Would create: {local_config if create_local else project_config}"))
+        return 0
+
+    # Check for existing config
+    target_config = local_config if create_local else project_config
+    if target_config.exists() and not args.force:
+        print(warning(f"⚠️  Config already exists: {target_config}"))
+        print(hint("💡 Use --force to overwrite"))
+        return 0
+
+    # Create .claude directory
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write config
+    try:
+        target_config.write_text(yaml_content)
+        config_type = "local" if create_local else "project"
+        print(success(f"✅ Created {config_type} config ({preset} preset)"))
+        print(dim(f"   {target_config}"))
+        print()
+        print(hint("💡 Next steps:"))
+        print(dim("   • Run 'req status' to see your requirements"))
+        print(dim("   • Make changes - you'll be prompted to satisfy requirements"))
+        print(dim(f"   • Edit {target_config.name} to customize"))
+        return 0
+    except Exception as e:
+        print(error(f"❌ Failed to create config: {e}"), file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -611,6 +687,10 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
+    req init                            # Initialize with relaxed preset
+    req init --preset strict            # Initialize with strict preset
+    req init --local                    # Create local config only
+    req init --preview                  # Preview config without writing
     req status                          # Show current status
     req satisfy commit_plan             # Mark commit_plan as satisfied
     req satisfy github_ticket -m '{"ticket":"#123"}'
@@ -666,6 +746,16 @@ Environment Variables:
     disable_parser = subparsers.add_parser('disable', help='Disable requirements framework')
     disable_parser.add_argument('requirement', nargs='?', help='Requirement name (optional, for future use)')
 
+    # init
+    init_parser = subparsers.add_parser('init', help='Initialize requirements framework for project')
+    init_parser.add_argument('--yes', '-y', action='store_true', help='Non-interactive mode (use defaults)')
+    init_parser.add_argument('--preset', '-p', choices=['strict', 'relaxed', 'minimal'],
+                             help='Preset profile (default: relaxed)')
+    init_parser.add_argument('--project', action='store_true', help='Create project config only')
+    init_parser.add_argument('--local', action='store_true', help='Create local config only')
+    init_parser.add_argument('--force', '-f', action='store_true', help='Overwrite existing config')
+    init_parser.add_argument('--preview', '--dry-run', action='store_true', help='Preview without writing')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -682,6 +772,7 @@ Environment Variables:
         'sessions': cmd_sessions,
         'enable': cmd_enable,
         'disable': cmd_disable,
+        'init': cmd_init,
     }
 
     return commands[args.command](args)

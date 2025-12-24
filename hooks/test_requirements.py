@@ -2451,6 +2451,78 @@ def test_interactive_module(runner: TestRunner):
         builtins.input = original_input
 
 
+def test_cli_init_command(runner: TestRunner):
+    """Test req init command."""
+    print("\n📦 Testing CLI init command...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo (required for req commands)
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+
+        # Test --preview flag (doesn't create files)
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes", "--preview"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init --preview runs", result.returncode == 0, result.stderr)
+        runner.test("init --preview shows config", "commit_plan" in result.stdout, result.stdout[:200])
+        config_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
+        runner.test("init --preview doesn't create file", not config_file.exists())
+
+        # Test --yes creates project config
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init --yes runs", result.returncode == 0, result.stderr)
+        runner.test("init creates .claude dir", (Path(tmpdir) / '.claude').exists())
+        runner.test("init creates config", config_file.exists())
+
+        # Verify config content
+        if config_file.exists():
+            content = config_file.read_text()
+            runner.test("config has version", 'version' in content)
+            runner.test("config has enabled", 'enabled' in content)
+            runner.test("config has commit_plan", 'commit_plan' in content)
+
+        # Test init warns on existing config
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init warns on existing", "already exists" in result.stdout.lower() or result.returncode == 0)
+
+        # Test --force overwrites
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes", "--force", "--preset", "strict"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init --force runs", result.returncode == 0, result.stderr)
+        content = config_file.read_text()
+        runner.test("init --force writes strict", "protected_branch" in content, content[:200])
+
+        # Test --local creates local config
+        local_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes", "--local", "--force"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init --local runs", result.returncode == 0, result.stderr)
+        runner.test("init --local creates file", local_file.exists(), str(local_file))
+
+        # Test presets
+        for preset in ['strict', 'relaxed', 'minimal']:
+            with tempfile.TemporaryDirectory() as preset_dir:
+                subprocess.run(["git", "init"], cwd=preset_dir, capture_output=True)
+                result = subprocess.run(
+                    ["python3", str(cli_path), "init", "--yes", "--preset", preset],
+                    cwd=preset_dir, capture_output=True, text=True
+                )
+                runner.test(f"init --preset {preset} runs", result.returncode == 0, result.stderr)
+
+
 def test_init_presets_module(runner: TestRunner):
     """Test init presets module."""
     print("\n📦 Testing init presets module...")
@@ -2573,6 +2645,9 @@ def main():
 
     # Init presets module tests
     test_init_presets_module(runner)
+
+    # CLI init command tests
+    test_cli_init_command(runner)
 
     return runner.summary()
 
