@@ -208,6 +208,9 @@ def cmd_satisfy(args) -> int:
         print("❌ Not in a git repository", file=sys.stderr)
         return 1
 
+    # Check if --branch was explicitly provided (triggers branch-level satisfaction)
+    branch_level_mode = args.branch is not None
+
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
@@ -222,37 +225,42 @@ def cmd_satisfy(args) -> int:
         print("⚠️  No requirements configured for this project.", file=sys.stderr)
         # Still allow satisfying (for testing)
 
-    # Smart session detection
-    session_id = None
-
-    # Priority 1: Explicit --session flag
-    if hasattr(args, 'session') and args.session:
-        session_id = args.session
-        print(f"🎯 Using explicit session: {session_id}")
-
-    # Priority 2: CLAUDE_SESSION_ID env var
-    elif 'CLAUDE_SESSION_ID' in os.environ:
-        session_id = os.environ['CLAUDE_SESSION_ID']
-        print(f"🔍 Using env session: {session_id}")
-
-    # Priority 3: Auto-detect from registry
+    # Branch-level mode: no session detection needed
+    if branch_level_mode:
+        session_id = 'branch-override'
+        print(f"🌿 Using branch-level satisfaction for: {branch}")
     else:
-        matches = get_active_sessions(project_dir=project_dir, branch=branch)
+        # Smart session detection
+        session_id = None
 
-        if len(matches) == 1:
-            session_id = matches[0]['id']
-            print(f"✨ Auto-detected Claude session: {session_id}")
-        elif len(matches) > 1:
-            print("⚠️  Multiple Claude Code sessions found:", file=sys.stderr)
-            for i, sess in enumerate(matches, 1):
-                print(f"   {i}. {sess['id']} [PID {sess['pid']}]", file=sys.stderr)
-            print("\n💡 Use --session flag or export CLAUDE_SESSION_ID", file=sys.stderr)
-            return 1
+        # Priority 1: Explicit --session flag
+        if hasattr(args, 'session') and args.session:
+            session_id = args.session
+            print(f"🎯 Using explicit session: {session_id}")
+
+        # Priority 2: CLAUDE_SESSION_ID env var
+        elif 'CLAUDE_SESSION_ID' in os.environ:
+            session_id = os.environ['CLAUDE_SESSION_ID']
+            print(f"🔍 Using env session: {session_id}")
+
+        # Priority 3: Auto-detect from registry
         else:
-            # No matches - fall back to PPID
-            session_id = get_session_id()
-            print(f"⚠️  No active Claude session detected. Using terminal session: {session_id}")
-            print(f"💡 This may not satisfy requirements in Claude Code.")
+            matches = get_active_sessions(project_dir=project_dir, branch=branch)
+
+            if len(matches) == 1:
+                session_id = matches[0]['id']
+                print(f"✨ Auto-detected Claude session: {session_id}")
+            elif len(matches) > 1:
+                print("⚠️  Multiple Claude Code sessions found:", file=sys.stderr)
+                for i, sess in enumerate(matches, 1):
+                    print(f"   {i}. {sess['id']} [PID {sess['pid']}]", file=sys.stderr)
+                print("\n💡 Use --session flag, or use --branch to satisfy all sessions", file=sys.stderr)
+                return 1
+            else:
+                # No matches - fall back to PPID
+                session_id = get_session_id()
+                print(f"⚠️  No active Claude session detected. Using terminal session: {session_id}")
+                print(f"💡 This may not satisfy requirements in Claude Code.")
 
     # Get config for scope
     config = RequirementsConfig(project_dir)
@@ -286,35 +294,55 @@ def cmd_satisfy(args) -> int:
         req_type = config.get_requirement_type(req_name)
 
         if req_type == 'dynamic':
-            # Dynamic requirement - use approval workflow with TTL
-            ttl = config.get_attribute(req_name, 'approval_ttl', 300)
+            if branch_level_mode:
+                # Branch-level mode: use branch scope for dynamic requirements too
+                reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
+                if len(requirements) == 1:
+                    print(f"✅ Satisfied '{req_name}' at branch level for {branch}")
+                    print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+            else:
+                # Dynamic requirement - use approval workflow with TTL
+                ttl = config.get_attribute(req_name, 'approval_ttl', 300)
 
-            # Add metadata about method
-            req_metadata = metadata.copy() if metadata else {}
-            req_metadata['method'] = 'cli'
+                # Add metadata about method
+                req_metadata = metadata.copy() if metadata else {}
+                req_metadata['method'] = 'cli'
 
-            reqs.approve_for_session(req_name, ttl, metadata=req_metadata)
+                reqs.approve_for_session(req_name, ttl, metadata=req_metadata)
 
-            mins = ttl // 60
-            secs = ttl % 60
-            if len(requirements) == 1:
-                print(f"✅ Approved '{req_name}' for {branch}")
-                print(f"   Duration: {mins}m {secs}s (session scope)")
-                print(f"   Session: {session_id}")
+                mins = ttl // 60
+                secs = ttl % 60
+                if len(requirements) == 1:
+                    print(f"✅ Approved '{req_name}' for {branch}")
+                    print(f"   Duration: {mins}m {secs}s (session scope)")
+                    print(f"   Session: {session_id}")
         else:
             # Blocking requirement - standard satisfaction
-            scope = config.get_scope(req_name)
-            reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
-            if len(requirements) == 1:
-                print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
+            if branch_level_mode:
+                # Force branch scope when --branch is explicit
+                reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
+                if len(requirements) == 1:
+                    print(f"✅ Satisfied '{req_name}' at branch level for {branch}")
+                    print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+            else:
+                # Use config's scope (existing behavior)
+                scope = config.get_scope(req_name)
+                reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
+                if len(requirements) == 1:
+                    print(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)")
 
         satisfied_count += 1
 
     # Summary for multiple requirements
     if len(requirements) > 1:
-        print(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}")
+        if branch_level_mode:
+            print(f"✅ Satisfied {satisfied_count} requirement(s) at branch level")
+            print(f"   Branch: {branch}")
+            print(f"   ℹ️  All current and future sessions on this branch are now satisfied")
+        else:
+            print(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}")
         for req_name in requirements:
-            scope = config.get_scope(req_name)
+            scope = 'branch' if branch_level_mode else config.get_scope(req_name)
             print(f"   - {req_name} ({scope} scope)")
 
     return 0

@@ -237,20 +237,26 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Check dynamic requirement with automatic calculation.
 
         Flow:
-        1. Check if approved (TTL-based) → allow
-        2. Get cached or calculate fresh result
-        3. Evaluate thresholds (warn vs block)
-        4. Return appropriate response
+        1. Check if satisfied at branch level (via --branch flag) → allow
+        2. Check if approved (TTL-based) → allow
+        3. Get cached or calculate fresh result
+        4. Evaluate thresholds (warn vs block)
+        5. Return appropriate response
 
         Returns:
             None if passes or approved
             Dict with denial if blocked
         """
-        # 1. Check if approved (short-circuit)
+        # 1. Check if satisfied at branch level (via `req satisfy --branch`)
+        # This uses is_satisfied with session scope, which now checks branch-level overrides first
+        if reqs.is_satisfied(req_name, scope='session'):
+            return None  # Satisfied at branch level, allow
+
+        # 2. Check if approved (TTL-based short-circuit)
         if reqs.is_approved(req_name):
             return None  # Approved, allow
 
-        # 2. Get or calculate result
+        # 3. Get or calculate result
         result = self._get_result(req_name, config, context)
         if result is None:
             return None  # Skip check (e.g., main branch, error)

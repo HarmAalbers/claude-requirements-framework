@@ -10,9 +10,63 @@ Implements cascading configuration:
 Config files can be YAML (if PyYAML available) or JSON (fallback).
 """
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+
+
+def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
+    """
+    Check if a tool invocation matches any configured trigger.
+
+    Supports two trigger formats:
+    1. Simple string: 'Edit' - matches tool name exactly
+    2. Complex object: {tool: 'Bash', command_pattern: 'git\\s+commit'} - matches tool + command regex
+
+    Args:
+        tool_name: Name of the tool being invoked (e.g., 'Edit', 'Bash')
+        tool_input: Tool input parameters (for Bash, includes 'command')
+        triggers: List of triggers from config (strings or dicts)
+
+    Returns:
+        True if tool matches any trigger, False otherwise
+
+    Examples:
+        # Simple trigger
+        matches_trigger('Edit', {}, ['Edit', 'Write'])  # True
+
+        # Complex trigger with command pattern
+        matches_trigger('Bash', {'command': 'git commit -m "test"'},
+                        [{'tool': 'Bash', 'command_pattern': 'git\\s+commit'}])  # True
+    """
+    for trigger in triggers:
+        if isinstance(trigger, str):
+            # Simple tool name match (backwards compatible)
+            if tool_name == trigger:
+                return True
+        elif isinstance(trigger, dict):
+            # Complex match with optional command pattern
+            trigger_tool = trigger.get('tool', '')
+            if trigger_tool != tool_name:
+                continue
+
+            # Check command pattern for Bash tool
+            if 'command_pattern' in trigger and tool_name == 'Bash':
+                command = tool_input.get('command', '')
+                pattern = trigger['command_pattern']
+                try:
+                    if re.search(pattern, command, re.IGNORECASE):
+                        return True
+                except re.error:
+                    # Invalid regex - log and skip
+                    print(f"⚠️ Invalid regex pattern: {pattern}", file=sys.stderr)
+                    continue
+            elif 'command_pattern' not in trigger:
+                # Tool matches, no command pattern required
+                return True
+
+    return False
 
 
 def load_yaml_or_json(path: Path) -> dict:
@@ -159,8 +213,8 @@ class RequirementsConfig:
 
     REQUIREMENT_SCHEMA = {
         'enabled': {'type': bool},
-        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent'}},
-        'trigger_tools': {'type': list, 'element_type': str},
+        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent', 'single_use'}},
+        'trigger_tools': {'type': list},  # Can be strings OR dicts (validated separately)
         'checklist': {'type': list, 'element_type': str},
         'message': {'type': str},
         'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
@@ -246,16 +300,20 @@ class RequirementsConfig:
             if expected_type is list:
                 if not isinstance(value, list):
                     raise ValueError(
-                        f"Requirement '{req_name}' field '{field}' must be a list of strings"
+                        f"Requirement '{req_name}' field '{field}' must be a list"
                     )
 
-                element_type = rules.get('element_type')
-                if element_type:
-                    invalid_items = [item for item in value if not isinstance(item, element_type)]
-                    if invalid_items:
-                        raise ValueError(
-                            f"Requirement '{req_name}' field '{field}' must contain only strings"
-                        )
+                # Special handling for trigger_tools - can be strings OR dicts
+                if field == 'trigger_tools':
+                    self._validate_trigger_tools(req_name, value)
+                else:
+                    element_type = rules.get('element_type')
+                    if element_type:
+                        invalid_items = [item for item in value if not isinstance(item, element_type)]
+                        if invalid_items:
+                            raise ValueError(
+                                f"Requirement '{req_name}' field '{field}' must contain only strings"
+                            )
             else:
                 if not isinstance(value, expected_type):
                     raise ValueError(
@@ -266,6 +324,58 @@ class RequirementsConfig:
                 allowed_values = ', '.join(sorted(rules['allowed']))
                 raise ValueError(
                     f"Requirement '{req_name}' field '{field}' must be one of: {allowed_values}"
+                )
+
+    def _validate_trigger_tools(self, req_name: str, triggers: list) -> None:
+        """
+        Validate trigger_tools configuration.
+
+        Allows two formats:
+        1. Simple string: 'Edit' - tool name
+        2. Complex object: {tool: 'Bash', command_pattern: 'regex'}
+
+        Args:
+            req_name: Requirement name (for error messages)
+            triggers: List of triggers to validate
+
+        Raises:
+            ValueError: If any trigger is invalid
+        """
+        for i, trigger in enumerate(triggers):
+            if isinstance(trigger, str):
+                # Simple tool name - valid
+                continue
+            elif isinstance(trigger, dict):
+                # Complex trigger - validate structure
+                if 'tool' not in trigger:
+                    raise ValueError(
+                        f"Requirement '{req_name}' trigger_tools[{i}]: "
+                        f"dict trigger must have 'tool' field"
+                    )
+                if not isinstance(trigger['tool'], str):
+                    raise ValueError(
+                        f"Requirement '{req_name}' trigger_tools[{i}]: "
+                        f"'tool' must be a string"
+                    )
+                # Validate command_pattern is valid regex if present
+                if 'command_pattern' in trigger:
+                    pattern = trigger['command_pattern']
+                    if not isinstance(pattern, str):
+                        raise ValueError(
+                            f"Requirement '{req_name}' trigger_tools[{i}]: "
+                            f"'command_pattern' must be a string"
+                        )
+                    try:
+                        re.compile(pattern)
+                    except re.error as e:
+                        raise ValueError(
+                            f"Requirement '{req_name}' trigger_tools[{i}]: "
+                            f"invalid regex pattern '{pattern}': {e}"
+                        )
+            else:
+                raise ValueError(
+                    f"Requirement '{req_name}' trigger_tools[{i}]: "
+                    f"must be string or dict, got {type(trigger).__name__}"
                 )
 
     def _validate_requirement_config(self, req_name: str, req_config: dict) -> None:
@@ -485,11 +595,45 @@ class RequirementsConfig:
         """
         Get tools that trigger this requirement check.
 
+        DEPRECATED: Use get_triggers() for full trigger matching support.
+
         Args:
             name: Requirement name
 
         Returns:
             List of tool names (default: Edit, Write, MultiEdit)
+        """
+        req = self.get_requirement(name)
+        if req:
+            triggers = req.get('trigger_tools', ['Edit', 'Write', 'MultiEdit'])
+            # For backwards compatibility, extract tool names from complex triggers
+            result = []
+            for t in triggers:
+                if isinstance(t, str):
+                    result.append(t)
+                elif isinstance(t, dict):
+                    result.append(t.get('tool', ''))
+            return result
+        return ['Edit', 'Write', 'MultiEdit']
+
+    def get_triggers(self, name: str) -> list:
+        """
+        Get full trigger configuration for a requirement.
+
+        Returns raw trigger_tools config that may include:
+        - Simple strings: ['Edit', 'Write']
+        - Complex objects: [{'tool': 'Bash', 'command_pattern': 'git\\s+commit'}]
+
+        Use with matches_trigger() for proper matching:
+            triggers = config.get_triggers('pre_commit_review')
+            if matches_trigger(tool_name, tool_input, triggers):
+                # Requirement applies
+
+        Args:
+            name: Requirement name
+
+        Returns:
+            List of triggers (strings or dicts). Default: ['Edit', 'Write', 'MultiEdit']
         """
         req = self.get_requirement(name)
         if req:

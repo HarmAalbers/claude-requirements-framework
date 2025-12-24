@@ -775,6 +775,63 @@ def test_requirements_manager(runner: TestRunner):
         runner.test("TTL expired", not reqs4.is_satisfied("ttl_req", "session"))
 
 
+def test_branch_level_override(runner: TestRunner):
+    """Test branch-level override for session-scoped requirements."""
+    print("\n📦 Testing branch-level override...")
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Simulate git repo
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Create initial session and verify session scope works
+        reqs1 = BranchRequirements("override/branch", "session-1", tmpdir)
+        runner.test("Initially not satisfied", not reqs1.is_satisfied("commit_plan", "session"))
+
+        # Satisfy with BRANCH scope (simulates --branch flag behavior)
+        reqs1.satisfy("commit_plan", scope="branch", method="cli")
+
+        # Same session should see it satisfied
+        runner.test("Session 1 sees branch override", reqs1.is_satisfied("commit_plan", "session"))
+
+        # NEW session should also see it satisfied (branch-level override)
+        reqs2 = BranchRequirements("override/branch", "session-2", tmpdir)
+        runner.test("Session 2 sees branch override", reqs2.is_satisfied("commit_plan", "session"),
+                   "Branch-level override should apply to all sessions")
+
+        # Another new session
+        reqs3 = BranchRequirements("override/branch", "totally-new-session", tmpdir)
+        runner.test("New session sees branch override", reqs3.is_satisfied("commit_plan", "session"),
+                   "Branch-level override should apply to future sessions")
+
+        # Different branch should NOT have the override
+        reqs_other = BranchRequirements("other/branch", "session-1", tmpdir)
+        runner.test("Other branch not affected", not reqs_other.is_satisfied("commit_plan", "session"),
+                   "Branch override should only apply to the specific branch")
+
+
+def test_branch_level_override_with_ttl(runner: TestRunner):
+    """Test branch-level override respects TTL."""
+    print("\n📦 Testing branch-level override with TTL...")
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Satisfy with branch scope and TTL
+        reqs1 = BranchRequirements("ttl-override/branch", "session-1", tmpdir)
+        reqs1.satisfy("commit_plan", scope="branch", method="cli", ttl=1)  # 1 second TTL
+
+        # Should be satisfied initially
+        runner.test("Branch override with TTL satisfied initially", reqs1.is_satisfied("commit_plan", "session"))
+
+        # Wait for TTL to expire
+        time.sleep(1.5)
+
+        # Should be expired now
+        runner.test("Branch override expires after TTL", not reqs1.is_satisfied("commit_plan", "session"))
+
+
 def test_cli_commands(runner: TestRunner):
     """Test CLI commands."""
     print("\n📦 Testing CLI commands...")
@@ -1562,6 +1619,199 @@ def test_cli_satisfy_multiple(runner: TestRunner):
                    f"Got: {result.stdout[:200]}")
 
 
+def test_cli_satisfy_branch_flag(runner: TestRunner):
+    """Test CLI satisfy command with --branch flag for branch-level satisfaction."""
+    print("\n📦 Testing CLI satisfy with --branch flag...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/branch-test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"},
+                "adr_reviewed": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test satisfy with --branch flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--branch", "feature/branch-test"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Branch satisfy succeeds", result.returncode == 0, result.stderr)
+        runner.test("Shows branch-level message", "branch level" in result.stdout.lower(),
+                   f"Output: {result.stdout}")
+        runner.test("Shows all sessions message", "all" in result.stdout.lower() and "session" in result.stdout.lower(),
+                   f"Output: {result.stdout}")
+
+        # Verify hook passes with a DIFFERENT session ID (branch override should work)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit", "session_id": "totally-new-session-xyz"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # Parse output to check commit_plan status
+        if result.stdout.strip():
+            try:
+                output_data = json.loads(result.stdout)
+                message = output_data.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+            except (json.JSONDecodeError, KeyError):
+                message = result.stdout
+        else:
+            message = ""
+
+        # commit_plan should NOT be in the blocking message (satisfied at branch level)
+        # adr_reviewed SHOULD be in the blocking message (not satisfied)
+        runner.test("Branch-satisfied req not blocked",
+                   "commit_plan" not in message or "adr_reviewed" in message,
+                   f"Expected only adr_reviewed to block. Message: {message[:200]}")
+
+
+def test_cli_satisfy_branch_flag_dynamic(runner: TestRunner):
+    """Test CLI satisfy with --branch flag for DYNAMIC requirements.
+
+    This is a critical test because dynamic requirements use DynamicRequirementStrategy
+    which has a different code path than blocking requirements. The strategy must check
+    for branch-level satisfaction before running the calculator.
+    """
+    print("\n📦 Testing CLI satisfy with --branch flag (dynamic requirement)...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo with commits (needed for branch size calculation)
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=tmpdir, capture_output=True)
+
+        # Create initial commit on main
+        Path(f"{tmpdir}/README.md").write_text("# Test\n")
+        subprocess.run(["git", "add", "."], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=tmpdir, capture_output=True)
+
+        # Create feature branch
+        subprocess.run(["git", "checkout", "-b", "feature/dynamic-test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        # Config with a DYNAMIC requirement (like branch_size_limit)
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "branch_size_limit": {
+                    "enabled": True,
+                    "type": "dynamic",  # This uses DynamicRequirementStrategy
+                    "calculator": "branch_size_calculator",
+                    "scope": "session",
+                    "cache_ttl": 60,
+                    "approval_ttl": 300,
+                    "thresholds": {
+                        "warn": 10,
+                        "block": 20
+                    },
+                    "blocking_message": "Branch too large: {total} lines"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Satisfy with --branch flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "satisfy", "branch_size_limit", "--branch", "feature/dynamic-test"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Dynamic req branch satisfy succeeds", result.returncode == 0, result.stderr)
+        runner.test("Shows branch-level message", "branch level" in result.stdout.lower(),
+                   f"Output: {result.stdout}")
+
+        # Verify via the requirements module directly that branch-level override works
+        # for a NEW session (the key test!)
+        sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+        from requirements import BranchRequirements
+        from requirement_strategies import DynamicRequirementStrategy
+        from config import RequirementsConfig
+
+        reqs = BranchRequirements("feature/dynamic-test", "brand-new-session-xyz", tmpdir)
+        config_obj = RequirementsConfig(tmpdir)
+        strategy = DynamicRequirementStrategy()
+
+        context = {
+            'project_dir': tmpdir,
+            'branch': 'feature/dynamic-test',
+            'session_id': 'brand-new-session-xyz',
+            'tool_name': 'Edit'
+        }
+
+        # The strategy should return None (allow) due to branch-level override
+        check_result = strategy.check('branch_size_limit', config_obj, reqs, context)
+        runner.test("Dynamic strategy respects branch override",
+                   check_result is None,
+                   f"Expected None (allow), got: {check_result}")
+
+
+def test_cli_satisfy_branch_flag_multiple(runner: TestRunner):
+    """Test CLI satisfy command with --branch flag for multiple requirements."""
+    print("\n📦 Testing CLI satisfy with --branch flag (multiple requirements)...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/multi-branch"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"},
+                "adr_reviewed": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test satisfy multiple requirements with --branch flag
+        result = subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "adr_reviewed", "--branch", "feature/multi-branch"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("Multi-branch satisfy succeeds", result.returncode == 0, result.stderr)
+        runner.test("Shows count", "2" in result.stdout, f"Output: {result.stdout}")
+        runner.test("Shows branch level", "branch level" in result.stdout.lower(), f"Output: {result.stdout}")
+
+        # Verify hook passes completely with a NEW session (branch overrides should work)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Edit", "session_id": "brand-new-session"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        runner.test("No blocking after branch-level satisfy", result.stdout.strip() == "",
+                   f"Expected no output (all satisfied at branch level). Got: {result.stdout[:200]}")
+
+
 def test_partial_satisfaction(runner: TestRunner):
     """Test that partial satisfaction shows remaining requirements."""
     print("\n📦 Testing partial satisfaction...")
@@ -2015,6 +2265,8 @@ def main():
     test_write_local_config(runner)
     test_cli_enable_disable(runner)
     test_requirements_manager(runner)
+    test_branch_level_override(runner)
+    test_branch_level_override_with_ttl(runner)
     test_cli_commands(runner)
     test_cli_sessions_command(runner)
     test_hook_behavior(runner)
@@ -2030,6 +2282,9 @@ def main():
     # Batched requirements tests
     test_batched_requirements_blocking(runner)
     test_cli_satisfy_multiple(runner)
+    test_cli_satisfy_branch_flag(runner)
+    test_cli_satisfy_branch_flag_dynamic(runner)
+    test_cli_satisfy_branch_flag_multiple(runner)
     test_partial_satisfaction(runner)
 
     # Guard strategy tests

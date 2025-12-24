@@ -8,6 +8,8 @@ and satisfying requirements. It handles different scopes:
 - session: Requirement resets each Claude session (forces daily planning)
 - branch: Requirement persists for the branch (one-time per branch)
 - permanent: Never resets (rare, use for things like "reviewed security")
+- single_use: Like session, but auto-clears after the triggering action completes
+              (e.g., must review before EACH commit, not just once per session)
 
 Usage:
     reqs = BranchRequirements('feature/auth', 'session-123', '/path/to/project')
@@ -83,11 +85,12 @@ class BranchRequirements:
         """
         Check if requirement is satisfied.
 
-        Handles different scopes and TTL expiration.
+        Handles different scopes and TTL expiration. Also checks for branch-level
+        overrides that apply to all sessions (set via `req satisfy --branch`).
 
         Args:
             req_name: Requirement name
-            scope: One of 'session', 'branch', 'permanent'
+            scope: One of 'session', 'branch', 'permanent', 'single_use'
 
         Returns:
             True if requirement is currently satisfied
@@ -95,8 +98,18 @@ class BranchRequirements:
         req_state = self._get_req_state(req_name)
         now = time.time()
 
-        if scope == 'session':
-            # Session scope: check current session only
+        # Check for branch-level override first (even for session-scoped requirements)
+        # This allows `req satisfy --branch` to satisfy for all sessions
+        if scope in ('session', 'single_use') and req_state.get('satisfied', False):
+            # Branch-level satisfaction exists - check TTL if present
+            expires_at = req_state.get('expires_at')
+            if expires_at is None or now <= expires_at:
+                return True  # Branch-level override is active
+
+        if scope in ('session', 'single_use'):
+            # Session/single_use scope: check current session only
+            # (single_use behaves like session for satisfaction check;
+            #  the difference is that it auto-clears after the action completes)
             sessions = req_state.get('sessions', {})
             if self.session_id not in sessions:
                 return False
@@ -144,8 +157,8 @@ class BranchRequirements:
 
         Args:
             req_name: Requirement name
-            scope: One of 'session', 'branch', 'permanent'
-            method: How it was satisfied ('cli', 'auto', 'api', etc.)
+            scope: One of 'session', 'branch', 'permanent', 'single_use'
+            method: How it was satisfied ('cli', 'auto', 'skill', etc.)
             metadata: Optional extra data (e.g., {"ticket": "#1234"})
             ttl: Optional time-to-live in seconds
         """
@@ -153,8 +166,9 @@ class BranchRequirements:
         req_state['scope'] = scope
         now = int(time.time())
 
-        if scope == 'session':
-            # Session-scoped: store under current session ID
+        if scope in ('session', 'single_use'):
+            # Session/single_use: store under current session ID
+            # (single_use is stored the same way; it's cleared via clear_single_use())
             if 'sessions' not in req_state:
                 req_state['sessions'] = {}
 
@@ -201,6 +215,38 @@ class BranchRequirements:
         if req_name in self._state['requirements']:
             del self._state['requirements'][req_name]
             self._save()
+
+    def clear_single_use(self, req_name: str) -> bool:
+        """
+        Clear a single_use requirement for the current session only.
+
+        This is called after a triggering action (like git commit) completes
+        successfully, to ensure the requirement must be satisfied again
+        before the next action.
+
+        Only clears if the requirement's scope is 'single_use'. This ensures
+        session-scoped requirements aren't accidentally cleared.
+
+        Args:
+            req_name: Requirement name to clear
+
+        Returns:
+            True if the requirement was cleared, False otherwise
+        """
+        req_state = self._state['requirements'].get(req_name, {})
+
+        # Only clear if scope is single_use
+        if req_state.get('scope') != 'single_use':
+            return False
+
+        # Clear only the current session's satisfaction
+        sessions = req_state.get('sessions', {})
+        if self.session_id in sessions:
+            del sessions[self.session_id]
+            self._save()
+            return True
+
+        return False
 
     def clear_all(self) -> None:
         """Clear all requirements for this branch."""

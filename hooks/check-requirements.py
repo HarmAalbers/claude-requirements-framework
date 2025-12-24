@@ -43,7 +43,7 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from config import RequirementsConfig
+from config import RequirementsConfig, matches_trigger
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, update_registry, get_active_sessions
 from requirement_strategies import STRATEGIES
@@ -209,20 +209,21 @@ def main() -> int:
             return 0
 
         tool_name = input_data.get('tool_name', '')
+        tool_input = input_data.get('tool_input', {})
 
         logger = logger.bind(tool=tool_name)
 
-        # Only check on write operations
-        if tool_name not in ['Edit', 'Write', 'MultiEdit']:
+        # Quick skip for tools that never trigger requirements
+        # (Read, Glob, Grep, etc. - read-only tools)
+        POTENTIALLY_TRIGGERING_TOOLS = {'Edit', 'Write', 'MultiEdit', 'Bash'}
+        if tool_name not in POTENTIALLY_TRIGGERING_TOOLS:
             return 0
 
         # Skip plan files - plan mode needs to write plans before requirements can be satisfied
-        tool_input = input_data.get('tool_input', {})
-        if tool_input:
-            file_path = tool_input.get('file_path', '')
-            if file_path and should_skip_plan_file(file_path):
-                logger.info("Skipping plan file", file_path=file_path)
-                return 0
+        file_path = tool_input.get('file_path', '')
+        if file_path and should_skip_plan_file(file_path):
+            logger.info("Skipping plan file", file_path=file_path)
+            return 0
 
         # Get project directory (resolves to git root from subdirectories)
         project_dir = resolve_project_root(verbose=False)
@@ -287,9 +288,9 @@ def main() -> int:
             if not config.is_requirement_enabled(req_name):
                 continue
 
-            # Check if this tool triggers this requirement
-            trigger_tools = config.get_trigger_tools(req_name)
-            if tool_name not in trigger_tools:
+            # Check if this tool triggers this requirement using full pattern matching
+            triggers = config.get_triggers(req_name)
+            if not matches_trigger(tool_name, tool_input, triggers):
                 continue
 
             # Get strategy for requirement type (blocking, dynamic, etc.)
