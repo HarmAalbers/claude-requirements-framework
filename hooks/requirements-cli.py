@@ -15,6 +15,7 @@ Shell Alias (add to ~/.zshrc or ~/.bashrc):
     alias req='python3 ~/.claude/hooks/requirements-cli.py'
 """
 import argparse
+import filecmp
 import json
 import os
 import sys
@@ -31,6 +32,18 @@ from session import get_session_id, get_active_sessions, cleanup_stale_sessions
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
 import time
+
+
+SYNC_FILES = [
+    "check-requirements.py",
+    "requirements-cli.py",
+    "test_requirements.py",
+    "lib/config.py",
+    "lib/git_utils.py",
+    "lib/requirements.py",
+    "lib/session.py",
+    "lib/state_storage.py",
+]
 
 
 def get_project_dir() -> str:
@@ -452,6 +465,284 @@ def cmd_prune(args) -> int:
     print(success(f"✅ Removed {count} state file(s) for deleted branches"))
 
     return 0
+
+
+def _load_settings_file(claude_dir: Path) -> tuple[Path | None, dict]:
+    """Load the first available settings file."""
+
+    for filename in ["settings.json", "settings.local.json"]:
+        path = claude_dir / filename
+        if path.exists():
+            try:
+                content = path.read_text()
+                return path, json.loads(content)
+            except PermissionError:
+                print(f"❌ Cannot read {path}: Permission denied", file=sys.stderr)
+                return path, {}
+            except UnicodeDecodeError as e:
+                print(f"❌ {path} contains invalid UTF-8: {e}", file=sys.stderr)
+                return path, {}
+            except json.JSONDecodeError:
+                print(f"❌ {path} is not valid JSON", file=sys.stderr)
+                return path, {}
+            except (OSError, IOError) as e:
+                print(f"❌ Error reading {path}: {e}", file=sys.stderr)
+                return path, {}
+    return None, {}
+
+
+def _extract_path_from_command(command: str, expected_script: str) -> str | None:
+    """
+    Extract file path from a command string.
+
+    Looks for the expected script name in the command tokens and returns
+    the path containing it. Handles various command formats like:
+    - "python3 ~/.claude/hooks/check-requirements.py"
+    - "~/.claude/hooks/check-requirements.py"
+    - "/usr/bin/python3 /home/user/.claude/hooks/check-requirements.py --flag"
+
+    Args:
+        command: Command string from hook configuration
+        expected_script: Script name to look for (e.g., "check-requirements.py")
+
+    Returns:
+        Extracted path if found, None otherwise
+    """
+    if not isinstance(command, str):
+        return None
+
+    # Split command into tokens
+    tokens = command.split()
+
+    # Find the token containing the expected script
+    for token in tokens:
+        if expected_script in token:
+            # Strip common surrounding characters
+            cleaned = token.strip('";,\'')
+
+            # Verify the cleaned token still contains the script name
+            if expected_script in cleaned:
+                return cleaned
+
+    return None
+
+
+def _check_hook_registration(claude_dir: Path) -> tuple[bool, str]:
+    """Verify PreToolUse hook is registered (new format only)."""
+
+    settings_path, settings = _load_settings_file(claude_dir)
+    expected_script = "check-requirements.py"
+
+    # Safely expand path
+    try:
+        expected_path = str((claude_dir / "hooks" / expected_script).expanduser())
+    except (RuntimeError, OSError) as e:
+        return False, f"Failed to expand path for {expected_script}: {e}"
+
+    if not settings_path:
+        return False, "Missing ~/.claude/settings.json"
+
+    hooks = settings.get("hooks", {})
+    hook_value = hooks.get("PreToolUse")
+
+    if not hook_value:
+        return False, f"PreToolUse hook not registered in {settings_path}"
+
+    # Detect old format (string) and show migration message
+    if isinstance(hook_value, str):
+        return False, (
+            f"PreToolUse hook uses old format (string path).\n"
+            f"Please upgrade to new format in {settings_path}.\n"
+            f"See: https://github.com/anthropics/claude-code/releases"
+        )
+
+    # Check if new format (list)
+    if not isinstance(hook_value, list):
+        actual_type = type(hook_value).__name__
+        return False, (
+            f"PreToolUse hook has unexpected format in {settings_path}\n"
+            f"Expected: list of matchers, Found: {actual_type}"
+        )
+
+    # Track validation issues for better diagnostics
+    malformed_matchers = 0
+    malformed_hooks = 0
+
+    # Iterate through matchers to find our hook
+    for matcher_obj in hook_value:
+        if not isinstance(matcher_obj, dict):
+            malformed_matchers += 1
+            continue
+
+        hooks_list = matcher_obj.get("hooks", [])
+
+        # Validate hooks is a list
+        if not isinstance(hooks_list, list):
+            malformed_hooks += 1
+            continue
+
+        for hook_obj in hooks_list:
+            if not isinstance(hook_obj, dict):
+                malformed_hooks += 1
+                continue
+
+            command = hook_obj.get("command", "")
+            found_path = _extract_path_from_command(command, expected_script)
+
+            if found_path:
+                # Normalize and compare - safely handle path expansion
+                try:
+                    normalized = str(Path(found_path).expanduser())
+                except (RuntimeError, OSError) as e:
+                    return False, f"Invalid path in hook configuration '{found_path}': {e}"
+
+                if normalized != expected_path:
+                    return False, f"PreToolUse hook points to {found_path} (expected {expected_path})"
+
+                return True, f"PreToolUse hook registered in {settings_path}"
+
+    # Hook not found - provide diagnostic info
+    diagnostic_msg = f"PreToolUse hook does not reference {expected_script}"
+    if malformed_matchers > 0 or malformed_hooks > 0:
+        diagnostic_msg += f"\nWarning: Found {malformed_matchers} malformed matcher(s) and {malformed_hooks} malformed hook(s) in {settings_path}"
+        diagnostic_msg += f"\nExpected format: [{{'matcher': '...', 'hooks': [{{'type': 'command', 'command': '...'}}]}}]"
+
+    return False, diagnostic_msg
+
+
+def _check_executable(path: Path) -> tuple[bool, str]:
+    """Check that a script exists and is executable."""
+
+    if not path.exists():
+        return False, f"Missing {path}"
+    if not os.access(path, os.X_OK):
+        return False, f"{path} is not executable"
+    return True, f"{path} is executable"
+
+
+def _check_project_config(project_dir: str) -> tuple[bool, str]:
+    """Ensure project has a requirements config file."""
+
+    config_path = Path(project_dir) / ".claude" / "requirements.yaml"
+    if config_path.exists():
+        return True, f"Found project config at {config_path}"
+
+    legacy_path = Path(project_dir) / ".claude" / "requirements.json"
+    if legacy_path.exists():
+        return False, "Found requirements.json; migrate to requirements.yaml"
+
+    return False, "Missing .claude/requirements.yaml in project"
+
+
+def _find_repo_dir(explicit: str | None = None) -> Path | None:
+    """Locate the hooks repository directory containing sync.sh."""
+
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+
+    script_repo = Path(__file__).resolve().parent.parent
+    candidates.append(script_repo)
+
+    default_repo = Path.home() / "Tools" / "claude-requirements-framework"
+    candidates.append(default_repo)
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if (candidate / "sync.sh").exists():
+            return candidate
+    return None
+
+
+def _compare_repo_and_deployed(repo_dir: Path, deployed_dir: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """Compare repository files to deployed files and suggest actions."""
+
+    results: list[tuple[str, str]] = []
+    actions: set[str] = set()
+
+    for relative in SYNC_FILES:
+        repo_file = repo_dir / "hooks" / relative
+        deployed_file = deployed_dir / relative
+
+        if repo_file.exists() and deployed_file.exists():
+            if filecmp.cmp(repo_file, deployed_file, shallow=False):
+                results.append((relative, "✓ In sync"))
+            else:
+                repo_newer = repo_file.stat().st_mtime > deployed_file.stat().st_mtime
+                if repo_newer:
+                    results.append((relative, "↑ Repository is newer"))
+                    actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
+                else:
+                    results.append((relative, "↓ Deployed is newer"))
+                    actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+        elif repo_file.exists():
+            results.append((relative, "⚠ Not deployed"))
+            actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
+        elif deployed_file.exists():
+            results.append((relative, "✗ Missing in repository"))
+            actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+        else:
+            results.append((relative, "✗ Missing in both locations"))
+
+    return results, sorted(actions)
+
+
+def cmd_doctor(args) -> int:
+    """Run environment diagnostics for the requirements framework."""
+
+    project_dir = get_project_dir()
+    claude_dir = Path.home() / ".claude"
+    hooks_dir = claude_dir / "hooks"
+
+    print("🩺 Running requirements doctor\n")
+
+    status_ok = True
+
+    # Hook registration check
+    hook_ok, hook_msg = _check_hook_registration(claude_dir)
+    status_ok &= hook_ok
+    icon = "✅" if hook_ok else "❌"
+    print(f"{icon} {hook_msg}")
+
+    # Executable bits
+    for script_name in ["check-requirements.py", "requirements-cli.py"]:
+        ok, msg = _check_executable(hooks_dir / script_name)
+        status_ok &= ok
+        icon = "✅" if ok else "❌"
+        print(f"{icon} {msg}")
+
+    # Project config (informational only - not fatal)
+    config_ok, config_msg = _check_project_config(project_dir)
+    # Don't fail doctor if project config is missing - it's optional
+    icon = "✅" if config_ok else "⚠️"
+    print(f"{icon} {config_msg}")
+
+    # Sync status
+    repo_dir = _find_repo_dir(args.repo)
+    if repo_dir:
+        print("\n📊 Repo vs Deployed")
+        results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
+        for relative, message in results:
+            if message.startswith("✓"):
+                prefix = "✅"
+            elif message.startswith(("↑", "↓", "⚠", "✗")):
+                prefix = "⚠️"
+            else:
+                prefix = "ℹ️"
+            print(f"  {prefix} {relative}: {message}")
+
+        if actions:
+            status_ok = False
+            print("\nRecommended actions:")
+            for action in actions:
+                print(f"  - {action}")
+    else:
+        print("\n⚠️ Could not locate repository copy (set --repo to specify path)")
+
+    return 0 if status_ok else 1
 
 
 def cmd_sessions(args) -> int:
@@ -1028,6 +1319,10 @@ Environment Variables:
     config_parser.add_argument('--local', action='store_true', help='Modify local config')
     config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
 
+    # doctor
+    doctor_parser = subparsers.add_parser('doctor', help='Verify hook installation and sync status')
+    doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1046,6 +1341,7 @@ Environment Variables:
         'disable': cmd_disable,
         'init': cmd_init,
         'config': cmd_config,
+        'doctor': cmd_doctor,
     }
 
     return commands[args.command](args)

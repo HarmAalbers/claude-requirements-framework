@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Prepare Claude home
+        run: |
+          mkdir -p ~/.claude/hooks/lib ~/.local/bin
+          cp hooks/*.py ~/.claude/hooks/
+          cp hooks/lib/*.py ~/.claude/hooks/lib/
+          chmod +x ~/.claude/hooks/check-requirements.py ~/.claude/hooks/requirements-cli.py
+          cat > ~/.claude/settings.json <<'SETTINGS'
+          {
+            "hooks": {
+              "PreToolUse": [
+                {
+                  "matcher": "Edit|Write|MultiEdit|Bash",
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "python3 ~/.claude/hooks/check-requirements.py",
+                      "timeout": 5
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+          SETTINGS
+          cp examples/global-requirements.yaml ~/.claude/requirements.yaml
+
+      - name: Run doctor check
+        run: python hooks/requirements-cli.py doctor --repo "$(pwd)"
+
+      - name: Run test suite
+        run: python hooks/test_requirements.py

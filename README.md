@@ -78,6 +78,24 @@ req config commit_plan --enable --scope branch
 
 # Set custom fields (e.g., ADR location)
 req config adr_reviewed --set adr_path=/docs/adr
+
+# Diagnose installation and sync status
+req doctor --repo ~/Tools/claude-requirements-framework
+```
+
+### Doctor Command
+
+Use `req doctor` to verify the framework is installed and synced correctly:
+
+- Confirms the `PreToolUse` hook is registered in `~/.claude/settings.json`
+- Ensures `check-requirements.py` and `requirements-cli.py` are executable
+- Checks the current project for `.claude/requirements.yaml`
+- Compares repository files to the deployed `~/.claude/hooks` installation and recommends whether to deploy or pull changes
+
+Pass `--repo` to point at your repository copy if auto-detection fails:
+
+```bash
+req doctor --repo ~/Tools/claude-requirements-framework
 ```
 
 ### Managing Configuration
