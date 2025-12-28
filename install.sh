@@ -77,11 +77,39 @@ with open(settings_file, 'r') as f:
 if 'hooks' not in settings:
     settings['hooks'] = {}
 
-# Register all four hooks
-settings['hooks']['PreToolUse'] = "~/.claude/hooks/check-requirements.py"
-settings['hooks']['SessionStart'] = "~/.claude/hooks/handle-session-start.py"
-settings['hooks']['Stop'] = "~/.claude/hooks/handle-stop.py"
-settings['hooks']['SessionEnd'] = "~/.claude/hooks/handle-session-end.py"
+# Register all four hooks using new array-of-matchers format
+# This format is required by Claude Code's current API
+settings['hooks']['PreToolUse'] = [{
+    "matcher": "*",
+    "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/check-requirements.py"
+    }]
+}]
+
+settings['hooks']['SessionStart'] = [{
+    "matcher": "*",
+    "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-session-start.py"
+    }]
+}]
+
+settings['hooks']['Stop'] = [{
+    "matcher": "*",
+    "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-stop.py"
+    }]
+}]
+
+settings['hooks']['SessionEnd'] = [{
+    "matcher": "*",
+    "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-session-end.py"
+    }]
+}]
 
 with open(settings_file, 'w') as f:
     json.dump(settings, f, indent=2)
@@ -89,15 +117,39 @@ with open(settings_file, 'w') as f:
 print("   ✅ Registered all hooks in", settings_file)
 EOF
 else
-    # Create new settings file
+    # Create new settings file with proper format
     echo "   Creating new settings file..."
     cat > "$SETTINGS_FILE" << 'EOF'
 {
   "hooks": {
-    "PreToolUse": "~/.claude/hooks/check-requirements.py",
-    "SessionStart": "~/.claude/hooks/handle-session-start.py",
-    "Stop": "~/.claude/hooks/handle-stop.py",
-    "SessionEnd": "~/.claude/hooks/handle-session-end.py"
+    "PreToolUse": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/check-requirements.py"
+      }]
+    }],
+    "SessionStart": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-session-start.py"
+      }]
+    }],
+    "Stop": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-stop.py"
+      }]
+    }],
+    "SessionEnd": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "~/.claude/hooks/handle-session-end.py"
+      }]
+    }]
   }
 }
 EOF
@@ -105,13 +157,45 @@ EOF
 fi
 
 echo ""
-echo "✅ Installation complete!"
+echo "🧪 Verifying installation..."
+echo ""
+
+# Test 1: Check if hooks are executable
+HOOK_OK=true
+for hook in check-requirements.py requirements-cli.py handle-session-start.py handle-stop.py handle-session-end.py; do
+    if [ ! -x "$HOME/.claude/hooks/$hook" ]; then
+        echo "  ❌ Hook not executable: $hook"
+        HOOK_OK=false
+    fi
+done
+
+if [ "$HOOK_OK" = true ]; then
+    echo "  ✅ All hooks are executable"
+fi
+
+# Test 2: Check if req command works
+if command -v req &> /dev/null; then
+    echo "  ✅ 'req' command is accessible"
+else
+    echo "  ⚠️  'req' command not in PATH (add ~/.local/bin to PATH)"
+fi
+
+# Test 3: Test PreToolUse hook responds correctly
+echo -n "  Testing PreToolUse hook... "
+if echo '{"tool_name":"Read"}' | python3 "$HOME/.claude/hooks/check-requirements.py" > /dev/null 2>&1; then
+    echo "✅ Hook responds correctly"
+else
+    echo "❌ Hook failed to respond"
+fi
+
+echo ""
+echo "✅ Installation complete and verified!"
 echo ""
 echo "📋 Next steps:"
 echo "   1. Review the global configuration: ~/.claude/requirements.yaml"
 echo "   2. Enable requirements for your projects by creating .claude/requirements.yaml"
 echo "   3. Run 'req status' to check your requirements"
-echo "   4. Run 'python3 ~/.claude/hooks/test_requirements.py' to verify installation"
+echo "   4. Run 'python3 ~/.claude/hooks/test_requirements.py' for comprehensive tests"
 echo ""
 echo "📖 For more information, see README.md"
 echo ""

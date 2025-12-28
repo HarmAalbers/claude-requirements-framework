@@ -36,10 +36,18 @@ class CalculationCache:
     def __init__(self):
         """Initialize cache with user-specific temp file."""
         # User-specific temp file (prevents conflicts on shared systems)
-        # Uses UID to ensure different users get different cache files
+        # Uses UID on Unix, falls back to username on Windows
+        try:
+            # Unix systems
+            user_id = str(os.getuid())
+        except AttributeError:
+            # Windows fallback
+            import getpass
+            user_id = getpass.getuser()
+
         self.cache_file = (
             Path(tempfile.gettempdir()) /
-            f"claude-req-calc-cache-{os.getuid()}.json"
+            f"claude-req-calc-cache-{user_id}.json"
         )
 
     def get(self, cache_key: str, ttl: int) -> Optional[dict]:

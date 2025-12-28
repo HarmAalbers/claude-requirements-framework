@@ -132,8 +132,7 @@ def test_session_registry(runner: TestRunner):
             runner.test("Session has started_at", "started_at" in session_data)
             runner.test("Session has last_active", "last_active" in session_data)
 
-            # Test update_registry updates existing session
-            time.sleep(0.01)  # Ensure different timestamp
+            # Test update_registry updates existing session (no sleep needed - just update)
             update_registry("abc12345", "/test/project", "feature/new")
             with open(test_registry) as f:
                 registry = json.load(f)
@@ -768,12 +767,14 @@ def test_requirements_manager(runner: TestRunner):
         status = reqs3.get_status()
         runner.test("Clear all works", len(status["requirements"]) == 0)
 
-        # Test TTL expiration
+        # Test TTL expiration (using mock time for deterministic testing)
+        import unittest.mock as mock
         reqs4 = BranchRequirements("ttl/branch", "session-1", tmpdir)
-        reqs4.satisfy("ttl_req", "session", ttl=1)  # 1 second TTL
-        runner.test("TTL satisfied initially", reqs4.is_satisfied("ttl_req", "session"))
-        time.sleep(1.5)
-        runner.test("TTL expired", not reqs4.is_satisfied("ttl_req", "session"))
+        with mock.patch('time.time', return_value=1000.0):
+            reqs4.satisfy("ttl_req", "session", ttl=1)  # 1 second TTL
+            runner.test("TTL satisfied initially", reqs4.is_satisfied("ttl_req", "session"))
+        with mock.patch('time.time', return_value=1001.5):  # 1.5 seconds later (TTL expired)
+            runner.test("TTL expired", not reqs4.is_satisfied("ttl_req", "session"))
 
 
 def test_branch_level_override(runner: TestRunner):
@@ -819,18 +820,17 @@ def test_branch_level_override_with_ttl(runner: TestRunner):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(f"{tmpdir}/.git")
 
-        # Satisfy with branch scope and TTL
+        # Satisfy with branch scope and TTL (using mock time for deterministic testing)
+        import unittest.mock as mock
         reqs1 = BranchRequirements("ttl-override/branch", "session-1", tmpdir)
-        reqs1.satisfy("commit_plan", scope="branch", method="cli", ttl=1)  # 1 second TTL
+        with mock.patch('time.time', return_value=2000.0):
+            reqs1.satisfy("commit_plan", scope="branch", method="cli", ttl=1)  # 1 second TTL
+            # Should be satisfied initially
+            runner.test("Branch override with TTL satisfied initially", reqs1.is_satisfied("commit_plan", "session"))
 
-        # Should be satisfied initially
-        runner.test("Branch override with TTL satisfied initially", reqs1.is_satisfied("commit_plan", "session"))
-
-        # Wait for TTL to expire
-        time.sleep(1.5)
-
-        # Should be expired now
-        runner.test("Branch override expires after TTL", not reqs1.is_satisfied("commit_plan", "session"))
+        # Check after TTL expiration (1.5 seconds later)
+        with mock.patch('time.time', return_value=2001.5):
+            runner.test("Branch override expires after TTL", not reqs1.is_satisfied("commit_plan", "session"))
 
 
 def test_cli_commands(runner: TestRunner):
@@ -1442,6 +1442,7 @@ def test_checklist_rendering(runner: TestRunner):
         config_with_checklist = {
             "version": "1.0",
             "enabled": True,
+            "inherit": False,  # Isolate test from global config
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -1478,6 +1479,7 @@ def test_checklist_rendering(runner: TestRunner):
         config_empty = {
             "version": "1.0",
             "enabled": True,
+            "inherit": False,  # Don't inherit global checklist
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -3187,6 +3189,285 @@ def test_feature_selector(runner: TestRunner):
     runner.test("build_config empty has no requirements", len(config.get('requirements', {})) == 0)
 
 
+def test_message_dedup_cache(runner: TestRunner):
+    """Test MessageDedupCache module."""
+    print("\n📦 Testing message_dedup_cache module...")
+
+    from message_dedup_cache import MessageDedupCache
+    import unittest.mock as mock
+
+    # Test 1: Cache initialization
+    cache = MessageDedupCache()
+    runner.test("Cache initializes", cache is not None)
+    runner.test("Cache file path set", cache.cache_file is not None)
+
+    # Test 2: First message shown (returns True)
+    with mock.patch('time.time', return_value=1000.0):
+        result = cache.should_show_message("key1", "Test message 1", ttl=5)
+        runner.test("First message shown", result is True)
+
+    # Test 3: Duplicate message suppressed within TTL (returns False)
+    with mock.patch('time.time', return_value=1002.0):  # 2 seconds later
+        result = cache.should_show_message("key1", "Test message 1", ttl=5)
+        runner.test("Duplicate message suppressed", result is False)
+
+    # Test 4: Message shown again after TTL expires
+    with mock.patch('time.time', return_value=1006.0):  # 6 seconds later (TTL expired)
+        result = cache.should_show_message("key1", "Test message 1", ttl=5)
+        runner.test("Message shown after TTL", result is True)
+
+    # Test 5: Different messages both shown
+    with mock.patch('time.time', return_value=2000.0):
+        result1 = cache.should_show_message("key2", "Message A", ttl=5)
+        result2 = cache.should_show_message("key2", "Message B", ttl=5)
+        runner.test("Different messages shown", result1 and result2)
+
+    # Test 6: Message hash changes when content changes
+    hash1 = cache._hash_message("Message 1")
+    hash2 = cache._hash_message("Message 2")
+    runner.test("Hash changes with content", hash1 != hash2)
+    runner.test("Hash is 8 chars", len(hash1) == 8)
+
+    # Test 7: Cache survives between instances (file persistence)
+    cache1 = MessageDedupCache()
+    with mock.patch('time.time', return_value=3000.0):
+        cache1.should_show_message("persist_key", "Persist message", ttl=60)
+
+    cache2 = MessageDedupCache()
+    with mock.patch('time.time', return_value=3005.0):  # 5 seconds later, within TTL
+        result = cache2.should_show_message("persist_key", "Persist message", ttl=60)
+        runner.test("Cache persists between instances", result is False)
+
+    # Test 8: Corrupted cache file recovery (fail-open)
+    if cache.cache_file.exists():
+        with open(cache.cache_file, 'w') as f:
+            f.write("{invalid json")
+        result = cache.should_show_message("corrupt_key", "Test", ttl=5)
+        runner.test("Corrupted cache fails open", result is True)
+
+    # Test 9: clear() method works
+    # First ensure file exists
+    with mock.patch('time.time', return_value=3500.0):
+        cache.should_show_message("temp_key", "Temp message", ttl=5)
+    cache.clear()
+    runner.test("clear() removes cache file", not cache.cache_file.exists())
+
+    # Test 10: Multiple keys in same cache
+    with mock.patch('time.time', return_value=4000.0):
+        cache.should_show_message("multi_key1", "Message 1", ttl=5)
+        cache.should_show_message("multi_key2", "Message 2", ttl=5)
+
+    with mock.patch('time.time', return_value=4002.0):
+        result1 = cache.should_show_message("multi_key1", "Message 1", ttl=5)
+        result2 = cache.should_show_message("multi_key2", "Message 2", ttl=5)
+        runner.test("Multiple keys handled independently", result1 is False and result2 is False)
+
+    # Cleanup
+    cache.clear()
+
+
+def test_calculation_cache(runner: TestRunner):
+    """Test CalculationCache module."""
+    print("\n📦 Testing calculation_cache module...")
+
+    from calculation_cache import CalculationCache
+    import unittest.mock as mock
+
+    # Test 1: Cache initialization
+    cache = CalculationCache()
+    runner.test("CalculationCache initializes", cache is not None)
+    runner.test("Cache file path set", cache.cache_file is not None)
+
+    # Test 2: Cache miss returns None
+    with mock.patch('time.time', return_value=1000.0):
+        result = cache.get("missing_key", ttl=60)
+        runner.test("Cache miss returns None", result is None)
+
+    # Test 3: set() and get() round-trip
+    test_data = {"lines_added": 150, "lines_deleted": 50}
+    with mock.patch('time.time', return_value=2000.0):
+        cache.set("test_key", test_data)
+
+    with mock.patch('time.time', return_value=2010.0):  # 10 seconds later, within TTL
+        result = cache.get("test_key", ttl=60)
+        runner.test("Cache hit returns data", result == test_data, f"Expected {test_data}, got {result}")
+
+    # Test 4: Cache expiration after TTL
+    with mock.patch('time.time', return_value=2070.0):  # 70 seconds later (TTL expired)
+        result = cache.get("test_key", ttl=60)
+        runner.test("Cache expires after TTL", result is None)
+
+    # Test 5: clear(key) removes specific entry
+    with mock.patch('time.time', return_value=3000.0):
+        cache.set("clear_test1", {"value": 1})
+        cache.set("clear_test2", {"value": 2})
+
+    cache.clear("clear_test1")
+
+    with mock.patch('time.time', return_value=3010.0):
+        result1 = cache.get("clear_test1", ttl=60)
+        result2 = cache.get("clear_test2", ttl=60)
+        runner.test("clear(key) removes specific entry", result1 is None and result2 is not None)
+
+    # Test 6: clear() removes all entries
+    # First ensure file exists
+    with mock.patch('time.time', return_value=3500.0):
+        cache.set("ensure_exists", {"data": "exists"})
+    cache.clear()
+    runner.test("clear() removes cache file", not cache.cache_file.exists())
+
+    # Test 7: Multiple keys in same cache
+    with mock.patch('time.time', return_value=4000.0):
+        cache.set("key1", {"data": "value1"})
+        cache.set("key2", {"data": "value2"})
+
+    with mock.patch('time.time', return_value=4010.0):
+        result1 = cache.get("key1", ttl=60)
+        result2 = cache.get("key2", ttl=60)
+        runner.test("Multiple keys stored independently",
+                   result1 == {"data": "value1"} and result2 == {"data": "value2"})
+
+    # Test 8: JSON serialization edge cases
+    edge_case_data = {"none_value": None, "list": [1, 2, 3], "nested": {"key": "value"}}
+    with mock.patch('time.time', return_value=5000.0):
+        cache.set("edge_case", edge_case_data)
+        result = cache.get("edge_case", ttl=60)
+        runner.test("JSON serialization handles edge cases", result == edge_case_data)
+
+    # Test 9: Corrupted cache file recovery (fail-silent)
+    if cache.cache_file.exists():
+        with open(cache.cache_file, 'w') as f:
+            f.write("{invalid json")
+        result = cache.get("any_key", ttl=60)
+        runner.test("Corrupted cache returns None", result is None)
+
+    # Cleanup
+    cache.clear()
+
+
+def test_logger_module(runner: TestRunner):
+    """Test logger module."""
+    print("\n📦 Testing logger module...")
+
+    from logger import JsonLogger, StdoutHandler, FileHandler, get_logger, LEVELS
+    import io
+
+    # Test 1: LEVELS dict
+    runner.test("LEVELS has debug", "debug" in LEVELS)
+    runner.test("LEVELS has info", "info" in LEVELS)
+    runner.test("LEVELS has warning", "warning" in LEVELS)
+    runner.test("LEVELS has error", "error" in LEVELS)
+    runner.test("Level ordering correct",
+               LEVELS["debug"] < LEVELS["info"] < LEVELS["warning"] < LEVELS["error"])
+
+    # Test 2: JsonLogger initialization
+    logger = JsonLogger(level="info")
+    runner.test("JsonLogger initializes", logger is not None)
+    runner.test("Logger level set", logger.level_name == "info")
+
+    # Test 3: Log level filtering
+    output = io.StringIO()
+    handler = StdoutHandler(stream=output)
+    logger = JsonLogger(level="warning", handlers=[handler])
+
+    logger.debug("debug message")
+    logger.info("info message")
+    logger.warning("warning message")
+    logger.error("error message")
+
+    output_lines = output.getvalue().strip().split('\n')
+    output_lines = [line for line in output_lines if line]  # Filter empty lines
+    runner.test("Log level filters debug/info", len(output_lines) == 2,
+               f"Expected 2 lines (warning+error), got {len(output_lines)}")
+
+    # Test 4: Context binding preserves fields
+    logger1 = JsonLogger(level="info", context={"session": "abc123"})
+    logger2 = logger1.bind(branch="feature/test")
+
+    runner.test("bind() creates new logger", logger2 is not logger1)
+    runner.test("Original context preserved", logger1.context.get("session") == "abc123")
+    runner.test("New context has both fields",
+               logger2.context.get("session") == "abc123" and logger2.context.get("branch") == "feature/test")
+
+    # Test 5: StdoutHandler writes to stream
+    output = io.StringIO()
+    handler = StdoutHandler(stream=output)
+    logger = JsonLogger(level="info", handlers=[handler])
+    logger.info("test message", extra_field="value")
+
+    log_output = output.getvalue()
+    runner.test("StdoutHandler writes output", len(log_output) > 0)
+
+    # Parse JSON to verify structure
+    try:
+        log_record = json.loads(log_output.strip())
+        runner.test("Log output is valid JSON", True)
+        runner.test("Log has timestamp", "timestamp" in log_record)
+        runner.test("Log has level", log_record.get("level") == "info")
+        runner.test("Log has message", log_record.get("message") == "test message")
+        runner.test("Log has extra fields", log_record.get("extra_field") == "value")
+    except json.JSONDecodeError:
+        runner.test("Log output is valid JSON", False, f"Output: {log_output}")
+
+    # Test 6: FileHandler writes to file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "test.log"
+        handler = FileHandler(log_file)
+        logger = JsonLogger(level="info", handlers=[handler])
+        logger.info("file test message")
+
+        runner.test("FileHandler creates file", log_file.exists())
+        if log_file.exists():
+            content = log_file.read_text()
+            runner.test("FileHandler writes JSON", len(content) > 0 and "file test message" in content)
+
+    # Test 7: Multiple handlers work together
+    output = io.StringIO()
+    stdout_handler = StdoutHandler(stream=output)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "multi.log"
+        file_handler = FileHandler(log_file)
+        logger = JsonLogger(level="info", handlers=[stdout_handler, file_handler])
+        logger.info("multi handler test")
+
+        runner.test("Multiple handlers both write",
+                   len(output.getvalue()) > 0 and log_file.exists())
+
+    # Test 8: Handler errors don't crash (fail-open)
+    class FailingHandler:
+        def emit(self, record):
+            raise Exception("Handler failure")
+
+    logger = JsonLogger(level="info", handlers=[FailingHandler()])
+    try:
+        logger.info("test with failing handler")
+        runner.test("Failing handler doesn't crash", True)
+    except Exception:
+        runner.test("Failing handler doesn't crash", False, "Exception propagated")
+
+    # Test 9: get_logger() with config dict
+    config = {"level": "debug", "destinations": ["stdout"]}
+    logger = get_logger(config, base_context={"app": "test"})
+    runner.test("get_logger creates logger", logger is not None)
+    runner.test("get_logger sets level", logger.level_name == "debug")
+    runner.test("get_logger sets context", logger.context.get("app") == "test")
+
+    # Test 10: Timestamp format (ISO 8601)
+    output = io.StringIO()
+    handler = StdoutHandler(stream=output)
+    logger = JsonLogger(level="info", handlers=[handler])
+    logger.info("timestamp test")
+
+    log_output = output.getvalue()
+    try:
+        log_record = json.loads(log_output.strip())
+        timestamp = log_record.get("timestamp", "")
+        runner.test("Timestamp ends with Z", timestamp.endswith("Z"))
+        runner.test("Timestamp is ISO format", "T" in timestamp and "-" in timestamp)
+    except (json.JSONDecodeError, KeyError):
+        runner.test("Timestamp format check", False, "Could not parse log output")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -3254,6 +3535,11 @@ def main():
 
     # CLI config command tests
     test_cli_config_command(runner)
+
+    # NEW: Cache and logger module tests (Phase 1)
+    test_message_dedup_cache(runner)
+    test_calculation_cache(runner)
+    test_logger_module(runner)
 
     return runner.summary()
 

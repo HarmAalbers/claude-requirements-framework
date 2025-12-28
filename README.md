@@ -757,6 +757,195 @@ The framework now supports the complete Claude Code session lifecycle with four 
 
 ---
 
+## Troubleshooting
+
+### Installation Issues
+
+**Problem**: Hooks not firing after installation
+
+1. **Check hook registration format**:
+   ```bash
+   cat ~/.claude/settings.local.json
+   ```
+   Hooks should use the array-of-matchers format:
+   ```json
+   {
+     "hooks": {
+       "PreToolUse": [{
+         "matcher": "*",
+         "hooks": [{"type": "command", "command": "~/.claude/hooks/check-requirements.py"}]
+       }]
+     }
+   }
+   ```
+
+2. **Verify hooks are executable**:
+   ```bash
+   ls -l ~/.claude/hooks/*.py
+   ```
+   If not executable: `chmod +x ~/.claude/hooks/*.py`
+
+3. **Test hook manually**:
+   ```bash
+   echo '{"tool_name":"Read"}' | python3 ~/.claude/hooks/check-requirements.py
+   ```
+   Should return immediately with no errors.
+
+4. **Re-run installation**:
+   ```bash
+   cd ~/tools/claude-requirements-framework
+   ./install.sh
+   ```
+
+**Problem**: `req` command not found
+
+- Add `~/.local/bin` to your PATH:
+  ```bash
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
+  source ~/.bashrc
+  ```
+
+### Common Errors
+
+**Problem**: "Unknown requirement: xyz"
+
+**Solution**: The requirement doesn't exist in your configuration. Check:
+
+1. **Typo in requirement name?**
+   - Use `req status` to see available requirements
+   - The error message will show "Did you mean?" suggestions
+
+2. **Requirement not defined?**
+   - Add it to:
+     - Global: `~/.claude/requirements.yaml`
+     - Project: `.claude/requirements.yaml`
+     - Local: `.claude/requirements.local.yaml`
+   - Or run `req init` to set up project requirements
+
+**Problem**: "No active Claude session detected"
+
+This means `req satisfy` couldn't find your Claude Code session. Solutions:
+
+1. **Use explicit session ID** (recommended):
+   ```bash
+   req satisfy commit_plan --session abc12345
+   ```
+   Find your session ID in the blocking message or via `req sessions`.
+
+2. **Use branch-level satisfaction** (satisfies all sessions on the branch):
+   ```bash
+   req satisfy commit_plan --branch
+   ```
+
+3. **Set CLAUDE_SESSION_ID environment variable**:
+   ```bash
+   export CLAUDE_SESSION_ID=abc12345
+   req satisfy commit_plan
+   ```
+
+**Problem**: Requirements satisfied but still blocking
+
+1. **Check scope mismatch**:
+   - Requirement might be `branch` scope but you satisfied it with `session` scope
+   - Use `req status` to see the scope
+   - Satisfy with matching scope: `req satisfy <name> --branch` or `req satisfy <name> --session <id>`
+
+2. **Check session ID**:
+   - You might be satisfying a different session
+   - Use `req sessions` to list active sessions
+   - Use `req status` to see current session
+
+3. **TTL expired**:
+   - Dynamic requirements have approval TTLs (default 5 minutes)
+   - Re-satisfy the requirement: `req satisfy <name>`
+
+**Problem**: Framework blocking when it shouldn't
+
+1. **Disable temporarily**:
+   ```bash
+   export CLAUDE_SKIP_REQUIREMENTS=1
+   # Work normally
+   unset CLAUDE_SKIP_REQUIREMENTS
+   ```
+
+2. **Disable specific requirement**:
+   ```bash
+   req config <requirement_name> --disable --local --yes
+   ```
+
+3. **Check configuration**:
+   ```bash
+   req config <requirement_name>  # Show current config
+   req doctor  # Full diagnostic
+   ```
+
+### Sync Issues (Development)
+
+**Problem**: Changes not taking effect
+
+1. **Deploy changes**:
+   ```bash
+   cd ~/tools/claude-requirements-framework
+   ./sync.sh deploy
+   ```
+
+2. **Check sync status**:
+   ```bash
+   ./sync.sh status  # Shows files that differ
+   ./sync.sh diff     # Shows actual differences
+   ```
+
+3. **Verify deployment**:
+   ```bash
+   python3 ~/.claude/hooks/test_requirements.py
+   ```
+
+**Problem**: Lost work after sync
+
+- The repository is the source of truth
+- Always run `./sync.sh status` before committing
+- Use `./sync.sh pull` to recover deployed changes to repo
+
+### Performance Issues
+
+**Problem**: Hooks slow down file operations
+
+1. **Check calculation cache**:
+   - Dynamic requirements cache results for 30 seconds
+   - Clear cache if stale: `rm ~/tmp/claude-req-calc-cache-*.json`
+
+2. **Check message dedup cache**:
+   - Enable debug mode to see cache behavior:
+     ```bash
+     export CLAUDE_DEDUP_DEBUG=1
+     ```
+
+3. **Disable expensive requirements**:
+   ```bash
+   req config branch_size_limit --disable --local --yes
+   ```
+
+### Getting Help
+
+1. **Run diagnostics**:
+   ```bash
+   req doctor
+   ```
+
+2. **Check logs**:
+   ```bash
+   tail -f ~/.claude/requirements.log
+   ```
+
+3. **Test manually**:
+   ```bash
+   python3 ~/.claude/hooks/test_requirements.py
+   ```
+
+4. **Report issues**: https://github.com/anthropics/claude-code/issues
+
+---
+
 ## Development Workflow
 
 ### Keeping Repository and Deployed Installation in Sync
