@@ -1,10 +1,16 @@
 # GitHub Issues Management Plugin
 
-Comprehensive GitHub issues management with deep GitHub Projects v2 integration for the claude-requirements-framework repository.
+Comprehensive GitHub issues management with deep GitHub Projects v2 integration.
 
 ## Overview
 
 This plugin provides an autonomous agent that handles the complete lifecycle of GitHub issues, from creation to closure, with seamless integration into GitHub Projects v2. It leverages findings from recent sessions about GitHub CLI capabilities, custom fields, and automation patterns.
+
+**Key Features**:
+- ✨ **Globally installable** - Use across all your projects
+- 🔧 **Per-project configuration** - Customize for each repository
+- 🔄 **Configuration cascade** - Team defaults with personal overrides
+- 📦 **No hard-coded values** - All settings in configuration files
 
 ## Features
 
@@ -116,28 +122,129 @@ Agent will:
 4. Return summary with all issue URLs
 ```
 
-## Configuration
+## Installation
 
-The plugin is pre-configured for the claude-requirements-framework repository. Configuration is stored in `plugin.json`:
+### Global Installation (Recommended)
 
-```json
-{
-  "default_project_number": 2,
-  "owner": "HarmAalbers",
-  "repository": "claude-requirements-framework",
-  "project_url": "https://github.com/users/HarmAalbers/projects/2"
-}
+Install the plugin globally to use it across all your projects:
+
+```bash
+# When available in a marketplace
+claude plugin install github-issues@your-marketplace
+
+# Or install from a local directory
+claude plugin install /path/to/github-issues-plugin
 ```
 
-### Custom Field IDs
+### Per-Project Installation
 
-Custom field IDs and option IDs are stored in the plugin configuration and discovered during the initial GitHub Project setup session:
+Install for a specific project only:
 
-- **Priority Field ID**: `PVTSSF_lAHOAnYO9M4BLeovzg7ClOY`
-- **Type Field ID**: `PVTSSF_lAHOAnYO9M4BLeovzg7CmYg`
-- **Status Field ID**: `PVTSSF_lAHOAnYO9M4BLeovzg7CkI8`
+```bash
+cd your-project
+claude plugin install github-issues@your-marketplace --scope project
+```
 
-These IDs are used internally by the agent for setting custom field values via `gh project item-edit`.
+## Configuration
+
+The plugin uses a **configuration cascade** pattern for flexible, per-project customization:
+
+### Configuration Files
+
+1. **`.claude/github-issues.md`** (Team defaults, checked into git)
+   - Shared configuration for all team members
+   - Contains repository, project, and custom field settings
+   - Version controlled with your project
+
+2. **`.claude/github-issues.local.md`** (Personal overrides, gitignored)
+   - Your personal configuration overrides
+   - Takes precedence over team defaults
+   - Never committed to version control
+
+### Setting Up Configuration
+
+**For the claude-requirements-framework project**, configuration is already included:
+- `.claude/github-issues.md` - Contains project defaults
+- `.claude/github-issues.local.md` - Template for personal overrides
+
+**For other projects**, create `.claude/github-issues.md`:
+
+```markdown
+---
+repo_owner: your-org
+repo_name: your-repo
+project_number: 2
+project_url: https://github.com/users/your-org/projects/2
+custom_fields:
+  priority:
+    name: Priority
+    field_id: PVTSSF_xxxxxxxxxxxxxxxxxxxxx
+    options:
+      high:
+        id: "abcd1234"
+        name: "🔴 High"
+      medium:
+        id: "efgh5678"
+        name: "🟡 Medium"
+      low:
+        id: "ijkl9012"
+        name: "🟢 Low"
+  type:
+    name: Type
+    field_id: PVTSSF_yyyyyyyyyyyyyyyyyyyyy
+    options:
+      feature:
+        id: "mnop3456"
+        name: "✨ Feature"
+      bug:
+        id: "qrst7890"
+        name: "🐛 Bug"
+  status:
+    name: Status
+    field_id: PVTSSF_zzzzzzzzzzzzzzzzzzzzz
+    options:
+      todo:
+        id: "uvwx1234"
+        name: "Todo"
+      in_progress:
+        id: "yzab5678"
+        name: "In Progress"
+---
+
+# GitHub Issues Configuration
+
+Default settings for this project.
+```
+
+### Discovering Custom Field IDs
+
+To find your project's custom field IDs:
+
+```bash
+# List all fields in your project
+gh project field-list YOUR_PROJECT_NUMBER --owner YOUR_OWNER --format json
+
+# Example output shows field_id and option IDs
+```
+
+### Overriding Configuration Locally
+
+Create `.claude/github-issues.local.md` to override settings:
+
+```markdown
+---
+# Test against a different project
+project_number: 3
+---
+
+# Local Testing Configuration
+```
+
+**Add to `.gitignore`**:
+```bash
+.claude/*.local.md
+.claude/settings.local.json
+```
 
 ## Technical Details
 

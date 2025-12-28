@@ -46,6 +46,9 @@ htmlcov/
 # Local configuration
 *.local.yaml
 *.local.json
+*.local.md
+.claude/*.local.md
+.claude/settings.local.json
 
 # Session data
 sessions.json
