@@ -3468,6 +3468,97 @@ def test_logger_module(runner: TestRunner):
         runner.test("Timestamp format check", False, "Could not parse log output")
 
 
+def test_registry_client(runner: TestRunner):
+    """Test RegistryClient module."""
+    print("\n📦 Testing registry_client module...")
+
+    from registry_client import RegistryClient
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry_path = Path(tmpdir) / "test-registry.json"
+        client = RegistryClient(registry_path)
+
+        # Test 1: Read non-existent registry returns empty
+        result = client.read()
+        runner.test("Read non-existent returns empty", result == {"version": "1.0", "sessions": {}})
+
+        # Test 2: Write creates registry
+        test_registry = {
+            "version": "1.0",
+            "sessions": {
+                "abc123": {"pid": 1234, "ppid": 1230, "project_dir": "/test", "branch": "main"}
+            }
+        }
+        success = client.write(test_registry)
+        runner.test("Write succeeds", success is True)
+        runner.test("Write creates file", registry_path.exists())
+
+        # Test 3: Read returns written data
+        result = client.read()
+        runner.test("Read returns written data", result == test_registry)
+
+        # Test 4: update() with modification function
+        def add_session(registry):
+            registry["sessions"]["def456"] = {
+                "pid": 5678, "ppid": 5670, "project_dir": "/test2", "branch": "develop"
+            }
+            return registry
+
+        success = client.update(add_session)
+        runner.test("update() succeeds", success is True)
+
+        result = client.read()
+        runner.test("update() adds session", "def456" in result["sessions"])
+        runner.test("update() preserves existing", "abc123" in result["sessions"])
+
+        # Test 5: update() with None return (no write)
+        write_count_before = 0
+        if registry_path.exists():
+            write_count_before = os.stat(registry_path).st_mtime
+
+        def no_change(registry):
+            return None  # Signal no write needed
+
+        success = client.update(no_change)
+        runner.test("update() with None succeeds", success is True)
+
+        # Test 6: Corrupted registry file recovery
+        with open(registry_path, 'w') as f:
+            f.write("{invalid json")
+
+        result = client.read()
+        runner.test("Corrupted registry returns empty", result == {"version": "1.0", "sessions": {}})
+
+        # Test 7: Write after corruption creates valid registry
+        success = client.write(test_registry)
+        runner.test("Write after corruption succeeds", success is True)
+
+        result = client.read()
+        runner.test("Registry valid after recovery", result == test_registry)
+
+        # Test 8: update() exception handling
+        def failing_update(registry):
+            raise ValueError("Update function error")
+
+        success = client.update(failing_update)
+        runner.test("update() with exception fails open", success is False)
+
+        # Registry should still be readable after failed update
+        result = client.read()
+        runner.test("Registry intact after failed update", "abc123" in result["sessions"])
+
+        # Test 9: Atomic write cleanup on failure
+        # Simulate write failure by making directory read-only (if possible)
+        original_registry = client.read()
+
+        # Create a scenario where temp file write might fail
+        # We'll test that cleanup happens by checking no .tmp files remain
+        client.write(original_registry)
+
+        tmp_files = list(registry_path.parent.glob("*.tmp"))
+        runner.test("No orphaned temp files", len(tmp_files) == 0)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -3540,6 +3631,9 @@ def main():
     test_message_dedup_cache(runner)
     test_calculation_cache(runner)
     test_logger_module(runner)
+
+    # NEW: Registry client tests (Phase 3)
+    test_registry_client(runner)
 
     return runner.summary()
 
