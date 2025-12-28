@@ -61,12 +61,32 @@ Before performing any GitHub operations, you MUST load configuration from projec
 1. **Check for local override**: `.claude/github-issues.local.md` (personal, gitignored)
 2. **Fallback to defaults**: `.claude/github-issues.md` (team defaults, checked in)
 
-Use this bash snippet to select the config file:
+Use this bash snippet to select and validate the config file:
 ```bash
 if [ -f .claude/github-issues.local.md ]; then
   CONFIG_FILE=".claude/github-issues.local.md"
-else
+  echo "Using local config: $CONFIG_FILE" >&2
+elif [ -f .claude/github-issues.md ]; then
   CONFIG_FILE=".claude/github-issues.md"
+  echo "Using team config: $CONFIG_FILE" >&2
+else
+  echo "ERROR: No configuration file found!" >&2
+  echo "Expected: .claude/github-issues.md or .claude/github-issues.local.md" >&2
+  echo "" >&2
+  echo "Create .claude/github-issues.md with repository configuration:" >&2
+  echo "  - repo_owner: Your GitHub username/org" >&2
+  echo "  - repo_name: Repository name" >&2
+  echo "  - project_number: GitHub Projects v2 number" >&2
+  echo "" >&2
+  echo "See README.md for complete configuration template." >&2
+  exit 1
+fi
+
+# Verify file is readable
+if [ ! -r "$CONFIG_FILE" ]; then
+  echo "ERROR: Config file exists but is not readable: $CONFIG_FILE" >&2
+  echo "Check file permissions." >&2
+  exit 1
 fi
 ```
 
@@ -77,23 +97,72 @@ Parse the YAML frontmatter to extract:
 - `project_url` - Project URL (for reference)
 - `custom_fields` - Nested structure with field_id and options
 
-Example Python parser (use this in a bash heredoc if needed):
+Example Python parser with comprehensive error handling:
 ```python
 import yaml
 import sys
+import os
 
 config_file = sys.argv[1] if len(sys.argv) > 1 else ".claude/github-issues.md"
 
-with open(config_file, 'r') as f:
-    content = f.read()
+try:
+    # Validate file exists
+    if not os.path.exists(config_file):
+        print(f"ERROR: Config file not found: {config_file}", file=sys.stderr)
+        print("Create .claude/github-issues.md with repository configuration.", file=sys.stderr)
+        print("See README.md for configuration template.", file=sys.stderr)
+        sys.exit(1)
+
+    # Read file content
+    with open(config_file, 'r') as f:
+        content = f.read()
+
+    # Parse frontmatter
     parts = content.split('---')
-    if len(parts) >= 3:
+    if len(parts) < 3:
+        print(f"ERROR: Invalid frontmatter in {config_file}", file=sys.stderr)
+        print("File must start with --- and end with --- around YAML frontmatter", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse YAML
+    try:
         config = yaml.safe_load(parts[1])
-        print(f"REPO_OWNER={config['repo_owner']}")
-        print(f"REPO_NAME={config['repo_name']}")
-        print(f"PROJECT_NUMBER={config['project_number']}")
-        print(f"PRIORITY_FIELD_ID={config['custom_fields']['priority']['field_id']}")
-        print(f"PRIORITY_HIGH_ID={config['custom_fields']['priority']['options']['high']['id']}")
+    except yaml.YAMLError as e:
+        print(f"ERROR: Invalid YAML syntax in {config_file}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate required fields
+    required = ['repo_owner', 'repo_name', 'project_number']
+    missing = [f for f in required if f not in config]
+    if missing:
+        print(f"ERROR: Missing required fields in {config_file}: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
+    # Output configuration
+    print(f"REPO_OWNER={config['repo_owner']}")
+    print(f"REPO_NAME={config['repo_name']}")
+    print(f"PROJECT_NUMBER={config['project_number']}")
+
+    # Optional: Export custom field IDs if present
+    if 'custom_fields' in config and isinstance(config['custom_fields'], dict):
+        if 'priority' in config['custom_fields']:
+            priority = config['custom_fields']['priority']
+            if 'field_id' in priority:
+                print(f"PRIORITY_FIELD_ID={priority['field_id']}")
+            if 'options' in priority and 'high' in priority['options']:
+                print(f"PRIORITY_HIGH_ID={priority['options']['high']['id']}")
+
+except ImportError:
+    print("ERROR: PyYAML not installed. Install with: pip3 install pyyaml", file=sys.stderr)
+    sys.exit(1)
+except IOError as e:
+    print(f"ERROR: Failed to read {config_file}: {e}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR: Unexpected error loading config: {e}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
 ```
 
 **Configuration Variables**:
@@ -109,7 +178,7 @@ After loading, you'll have access to:
    - Clear titles following project conventions (e.g., "[Feature]", "[Bug]", "[Worktree]" prefixes)
    - Detailed descriptions with context
    - Appropriate labels (enhancement, bug, documentation)
-   - Automatic addition to Project #2
+   - Automatic addition to configured project
    - Custom field values (Priority, Type, Status)
 
 2. **Issue Updates** - Modify existing issues:
@@ -125,7 +194,7 @@ After loading, you'll have access to:
    - Search by custom fields (Priority, Type)
    - Display in user-friendly format with key metadata
 
-4. **Project Integration** - Manage Project #2 integration:
+4. **Project Integration** - Manage configured project integration:
    - Add new issues to the project automatically
    - Update custom field values via gh project item-edit
    - Move items between status columns
@@ -170,6 +239,15 @@ Custom fields are defined in the configuration file. The structure includes:
 
 **Workflow Process:**
 
+**CRITICAL: Error Handling Requirements**
+
+Before executing ANY `gh` command, you MUST:
+1. Check if `gh` is installed: `command -v gh &> /dev/null`
+2. Check authentication: `gh auth status &> /dev/null`
+3. Check exit codes: Use `||` to catch failures
+4. Provide actionable error messages on failure
+5. For operations with dependencies (create → add to project → set fields), handle partial success gracefully
+
 ### For Issue Creation:
 
 1. **Gather Requirements**:
@@ -179,46 +257,96 @@ Custom fields are defined in the configuration file. The structure includes:
    - Assess Priority (High/Medium/Low) and Type
    - Check for related issues to reference
 
-2. **Create Issue**:
+2. **Create Issue with Error Handling**:
    ```bash
-   gh issue create \
+   # Verify gh is installed and authenticated
+   if ! command -v gh &> /dev/null; then
+       echo "ERROR: GitHub CLI (gh) not installed. Install from https://cli.github.com/" >&2
+       exit 1
+   fi
+
+   if ! gh auth status &> /dev/null; then
+       echo "ERROR: Not authenticated. Run: gh auth login" >&2
+       exit 1
+   fi
+
+   # Create issue with error checking
+   ISSUE_OUTPUT=$(gh issue create \
      --title "[Type] Title" \
      --body "Detailed description..." \
      --label "enhancement,documentation" \
-     --repo "$REPO_OWNER/$REPO_NAME"
+     --repo "$REPO_OWNER/$REPO_NAME" 2>&1) || {
+     echo "ERROR: Failed to create issue" >&2
+     echo "$ISSUE_OUTPUT" >&2
+     exit 1
+   }
+
+   # Extract and validate URL
+   ISSUE_URL=$(echo "$ISSUE_OUTPUT" | grep -oE 'https://github.com/[^ ]+' | head -1)
+   if [ -z "$ISSUE_URL" ]; then
+       echo "ERROR: Issue URL not found in output" >&2
+       exit 1
+   fi
+   echo "✅ Issue created: $ISSUE_URL"
    ```
 
-   Capture the issue URL from output.
-
-3. **Add to Project**:
+3. **Add to Project with Error Handling**:
    ```bash
-   gh project item-add "$PROJECT_NUMBER" \
+   # Check if jq is available for JSON parsing
+   if ! command -v jq &> /dev/null; then
+       echo "WARNING: jq not installed. Cannot extract project item ID." >&2
+       echo "Issue created: $ISSUE_URL" >&2
+       echo "Manually add to project if needed." >&2
+       exit 0
+   fi
+
+   # Add to project
+   PROJECT_OUTPUT=$(gh project item-add "$PROJECT_NUMBER" \
      --owner "$REPO_OWNER" \
-     --url <ISSUE_URL>
+     --url "$ISSUE_URL" 2>&1) || {
+     echo "WARNING: Issue created but failed to add to project" >&2
+     echo "$PROJECT_OUTPUT" >&2
+     echo "Issue URL: $ISSUE_URL" >&2
+     exit 0  # Partial success - issue exists
+   }
+
+   # Extract project item ID
+   ITEM_ID=$(echo "$PROJECT_OUTPUT" | grep -oE 'PVTI_[A-Za-z0-9_]+' | head -1)
+   if [ -z "$ITEM_ID" ]; then
+       echo "WARNING: Could not extract project item ID" >&2
+       echo "Issue created and added to project, but cannot set custom fields" >&2
+       exit 0
+   fi
    ```
 
-   This returns a project item ID.
-
-4. **Set Custom Fields**:
-   Use `gh project item-edit` to set Priority and Type:
+4. **Set Custom Fields with Error Handling**:
+   Use loaded field IDs from config (not hard-coded):
    ```bash
-   # Set Priority to High
-   gh project item-edit \
-     --id <ITEM_ID> \
-     --field-id PVTSSF_lAHOAnYO9M4BLeovzg7ClOY \
-     --option-id 13cda666
+   # Set Priority (fail gracefully if custom fields not available)
+   if [ -n "$PRIORITY_FIELD_ID" ] && [ -n "$PRIORITY_HIGH_ID" ]; then
+       gh project item-edit \
+         --id "$ITEM_ID" \
+         --field-id "$PRIORITY_FIELD_ID" \
+         --option-id "$PRIORITY_HIGH_ID" 2>&1 || {
+         echo "WARNING: Could not set Priority field" >&2
+       }
+   fi
 
-   # Set Type to Feature
-   gh project item-edit \
-     --id <ITEM_ID> \
-     --field-id PVTSSF_lAHOAnYO9M4BLeovzg7CmYg \
-     --option-id d752d1a7
+   # Set Type
+   if [ -n "$TYPE_FIELD_ID" ] && [ -n "$TYPE_FEATURE_ID" ]; then
+       gh project item-edit \
+         --id "$ITEM_ID" \
+         --field-id "$TYPE_FIELD_ID" \
+         --option-id "$TYPE_FEATURE_ID" 2>&1 || {
+         echo "WARNING: Could not set Type field" >&2
+       }
+   fi
    ```
 
 5. **Confirm**:
    - Report issue number and URL to user
-   - Summarize configured fields
-   - Mention project board addition
+   - Summarize configured fields (or warnings if fields couldn't be set)
+   - Mention project board addition status
 
 ### For Issue Updates:
 
@@ -242,14 +370,40 @@ Custom fields are defined in the configuration file. The structure includes:
    gh issue close <NUMBER> --reason "completed"
    ```
 
-4. **Update Project Fields**:
-   - First get the project item ID:
+4. **Update Project Fields with Error Handling**:
+   - First get the project item ID with validation:
      ```bash
-     gh project item-list "$PROJECT_NUMBER" --owner "$REPO_OWNER" --format json | \
-       jq '.items[] | select(.content.number == <NUMBER>) | .id'
+     # Verify jq is installed
+     if ! command -v jq &> /dev/null; then
+         echo "ERROR: jq not installed (required for JSON parsing)" >&2
+         echo "Install from: https://stedolan.github.io/jq/" >&2
+         exit 1
+     fi
+
+     # Get project items
+     PROJECT_JSON=$(gh project item-list "$PROJECT_NUMBER" \
+         --owner "$REPO_OWNER" \
+         --format json 2>&1) || {
+         echo "ERROR: Failed to list project items" >&2
+         echo "$PROJECT_JSON" >&2
+         exit 1
+     }
+
+     # Validate JSON and find item
+     ITEM_ID=$(echo "$PROJECT_JSON" | jq -r \
+         ".items[] | select(.content.number == $ISSUE_NUMBER) | .id" 2>&1) || {
+         echo "ERROR: jq parsing failed" >&2
+         exit 1
+     }
+
+     if [ -z "$ITEM_ID" ]; then
+         echo "WARNING: Issue #$ISSUE_NUMBER not found in project #$PROJECT_NUMBER" >&2
+         echo "The issue may not be added to this project yet." >&2
+         exit 1
+     fi
      ```
 
-   - Then update custom fields using item-edit
+   - Then update custom fields using item-edit with error checking
 
 ### For Issue Listing:
 

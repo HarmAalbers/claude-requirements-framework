@@ -90,9 +90,27 @@ project_number: 3
 
 ## Custom Field IDs
 
-The field IDs and option IDs in this file are specific to Project #2 and were discovered using:
+The field IDs and option IDs in this file are project-specific. To discover field IDs for your project:
+
+### Step 1: List all fields
 ```bash
-gh project field-list 2 --owner HarmAalbers --format json
+gh project field-list YOUR_PROJECT_NUMBER --owner YOUR_OWNER --format json
 ```
 
-If you're setting up this plugin for a different project, you'll need to discover your own field IDs.
+### Step 2: Extract specific field IDs
+```bash
+# Get Priority field ID and options
+gh project field-list 2 --owner HarmAalbers --format json | \
+  jq '.fields[] | select(.name=="Priority") | {field_id: .id, options: .options}'
+
+# Get Type field ID and options
+gh project field-list 2 --owner HarmAalbers --format json | \
+  jq '.fields[] | select(.name=="Type") | {field_id: .id, options: .options}'
+
+# Get Status field ID and options
+gh project field-list 2 --owner HarmAalbers --format json | \
+  jq '.fields[] | select(.name=="Status") | {field_id: .id, options: .options}'
+```
+
+### Step 3: Copy IDs to configuration
+Copy the `field_id` and option `id` values into this file's YAML frontmatter.

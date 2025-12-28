@@ -19,12 +19,12 @@ This plugin provides an autonomous agent that handles the complete lifecycle of 
 - **Issue Creation**: Create well-structured issues with titles, descriptions, labels, and automatic project board integration
 - **Issue Updates**: Modify titles, descriptions, labels, status, and custom fields
 - **Issue Retrieval**: List and filter issues by state, labels, custom fields, or search terms
-- **Project Integration**: Automatic addition to Project #2 with custom field configuration
+- **Project Integration**: Automatic addition to your configured project with custom field configuration
 - **Batch Operations**: Handle multiple related issues efficiently
 
 ### 🏗️ Projects v2 Integration
 
-The agent integrates with **Project #2** (https://github.com/users/HarmAalbers/projects/2) and manages these custom fields:
+The agent integrates with your configured GitHub Project and manages these custom fields:
 
 #### Priority Field
 - 🔴 **High** - Critical issues, blockers, security concerns
@@ -66,7 +66,7 @@ You: "Create an issue for adding git worktree support to the requirements framew
 Agent will:
 1. Create issue with title "[Feature] Add git worktree support to requirements framework"
 2. Add labels: enhancement
-3. Add to Project #2
+3. Add to configured project
 4. Set Type to ✨ Feature
 5. Set Priority to 🟡 Medium (default)
 6. Set Status to Todo
@@ -81,7 +81,7 @@ You: "Create a high priority bug issue for the TOCTOU race condition in commondi
 Agent will:
 1. Create issue with title "[Bug] Potential TOCTOU race condition in commondir check"
 2. Add labels: bug
-3. Add to Project #2
+3. Add to configured project
 4. Set Type to 🐛 Bug
 5. Set Priority to 🔴 High
 6. Return issue URL and summary
@@ -118,25 +118,38 @@ You: "Create issues for the worktree feature: one for git_utils, one for state_s
 Agent will:
 1. Create three related issues
 2. Set consistent Priority and Type
-3. Add all to Project #2
+3. Add all to configured project
 4. Return summary with all issue URLs
 ```
 
 ## Installation
 
-### Global Installation (Recommended)
+> **Note**: The `claude plugin install` commands shown below represent the intended plugin distribution model. Currently, manually copy the plugin directory to your Claude Code plugins location.
+
+### Current Installation
+
+```bash
+# Copy plugin to global Claude Code plugins directory
+cp -r .claude/plugins/github-issues ~/.claude/plugins/
+
+# Or for project-specific installation
+cp -r .claude/plugins/github-issues /path/to/your-project/.claude/plugins/
+```
+
+### Future Installation (When Marketplace Available)
+
+**Global Installation (Recommended)**
 
 Install the plugin globally to use it across all your projects:
 
 ```bash
-# When available in a marketplace
 claude plugin install github-issues@your-marketplace
 
 # Or install from a local directory
 claude plugin install /path/to/github-issues-plugin
 ```
 
-### Per-Project Installation
+**Per-Project Installation**
 
 Install for a specific project only:
 
@@ -296,7 +309,7 @@ This plugin leverages insights from recent development sessions:
 
 1. **GitHub CLI Discovery**: `gh project field-create` for custom fields
 2. **Projects v2 API Research**: Understanding GraphQL limitations (no view creation API)
-3. **Custom Field Configuration**: Real field IDs from Project #2 setup
+3. **Custom Field Configuration**: Real field IDs from project setup
 4. **Repository Patterns**: Existing label conventions and issue prefixes
 5. **Automation Findings**: Auto-add workflows and field automation
 
