@@ -1064,6 +1064,80 @@ def cmd_config(args) -> int:
         return 1
 
 
+def _detect_init_context(args, project_dir: str) -> str:
+    """
+    Detect if user is creating global, project, or local config.
+
+    Returns: 'global', 'project', or 'local'
+    """
+    # Explicit flags take precedence
+    if args.local:
+        return 'local'
+    if args.project:
+        return 'project'
+
+    # Check if we're in home directory or .claude directory
+    home_claude = Path.home() / '.claude'
+    try:
+        if Path(project_dir).resolve() == home_claude.resolve():
+            return 'global'
+    except (OSError, RuntimeError) as e:
+        # Path resolution failed - log warning and default to project
+        print(warning(f"⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
+        print(dim(f"   Error: {e}"), file=sys.stderr)
+
+    # Default: project
+    return 'project'
+
+
+def _get_preset_options_for_context(context: str) -> tuple:
+    """
+    Return (preset_options, default_index) for context.
+
+    Args:
+        context: 'global', 'project', or 'local'
+
+    Returns:
+        Tuple of (list of preset option strings, default index)
+    """
+    if context == 'global':
+        return (
+            [
+                'advanced - All features (recommended for global)',
+                'relaxed - Baseline requirements only',
+                'minimal - Framework enabled, configure later',
+            ],
+            0  # Default to 'advanced'
+        )
+    elif context == 'local':
+        return (
+            [
+                'minimal - Override specific settings only',
+            ],
+            0
+        )
+    else:  # project
+        global_config = Path.home() / '.claude' / 'requirements.yaml'
+        if global_config.exists():
+            return (
+                [
+                    'inherit - Use global defaults (recommended)',
+                    'relaxed - Override with relaxed preset',
+                    'minimal - Start minimal',
+                ],
+                0  # Default to 'inherit'
+            )
+        else:
+            return (
+                [
+                    'inherit - Use global when created',
+                    'relaxed - Standalone requirements',
+                    'minimal - Framework enabled, no requirements',
+                ],
+                1  # Default to 'relaxed' if no global
+            )
+
+
 def cmd_init(args) -> int:
     """
     Initialize requirements framework for a project.
@@ -1088,68 +1162,117 @@ def cmd_init(args) -> int:
         print(dim("   Requirements framework only works in git repositories"))
         return 1
 
+    # Detect context (global/project/local)
+    context = _detect_init_context(args, project_dir)
+
     # Paths
     claude_dir = Path(project_dir) / '.claude'
     project_config = claude_dir / 'requirements.yaml'
     local_config = claude_dir / 'requirements.local.yaml'
+    global_config = Path.home() / '.claude' / 'requirements.yaml'
+
+    # Determine target file based on context
+    if context == 'global':
+        target_file = global_config
+        create_local = False
+    elif context == 'local':
+        target_file = local_config
+        create_local = True
+    else:  # project
+        target_file = project_config
+        create_local = False
 
     # Interactive mode (default) vs non-interactive (--yes)
     if not args.yes and not args.preview:
-        # Show header
-        print(header("🚀 Requirements Framework Setup"))
+        # Show context-specific header
+        if context == 'global':
+            print(header("🌍 Global Requirements Framework Setup"))
+            print(dim("   Setting up defaults for all your projects"))
+        elif context == 'local':
+            print(header("📝 Local Requirements Override Setup"))
+            print(dim("   Creating personal overrides (gitignored)"))
+        else:  # project
+            print(header("🚀 Project Requirements Setup"))
+            if global_config.exists():
+                print(dim("   Configuring project-specific requirements"))
+            else:
+                print(dim("   Setting up project requirements"))
         print(dim("─" * 50))
         print()
 
-        # Detection
-        print(info("Detecting project:"))
+        # Context-specific detection info
+        print(info("Detecting environment:"))
         print(success(f"  ✓ Git repository at {project_dir}"))
-        if claude_dir.exists():
-            print(success("  ✓ .claude/ directory exists"))
-        else:
-            print(dim("  ○ .claude/ directory will be created"))
 
-        if project_config.exists():
-            print(warning(f"  ⚠ Project config exists: {project_config.name}"))
-        if local_config.exists():
-            print(warning(f"  ⚠ Local config exists: {local_config.name}"))
+        if context == 'global':
+            if global_config.exists():
+                print(warning(f"  ⚠ Global config exists"))
+        else:
+            if claude_dir.exists():
+                print(success("  ✓ .claude/ directory exists"))
+            else:
+                print(dim("  ○ .claude/ directory will be created"))
+
+            if context == 'project' and global_config.exists():
+                print(success(f"  ✓ Global config found"))
+                print(dim("     Project will inherit from global defaults"))
+
+            if project_config.exists():
+                print(warning(f"  ⚠ Project config exists"))
+            if local_config.exists() and context == 'local':
+                print(warning(f"  ⚠ Local config exists"))
+
+        if context == 'project' and not global_config.exists():
+            print(warning("  ⚠ No global config found"))
+            print(dim("     Tip: Run 'req init' to create global defaults first"))
+
         print()
 
-        # Ask config type (unless --local or --project specified)
-        if not args.local and not args.project:
-            config_choice = select(
-                "Which configuration file to create?",
-                [
-                    "Project config (.claude/requirements.yaml) - shared with team",
-                    "Local config (.claude/requirements.local.yaml) - personal only",
-                ],
-                default=0
-            )
-            create_local = "Local" in config_choice
-        else:
-            create_local = args.local
-
-        # Ask preset (unless --preset specified)
+        # Ask: preset or custom feature selection?
         if not args.preset:
-            preset_choice = select(
-                "Choose a preset profile:",
+            mode = select(
+                "How would you like to configure?",
                 [
-                    "relaxed - Light touch: commit_plan only (recommended)",
-                    "strict - Full enforcement: commit_plan + protected_branch",
-                    "minimal - Framework enabled, no requirements (configure later)",
+                    "Quick Preset - Choose from preset profiles (recommended)",
+                    "Custom Selection - Pick specific features",
+                    "Manual Setup - Start minimal, configure later",
                 ],
                 default=0
             )
-            if "strict" in preset_choice:
-                preset = 'strict'
-            elif "minimal" in preset_choice:
-                preset = 'minimal'
-            else:
-                preset = 'relaxed'
-        else:
-            preset = args.preset
 
-        # Generate and preview
-        config = generate_config(preset)
+            if "Custom" in mode:
+                # Custom feature selection
+                from lib.feature_selector import FeatureSelector
+
+                selector = FeatureSelector()
+                selected_features = selector.select_features_interactive()
+
+                config = selector.build_config_from_features(selected_features, context)
+                preset = f"custom ({len(selected_features)} features)"
+
+            elif "Manual" in mode:
+                # Manual setup - minimal preset
+                preset = 'minimal'
+                config = generate_config(preset, context=context)
+
+            else:  # Quick Preset
+                # Get context-appropriate preset options
+                preset_options, default_idx = _get_preset_options_for_context(context)
+
+                preset_choice = select(
+                    "Choose a preset profile:",
+                    preset_options,
+                    default=default_idx
+                )
+                # Extract preset name from choice
+                preset = preset_choice.split(' - ')[0]
+                config = generate_config(preset, context=context)
+        else:
+            # --preset flag specified
+            preset = args.preset
+            config = generate_config(preset, context=context)
+
+        # Generate YAML
         yaml_content = config_to_yaml(config)
 
         print()
@@ -1165,56 +1288,50 @@ def cmd_init(args) -> int:
         print()
 
         # Confirm
-        target_config = local_config if create_local else project_config
-        if target_config.exists() and not args.force:
-            if not confirm(f"Overwrite existing {target_config.name}?", default=False):
+        if target_file.exists() and not args.force:
+            if not confirm(f"Overwrite existing {target_file.name}?", default=False):
                 print(info("ℹ️  Cancelled"))
                 return 0
         else:
-            if not confirm(f"Create {target_config.name}?", default=True):
+            if not confirm(f"Create {target_file.name}?", default=True):
                 print(info("ℹ️  Cancelled"))
                 return 0
     else:
         # Non-interactive mode
-        create_local = args.local
         preset = args.preset or 'relaxed'
-        config = generate_config(preset)
+        config = generate_config(preset, context=context)
         yaml_content = config_to_yaml(config)
 
         # Preview mode (non-interactive)
         if args.preview:
-            target = "local" if create_local else "project"
-            print(header(f"📋 Preview: {target} config ({preset} preset)"))
+            context_name = context.capitalize()
+            print(header(f"📋 Preview: {context_name} config ({preset} preset)"))
             print(dim("─" * 50))
             print(yaml_content)
             print(dim("─" * 50))
-            print(info(f"ℹ️  Would create: {local_config if create_local else project_config}"))
+            print(info(f"ℹ️  Would create: {target_file}"))
             return 0
 
         # Check for existing config (non-interactive mode only)
-        target_config = local_config if create_local else project_config
-        if target_config.exists() and not args.force:
-            print(warning(f"⚠️  Config already exists: {target_config}"))
+        if target_file.exists() and not args.force:
+            print(warning(f"⚠️  Config already exists: {target_file}"))
             print(hint("💡 Use --force to overwrite"))
             return 0
 
-    # Determine target
-    target_config = local_config if create_local else project_config
-
-    # Create .claude directory
-    claude_dir.mkdir(parents=True, exist_ok=True)
+    # Create parent directory if needed
+    target_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Write config
     try:
-        target_config.write_text(yaml_content)
-        config_type = "local" if create_local else "project"
-        print(success(f"✅ Created {config_type} config ({preset} preset)"))
-        print(dim(f"   {target_config}"))
+        target_file.write_text(yaml_content)
+        context_name = context.capitalize() if context != 'project' else 'project'
+        print(success(f"✅ Created {context_name} config ({preset} preset)"))
+        print(dim(f"   {target_file}"))
         print()
         print(hint("💡 Next steps:"))
         print(dim("   • Run 'req status' to see your requirements"))
         print(dim("   • Make changes - you'll be prompted to satisfy requirements"))
-        print(dim(f"   • Edit {target_config.name} to customize"))
+        print(dim(f"   • Edit {target_file.name} to customize"))
         return 0
     except Exception as e:
         print(error(f"❌ Failed to create config: {e}"), file=sys.stderr)
@@ -1298,8 +1415,8 @@ Environment Variables:
     # init
     init_parser = subparsers.add_parser('init', help='Initialize requirements framework for project')
     init_parser.add_argument('--yes', '-y', action='store_true', help='Non-interactive mode (use defaults)')
-    init_parser.add_argument('--preset', '-p', choices=['strict', 'relaxed', 'minimal'],
-                             help='Preset profile (default: relaxed)')
+    init_parser.add_argument('--preset', '-p', choices=['strict', 'relaxed', 'minimal', 'advanced', 'inherit'],
+                             help='Preset profile (context-aware defaults)')
     init_parser.add_argument('--project', action='store_true', help='Create project config only')
     init_parser.add_argument('--local', action='store_true', help='Create local config only')
     init_parser.add_argument('--force', '-f', action='store_true', help='Overwrite existing config')
