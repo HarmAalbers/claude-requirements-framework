@@ -6,8 +6,10 @@ Each preset defines a set of requirements with sensible defaults.
 
 Presets:
 - strict: Full enforcement with commit_plan + protected_branch
-- relaxed: Light touch with commit_plan only (default)
+- relaxed: Light touch with commit_plan only (default for project without global)
 - minimal: Framework enabled, no requirements (configure later)
+- advanced: All features - showcases every requirement type (recommended for global)
+- inherit: Use global defaults (recommended for project with global config)
 
 Usage:
     from init_presets import get_preset, generate_config, config_to_yaml
@@ -16,7 +18,7 @@ Usage:
     preset = get_preset('relaxed')
 
     # Generate full config with version/enabled
-    config = generate_config('relaxed')
+    config = generate_config('relaxed', context='project')
 
     # Convert to YAML string
     yaml_str = config_to_yaml(config)
@@ -112,6 +114,146 @@ Before making code changes, please create a brief plan describing:
     'minimal': {
         'requirements': {},
     },
+
+    'advanced': {
+        'requirements': {
+            'commit_plan': {
+                'enabled': True,
+                'type': 'blocking',
+                'scope': 'session',
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'message': '''📋 **Commit Plan Required**
+
+Before making code changes, create a brief plan documenting your approach.
+
+**To proceed**: Run `req satisfy commit_plan` after creating a plan
+''',
+                'checklist': [
+                    'Identified the changes needed',
+                    'Determined atomic commit boundaries',
+                    'Planned commit sequence',
+                    'Considered rollback strategy',
+                    'Created plan file',
+                ],
+            },
+
+            'adr_reviewed': {
+                'enabled': True,
+                'type': 'blocking',
+                'scope': 'session',
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'message': '''📚 **ADR Review Checkpoint**
+
+Have you reviewed relevant Architecture Decision Records?
+
+**To satisfy**: `req satisfy adr_reviewed` after reviewing ADRs
+''',
+                'checklist': [
+                    'Found relevant ADRs',
+                    'Reviewed decision context',
+                    'Confirmed approach aligns with ADRs',
+                ],
+            },
+
+            'protected_branch': {
+                'enabled': True,
+                'type': 'guard',
+                'guard_type': 'protected_branch',
+                'protected_branches': ['master', 'main'],
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'message': '''🚫 **Cannot edit files on protected branch**
+
+Create a feature branch: `git checkout -b feature/name`
+
+**For emergency**: `req approve protected_branch`
+''',
+            },
+
+            'branch_size_limit': {
+                'enabled': True,
+                'type': 'dynamic',
+                'calculator': 'branch_size_calculator',
+                'scope': 'session',
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'cache_ttl': 60,
+                'approval_ttl': 3600,
+                'thresholds': {
+                    'warn': 250,
+                    'block': 400,
+                },
+                'blocking_message': '''🛑 **Branch size limit: {total} changes**
+
+{summary}
+
+Consider splitting into smaller PRs for easier review.
+
+**To override**: `req approve branch_size_limit`
+''',
+            },
+
+            'pre_commit_review': {
+                'enabled': True,
+                'type': 'blocking',
+                'scope': 'single_use',
+                'trigger_tools': [
+                    {'tool': 'Bash', 'command_pattern': 'git\\s+(commit|cherry-pick|revert|merge)'},
+                ],
+                'message': '''📝 **Code review before commit**
+
+Run `/pre-pr-review:pre-commit` to review changes.
+
+**After review**: Proceed with commit.
+''',
+                'checklist': [
+                    'Code follows conventions',
+                    'Error handling adequate',
+                    'No obvious bugs',
+                ],
+            },
+
+            'pre_pr_review': {
+                'enabled': True,
+                'type': 'blocking',
+                'scope': 'single_use',
+                'trigger_tools': [
+                    {'tool': 'Bash', 'command_pattern': 'gh\\s+pr\\s+create'},
+                ],
+                'message': '''🔍 **Quality check before PR**
+
+Run `/pre-pr-review:quality-check` for comprehensive review.
+
+**After review**: Create PR.
+''',
+                'checklist': [
+                    'Code reviewed for bugs',
+                    'Error handling complete',
+                    'Style guide followed',
+                    'Tests adequate',
+                ],
+            },
+
+            'github_ticket': {
+                'enabled': False,
+                'type': 'blocking',
+                'scope': 'branch',
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'message': '''🎫 **No GitHub issue linked**
+
+**To satisfy**: `req satisfy github_ticket --metadata '{"ticket":"#1234"}'`
+
+(Disabled by default - enable if using issue tracking)
+''',
+            },
+        },
+        'hooks': {
+            'stop': {'verify_requirements': True},
+        },
+    },
+
+    'inherit': {
+        'inherit': True,
+        'requirements': {},
+    },
 }
 
 
@@ -120,7 +262,7 @@ def get_preset(name: str) -> Dict[str, Any]:
     Get a preset configuration by name.
 
     Args:
-        name: Preset name ('strict', 'relaxed', 'minimal')
+        name: Preset name ('strict', 'relaxed', 'minimal', 'advanced', 'inherit')
 
     Returns:
         Deep copy of the preset configuration.
@@ -152,24 +294,57 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
 
 
 def generate_config(preset_name: str,
-                    customizations: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                    customizations: Optional[Dict[str, Any]] = None,
+                    context: str = 'project') -> Dict[str, Any]:
     """
     Generate a full configuration from a preset with optional customizations.
 
     Adds version and enabled fields, then merges any customizations.
+    Context-aware behavior adjusts defaults based on whether this is
+    global, project, or local config.
 
     Args:
-        preset_name: Preset name ('strict', 'relaxed', 'minimal')
+        preset_name: Preset name ('strict', 'relaxed', 'minimal', 'advanced', 'inherit')
         customizations: Optional dict to merge on top of preset
+        context: Config context - 'global', 'project', or 'local'
 
     Returns:
         Complete configuration dict ready to write
+
+    Raises:
+        ValueError: If preset_name or context is invalid
     """
+    # Validate preset name
+    valid_presets = list(PRESETS.keys())
+    if preset_name not in valid_presets:
+        raise ValueError(
+            f"Invalid preset '{preset_name}'. "
+            f"Valid presets: {', '.join(valid_presets)}"
+        )
+
+    # Validate context
+    valid_contexts = ['global', 'project', 'local']
+    if context not in valid_contexts:
+        raise ValueError(
+            f"Invalid context '{context}'. "
+            f"Valid contexts: {', '.join(valid_contexts)}"
+        )
+
     config = get_preset(preset_name)
 
     # Add standard fields
     config['version'] = '1.0'
     config['enabled'] = True
+
+    # Add inherit flag for project context (unless preset already defines it)
+    if context == 'project' and 'inherit' not in config:
+        # The 'inherit' preset already has inherit: True
+        # Standalone presets like 'strict'/'relaxed' should not inherit
+        if preset_name == 'inherit':
+            config['inherit'] = True
+        elif preset_name in ['minimal']:
+            # Minimal can inherit for project context
+            config['inherit'] = True
 
     # Merge customizations if provided
     if customizations:
