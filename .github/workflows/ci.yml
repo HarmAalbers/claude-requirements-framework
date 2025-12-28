@@ -16,6 +16,9 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install dependencies
+        run: pip install pyyaml
+
       - name: Prepare Claude home
         run: |
           mkdir -p ~/.claude/hooks/lib ~/.local/bin
