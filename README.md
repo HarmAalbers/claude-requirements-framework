@@ -13,7 +13,7 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 346 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 421 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -485,7 +485,7 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (275 tests, 100% passing):
+The framework includes comprehensive tests (421 tests, 100% passing):
 
 ```bash
 # Run all tests
@@ -496,7 +496,7 @@ python3 test_requirements.py
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 275/275 tests passed
+# Results: 421/421 tests passed
 ```
 
 Test categories:
