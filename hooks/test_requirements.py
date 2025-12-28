@@ -872,9 +872,9 @@ def test_cli_commands(runner: TestRunner):
         runner.test("Satisfy runs", result.returncode == 0, result.stderr)
         runner.test("Satisfy confirms", "✅" in result.stdout, result.stdout)
 
-        # Test status after satisfy
+        # Test status after satisfy (use --verbose to see all requirements)
         result = subprocess.run(
-            ["python3", str(cli_path), "status"],
+            ["python3", str(cli_path), "status", "--verbose"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Status shows satisfied", "✅" in result.stdout, result.stdout)
@@ -911,7 +911,7 @@ def test_cli_commands(runner: TestRunner):
             json.dump(invalid_config, f)
 
         result = subprocess.run(
-            ["python3", str(cli_path), "status"],
+            ["python3", str(cli_path), "status", "--verbose"],
             cwd=tmpdir_invalid, capture_output=True, text=True
         )
 
@@ -1080,7 +1080,7 @@ def test_cli_doctor_command(runner: TestRunner):
         env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
 
         result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
+            ["python3", str(cli_path), "doctor", "--repo", str(repo_root), "--verbose"],
             cwd=project_dir,
             capture_output=True,
             text=True,
@@ -1089,7 +1089,7 @@ def test_cli_doctor_command(runner: TestRunner):
 
         runner.test("Doctor runs", result.returncode == 0, result.stdout + result.stderr)
         runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
-        runner.test("Reports sync status", "Repo vs Deployed" in result.stdout, result.stdout)
+        runner.test("Reports sync status", "sync" in result.stdout.lower(), result.stdout)
 
 
 def test_cli_doctor_old_format_migration(runner: TestRunner):
@@ -1334,7 +1334,7 @@ def test_cli_doctor_multiple_matchers(runner: TestRunner):
         env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
 
         result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
+            ["python3", str(cli_path), "doctor", "--repo", str(repo_root), "--verbose"],
             cwd=project_dir,
             capture_output=True,
             text=True,

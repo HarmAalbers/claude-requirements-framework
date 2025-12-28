@@ -56,7 +56,7 @@ def cmd_status(args) -> int:
     Show requirements status for current branch.
 
     Args:
-        args: Parsed arguments
+        args: Parsed arguments with optional --verbose or --summary flags
 
     Returns:
         Exit code
@@ -80,6 +80,120 @@ def cmd_status(args) -> int:
     else:
         session_id = get_session_id()
 
+    # Check for summary mode
+    summary_mode = hasattr(args, 'summary') and args.summary
+    verbose_mode = hasattr(args, 'verbose') and args.verbose
+
+    # Summary mode - one liner
+    if summary_mode:
+        return _cmd_status_summary(project_dir, branch, session_id)
+
+    # Focused mode (default) - show only unsatisfied
+    if not verbose_mode:
+        return _cmd_status_focused(project_dir, branch, session_id, args)
+
+    # Verbose mode - show everything (original behavior)
+    return _cmd_status_verbose(project_dir, branch, session_id, args)
+
+
+def _cmd_status_summary(project_dir: str, branch: str, session_id: str) -> int:
+    """One-line summary of requirements status."""
+    config = RequirementsConfig(project_dir)
+
+    if not config.is_enabled():
+        print(dim("Requirements framework disabled"))
+        return 0
+
+    all_reqs = config.get_all_requirements()
+    if not all_reqs:
+        print(dim("No requirements configured"))
+        return 0
+
+    reqs = BranchRequirements(branch, session_id, project_dir)
+
+    satisfied_count = 0
+    unsatisfied = []
+
+    for req_name in all_reqs:
+        if not config.is_requirement_enabled(req_name):
+            continue
+        scope = config.get_scope(req_name)
+        if reqs.is_satisfied(req_name, scope):
+            satisfied_count += 1
+        else:
+            unsatisfied.append(req_name)
+
+    total = satisfied_count + len(unsatisfied)
+
+    if unsatisfied:
+        print(warning(f"⚠️  {satisfied_count}/{total} requirements satisfied ({', '.join(unsatisfied)} needed)"))
+        return 0  # Status command succeeds regardless
+    else:
+        print(success(f"✅ All {total} requirements satisfied"))
+        return 0
+
+
+def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) -> int:
+    """Focused view - show only unsatisfied requirements."""
+    # Header
+    print(header("📋 Requirements Status"))
+    print(f"Branch: {bold(branch)}")
+    print()
+
+    # Check for config
+    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
+    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
+
+    if not config_file.exists() and not config_file_json.exists():
+        print(info("ℹ️  No requirements configured for this project."))
+        print(dim("   Run 'req init' to set up requirements"))
+        return 0
+
+    config = RequirementsConfig(project_dir)
+
+    if not config.is_enabled():
+        print(warning("⚠️  Requirements framework disabled"))
+        return 0
+
+    all_reqs = config.get_all_requirements()
+    if not all_reqs:
+        print(info("ℹ️  No requirements defined."))
+        return 0
+
+    reqs = BranchRequirements(branch, session_id, project_dir)
+
+    # Find unsatisfied requirements
+    unsatisfied = []
+    for req_name in all_reqs:
+        if not config.is_requirement_enabled(req_name):
+            continue
+        scope = config.get_scope(req_name)
+        if not reqs.is_satisfied(req_name, scope):
+            unsatisfied.append((req_name, scope))
+
+    if not unsatisfied:
+        print(success("✅ All requirements satisfied"))
+        print()
+        print(hint("💡 Use 'req status --verbose' for full details"))
+        return 0
+
+    # Show unsatisfied requirements
+    print(error("❌ Unsatisfied Requirements:"))
+    print()
+
+    for req_name, scope in unsatisfied:
+        print(f"  • {bold(req_name)} ({dim(scope)} scope)")
+        print(dim(f"    → req satisfy {req_name}"))
+
+    print()
+    print(hint(f"💡 Satisfy all: req satisfy {' '.join(r[0] for r in unsatisfied)}"))
+    print(dim("   Use 'req status --verbose' for full details"))
+
+    return 0  # Status command succeeds even with unsatisfied requirements
+
+
+def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) -> int:
+    """Verbose view - show all details (original behavior)."""
     # Header
     print(header("📋 Requirements Status"))
     print(dim(f"{'─' * 40}"))
@@ -849,56 +963,94 @@ def cmd_verify(args) -> int:
 
 
 def cmd_doctor(args) -> int:
-    """Run environment diagnostics for the requirements framework."""
+    """
+    Run environment diagnostics for the requirements framework.
+
+    Args:
+        args: Parsed arguments with optional --verbose flag
+
+    Returns:
+        Exit code (0 if all checks pass, 1 if issues found)
+    """
+    verbose = hasattr(args, 'verbose') and args.verbose
 
     project_dir = get_project_dir()
     claude_dir = Path.home() / ".claude"
     hooks_dir = claude_dir / "hooks"
 
-    print("🩺 Running requirements doctor\n")
+    print(header("🩺 Requirements Framework Health Check"))
+    print()
 
+    problems = []
+    info_items = []
     status_ok = True
 
     # Hook registration check
     hook_ok, hook_msg = _check_hook_registration(claude_dir)
     status_ok &= hook_ok
-    icon = "✅" if hook_ok else "❌"
-    print(f"{icon} {hook_msg}")
+    if not hook_ok:
+        problems.append(("❌ CRITICAL", hook_msg, "Re-run ./install.sh to register hooks"))
+    elif verbose:
+        info_items.append(("✅", hook_msg))
 
     # Executable bits
     for script_name in ["check-requirements.py", "requirements-cli.py"]:
         ok, msg = _check_executable(hooks_dir / script_name)
         status_ok &= ok
-        icon = "✅" if ok else "❌"
-        print(f"{icon} {msg}")
+        if not ok:
+            problems.append(("❌ CRITICAL", msg, f"Fix: chmod +x ~/.claude/hooks/{script_name}"))
+        elif verbose:
+            info_items.append(("✅", msg))
 
     # Project config (informational only - not fatal)
     config_ok, config_msg = _check_project_config(project_dir)
-    # Don't fail doctor if project config is missing - it's optional
-    icon = "✅" if config_ok else "⚠️"
-    print(f"{icon} {config_msg}")
+    if not config_ok:
+        info_items.append(("ℹ️", config_msg + " (optional)"))
+    elif verbose:
+        info_items.append(("✅", config_msg))
 
     # Sync status
     repo_dir = _find_repo_dir(args.repo)
     if repo_dir:
-        print("\n📊 Repo vs Deployed")
         results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
         for relative, message in results:
             if message.startswith("✓"):
-                prefix = "✅"
-            elif message.startswith(("↑", "↓", "⚠", "✗")):
-                prefix = "⚠️"
+                if verbose:
+                    info_items.append(("✅", f"{relative}: {message}"))
+            elif message.startswith(("↑", "↓")):
+                problems.append(("⚠️  WARNING", f"{relative}: {message}", "Run: ./sync.sh deploy or ./sync.sh pull"))
+                status_ok = False
+            elif message.startswith(("⚠", "✗")):
+                problems.append(("❌ CRITICAL", f"{relative}: {message}", "Check file permissions or re-install"))
+                status_ok = False
             else:
-                prefix = "ℹ️"
-            print(f"  {prefix} {relative}: {message}")
+                if verbose:
+                    info_items.append(("ℹ️", f"{relative}: {message}"))
+    elif verbose:
+        info_items.append(("⚠️", "Could not locate repository copy (set --repo to specify path)"))
 
-        if actions:
-            status_ok = False
-            print("\nRecommended actions:")
-            for action in actions:
-                print(f"  - {action}")
+    # Display results
+    if problems:
+        print(error("❌ Issues Found:"))
+        print()
+        for severity, msg, fix in problems:
+            print(f"  {severity}: {msg}")
+            if fix:
+                print(dim(f"     Fix: {fix}"))
+            print()
     else:
-        print("\n⚠️ Could not locate repository copy (set --repo to specify path)")
+        print(success("✅ All checks passed"))
+        print()
+
+    if verbose and info_items:
+        print(header("ℹ️  All Checks:"))
+        print()
+        for icon, msg in info_items:
+            print(f"  {icon} {msg}")
+        print()
+
+    if not verbose and not problems:
+        print(hint("💡 Use 'req doctor --verbose' for full diagnostics"))
 
     return 0 if status_ok else 1
 
@@ -1537,6 +1689,8 @@ Environment Variables:
     status_parser = subparsers.add_parser('status', help='Show requirements status')
     status_parser.add_argument('--branch', '-b', help='Branch name (default: current)')
     status_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
+    status_parser.add_argument('--verbose', '-v', action='store_true', help='Show all details (sessions, all requirements)')
+    status_parser.add_argument('--summary', action='store_true', help='One-line summary only')
 
     # satisfy
     satisfy_parser = subparsers.add_parser('satisfy', help='Satisfy one or more requirements')
@@ -1600,6 +1754,7 @@ Environment Variables:
     # doctor
     doctor_parser = subparsers.add_parser('doctor', help='Verify hook installation and sync status')
     doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
+    doctor_parser.add_argument('--verbose', '-v', action='store_true', help='Show all checks including passing ones')
 
     args = parser.parse_args()
 
