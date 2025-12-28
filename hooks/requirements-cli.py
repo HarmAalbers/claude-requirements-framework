@@ -117,11 +117,24 @@ def _cmd_status_summary(project_dir: str, branch: str, session_id: str) -> int:
     for req_name in all_reqs:
         if not config.is_requirement_enabled(req_name):
             continue
-        scope = config.get_scope(req_name)
-        if reqs.is_satisfied(req_name, scope):
-            satisfied_count += 1
+
+        req_type = config.get_requirement_type(req_name)
+
+        # Handle dynamic requirements specially - check approval, not satisfaction
+        if req_type == 'dynamic':
+            if reqs.is_approved(req_name):
+                satisfied_count += 1
+            else:
+                # For summary, dynamic requirements are "satisfied" unless they would block
+                # We don't run expensive calculations here - assume passing unless approved
+                satisfied_count += 1
         else:
-            unsatisfied.append(req_name)
+            # Blocking/guard requirements - check satisfaction
+            scope = config.get_scope(req_name)
+            if reqs.is_satisfied(req_name, scope):
+                satisfied_count += 1
+            else:
+                unsatisfied.append(req_name)
 
     total = satisfied_count + len(unsatisfied)
 
@@ -162,31 +175,55 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
 
     reqs = BranchRequirements(branch, session_id, project_dir)
 
-    # Find unsatisfied requirements
-    unsatisfied = []
+    # Find unsatisfied requirements (blocking/guard only - dynamic shown separately)
+    unsatisfied_blocking = []
+    unsatisfied_dynamic = []
+
     for req_name in all_reqs:
         if not config.is_requirement_enabled(req_name):
             continue
-        scope = config.get_scope(req_name)
-        if not reqs.is_satisfied(req_name, scope):
-            unsatisfied.append((req_name, scope))
 
-    if not unsatisfied:
+        req_type = config.get_requirement_type(req_name)
+
+        if req_type == 'dynamic':
+            # Dynamic requirements - check if approved (don't run expensive calculations)
+            if not reqs.is_approved(req_name):
+                unsatisfied_dynamic.append(req_name)
+        else:
+            # Blocking/guard requirements - check satisfaction
+            scope = config.get_scope(req_name)
+            if not reqs.is_satisfied(req_name, scope):
+                unsatisfied_blocking.append((req_name, scope))
+
+    if not unsatisfied_blocking and not unsatisfied_dynamic:
         print(success("✅ All requirements satisfied"))
         print()
         print(hint("💡 Use 'req status --verbose' for full details"))
         return 0
 
-    # Show unsatisfied requirements
-    print(error("❌ Unsatisfied Requirements:"))
-    print()
+    # Show unsatisfied blocking requirements
+    if unsatisfied_blocking:
+        print(error("❌ Unsatisfied Requirements:"))
+        print()
 
-    for req_name, scope in unsatisfied:
-        print(f"  • {bold(req_name)} ({dim(scope)} scope)")
-        print(dim(f"    → req satisfy {req_name}"))
+        for req_name, scope in unsatisfied_blocking:
+            print(f"  • {bold(req_name)} ({dim(scope)} scope)")
+            print(dim(f"    → req satisfy {req_name}"))
+        print()
 
-    print()
-    print(hint(f"💡 Satisfy all: req satisfy {' '.join(r[0] for r in unsatisfied)}"))
+    # Show unapproved dynamic requirements (informational)
+    if unsatisfied_dynamic:
+        print(warning("⚠️  Dynamic Requirements (not yet approved):"))
+        print()
+        for req_name in unsatisfied_dynamic:
+            print(f"  • {bold(req_name)} (needs approval after calculation)")
+            print(dim(f"    → req satisfy {req_name}"))
+        print()
+
+    # Show combined satisfy hint
+    all_unsatisfied_names = [r[0] for r in unsatisfied_blocking] + unsatisfied_dynamic
+    if all_unsatisfied_names:
+        print(hint(f"💡 Satisfy all: req satisfy {' '.join(all_unsatisfied_names)}"))
     print(dim("   Use 'req status --verbose' for full details"))
 
     return 0  # Status command succeeds even with unsatisfied requirements
@@ -1017,17 +1054,34 @@ def cmd_doctor(args) -> int:
             if message.startswith("✓"):
                 if verbose:
                     info_items.append(("✅", f"{relative}: {message}"))
-            elif message.startswith(("↑", "↓")):
-                problems.append(("⚠️  WARNING", f"{relative}: {message}", "Run: ./sync.sh deploy or ./sync.sh pull"))
-                status_ok = False
-            elif message.startswith(("⚠", "✗")):
-                problems.append(("❌ CRITICAL", f"{relative}: {message}", "Check file permissions or re-install"))
+            elif message.startswith(("↑", "↓", "⚠", "✗")):
+                # Determine severity and specific fix from message
+                if message.startswith("↑"):
+                    severity = "⚠️  WARNING"
+                    fix = "Run: ./sync.sh deploy"
+                elif message.startswith("↓"):
+                    severity = "⚠️  WARNING"
+                    fix = "Run: ./sync.sh pull"
+                elif message.startswith("⚠"):
+                    severity = "⚠️  WARNING"
+                    fix = "Run: ./sync.sh status for details"
+                else:  # ✗
+                    severity = "❌ CRITICAL"
+                    fix = "Check file permissions or re-install"
+
+                problems.append((severity, f"{relative}: {message}", fix))
                 status_ok = False
             else:
                 if verbose:
                     info_items.append(("ℹ️", f"{relative}: {message}"))
-    elif verbose:
-        info_items.append(("⚠️", "Could not locate repository copy (set --repo to specify path)"))
+
+        # Add specific actions if provided
+        if actions and verbose:
+            for action in actions:
+                info_items.append(("💡", f"Recommended: {action}"))
+    else:
+        # Report repo not found as warning (always, not just in verbose)
+        problems.append(("⚠️  WARNING", "Could not locate repository copy", "Set --repo to specify path or run from repo directory"))
 
     # Display results
     if problems:
