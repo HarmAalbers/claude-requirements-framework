@@ -299,10 +299,28 @@ def cmd_satisfy(args) -> int:
     for req_name in requirements:
         # Check if requirement exists in config
         if req_name not in config.get_all_requirements():
-            print(warning(f"⚠️  Unknown requirement: {req_name}"), file=sys.stderr)
+            print(error(f"❌ Unknown requirement: '{req_name}'"), file=sys.stderr)
+
+            # Provide did-you-mean suggestions
             available = config.get_all_requirements()
             if available:
-                print(dim(f"   Available: {', '.join(available)}"))
+                # Find close matches using simple edit distance
+                import difflib
+                close_matches = difflib.get_close_matches(req_name, available, n=3, cutoff=0.6)
+
+                if close_matches:
+                    print("", file=sys.stderr)
+                    print(info("Did you mean?"), file=sys.stderr)
+                    for match in close_matches:
+                        print(f"  → {match}", file=sys.stderr)
+
+                print("", file=sys.stderr)
+                print(dim("Where to define requirements:"), file=sys.stderr)
+                print(dim("  • Global:  ~/.claude/requirements.yaml"), file=sys.stderr)
+                print(dim("  • Project: .claude/requirements.yaml"), file=sys.stderr)
+                print(dim("  • Local:   .claude/requirements.local.yaml"), file=sys.stderr)
+                print("", file=sys.stderr)
+                print(hint(f"💡 Run 'req init' to set up project requirements"), file=sys.stderr)
             # Still allow satisfying (manual override)
 
         # Handle based on requirement type

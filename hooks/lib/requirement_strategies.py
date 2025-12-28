@@ -88,6 +88,29 @@ class RequirementStrategy(ABC):
     that implements the check() method.
     """
 
+    def __init__(self):
+        """
+        Initialize strategy with message deduplication cache.
+
+        Note:
+            Cache initialization failures are logged but don't prevent strategy creation.
+            If cache fails, all messages will be shown (fail-open behavior).
+        """
+        self._init_dedup_cache()
+
+    def _init_dedup_cache(self) -> None:
+        """
+        Initialize message deduplication cache with fail-open error handling.
+
+        This method is shared by all strategy subclasses to avoid code duplication.
+        """
+        try:
+            self.dedup_cache = MessageDedupCache()
+        except Exception as e:
+            log_error(f"Failed to initialize message dedup cache: {e}", exc_info=True)
+            # Create a dummy cache that always shows messages (fail-open)
+            self.dedup_cache = None
+
     @abstractmethod
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -119,21 +142,6 @@ class BlockingRequirementStrategy(RequirementStrategy):
 
     Examples: commit_plan, adr_reviewed, github_ticket
     """
-
-    def __init__(self):
-        """
-        Initialize blocking strategy with message deduplication cache.
-
-        Note:
-            Cache initialization failures are logged but don't prevent strategy creation.
-            If cache fails, all messages will be shown (fail-open behavior).
-        """
-        try:
-            self.dedup_cache = MessageDedupCache()
-        except Exception as e:
-            log_error(f"Failed to initialize message dedup cache: {e}", exc_info=True)
-            # Create a dummy cache that always shows messages (fail-open)
-            self.dedup_cache = None
 
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -218,18 +226,12 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Initialize dynamic strategy with calculator cache.
 
         Note:
+            Dedup cache initialization is handled by parent class.
             Cache initialization failures are logged but don't prevent strategy creation.
-            If dedup cache fails, all messages will be shown (fail-open behavior).
         """
+        super().__init__()  # Initialize dedup cache from base class
         self.calculators = {}  # Cache loaded calculator instances
         self.cache = CalculationCache()  # Calculation result cache
-
-        try:
-            self.dedup_cache = MessageDedupCache()  # Message deduplication cache
-        except Exception as e:
-            log_error(f"Failed to initialize message dedup cache: {e}", exc_info=True)
-            # Create a dummy cache that always shows messages (fail-open)
-            self.dedup_cache = None
 
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -551,6 +553,16 @@ class GuardRequirementStrategy(RequirementStrategy):
         message += f"\n\n**Current session**: `{session_id}`"
         message += f"\n**Branch**: `{branch}`"
 
+        # Deduplication check to prevent spam from parallel tool calls
+        if self.dedup_cache:
+            cache_key = f"{context.get('project_dir', '')}:{branch}:{session_id}:{req_name}"
+
+            if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
+                # Suppress verbose message - show minimal indicator instead
+                minimal_message = f"⏸️ Guard requirement `{req_name}` not satisfied (waiting...)"
+                return create_denial_response(minimal_message)
+
+        # Show full message (first time or after TTL expiration)
         return create_denial_response(message)
 
 
