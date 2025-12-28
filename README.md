@@ -13,7 +13,7 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 275 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 346 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -46,14 +46,56 @@ req init
 
 # Or non-interactively
 req init --yes --preset relaxed
-
-# Choose a preset:
-# - relaxed: commit_plan only (default)
-# - strict: commit_plan + protected_branch
-# - minimal: framework enabled, no requirements
 ```
 
-The `req init` command creates `.claude/requirements.yaml` with your chosen preset.
+#### Initialization Modes
+
+The interactive wizard offers three configuration approaches:
+
+**1. Quick Preset** (Recommended)
+Choose from context-aware presets optimized for your setup:
+
+- **`advanced`** - All features (recommended for global config)
+  - 7 requirements showcasing every capability
+  - Dynamic checks (branch_size_limit with calculator)
+  - Single-use requirements (pre_commit_review, pre_pr_review)
+  - Guard requirements (protected_branch)
+  - Perfect for discovering what the framework can do
+
+- **`inherit`** - Use global defaults (recommended for projects)
+  - Sets `inherit: true`
+  - Empty requirements (relies on global config)
+  - Perfect for projects when you have global config
+
+- **`relaxed`** - Baseline requirements
+  - commit_plan only
+  - Good for standalone projects or trying the framework
+
+- **`strict`** - Full enforcement
+  - commit_plan + protected_branch
+  - Good for team projects with protected branches
+
+- **`minimal`** - Framework enabled, no requirements
+  - Configure later manually
+
+**2. Custom Selection**
+Interactive checkbox to pick specific features:
+- Choose from: commit_plan, adr_reviewed, protected_branch, branch_size_limit, pre_commit_review, pre_pr_review
+- Perfect for power users who know exactly what they want
+
+**3. Manual Setup**
+Starts with minimal config - configure everything yourself later
+
+#### Context-Aware Behavior
+
+`req init` automatically detects your context:
+
+- **Global setup** (`~/.claude/` directory): Defaults to `advanced` preset
+- **Project with global config**: Defaults to `inherit` preset
+- **Project without global**: Defaults to `relaxed` preset
+- **Local override**: Only offers `minimal` preset
+
+The `req init` command creates `.claude/requirements.yaml` with your chosen configuration.
 
 ### Basic Usage
 

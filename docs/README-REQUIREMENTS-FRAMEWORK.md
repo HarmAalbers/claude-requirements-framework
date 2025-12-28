@@ -103,9 +103,16 @@ req init --preview
 
 | Preset | Requirements | Use Case |
 |--------|--------------|----------|
-| `relaxed` | commit_plan only (session scope) | Default, good for most projects |
+| `advanced` | All 7 requirements (blocking, guard, dynamic, single-use) | Global config showcase (recommended for ~/.claude/) |
+| `inherit` | Empty, sets inherit: true | Projects using global config (recommended) |
+| `relaxed` | commit_plan only (session scope) | Standalone projects, trying the framework |
 | `strict` | commit_plan + protected_branch guard | Teams with strict workflow policies |
 | `minimal` | Framework enabled, no requirements | "I'll configure it myself" |
+
+**Context-Aware Defaults:**
+- Running `req init` in `~/.claude/` → Defaults to `advanced`
+- Running in project with global config → Defaults to `inherit`
+- Running in project without global → Defaults to `relaxed`
 
 ### Automatic Detection
 

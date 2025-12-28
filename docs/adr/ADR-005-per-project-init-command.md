@@ -73,12 +73,18 @@ Add `req init` command with an interactive wizard that scaffolds project configu
   - InquirerPy detection and fallback logic
   - Stdlib implementations using `input()`
 
-- `hooks/lib/init_presets.py` (280 lines)
-  - `PRESETS` dict with strict/relaxed/minimal profiles
+- `hooks/lib/init_presets.py` (457 lines, updated 2025-12-28)
+  - `PRESETS` dict with strict/relaxed/minimal/advanced/inherit profiles
   - `get_preset()` - retrieve preset by name
-  - `generate_config()` - add version/enabled, merge customizations
+  - `generate_config()` - add version/enabled, merge customizations, context-aware, validation
   - `config_to_yaml()` - YAML output with PyYAML or stdlib fallback
   - `_needs_quoting()` - robust YAML string safety (handles special chars, booleans, numbers)
+
+- `hooks/lib/feature_selector.py` (148 lines, added 2025-12-28)
+  - `FEATURES` catalog - maps requirement keys to user-friendly descriptions
+  - `FeatureSelector` class for interactive feature selection
+  - `select_features_interactive()` - checkbox-based feature picker with validation
+  - `build_config_from_features()` - generates config from selected features
 
 ### Files Modified
 
@@ -101,10 +107,18 @@ Add `req init` command with an interactive wizard that scaffolds project configu
 
 ### Test Coverage
 
-**Total: 275 tests (up from 233)**
+**Original: 275 tests (up from 233)**
 - 42 new tests specifically for init functionality
 - 100% pass rate maintained
 - All tests use TDD methodology (RED-GREEN-REFACTOR)
+
+**Enhanced (2025-12-28): 346 tests (up from 291)**
+- +55 new tests for advanced features
+- Tests for advanced/inherit presets (27 tests)
+- Tests for context parameter behavior (4 tests)
+- Tests for validation (6 tests)
+- Tests for feature selector (18 tests)
+- 99.7% pass rate (346/347 passing)
 
 ### Implementation Sequence (5 commits)
 
@@ -188,7 +202,7 @@ PRESETS['enterprise'] = {
 2. Update argparse choices in `requirements-cli.py`:
 ```python
 init_parser.add_argument('--preset', '-p',
-    choices=['strict', 'relaxed', 'minimal', 'enterprise'])
+    choices=['strict', 'relaxed', 'minimal', 'advanced', 'inherit', 'enterprise'])
 ```
 
 3. Add description in interactive wizard
@@ -200,10 +214,89 @@ No other changes needed - tests and config generation are already generic.
 - **ADR-003**: Dynamic Sync File Discovery - `sync.sh` automatically includes new `lib/` modules
 - **ADR-004**: Guard Requirement Strategy - `strict` preset includes `protected_branch` guard
 
+## Enhancement: Advanced Feature Discovery (2025-12-28)
+
+### Motivation
+
+After initial implementation, a critical feature discovery gap was identified:
+- Original presets only showcased 2 of 7 available requirement types
+- Users never discovered advanced features like dynamic requirements, single-use scopes, or command pattern triggers
+- No differentiation between global setup (showcase features) vs project setup (inherit from global)
+- Projects using `inherit: true` never saw configuration options during their own setup
+
+### Enhancements Added
+
+**1. New Presets**
+
+- **`advanced`** - Showcases ALL framework capabilities:
+  - 7 requirements demonstrating every type
+  - Dynamic requirement (`branch_size_limit`) with calculator, thresholds, cache_ttl, approval_ttl
+  - Single-use requirements (`pre_commit_review`, `pre_pr_review`) with command patterns
+  - Guard requirement (`protected_branch`)
+  - Disabled example (`github_ticket`) showing metadata pattern
+  - Hooks configuration (stop hook verification)
+  - **Recommended for global config** to showcase what's possible
+
+- **`inherit`** - Simplified project config:
+  - Sets `inherit: true`
+  - Empty requirements (relies on global)
+  - **Recommended for projects** when global config exists
+
+**2. Context-Aware Initialization**
+
+Added automatic context detection:
+- **Global** (`~/.claude/` directory): Defaults to `advanced` preset
+- **Project with global**: Defaults to `inherit` preset
+- **Project without global**: Defaults to `relaxed` preset, warns to create global first
+- **Local override**: Only offers `minimal` preset
+
+Context-specific UX:
+- Different headers (🌍 Global, 🚀 Project, 📝 Local)
+- Detection messages (checks for global config existence)
+- Helpful tips ("Run req init to create global defaults first")
+
+**3. Interactive Custom Feature Selection**
+
+Added three-mode initialization:
+1. **Quick Preset** - Choose from context-aware presets (existing behavior, enhanced)
+2. **Custom Selection** - NEW: Interactive checkbox to pick individual features
+3. **Manual Setup** - Start with minimal, configure later
+
+Custom selection allows users to cherry-pick specific requirements instead of all-or-nothing presets.
+
+**4. Code Quality**
+
+- Added validation for preset names and context values
+- Added error logging for path resolution failures
+- Fixed checkbox() API usage in feature selector
+- Enhanced error messages with actionable guidance
+
+### Implementation
+
+**New Files:**
+- `hooks/lib/feature_selector.py` - Interactive feature selection module
+
+**Modified Files:**
+- `hooks/lib/init_presets.py` - Added advanced/inherit presets, context parameter, validation
+- `hooks/requirements-cli.py` - Context detection, mode selection, integration
+
+**Tests Added:**
+- +55 new tests (346 total, up from 291)
+- Test coverage for all new presets, validation, feature selector
+
+### Impact
+
+- **Feature discovery**: Users now see ALL 7 requirement types, not just 2
+- **Better onboarding**: Context-aware defaults guide users to appropriate setups
+- **Power user support**: Custom selection for specific needs
+- **Backward compatible**: Existing `--preset` flags still work, defaults unchanged for non-interactive mode
+
 ## Future Enhancements
 
 Potential future additions (out of scope for this ADR):
-- `req config` command for modifying individual requirement settings
-- More presets (team-specific, language-specific)
+- ✅ ~~`req config` command for modifying individual requirement settings~~ (IMPLEMENTED)
+- ✅ ~~More presets (advanced, inherit)~~ (IMPLEMENTED 2025-12-28)
+- ✅ ~~Custom feature selection~~ (IMPLEMENTED 2025-12-28)
 - Migration tool for converting old configs to new format
 - Config validation command (`req validate`)
+- Per-requirement customization wizard (scope, message, checklist editing)
