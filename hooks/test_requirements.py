@@ -923,6 +923,71 @@ def test_cli_commands(runner: TestRunner):
         )
 
 
+def test_cli_status_modes(runner: TestRunner):
+    """Test new status modes (focused, summary, verbose)."""
+    print("\n📦 Testing status command modes...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Create config with multiple requirements
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session"},
+                "adr_reviewed": {"enabled": True, "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test 1: Default focused mode (unsatisfied only)
+        result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Focused status runs", result.returncode == 0)
+        runner.test("Focused shows unsatisfied", "Unsatisfied Requirements" in result.stdout, result.stdout[:300])
+
+        # Test 2: Summary mode
+        result = subprocess.run(
+            ["python3", str(cli_path), "status", "--summary"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Summary status runs", result.returncode == 0)
+        runner.test("Summary shows counts", "0/2" in result.stdout or "requirements satisfied" in result.stdout, result.stdout)
+
+        # Test 3: Satisfy and check focused hides satisfied
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Focused shows remaining unsatisfied", "adr_reviewed" in result.stdout, result.stdout)
+
+        # Test 4: Summary when all satisfied
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "adr_reviewed"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "status", "--summary"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Summary shows all satisfied", "✅" in result.stdout and "2" in result.stdout, result.stdout)
+
+
 def test_cli_sessions_command(runner: TestRunner):
     """Test CLI sessions command and auto-detection."""
     print("\n📦 Testing CLI sessions command...")
@@ -3581,6 +3646,7 @@ def main():
     test_branch_level_override(runner)
     test_branch_level_override_with_ttl(runner)
     test_cli_commands(runner)
+    test_cli_status_modes(runner)
     test_cli_sessions_command(runner)
     test_cli_doctor_command(runner)
     test_hook_behavior(runner)
