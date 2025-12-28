@@ -1,0 +1,11 @@
+{
+  "name": "github-issues",
+  "version": "1.0.0",
+  "description": "Comprehensive GitHub issues management with Projects v2 integration",
+  "author": "HarmAalbers",
+  "repository": "HarmAalbers/claude-code-plugins",
+  "agents": ["agents/issue-manager.md"],
+  "skills": [],
+  "commands": [],
+  "hooks": []
+}
