@@ -607,10 +607,10 @@ def cmd_doctor(args) -> int:
         icon = "✅" if ok else "❌"
         print(f"{icon} {msg}")
 
-    # Project config
+    # Project config (informational only - not fatal)
     config_ok, config_msg = _check_project_config(project_dir)
-    status_ok &= config_ok
-    icon = "✅" if config_ok else "❌"
+    # Don't fail doctor if project config is missing - it's optional
+    icon = "✅" if config_ok else "⚠️"
     print(f"{icon} {config_msg}")
 
     # Sync status
