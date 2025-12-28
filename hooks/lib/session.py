@@ -126,79 +126,48 @@ def update_registry(session_id: str, project_dir: str, branch: str) -> None:
         This function is fail-open: errors are logged but don't raise exceptions,
         so registry failures never block hook execution.
     """
+    from registry_client import RegistryClient
+
     registry_path = get_registry_path()
+    client = RegistryClient(registry_path)
 
-    # Ensure ~/.claude directory exists
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    def update_session(registry):
+        """Update or add session with inline stale cleanup."""
+        sessions = registry.get("sessions", {})
 
-    # Read existing registry (or create empty)
-    registry = {"version": "1.0", "sessions": {}}
+        # Clean up stale entries (dead processes) - check ppid (Claude session) not pid (hook)
+        stale_ids = []
+        for sid, sess_data in sessions.items():
+            if not is_process_alive(sess_data.get("ppid", 0)):
+                stale_ids.append(sid)
 
-    if registry_path.exists():
-        try:
-            with open(registry_path, 'r') as f:
-                fcntl.flock(f, fcntl.LOCK_SH)  # Shared lock for reading
-                try:
-                    registry = json.load(f)
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
-        except (json.JSONDecodeError, OSError, IOError):
-            # Corrupted registry - start fresh
-            registry = {"version": "1.0", "sessions": {}}
+        for sid in stale_ids:
+            del sessions[sid]
 
-    # Clean up stale entries (dead processes) - check ppid (Claude session) not pid (hook)
-    sessions = registry.get("sessions", {})
-    stale_ids = []
-    for sid, sess_data in sessions.items():
-        if not is_process_alive(sess_data.get("ppid", 0)):
-            stale_ids.append(sid)
+        # Update or add current session
+        now = int(time.time())
+        if session_id not in sessions:
+            sessions[session_id] = {
+                "pid": os.getpid(),
+                "ppid": os.getppid(),
+                "project_dir": project_dir,
+                "branch": branch,
+                "started_at": now,
+                "last_active": now
+            }
+        else:
+            # Update existing session
+            sessions[session_id].update({
+                "project_dir": project_dir,
+                "branch": branch,
+                "last_active": now
+            })
 
-    for sid in stale_ids:
-        del sessions[sid]
+        registry["sessions"] = sessions
+        return registry
 
-    # Update or add current session
-    now = int(time.time())
-    if session_id not in sessions:
-        sessions[session_id] = {
-            "pid": os.getpid(),
-            "ppid": os.getppid(),
-            "project_dir": project_dir,
-            "branch": branch,
-            "started_at": now,
-            "last_active": now
-        }
-    else:
-        # Update existing session
-        sessions[session_id].update({
-            "project_dir": project_dir,
-            "branch": branch,
-            "last_active": now
-        })
-
-    registry["sessions"] = sessions
-
-    # Write atomically using temp file + rename
-    temp_path = registry_path.with_suffix('.tmp')
-
-    try:
-        with open(temp_path, 'w') as f:
-            fcntl.flock(f, fcntl.LOCK_EX)  # Exclusive lock for writing
-            try:
-                json.dump(registry, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())  # Ensure written to disk
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        # Atomic rename (POSIX guarantees atomicity)
-        temp_path.rename(registry_path)
-    except OSError:
-        # Fail-open: clean up temp file but don't raise
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
+    # Use atomic update
+    client.update(update_session)
 
 
 def get_active_sessions(project_dir: str = None, branch: str = None) -> list[dict]:
@@ -222,21 +191,12 @@ def get_active_sessions(project_dir: str = None, branch: str = None) -> list[dic
         - started_at: Session start timestamp
         - last_active: Last activity timestamp
     """
+    from registry_client import RegistryClient
+
     registry_path = get_registry_path()
+    client = RegistryClient(registry_path)
 
-    if not registry_path.exists():
-        return []
-
-    try:
-        with open(registry_path, 'r') as f:
-            fcntl.flock(f, fcntl.LOCK_SH)  # Shared lock for reading
-            try:
-                registry = json.load(f)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-    except (json.JSONDecodeError, OSError, IOError):
-        return []
-
+    registry = client.read()
     sessions = registry.get("sessions", {})
     result = []
 
@@ -270,62 +230,39 @@ def cleanup_stale_sessions() -> int:
     Returns:
         Number of stale entries removed
     """
+    from registry_client import RegistryClient
+
     registry_path = get_registry_path()
+    client = RegistryClient(registry_path)
 
-    if not registry_path.exists():
-        return 0
+    stale_count = 0
 
-    # Read registry
-    try:
-        with open(registry_path, 'r') as f:
-            fcntl.flock(f, fcntl.LOCK_SH)
-            try:
-                registry = json.load(f)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-    except (json.JSONDecodeError, OSError, IOError):
-        return 0
+    def cleanup_stale(registry):
+        """Find and remove stale sessions."""
+        nonlocal stale_count
 
-    # Find stale entries - check ppid (Claude session) not pid (hook subprocess)
-    sessions = registry.get("sessions", {})
-    stale_ids = []
-    for session_id, sess_data in sessions.items():
-        if not is_process_alive(sess_data.get("ppid", 0)):
-            stale_ids.append(session_id)
+        sessions = registry.get("sessions", {})
+        stale_ids = []
 
-    if not stale_ids:
-        return 0
+        # Find stale entries - check ppid (Claude session) not pid (hook subprocess)
+        for session_id, sess_data in sessions.items():
+            if not is_process_alive(sess_data.get("ppid", 0)):
+                stale_ids.append(session_id)
 
-    # Remove stale entries
-    for session_id in stale_ids:
-        del sessions[session_id]
+        if not stale_ids:
+            return None  # No changes needed
 
-    registry["sessions"] = sessions
+        # Remove stale entries
+        for session_id in stale_ids:
+            del sessions[session_id]
 
-    # Write back atomically
-    temp_path = registry_path.with_suffix('.tmp')
+        registry["sessions"] = sessions
+        stale_count = len(stale_ids)
+        return registry
 
-    try:
-        with open(temp_path, 'w') as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                json.dump(registry, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        temp_path.rename(registry_path)
-    except OSError:
-        # Fail-open
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-        return 0
-
-    return len(stale_ids)
+    # Use atomic update
+    client.update(cleanup_stale)
+    return stale_count
 
 
 def remove_session_from_registry(session_id: str) -> bool:
@@ -340,55 +277,33 @@ def remove_session_from_registry(session_id: str) -> bool:
     Returns:
         True if session was found and removed, False otherwise
     """
+    from registry_client import RegistryClient
+
     registry_path = get_registry_path()
+    client = RegistryClient(registry_path)
 
-    if not registry_path.exists():
-        return False
+    was_found = False
 
-    # Read registry
-    try:
-        with open(registry_path, 'r') as f:
-            fcntl.flock(f, fcntl.LOCK_SH)
-            try:
-                registry = json.load(f)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-    except (json.JSONDecodeError, OSError, IOError):
-        return False
+    def remove_session(registry):
+        """Remove session if it exists."""
+        nonlocal was_found
 
-    sessions = registry.get("sessions", {})
+        sessions = registry.get("sessions", {})
 
-    # Check if session exists
-    if session_id not in sessions:
-        return False
+        if session_id not in sessions:
+            # Session not found - signal no write needed
+            was_found = False
+            return None
 
-    # Remove the session
-    del sessions[session_id]
-    registry["sessions"] = sessions
+        # Remove the session
+        del sessions[session_id]
+        registry["sessions"] = sessions
+        was_found = True
+        return registry
 
-    # Write back atomically
-    temp_path = registry_path.with_suffix('.tmp')
-
-    try:
-        with open(temp_path, 'w') as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                json.dump(registry, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        temp_path.rename(registry_path)
-        return True
-    except OSError:
-        # Fail-open
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-        return False
+    # Use atomic update
+    client.update(remove_session)
+    return was_found
 
 
 if __name__ == "__main__":
