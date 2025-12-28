@@ -2995,6 +2995,8 @@ def test_init_presets_module(runner: TestRunner):
     runner.test("Has 'strict' preset", 'strict' in PRESETS)
     runner.test("Has 'relaxed' preset", 'relaxed' in PRESETS)
     runner.test("Has 'minimal' preset", 'minimal' in PRESETS)
+    runner.test("Has 'advanced' preset", 'advanced' in PRESETS)
+    runner.test("Has 'inherit' preset", 'inherit' in PRESETS)
 
     # Test get_preset function
     strict = get_preset('strict')
@@ -3042,6 +3044,147 @@ def test_init_presets_module(runner: TestRunner):
     runner.test("commit_plan has scope", 'scope' in commit_plan)
     runner.test("commit_plan has trigger_tools", 'trigger_tools' in commit_plan)
     runner.test("commit_plan has message", 'message' in commit_plan)
+
+    # Test advanced preset - should have all 6+ requirement types
+    advanced = get_preset('advanced')
+    advanced_reqs = advanced.get('requirements', {})
+    runner.test("advanced has requirements", len(advanced_reqs) > 0)
+    runner.test("advanced has commit_plan", 'commit_plan' in advanced_reqs)
+    runner.test("advanced has adr_reviewed", 'adr_reviewed' in advanced_reqs)
+    runner.test("advanced has protected_branch", 'protected_branch' in advanced_reqs)
+    runner.test("advanced has branch_size_limit", 'branch_size_limit' in advanced_reqs)
+    runner.test("advanced has pre_commit_review", 'pre_commit_review' in advanced_reqs)
+    runner.test("advanced has pre_pr_review", 'pre_pr_review' in advanced_reqs)
+    runner.test("advanced has github_ticket", 'github_ticket' in advanced_reqs)
+
+    # Test advanced preset has hooks config
+    runner.test("advanced has hooks config", 'hooks' in advanced)
+    runner.test("advanced has stop hook", 'stop' in advanced.get('hooks', {}))
+
+    # Test branch_size_limit is dynamic with calculator
+    branch_limit = advanced_reqs.get('branch_size_limit', {})
+    runner.test("branch_size_limit type is dynamic", branch_limit.get('type') == 'dynamic')
+    runner.test("branch_size_limit has calculator", 'calculator' in branch_limit)
+    runner.test("branch_size_limit has thresholds", 'thresholds' in branch_limit)
+    runner.test("branch_size_limit has cache_ttl", 'cache_ttl' in branch_limit)
+    runner.test("branch_size_limit has approval_ttl", 'approval_ttl' in branch_limit)
+
+    # Test pre_commit_review has single_use scope and command pattern
+    pre_commit = advanced_reqs.get('pre_commit_review', {})
+    runner.test("pre_commit_review scope is single_use", pre_commit.get('scope') == 'single_use')
+    runner.test("pre_commit_review has trigger_tools", 'trigger_tools' in pre_commit)
+    trigger_tools = pre_commit.get('trigger_tools', [])
+    runner.test("pre_commit_review trigger is dict", isinstance(trigger_tools[0], dict) if trigger_tools else False)
+    if trigger_tools and isinstance(trigger_tools[0], dict):
+        runner.test("pre_commit_review has tool key", 'tool' in trigger_tools[0])
+        runner.test("pre_commit_review has command_pattern", 'command_pattern' in trigger_tools[0])
+
+    # Test github_ticket is disabled (example)
+    github_ticket = advanced_reqs.get('github_ticket', {})
+    runner.test("github_ticket is disabled", github_ticket.get('enabled') is False)
+    runner.test("github_ticket scope is branch", github_ticket.get('scope') == 'branch')
+
+    # Test inherit preset
+    inherit = get_preset('inherit')
+    runner.test("inherit has inherit flag", inherit.get('inherit') is True)
+    runner.test("inherit has empty requirements", len(inherit.get('requirements', {})) == 0)
+
+
+def test_generate_config_context_parameter(runner: TestRunner):
+    """Test generate_config with context parameter."""
+    print("\n📦 Testing generate_config context parameter...")
+
+    from init_presets import generate_config
+
+    # Test context parameter for project
+    config = generate_config('minimal', context='project')
+    runner.test("project context adds inherit", config.get('inherit') is True)
+
+    # Test context parameter for global
+    config = generate_config('advanced', context='global')
+    runner.test("global context has no inherit", 'inherit' not in config)
+
+    # Test context parameter for local
+    config = generate_config('minimal', context='local')
+    runner.test("local context has no inherit", 'inherit' not in config)
+
+    # Test inherit preset already has inherit flag
+    config = generate_config('inherit', context='project')
+    runner.test("inherit preset has inherit flag", config.get('inherit') is True)
+
+
+def test_generate_config_validation(runner: TestRunner):
+    """Test generate_config validation."""
+    print("\n📦 Testing generate_config validation...")
+
+    from init_presets import generate_config
+
+    # Test invalid preset name raises ValueError
+    try:
+        generate_config('nonexistent_preset')
+        runner.test("invalid preset raises ValueError", False, "No exception raised")
+    except ValueError as e:
+        runner.test("invalid preset raises ValueError", True)
+        runner.test("error message mentions valid presets", 'Valid presets' in str(e))
+
+    # Test invalid context raises ValueError
+    try:
+        generate_config('relaxed', context='invalid_context')
+        runner.test("invalid context raises ValueError", False, "No exception raised")
+    except ValueError as e:
+        runner.test("invalid context raises ValueError", True)
+        runner.test("error message mentions valid contexts", 'Valid contexts' in str(e))
+
+    # Test valid preset and context work
+    try:
+        config = generate_config('advanced', context='global')
+        runner.test("valid preset and context work", True)
+    except Exception as e:
+        runner.test("valid preset and context work", False, str(e))
+
+
+def test_feature_selector(runner: TestRunner):
+    """Test feature selector module."""
+    print("\n📦 Testing feature selector module...")
+
+    from feature_selector import FeatureSelector, FEATURES
+
+    # Test FEATURES catalog exists
+    runner.test("FEATURES is dict", isinstance(FEATURES, dict))
+    runner.test("FEATURES has commit_plan", 'commit_plan' in FEATURES)
+    runner.test("FEATURES has adr_reviewed", 'adr_reviewed' in FEATURES)
+    runner.test("FEATURES has protected_branch", 'protected_branch' in FEATURES)
+    runner.test("FEATURES has branch_size_limit", 'branch_size_limit' in FEATURES)
+    runner.test("FEATURES has pre_commit_review", 'pre_commit_review' in FEATURES)
+    runner.test("FEATURES has pre_pr_review", 'pre_pr_review' in FEATURES)
+
+    # Test feature structure
+    commit_plan_feature = FEATURES.get('commit_plan', {})
+    runner.test("feature has name", 'name' in commit_plan_feature)
+    runner.test("feature has description", 'description' in commit_plan_feature)
+    runner.test("feature has category", 'category' in commit_plan_feature)
+
+    # Test FeatureSelector.build_config_from_features
+    selector = FeatureSelector()
+
+    # Test with valid features
+    config = selector.build_config_from_features(['commit_plan', 'adr_reviewed'], context='project')
+    runner.test("build_config returns dict", isinstance(config, dict))
+    runner.test("build_config has version", config.get('version') == '1.0')
+    runner.test("build_config has enabled", config.get('enabled') is True)
+    runner.test("build_config project has inherit", config.get('inherit') is True)
+    runner.test("build_config has requirements", 'requirements' in config)
+    runner.test("build_config includes commit_plan", 'commit_plan' in config.get('requirements', {}))
+    runner.test("build_config includes adr_reviewed", 'adr_reviewed' in config.get('requirements', {}))
+
+    # Test with global context (no inherit)
+    config = selector.build_config_from_features(['commit_plan'], context='global')
+    runner.test("build_config global has no inherit", 'inherit' not in config)
+
+    # Test with empty features list
+    config = selector.build_config_from_features([], context='project')
+    runner.test("build_config empty features returns dict", isinstance(config, dict))
+    runner.test("build_config empty has no requirements", len(config.get('requirements', {})) == 0)
 
 
 def main():
@@ -3102,6 +3245,9 @@ def main():
 
     # Init presets module tests
     test_init_presets_module(runner)
+    test_generate_config_context_parameter(runner)
+    test_generate_config_validation(runner)
+    test_feature_selector(runner)
 
     # CLI init command tests
     test_cli_init_command(runner)
