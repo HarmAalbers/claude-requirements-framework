@@ -708,6 +708,146 @@ def _compare_repo_and_deployed(repo_dir: Path, deployed_dir: Path) -> tuple[list
     return results, sorted(actions)
 
 
+def cmd_verify(args) -> int:
+    """
+    Verify requirements framework installation.
+
+    Runs a comprehensive check of the installation to ensure
+    hooks are properly registered and functioning.
+
+    Returns:
+        0 if verification passed, 1 if issues found
+    """
+    print(header("🧪 Verifying Requirements Framework Installation"))
+    print()
+
+    issues_found = False
+
+    # Test 1: Check hook files exist
+    print(info("1. Checking hook files..."))
+    hook_files = [
+        "check-requirements.py",
+        "handle-session-start.py",
+        "handle-stop.py",
+        "handle-session-end.py",
+        "requirements-cli.py"
+    ]
+
+    hooks_dir = Path.home() / '.claude' / 'hooks'
+    missing_files = []
+    for hook_file in hook_files:
+        hook_path = hooks_dir / hook_file
+        if not hook_path.exists():
+            missing_files.append(hook_file)
+            print(error(f"  ❌ Missing: {hook_file}"))
+            issues_found = True
+        elif not os.access(hook_path, os.X_OK):
+            print(warning(f"  ⚠️  Not executable: {hook_file}"))
+            print(dim(f"     Fix: chmod +x ~/.claude/hooks/{hook_file}"))
+            issues_found = True
+
+    if not missing_files:
+        print(success("  ✅ All hook files present and executable"))
+
+    # Test 2: Check hook registration
+    print()
+    print(info("2. Checking hook registration..."))
+    settings_file = Path.home() / '.claude' / 'settings.local.json'
+
+    if not settings_file.exists():
+        print(error("  ❌ settings.local.json not found"))
+        print(dim("     Run: ./install.sh to register hooks"))
+        issues_found = True
+    else:
+        try:
+            with open(settings_file) as f:
+                settings = json.load(f)
+
+            hooks_config = settings.get('hooks', {})
+            expected_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']
+            missing_hooks = []
+
+            for hook_type in expected_hooks:
+                if hook_type not in hooks_config:
+                    missing_hooks.append(hook_type)
+                    print(error(f"  ❌ {hook_type} hook not registered"))
+                    issues_found = True
+
+            if not missing_hooks:
+                print(success("  ✅ All hooks registered in settings"))
+
+        except (json.JSONDecodeError, OSError) as e:
+            print(error(f"  ❌ Cannot read settings.local.json: {e}"))
+            issues_found = True
+
+    # Test 3: Test PreToolUse hook responds
+    print()
+    print(info("3. Testing PreToolUse hook response..."))
+    hook_path = hooks_dir / "check-requirements.py"
+
+    if hook_path.exists():
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"tool_name":"Read"}',
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            print(success("  ✅ PreToolUse hook responds correctly"))
+        else:
+            print(error(f"  ❌ Hook exited with code {result.returncode}"))
+            if result.stderr:
+                print(dim(f"     Error: {result.stderr[:200]}"))
+            issues_found = True
+    else:
+        print(warning("  ⚠️  Skipped (hook file missing)"))
+
+    # Test 4: Check req command accessibility
+    print()
+    print(info("4. Checking 'req' command..."))
+    req_link = Path.home() / '.local' / 'bin' / 'req'
+
+    if req_link.exists():
+        print(success("  ✅ 'req' command is accessible"))
+    else:
+        print(warning("  ⚠️  'req' symlink not found"))
+        print(dim("     Run: ./install.sh to create symlink"))
+
+    # Check PATH
+    local_bin = str(Path.home() / '.local' / 'bin')
+    if local_bin not in os.environ.get('PATH', ''):
+        print(warning("  ⚠️  ~/.local/bin not in PATH"))
+        print(dim("     Add: export PATH=\"$HOME/.local/bin:$PATH\""))
+
+    # Test 5: Check config exists
+    print()
+    print(info("5. Checking configuration..."))
+    global_config = Path.home() / '.claude' / 'requirements.yaml'
+
+    if global_config.exists():
+        print(success("  ✅ Global config exists"))
+    else:
+        print(warning("  ⚠️  No global config"))
+        print(dim("     Run: ./install.sh to install default config"))
+
+    # Summary
+    print()
+    print("=" * 50)
+    if issues_found:
+        print(error("❌ Verification failed - issues found"))
+        print()
+        print(hint("💡 Run './install.sh' to fix installation issues"))
+        return 1
+    else:
+        print(success("✅ Framework fully functional!"))
+        print()
+        print(hint("💡 Next: Run 'req init' in your project to set up requirements"))
+        return 0
+
+
 def cmd_doctor(args) -> int:
     """Run environment diagnostics for the requirements framework."""
 
@@ -1454,6 +1594,9 @@ Environment Variables:
     config_parser.add_argument('--local', action='store_true', help='Modify local config')
     config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
 
+    # verify
+    subparsers.add_parser('verify', help='Verify framework installation is working correctly')
+
     # doctor
     doctor_parser = subparsers.add_parser('doctor', help='Verify hook installation and sync status')
     doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
@@ -1476,6 +1619,7 @@ Environment Variables:
         'disable': cmd_disable,
         'init': cmd_init,
         'config': cmd_config,
+        'verify': cmd_verify,
         'doctor': cmd_doctor,
     }
 
