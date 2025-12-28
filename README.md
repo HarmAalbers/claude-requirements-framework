@@ -75,7 +75,49 @@ req sessions
 
 # Configure a requirement
 req config commit_plan --enable --scope branch
+
+# Set custom fields (e.g., ADR location)
+req config adr_reviewed --set adr_path=/docs/adr
 ```
+
+### Managing Configuration
+
+The `req config` command lets you view and modify requirement settings without manually editing YAML files:
+
+```bash
+# View current configuration for a requirement
+req config commit_plan
+
+# Enable/disable a requirement
+req config github_ticket --enable
+req config commit_plan --disable
+
+# Change scope
+req config commit_plan --scope branch
+
+# Set custom message
+req config adr_reviewed --message "📚 Review ADRs in docs/adr/"
+
+# Set arbitrary fields (great for custom requirements)
+req config adr_reviewed --set adr_path=/docs/adr
+req config dynamic_req --set approval_ttl=600
+req config my_requirement --set custom_field="value"
+
+# Multiple changes at once
+req config commit_plan --enable --scope branch --message "Custom"
+
+# Interactive mode (asks project vs local)
+req config commit_plan --enable
+
+# Non-interactive (for scripts)
+req config commit_plan --disable --local --yes
+```
+
+The `--set` flag supports:
+- **Strings**: `--set adr_path=/docs/adr`
+- **Numbers**: `--set approval_ttl=600` (auto-parsed as JSON)
+- **Booleans**: `--set strict=true`
+- **Arrays**: `--set branches='["main","master"]'`
 
 ## Requirements Types
 
