@@ -1,43 +1,4 @@
-requirements:
-  commit_plan:
-    enabled: true
-    type: blocking
-    scope: session
-    trigger_tools:
-    - Edit
-    - Write
-    - MultiEdit
-    message: "\U0001F4CB **No commit plan found for this session**\n\nBefore making\
-      \ code changes, you should plan your commits.\n\n**Required**: Create a commit\
-      \ plan that describes:\n- What changes you'll make\n- How you'll split them\
-      \ into atomic commits\n- What order to make the changes\n\n**Why this matters**:\n\
-      - Ensures commits are atomic and reviewable\n- Prevents \"fix comments\" commits\n\
-      - Follows project conventions\n\n**To proceed**: Run `req satisfy commit_plan`\
-      \ after creating a plan\n"
-    checklist:
-    - Identified the changes needed for this feature/fix
-    - Determined atomic commit boundaries (each commit is reviewable)
-    - Planned commit sequence and dependencies
-    - Considered what can be safely rolled back
-    - Created plan file documenting the approach
-  protected_branch:
-    enabled: true
-    type: guard
-    guard_type: protected_branch
-    protected_branches:
-    - master
-    - main
-    trigger_tools:
-    - Edit
-    - Write
-    - MultiEdit
-    message: "\U0001F6AB **Cannot edit files on protected branch**\n\nDirect edits\
-      \ on protected branches are not allowed.\nPlease create a feature branch first:\n\
-      \n```bash\ngit checkout -b feature/your-feature-name\n```\n\n**For emergency\
-      \ hotfixes** (current session only):\n```bash\nreq approve protected_branch\n\
-      ```\n"
-hooks:
-  stop:
-    verify_requirements: true
+inherit: true
+requirements: {}
 version: '1.0'
 enabled: true
