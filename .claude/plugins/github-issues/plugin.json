@@ -1,0 +1,85 @@
+{
+  "name": "github-issues",
+  "version": "1.0.0",
+  "description": "Comprehensive GitHub issues management with Projects v2 integration for claude-requirements-framework",
+  "author": "HarmAalbers",
+  "repository": "HarmAalbers/claude-requirements-framework",
+  "agents": ["agents/issue-manager.md"],
+  "skills": [],
+  "commands": [],
+  "hooks": [],
+  "settings": {
+    "default_project_number": 2,
+    "owner": "HarmAalbers",
+    "repository": "claude-requirements-framework",
+    "project_url": "https://github.com/users/HarmAalbers/projects/2",
+    "custom_fields": {
+      "priority": {
+        "name": "Priority",
+        "field_id": "PVTSSF_lAHOAnYO9M4BLeovzg7ClOY",
+        "options": {
+          "high": {
+            "id": "13cda666",
+            "name": "🔴 High"
+          },
+          "medium": {
+            "id": "03ec3ca1",
+            "name": "🟡 Medium"
+          },
+          "low": {
+            "id": "dd43ae1c",
+            "name": "🟢 Low"
+          }
+        }
+      },
+      "type": {
+        "name": "Type",
+        "field_id": "PVTSSF_lAHOAnYO9M4BLeovzg7CmYg",
+        "options": {
+          "feature": {
+            "id": "d752d1a7",
+            "name": "✨ Feature"
+          },
+          "bug": {
+            "id": "cf698683",
+            "name": "🐛 Bug"
+          },
+          "documentation": {
+            "id": "e2862951",
+            "name": "📚 Documentation"
+          },
+          "infrastructure": {
+            "id": "2a8c318e",
+            "name": "🏗️ Infrastructure"
+          },
+          "testing": {
+            "id": "97f4e30a",
+            "name": "🧪 Testing"
+          }
+        }
+      },
+      "status": {
+        "name": "Status",
+        "field_id": "PVTSSF_lAHOAnYO9M4BLeovzg7CkI8",
+        "options": {
+          "todo": {
+            "id": "f75ad846",
+            "name": "Todo"
+          },
+          "in_progress": {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          "in_review": {
+            "id": "728eea1f",
+            "name": "In Review"
+          },
+          "done": {
+            "id": "98236657",
+            "name": "Done"
+          }
+        }
+      }
+    }
+  }
+}
