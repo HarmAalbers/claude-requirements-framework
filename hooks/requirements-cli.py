@@ -474,33 +474,140 @@ def _load_settings_file(claude_dir: Path) -> tuple[Path | None, dict]:
         path = claude_dir / filename
         if path.exists():
             try:
-                return path, json.loads(path.read_text())
+                content = path.read_text()
+                return path, json.loads(content)
+            except PermissionError:
+                print(f"❌ Cannot read {path}: Permission denied", file=sys.stderr)
+                return path, {}
+            except UnicodeDecodeError as e:
+                print(f"❌ {path} contains invalid UTF-8: {e}", file=sys.stderr)
+                return path, {}
             except json.JSONDecodeError:
                 print(f"❌ {path} is not valid JSON", file=sys.stderr)
+                return path, {}
+            except (OSError, IOError) as e:
+                print(f"❌ Error reading {path}: {e}", file=sys.stderr)
                 return path, {}
     return None, {}
 
 
+def _extract_path_from_command(command: str, expected_script: str) -> str | None:
+    """
+    Extract file path from a command string.
+
+    Looks for the expected script name in the command tokens and returns
+    the path containing it. Handles various command formats like:
+    - "python3 ~/.claude/hooks/check-requirements.py"
+    - "~/.claude/hooks/check-requirements.py"
+    - "/usr/bin/python3 /home/user/.claude/hooks/check-requirements.py --flag"
+
+    Args:
+        command: Command string from hook configuration
+        expected_script: Script name to look for (e.g., "check-requirements.py")
+
+    Returns:
+        Extracted path if found, None otherwise
+    """
+    if not isinstance(command, str):
+        return None
+
+    # Split command into tokens
+    tokens = command.split()
+
+    # Find the token containing the expected script
+    for token in tokens:
+        if expected_script in token:
+            # Strip common surrounding characters
+            cleaned = token.strip('";,\'')
+
+            # Verify the cleaned token still contains the script name
+            if expected_script in cleaned:
+                return cleaned
+
+    return None
+
+
 def _check_hook_registration(claude_dir: Path) -> tuple[bool, str]:
-    """Verify PreToolUse hook is registered."""
+    """Verify PreToolUse hook is registered (new format only)."""
 
     settings_path, settings = _load_settings_file(claude_dir)
-    expected_path = str((claude_dir / "hooks" / "check-requirements.py").expanduser())
+    expected_script = "check-requirements.py"
+
+    # Safely expand path
+    try:
+        expected_path = str((claude_dir / "hooks" / expected_script).expanduser())
+    except (RuntimeError, OSError) as e:
+        return False, f"Failed to expand path for {expected_script}: {e}"
 
     if not settings_path:
         return False, "Missing ~/.claude/settings.json"
 
     hooks = settings.get("hooks", {})
-    hook_path = hooks.get("PreToolUse")
+    hook_value = hooks.get("PreToolUse")
 
-    if not hook_path:
+    if not hook_value:
         return False, f"PreToolUse hook not registered in {settings_path}"
 
-    normalized = str(Path(hook_path).expanduser())
-    if normalized != expected_path:
-        return False, f"PreToolUse hook points to {hook_path} (expected {expected_path})"
+    # Detect old format (string) and show migration message
+    if isinstance(hook_value, str):
+        return False, (
+            f"PreToolUse hook uses old format (string path).\n"
+            f"Please upgrade to new format in {settings_path}.\n"
+            f"See: https://github.com/anthropics/claude-code/releases"
+        )
 
-    return True, f"PreToolUse hook registered in {settings_path}"
+    # Check if new format (list)
+    if not isinstance(hook_value, list):
+        actual_type = type(hook_value).__name__
+        return False, (
+            f"PreToolUse hook has unexpected format in {settings_path}\n"
+            f"Expected: list of matchers, Found: {actual_type}"
+        )
+
+    # Track validation issues for better diagnostics
+    malformed_matchers = 0
+    malformed_hooks = 0
+
+    # Iterate through matchers to find our hook
+    for matcher_obj in hook_value:
+        if not isinstance(matcher_obj, dict):
+            malformed_matchers += 1
+            continue
+
+        hooks_list = matcher_obj.get("hooks", [])
+
+        # Validate hooks is a list
+        if not isinstance(hooks_list, list):
+            malformed_hooks += 1
+            continue
+
+        for hook_obj in hooks_list:
+            if not isinstance(hook_obj, dict):
+                malformed_hooks += 1
+                continue
+
+            command = hook_obj.get("command", "")
+            found_path = _extract_path_from_command(command, expected_script)
+
+            if found_path:
+                # Normalize and compare - safely handle path expansion
+                try:
+                    normalized = str(Path(found_path).expanduser())
+                except (RuntimeError, OSError) as e:
+                    return False, f"Invalid path in hook configuration '{found_path}': {e}"
+
+                if normalized != expected_path:
+                    return False, f"PreToolUse hook points to {found_path} (expected {expected_path})"
+
+                return True, f"PreToolUse hook registered in {settings_path}"
+
+    # Hook not found - provide diagnostic info
+    diagnostic_msg = f"PreToolUse hook does not reference {expected_script}"
+    if malformed_matchers > 0 or malformed_hooks > 0:
+        diagnostic_msg += f"\nWarning: Found {malformed_matchers} malformed matcher(s) and {malformed_hooks} malformed hook(s) in {settings_path}"
+        diagnostic_msg += f"\nExpected format: [{{'matcher': '...', 'hooks': [{{'type': 'command', 'command': '...'}}]}}]"
+
+    return False, diagnostic_msg
 
 
 def _check_executable(path: Path) -> tuple[bool, str]:
