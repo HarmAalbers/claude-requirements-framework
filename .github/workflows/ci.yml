@@ -25,7 +25,18 @@ jobs:
           cat > ~/.claude/settings.json <<'SETTINGS'
           {
             "hooks": {
-              "PreToolUse": "~/.claude/hooks/check-requirements.py"
+              "PreToolUse": [
+                {
+                  "matcher": "Edit|Write|MultiEdit|Bash",
+                  "hooks": [
+                    {
+                      "type": "command",
+                      "command": "python3 ~/.claude/hooks/check-requirements.py",
+                      "timeout": 5
+                    }
+                  ]
+                }
+              ]
             }
           }
           SETTINGS
