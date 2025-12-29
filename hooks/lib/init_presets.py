@@ -232,6 +232,27 @@ Run `/pre-pr-review:quality-check` for comprehensive review.
                 ],
             },
 
+            'codex_reviewer': {
+                'enabled': False,  # Optional (requires Codex CLI)
+                'type': 'blocking',
+                'scope': 'single_use',
+                'trigger_tools': [
+                    {'tool': 'Bash', 'command_pattern': 'gh\\s+pr\\s+create'},
+                ],
+                'message': '''🤖 **Codex AI Review Required**
+
+Run `/requirements-framework:codex-review` for AI-powered code review.
+
+**After review**: Create PR.
+''',
+                'checklist': [
+                    'Codex CLI installed (npm install -g @openai/codex)',
+                    'Logged in (codex login)',
+                    'AI review completed',
+                    'Critical findings addressed',
+                ],
+            },
+
             'github_ticket': {
                 'enabled': False,
                 'type': 'blocking',

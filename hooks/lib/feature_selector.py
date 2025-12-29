@@ -57,6 +57,13 @@ FEATURES = {
         'type': 'blocking',
         'scope': 'single_use',
     },
+    'codex_reviewer': {
+        'name': 'Codex AI Review',
+        'description': 'AI-powered review before PR',
+        'category': 'code_quality',
+        'type': 'blocking',
+        'scope': 'single_use',
+    },
 }
 
 

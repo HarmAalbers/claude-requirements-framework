@@ -3626,6 +3626,113 @@ def test_registry_client(runner: TestRunner):
         runner.test("No orphaned temp files", len(tmp_files) == 0)
 
 
+def test_codex_reviewer_requirement(runner: TestRunner):
+    """Test codex_reviewer requirement with single_use scope."""
+    print("\n📦 Testing codex_reviewer requirement...")
+
+    from requirement_strategies import BlockingRequirementStrategy
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create git repo
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Create config with codex_reviewer requirement
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'codex_reviewer': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'single_use',
+                    'trigger_tools': [
+                        {'tool': 'Bash', 'command_pattern': 'gh\\s+pr\\s+create'}
+                    ],
+                    'message': '🤖 Codex AI Review Required',
+                    'checklist': [
+                        'Codex CLI installed',
+                        'Logged in',
+                        'AI review completed',
+                    ],
+                }
+            }
+        }
+
+        # Write config
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        config_path = os.path.join(tmpdir, ".claude", "requirements.yaml")
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        # Load config object
+        config = RequirementsConfig(tmpdir)
+
+        # Test 1: Should block gh pr create when not satisfied
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Bash',
+            'tool_input': {'command': 'gh pr create --title "Test"'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test'
+        }
+        result = strategy.check('codex_reviewer', config, reqs, context)
+        runner.test("Blocks gh pr create when not satisfied", result is not None)
+        runner.test("Returns denial response",
+                    'hookSpecificOutput' in result and
+                    result['hookSpecificOutput']['permissionDecision'] == 'deny')
+
+        # Test 2: Satisfy the requirement
+        reqs.satisfy('codex_reviewer', 'single_use', method='skill', metadata={'skill': 'requirements-framework:codex-review'})
+        runner.test("Requirement satisfied", reqs.is_satisfied('codex_reviewer', 'single_use'))
+
+        # Test 3: Should allow gh pr create when satisfied
+        result = strategy.check('codex_reviewer', config, reqs, context)
+        runner.test("Allows gh pr create when satisfied", result is None)
+
+        # Test 4: Clear single_use requirement
+        reqs.clear_single_use('codex_reviewer')
+        runner.test("Requirement cleared", not reqs.is_satisfied('codex_reviewer', 'single_use'))
+
+        # Test 5: Should block again after clearing
+        result = strategy.check('codex_reviewer', config, reqs, context)
+        runner.test("Blocks again after clearing",
+                    result is not None and
+                    result['hookSpecificOutput']['permissionDecision'] == 'deny')
+
+        # Test 6: Trigger matching - verify trigger pattern works correctly
+        # Note: Strategy.check() doesn't check triggers - that happens in the hook
+        # We test that requirements can be checked for different tool contexts
+
+        # First, satisfy the requirement so we can test without blocking
+        reqs.satisfy('codex_reviewer', 'single_use', method='test')
+
+        # Verify satisfied requirement allows any tool (strategy doesn't check triggers)
+        context_commit = {
+            'tool_name': 'Bash',
+            'tool_input': {'command': 'git commit -m "test"'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test'
+        }
+        result = strategy.check('codex_reviewer', config, reqs, context_commit)
+        runner.test("Allows other bash commands when satisfied", result is None)
+
+        # Test 7: Verify Edit tool also allowed when satisfied
+        context_edit = {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': 'test.py', 'old_string': 'old', 'new_string': 'new'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test'
+        }
+        result = strategy.check('codex_reviewer', config, reqs, context_edit)
+        runner.test("Allows Edit tool when satisfied", result is None)
+
+
 def test_edge_cases(runner: TestRunner):
     """Test edge cases: concurrent access, permissions, Windows compatibility."""
     print("\n📦 Testing edge cases...")
@@ -3784,6 +3891,9 @@ def main():
 
     # NEW: Edge case tests (Phase 3 extended)
     test_edge_cases(runner)
+
+    # Codex reviewer requirement tests
+    test_codex_reviewer_requirement(runner)
 
     return runner.summary()
 
