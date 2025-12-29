@@ -1089,6 +1089,9 @@ def test_cli_doctor_command(runner: TestRunner):
         sync_files = [
             "check-requirements.py",
             "requirements-cli.py",
+            "handle-session-start.py",
+            "handle-stop.py",
+            "handle-session-end.py",
             "test_requirements.py",
             "lib/config.py",
             "lib/git_utils.py",
@@ -1104,12 +1107,13 @@ def test_cli_doctor_command(runner: TestRunner):
             shutil.copy2(source, destination)
 
         # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
+        for script in ["check-requirements.py", "requirements-cli.py",
+                      "handle-session-start.py", "handle-stop.py", "handle-session-end.py"]:
             target = hooks_dir / script
             target.chmod(0o755)
 
-        # Settings with hook registration (new format)
-        settings_path = claude_dir / "settings.json"
+        # Settings with hook registration (new format - all 4 required hooks)
+        settings_path = claude_dir / "settings.local.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(
             json.dumps(
@@ -1123,6 +1127,39 @@ def test_cli_doctor_command(runner: TestRunner):
                                         "type": "command",
                                         "command": "python3 ~/.claude/hooks/check-requirements.py",
                                         "timeout": 5
+                                    }
+                                ]
+                            }
+                        ],
+                        "SessionStart": [
+                            {
+                                "matcher": "*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.claude/hooks/handle-session-start.py"
+                                    }
+                                ]
+                            }
+                        ],
+                        "Stop": [
+                            {
+                                "matcher": "*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.claude/hooks/handle-stop.py"
+                                    }
+                                ]
+                            }
+                        ],
+                        "SessionEnd": [
+                            {
+                                "matcher": "*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.claude/hooks/handle-session-end.py"
                                     }
                                 ]
                             }
