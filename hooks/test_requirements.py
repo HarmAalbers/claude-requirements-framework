@@ -1412,6 +1412,109 @@ def test_cli_doctor_multiple_matchers(runner: TestRunner):
         runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
 
 
+def test_enhanced_doctor_json_output(runner: TestRunner):
+    """Test enhanced doctor JSON output mode."""
+    print("\n📦 Testing enhanced doctor --json...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+    repo_root = Path(__file__).parent.parent
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        home_dir = Path(tmpdir)
+        claude_dir = home_dir / ".claude"
+        hooks_dir = claude_dir / "hooks"
+        hooks_dir.mkdir(parents=True)
+
+        # Copy minimal files
+        for script in ["check-requirements.py", "requirements-cli.py"]:
+            source = Path(__file__).parent / script
+            dest = hooks_dir / script
+            shutil.copy2(source, dest)
+            dest.chmod(0o755)
+
+        # Create settings
+        settings = claude_dir / "settings.local.json"
+        settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/check-requirements.py"}]}]}}))
+
+        env = {**os.environ, "HOME": str(home_dir)}
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "doctor", "--json"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        runner.test("Doctor --json runs", result.returncode == 0, result.stderr)
+
+        # Parse JSON output
+        try:
+            output = json.loads(result.stdout)
+            runner.test("Output is valid JSON", True)
+            runner.test("Has status field", 'status' in output)
+            runner.test("Has summary field", 'summary' in output)
+            runner.test("Has checks array", 'checks' in output and isinstance(output['checks'], list))
+            runner.test("Checks have required fields",
+                       all('id' in c and 'status' in c and 'severity' in c for c in output['checks']))
+        except json.JSONDecodeError as e:
+            runner.test("Output is valid JSON", False, f"JSON parse error: {e}")
+
+
+def test_enhanced_doctor_check_functions(runner: TestRunner):
+    """Test enhanced doctor individual check functions."""
+    print("\n📦 Testing enhanced doctor check functions...")
+
+    # Import requirements-cli.py using importlib
+    import importlib.util
+    import sys
+    spec = importlib.util.spec_from_file_location("requirements_cli", Path(__file__).parent / "requirements-cli.py")
+    requirements_cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(requirements_cli)
+
+    _check_python_version = requirements_cli._check_python_version
+    _check_pyyaml_available = requirements_cli._check_pyyaml_available
+    _check_hook_file_exists = requirements_cli._check_hook_file_exists
+    _check_path_configured = requirements_cli._check_path_configured
+    _check_plugin_installation = requirements_cli._check_plugin_installation
+
+    # Test Python version check
+    result = _check_python_version()
+    runner.test("Python version check returns dict", isinstance(result, dict))
+    runner.test("Has required fields", all(k in result for k in ['id', 'status', 'severity', 'message']))
+    runner.test("Python version passes", result['status'] == 'pass')
+
+    # Test PyYAML check
+    result = _check_pyyaml_available()
+    runner.test("PyYAML check returns dict", isinstance(result, dict))
+    runner.test("PyYAML check has status", result['status'] == 'pass')
+
+    # Test hook file check with temp directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hooks_dir = Path(tmpdir)
+
+        # Test missing hook
+        result = _check_hook_file_exists('missing.py', hooks_dir)
+        runner.test("Missing hook detected", result['status'] == 'fail')
+        runner.test("Missing hook has fix", result['fix'] is not None)
+
+        # Test existing hook
+        test_hook = hooks_dir / 'test.py'
+        test_hook.write_text('#!/usr/bin/env python3\n')
+        test_hook.chmod(0o755)
+        result = _check_hook_file_exists('test.py', hooks_dir)
+        runner.test("Existing executable hook passes", result['status'] == 'pass')
+
+    # Test PATH check
+    result = _check_path_configured()
+    runner.test("PATH check returns dict", isinstance(result, dict))
+    runner.test("PATH check has status", 'status' in result)
+
+    # Test plugin check
+    result = _check_plugin_installation()
+    runner.test("Plugin check returns dict", isinstance(result, dict))
+    runner.test("Plugin check has status", 'status' in result)
+
+
 def test_hook_behavior(runner: TestRunner):
     """Test hook behavior."""
     print("\n📦 Testing hook behavior...")
@@ -3837,6 +3940,8 @@ def main():
     test_cli_status_modes(runner)
     test_cli_sessions_command(runner)
     test_cli_doctor_command(runner)
+    test_enhanced_doctor_json_output(runner)
+    test_enhanced_doctor_check_functions(runner)
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
 

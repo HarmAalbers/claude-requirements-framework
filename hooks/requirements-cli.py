@@ -1371,6 +1371,50 @@ def cmd_doctor(args) -> int:
     # Plugin check
     all_checks.append(_check_plugin_installation())
 
+    # Sync status check (if repo is available)
+    repo_dir = _find_repo_dir(args.repo if hasattr(args, 'repo') else None)
+    if repo_dir:
+        results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
+        for relative, message in results:
+            if message.startswith("✓"):
+                # In sync
+                all_checks.append({
+                    'id': f'sync_{relative.replace("/", "_")}',
+                    'category': 'sync',
+                    'status': 'pass',
+                    'severity': 'info',
+                    'message': f'{relative}: In sync',
+                    'fix': None
+                })
+            elif message.startswith("↑"):
+                # Repository has newer changes
+                all_checks.append({
+                    'id': f'sync_{relative.replace("/", "_")}',
+                    'category': 'sync',
+                    'status': 'fail',
+                    'severity': 'warning',
+                    'message': f'{relative}: Repository has changes',
+                    'fix': {
+                        'description': 'Run ./sync.sh deploy to sync changes',
+                        'safe': False,
+                        'command': None
+                    }
+                })
+            elif message.startswith("↓"):
+                # Deployed has newer changes
+                all_checks.append({
+                    'id': f'sync_{relative.replace("/", "_")}',
+                    'category': 'sync',
+                    'status': 'fail',
+                    'severity': 'warning',
+                    'message': f'{relative}: Deployed has changes',
+                    'fix': {
+                        'description': 'Run ./sync.sh pull to sync changes',
+                        'safe': False,
+                        'command': None
+                    }
+                })
+
     # Hook functionality tests (dry-run)
     all_checks.extend(_test_all_hooks(hooks_dir))
 

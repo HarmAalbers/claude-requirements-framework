@@ -24,16 +24,16 @@ mkdir -p "$HOME/.claude/hooks/lib"
 
 # Copy hook files
 echo "📦 Copying hook files to ~/.claude/hooks/..."
-cp -v hooks/check-requirements.py "$HOME/.claude/hooks/"
-cp -v hooks/requirements-cli.py "$HOME/.claude/hooks/"
-cp -v hooks/test_requirements.py "$HOME/.claude/hooks/"
-cp -v hooks/handle-session-start.py "$HOME/.claude/hooks/"
-cp -v hooks/handle-stop.py "$HOME/.claude/hooks/"
-cp -v hooks/handle-session-end.py "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/check-requirements.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/requirements-cli.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/test_requirements.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-session-start.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-stop.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-session-end.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
-cp -v hooks/lib/*.py "$HOME/.claude/hooks/lib/"
+cp -v "$REPO_DIR/hooks/lib/"*.py "$HOME/.claude/hooks/lib/"
 
 # Make scripts executable
 chmod +x "$HOME/.claude/hooks/check-requirements.py"
@@ -100,7 +100,7 @@ configure_codex_requirement
 if [ ! -f "$HOME/.claude/requirements.yaml" ]; then
     echo ""
     echo "⚙️  Installing global configuration to ~/.claude/requirements.yaml..."
-    cp examples/global-requirements.yaml "$HOME/.claude/requirements.yaml"
+    cp "$REPO_DIR/examples/global-requirements.yaml" "$HOME/.claude/requirements.yaml"
 
     # Update codex_reviewer setting based on user choice
     if [ "$ENABLE_CODEX" = "true" ]; then
