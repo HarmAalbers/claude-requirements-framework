@@ -39,6 +39,7 @@ from session import get_session_id
 SKILL_REQUIREMENTS = {
     'pre-pr-review:pre-commit': 'pre_commit_review',
     'pre-pr-review:quality-check': 'pre_pr_review',
+    'requirements-framework:codex-review': 'codex_reviewer',
 }
 
 
