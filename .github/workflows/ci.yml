@@ -24,7 +24,7 @@ jobs:
           mkdir -p ~/.claude/hooks/lib ~/.local/bin
           cp hooks/*.py ~/.claude/hooks/
           cp hooks/lib/*.py ~/.claude/hooks/lib/
-          chmod +x ~/.claude/hooks/check-requirements.py ~/.claude/hooks/requirements-cli.py
+          chmod +x ~/.claude/hooks/*.py
           cat > ~/.claude/settings.json <<'SETTINGS'
           {
             "hooks": {
@@ -46,7 +46,7 @@ jobs:
           cp examples/global-requirements.yaml ~/.claude/requirements.yaml
 
       - name: Run doctor check
-        run: python hooks/requirements-cli.py doctor --repo "$(pwd)"
+        run: python hooks/requirements-cli.py doctor --ci --repo "$(pwd)"
 
       - name: Run test suite
         run: python hooks/test_requirements.py
