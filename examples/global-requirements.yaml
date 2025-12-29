@@ -13,7 +13,7 @@ requirements:
   # Commit Plan Requirement
   # Ensures a commit plan exists before making code changes
   commit_plan:
-    enabled: false  # Disabled by default - projects opt-in
+    enabled: true
     type: blocking
     scope: session  # Resets each session (forces daily planning)
     trigger_tools:
@@ -21,19 +21,16 @@ requirements:
       - Write
       - MultiEdit
     message: |
-      📋 **No commit plan found for this session**
+      📋 **Commit Plan Required**
 
-      Before making code changes, you should plan your commits.
-
-      **Required**: Create a commit plan that describes:
-      - What changes you'll make
-      - How you'll split them into atomic commits
-      - What order to make the changes
+      Before making code changes, create a brief plan documenting your approach.
 
       **Why this matters**:
       - Ensures commits are atomic and reviewable
-      - Prevents "fix comments" commits
-      - Follows project conventions
+      - Prevents "fix comments" and "oops" commits
+      - Follows project conventions and best practices
+      - Makes rollbacks easier and safer
+      - Encourages thoughtful, deliberate changes
 
       **To proceed**: Run `req satisfy commit_plan` after creating a plan
     checklist:
@@ -43,9 +40,10 @@ requirements:
       - "Considered what can be safely rolled back"
       - "Created plan file documenting the approach"
 
-  # GitHub Ticket Requirement (example for Phase 2)
+  # GitHub Ticket Requirement
+  # Links work to GitHub issue tracking (disabled by default - opt-in)
   github_ticket:
-    enabled: false
+    enabled: false  # Disabled by default - enable per project if using issue tracking
     type: blocking
     scope: branch  # Once per branch
     trigger_tools:
@@ -57,11 +55,24 @@ requirements:
 
       Please link a GitHub issue to track this work.
 
+      **Why this matters**:
+      - Tracks work status and progress
+      - Links commits to project requirements
+      - Maintains project history and context
+      - Facilitates team coordination
+
       **To satisfy**: `req satisfy github_ticket --metadata '{"ticket":"#1234"}'`
 
-  # ADR Review Requirement (example for cclv2)
+      **Note**: This requirement is disabled by default. Enable in project config if needed.
+    checklist:
+      - "Created GitHub issue for this work"
+      - "Issue number linked to branch"
+      - "Issue describes problem and solution"
+
+  # ADR Review Requirement
+  # Ensures architectural decisions are reviewed before code changes
   adr_reviewed:
-    enabled: false
+    enabled: true
     type: blocking
     scope: session
     trigger_tools:
@@ -69,17 +80,27 @@ requirements:
       - Write
       - MultiEdit
     message: |
-      📚 **Have you reviewed relevant ADRs?**
+      📚 **ADR Review Checkpoint**
 
-      ADRs document architectural decisions for this project.
+      Have you reviewed relevant Architecture Decision Records?
 
-      **To satisfy**: `req satisfy adr_reviewed` after reviewing
+      **Why this matters**:
+      - Ensures consistency with existing architectural decisions
+      - Prevents conflicting implementations
+      - Documents reasoning for future maintainers
+      - Maintains architectural integrity
+
+      **To satisfy**: `req satisfy adr_reviewed` after reviewing ADRs
+    checklist:
+      - "Searched for ADRs related to this change"
+      - "Reviewed decision context and rationale"
+      - "Confirmed approach aligns with existing ADRs"
+      - "Noted any ADRs that need updating"
 
   # Protected Branch Guard
-  # Prevents direct edits on protected branches (e.g., main, master)
-  # Unlike blocking requirements, guards check conditions rather than requiring manual satisfaction
+  # Prevents direct edits on protected branches (main/master)
   protected_branch:
-    enabled: false  # Disabled by default - projects opt-in
+    enabled: true
     type: guard
     guard_type: protected_branch
     protected_branches:
@@ -99,7 +120,138 @@ requirements:
       git checkout -b feature/your-feature-name
       ```
 
+      **Why this matters**:
+      - Prevents accidental commits to main branch
+      - Enforces PR review workflow
+      - Maintains stable main branch
+
       **For emergency hotfixes** (current session only):
       ```bash
       req approve protected_branch
       ```
+    checklist:
+      - "Confirmed not on protected branch (master/main)"
+      - "Feature branch created for changes"
+      - "Emergency override approved if necessary"
+
+  # Branch Size Limit (Dynamic Requirement)
+  # Automatically calculates branch size and enforces limits
+  branch_size_limit:
+    enabled: true  # Enabled by default
+    type: dynamic  # Calculated automatically, not manually satisfied
+    calculator: branch_size_calculator  # References lib/branch_size_calculator.py
+    scope: session  # Approval persists for session
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+
+    # Calculation cache to avoid running git on every edit
+    cache_ttl: 60  # Recalculate every 60 seconds
+
+    # Approval TTL when user manually approves via CLI
+    approval_ttl: 3600  # 1 hour (increased from 5 minutes)
+
+    # Thresholds for evaluation
+    thresholds:
+      warn: 250   # Log warning (non-blocking)
+      block: 400  # Block with denial message
+
+    # Message template (supports {variable} substitution)
+    blocking_message: |
+      🛑 **Branch size limit: {total} line changes**
+
+      Limit: {block_threshold} changes exceeded
+      {summary}
+      Base: {base_branch}
+
+      **Why this matters**:
+      - Large PRs are harder to review thoroughly
+      - Increases risk of bugs slipping through
+      - Delays feedback and iteration cycles
+      - Makes rollbacks more complex
+
+      **Recommendation**: Consider splitting into smaller, focused PRs after this session.
+
+      **To override this session**: `req approve branch_size_limit`
+
+  # Pre-Commit Review Requirement
+  # Ensures code is reviewed before every commit
+  pre_commit_review:
+    enabled: true
+    type: blocking
+    scope: single_use  # Must re-satisfy before EACH commit
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "git\\s+(commit|cherry-pick|revert|merge)"
+    message: |
+      📝 **Code review required before committing**
+
+      Run `/pre-pr-review:pre-commit` to review your code changes before committing.
+
+      **Why this matters**:
+      - Catches bugs and issues before they're committed
+      - Ensures code quality standards are met
+      - Validates error handling is adequate
+      - Prevents broken commits from entering history
+      - Maintains clean, reviewable commit history
+
+      💡 After the review completes, you can commit.
+    checklist:
+      - "Code follows project conventions"
+      - "Error handling is adequate"
+      - "No obvious bugs or issues"
+
+  # Pre-PR Review Requirement
+  # Ensures comprehensive quality check before creating a PR
+  pre_pr_review:
+    enabled: true
+    type: blocking
+    scope: single_use  # Must re-satisfy for each PR creation
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "gh\\s+pr\\s+create"
+    message: |
+      🔍 **Quality check required before creating PR**
+
+      Run `/pre-pr-review:quality-check` for comprehensive review before creating a PR.
+
+      **Why this matters**:
+      - Catches issues before PR review begins
+      - Reduces review cycles and feedback rounds
+      - Maintains high code quality standards
+      - Validates tests and documentation
+      - Ensures PR is ready for team review
+
+      💡 After the review completes, you can create the PR.
+    checklist:
+      - "Code has been reviewed for bugs"
+      - "Error handling is complete"
+      - "Code follows project style guide"
+      - "Tests are adequate (if applicable)"
+
+  # Codex AI Review Requirement
+  # AI-powered code review before PR creation
+  codex_reviewer:
+    enabled: true
+    type: blocking
+    scope: single_use  # Must re-satisfy for each PR creation
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "gh\\s+pr\\s+create"
+    message: |
+      🤖 **Codex AI Review Required**
+
+      Run `/requirements-framework:codex-review` for AI-powered code review.
+
+      **After review**: Create PR.
+    checklist:
+      - "Codex CLI installed (npm install -g @openai/codex)"
+      - "Logged in (codex login)"
+      - "AI review completed"
+      - "Critical findings addressed"
+
+# Hooks configuration
+hooks:
+  stop:
+    verify_requirements: true  # Block session end if requirements unsatisfied
