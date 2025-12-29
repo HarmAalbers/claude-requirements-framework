@@ -1425,16 +1425,24 @@ def test_enhanced_doctor_json_output(runner: TestRunner):
         hooks_dir = claude_dir / "hooks"
         hooks_dir.mkdir(parents=True)
 
-        # Copy minimal files
-        for script in ["check-requirements.py", "requirements-cli.py"]:
+        # Copy all required hook files for comprehensive doctor check
+        for script in ["check-requirements.py", "requirements-cli.py",
+                      "handle-session-start.py", "handle-stop.py", "handle-session-end.py"]:
             source = Path(__file__).parent / script
             dest = hooks_dir / script
             shutil.copy2(source, dest)
             dest.chmod(0o755)
 
-        # Create settings
+        # Create settings with all required hooks
         settings = claude_dir / "settings.local.json"
-        settings.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/check-requirements.py"}]}]}}))
+        settings.write_text(json.dumps({
+            "hooks": {
+                "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/check-requirements.py"}]}],
+                "SessionStart": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/handle-session-start.py"}]}],
+                "Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/handle-stop.py"}]}],
+                "SessionEnd": [{"matcher": "*", "hooks": [{"type": "command", "command": "~/.claude/hooks/handle-session-end.py"}]}]
+            }
+        }))
 
         env = {**os.environ, "HOME": str(home_dir)}
 
