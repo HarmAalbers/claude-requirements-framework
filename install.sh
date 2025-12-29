@@ -30,6 +30,10 @@ cp -v "$REPO_DIR/hooks/test_requirements.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-session-start.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-stop.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-session-end.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/auto-satisfy-skills.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/clear-single-use.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-plan-exit.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/ruff_check.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
