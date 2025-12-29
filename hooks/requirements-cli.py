@@ -1339,13 +1339,14 @@ def cmd_doctor(args) -> int:
     Run comprehensive environment diagnostics for the requirements framework.
 
     Args:
-        args: Parsed arguments with --verbose, --json flags
+        args: Parsed arguments with --verbose, --json, --ci flags
 
     Returns:
         Exit code (0 if all checks pass, 1 if issues found)
     """
     verbose = hasattr(args, 'verbose') and args.verbose
     json_output = hasattr(args, 'json') and args.json
+    ci_mode = hasattr(args, 'ci') and args.ci
 
     claude_dir = Path.home() / ".claude"
     hooks_dir = claude_dir / "hooks"
@@ -1361,15 +1362,18 @@ def cmd_doctor(args) -> int:
     # Hook file checks
     all_checks.extend(_check_all_hook_files(hooks_dir))
 
-    # Hook registration checks
-    all_checks.extend(_check_all_hook_registrations(settings_file))
+    # Hook registration checks (skip in CI mode - settings.local.json won't exist)
+    if not ci_mode:
+        all_checks.extend(_check_all_hook_registrations(settings_file))
 
-    # CLI checks
-    all_checks.append(_check_path_configured())
-    all_checks.append(_check_req_command())
+    # CLI checks (skip in CI mode - PATH not relevant)
+    if not ci_mode:
+        all_checks.append(_check_path_configured())
+        all_checks.append(_check_req_command())
 
-    # Plugin check
-    all_checks.append(_check_plugin_installation())
+    # Plugin check (skip in CI mode - plugin not relevant for code validation)
+    if not ci_mode:
+        all_checks.append(_check_plugin_installation())
 
     # Sync status check (if repo is available)
     repo_dir = _find_repo_dir(args.repo if hasattr(args, 'repo') else None)
@@ -1415,8 +1419,9 @@ def cmd_doctor(args) -> int:
                     }
                 })
 
-    # Hook functionality tests (dry-run)
-    all_checks.extend(_test_all_hooks(hooks_dir))
+    # Hook functionality tests (dry-run) - skip in CI mode as hooks won't have full dependencies
+    if not ci_mode:
+        all_checks.extend(_test_all_hooks(hooks_dir))
 
     # Analyze results
     critical_issues = [c for c in all_checks if c['status'] in ['fail', 'error'] and c['severity'] == 'critical']
@@ -2196,6 +2201,7 @@ Environment Variables:
     doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
     doctor_parser.add_argument('--verbose', '-v', action='store_true', help='Show all checks including passing ones')
     doctor_parser.add_argument('--json', action='store_true', help='Output results in JSON format for scripting')
+    doctor_parser.add_argument('--ci', action='store_true', help='CI-friendly mode: only fail on code/hook issues, not missing Claude Code config')
 
     args = parser.parse_args()
 

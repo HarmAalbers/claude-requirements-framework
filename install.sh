@@ -41,6 +41,10 @@ chmod +x "$HOME/.claude/hooks/requirements-cli.py"
 chmod +x "$HOME/.claude/hooks/handle-session-start.py"
 chmod +x "$HOME/.claude/hooks/handle-stop.py"
 chmod +x "$HOME/.claude/hooks/handle-session-end.py"
+chmod +x "$HOME/.claude/hooks/auto-satisfy-skills.py"
+chmod +x "$HOME/.claude/hooks/clear-single-use.py"
+chmod +x "$HOME/.claude/hooks/handle-plan-exit.py"
+chmod +x "$HOME/.claude/hooks/ruff_check.py"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
