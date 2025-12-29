@@ -5,5 +5,14 @@
   "author": {
     "name": "Harm"
   },
-  "repository": "https://github.com/HarmAalbers/claude-requirements-framework"
+  "repository": "https://github.com/HarmAalbers/claude-requirements-framework",
+  "skills": [
+    "skills/requirements-framework-builder/skill.md",
+    "skills/requirements-framework-development/skill.md",
+    "skills/requirements-framework-status/skill.md",
+    "skills/requirements-framework-usage/skill.md"
+  ],
+  "commands": [],
+  "agents": [],
+  "hooks": []
 }
