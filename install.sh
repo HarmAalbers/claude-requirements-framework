@@ -506,7 +506,7 @@ fi
 # Test 5: Test SessionStart hook
 echo ""
 echo "5️⃣  Testing SessionStart hook..."
-if python3 "$HOME/.claude/hooks/handle-session-start.py" > /dev/null 2>&1; then
+if echo '{}' | python3 "$HOME/.claude/hooks/handle-session-start.py" > /dev/null 2>&1; then
     echo "   ✅ SessionStart hook responds correctly"
 else
     echo "   ❌ SessionStart hook failed"
@@ -573,6 +573,18 @@ else
     echo "  2. Verify Python 3 is installed and accessible"
     echo "  3. Review ~/.claude/settings.local.json for hook configuration"
     echo "  4. Run: python3 ~/.claude/hooks/test_requirements.py"
+    echo ""
+fi
+
+# Check if hooks are globally disabled in settings.json
+echo ""
+if grep -q '"disableAllHooks"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null; then
+    echo "⚠️  WARNING: Hooks are globally disabled"
+    echo "   Your hooks are registered but won't run because ~/.claude/settings.json has:"
+    echo "   \"disableAllHooks\": true"
+    echo ""
+    echo "   To enable hooks, edit ~/.claude/settings.json and change to:"
+    echo "   \"disableAllHooks\": false"
     echo ""
 fi
 
