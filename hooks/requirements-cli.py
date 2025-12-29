@@ -21,8 +21,8 @@ import os
 import sys
 from pathlib import Path
 
-# Add lib to path
-lib_path = Path(__file__).parent / 'lib'
+# Add lib to path (resolve symlinks to find actual location)
+lib_path = Path(__file__).resolve().parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
