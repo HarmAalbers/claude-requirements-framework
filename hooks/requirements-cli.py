@@ -999,114 +999,456 @@ def cmd_verify(args) -> int:
         return 0
 
 
+# ============================================================================
+# Enhanced Doctor Check Functions
+# ============================================================================
+
+def _check_python_version() -> dict:
+    """Check Python version >= 3.8."""
+    import sys
+    version = sys.version_info
+    passed = version >= (3, 8)
+    return {
+        'id': 'python_version',
+        'category': 'environment',
+        'status': 'pass' if passed else 'fail',
+        'severity': 'critical',
+        'message': f"Python version {version.major}.{version.minor}.{version.micro} {'>=' if passed else '<'} 3.8",
+        'fix': None if passed else {
+            'description': 'Upgrade Python to 3.8 or newer',
+            'safe': False,
+            'command': None
+        }
+    }
+
+
+def _check_pyyaml_available() -> dict:
+    """Check if PyYAML is installed (optional)."""
+    try:
+        import yaml
+        return {
+            'id': 'pyyaml',
+            'category': 'environment',
+            'status': 'pass',
+            'severity': 'info',
+            'message': 'PyYAML is installed',
+            'fix': None
+        }
+    except ImportError:
+        return {
+            'id': 'pyyaml',
+            'category': 'environment',
+            'status': 'pass',  # Not critical
+            'severity': 'info',
+            'message': 'PyYAML not installed (optional - framework uses JSON fallback)',
+            'fix': {
+                'description': 'Install PyYAML for better config handling: pip install pyyaml',
+                'safe': False,
+                'command': None
+            }
+        }
+
+
+def _check_hook_file_exists(hook_name: str, hooks_dir: Path) -> dict:
+    """Check if a specific hook file exists and is executable."""
+    hook_path = hooks_dir / hook_name
+    exists = hook_path.exists()
+    executable = hook_path.is_file() and os.access(hook_path, os.X_OK) if exists else False
+
+    if not exists:
+        status = 'fail'
+        message = f"{hook_name} not found"
+        fix = {
+            'description': f'Reinstall framework to restore {hook_name}',
+            'safe': False,
+            'command': None
+        }
+    elif not executable:
+        status = 'fail'
+        message = f"{hook_name} exists but is not executable"
+        fix = {
+            'description': f'Make {hook_name} executable',
+            'safe': True,
+            'command': ['chmod', '+x', str(hook_path)]
+        }
+    else:
+        status = 'pass'
+        message = f"{hook_name} exists and is executable"
+        fix = None
+
+    return {
+        'id': f'hook_file_{hook_name}',
+        'category': 'hook_files',
+        'status': status,
+        'severity': 'critical' if hook_name in ['check-requirements.py', 'handle-session-start.py', 'handle-stop.py'] else 'warning',
+        'message': message,
+        'fix': fix
+    }
+
+
+def _check_all_hook_files(hooks_dir: Path) -> list:
+    """Check all hook files."""
+    hooks = [
+        'check-requirements.py',
+        'handle-session-start.py',
+        'handle-stop.py',
+        'handle-session-end.py',
+        'requirements-cli.py',
+        'auto-satisfy-skills.py',
+        'clear-single-use.py',
+        'handle-plan-exit.py',
+        'ruff_check.py'
+    ]
+    return [_check_hook_file_exists(hook, hooks_dir) for hook in hooks]
+
+
+def _check_hook_registered(hook_type: str, settings_file: Path) -> dict:
+    """Check if a specific hook type is registered in settings."""
+    try:
+        if not settings_file.exists():
+            return {
+                'id': f'hook_reg_{hook_type.lower()}',
+                'category': 'hook_registration',
+                'status': 'fail',
+                'severity': 'critical',
+                'message': f'{hook_type} hook: settings.local.json not found',
+                'fix': {
+                    'description': 'Run ./install.sh to create settings file',
+                    'safe': False,
+                    'command': None
+                }
+            }
+
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+
+        if 'hooks' not in settings or hook_type not in settings['hooks']:
+            return {
+                'id': f'hook_reg_{hook_type.lower()}',
+                'category': 'hook_registration',
+                'status': 'fail',
+                'severity': 'critical',
+                'message': f'{hook_type} hook not registered',
+                'fix': {
+                    'description': 'Run ./install.sh to register hooks',
+                    'safe': False,
+                    'command': None
+                }
+            }
+
+        return {
+            'id': f'hook_reg_{hook_type.lower()}',
+            'category': 'hook_registration',
+            'status': 'pass',
+            'severity': 'critical',
+            'message': f'{hook_type} hook registered',
+            'fix': None
+        }
+    except Exception as e:
+        return {
+            'id': f'hook_reg_{hook_type.lower()}',
+            'category': 'hook_registration',
+            'status': 'error',
+            'severity': 'critical',
+            'message': f'{hook_type} hook: Error reading settings ({e})',
+            'fix': {
+                'description': 'Fix settings.local.json syntax or run ./install.sh',
+                'safe': False,
+                'command': None
+            }
+        }
+
+
+def _check_all_hook_registrations(settings_file: Path) -> list:
+    """Check all required hook registrations."""
+    return [_check_hook_registered(hook, settings_file)
+            for hook in ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']]
+
+
+def _check_path_configured() -> dict:
+    """Check if ~/.local/bin is in PATH."""
+    local_bin = str(Path.home() / ".local" / "bin")
+    in_path = local_bin in os.environ.get('PATH', '').split(os.pathsep)
+
+    return {
+        'id': 'path_configured',
+        'category': 'cli',
+        'status': 'pass' if in_path else 'fail',
+        'severity': 'warning',
+        'message': '~/.local/bin is in PATH' if in_path else '~/.local/bin not in PATH',
+        'fix': None if in_path else {
+            'description': 'Add ~/.local/bin to PATH in your shell profile',
+            'safe': False,
+            'command': None
+        }
+    }
+
+
+def _check_req_command() -> dict:
+    """Check if req command is accessible."""
+    import shutil
+    req_path = shutil.which('req')
+
+    if req_path:
+        return {
+            'id': 'req_command',
+            'category': 'cli',
+            'status': 'pass',
+            'severity': 'warning',
+            'message': f"'req' command accessible at {req_path}",
+            'fix': None
+        }
+    else:
+        return {
+            'id': 'req_command',
+            'category': 'cli',
+            'status': 'fail',
+            'severity': 'warning',
+            'message': "'req' command not found in PATH",
+            'fix': {
+                'description': 'Ensure ~/.local/bin/req symlink exists and PATH is configured',
+                'safe': True,
+                'command': ['ln', '-sf', str(Path.home() / '.claude' / 'hooks' / 'requirements-cli.py'),
+                           str(Path.home() / '.local' / 'bin' / 'req')]
+            }
+        }
+
+
+def _check_plugin_installation() -> dict:
+    """Check if plugin is symlinked."""
+    plugin_path = Path.home() / ".claude" / "plugins" / "requirements-framework"
+
+    if plugin_path.is_symlink() and plugin_path.is_dir():
+        return {
+            'id': 'plugin_installed',
+            'category': 'plugin',
+            'status': 'pass',
+            'severity': 'info',
+            'message': 'Plugin symlink is valid',
+            'fix': None
+        }
+    elif plugin_path.exists():
+        return {
+            'id': 'plugin_installed',
+            'category': 'plugin',
+            'status': 'pass',
+            'severity': 'info',
+            'message': 'Plugin directory exists (not symlinked)',
+            'fix': None
+        }
+    else:
+        return {
+            'id': 'plugin_installed',
+            'category': 'plugin',
+            'status': 'fail',
+            'severity': 'info',
+            'message': 'Plugin not installed',
+            'fix': {
+                'description': 'Run enhanced install.sh to set up plugin symlink',
+                'safe': False,
+                'command': None
+            }
+        }
+
+
+def _test_hook_dry_run(hook_name: str, test_input: dict, hooks_dir: Path) -> dict:
+    """Test hook execution with sample input (dry-run)."""
+    import subprocess
+    import json
+
+    hook_path = hooks_dir / hook_name
+
+    if not hook_path.exists():
+        return {
+            'id': f'hook_test_{hook_name}',
+            'category': 'hook_functionality',
+            'status': 'fail',
+            'severity': 'warning',
+            'message': f'{hook_name}: File not found',
+            'fix': None
+        }
+
+    try:
+        result = subprocess.run(
+            ['python3', str(hook_path)],
+            input=json.dumps(test_input),
+            text=True,
+            capture_output=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            return {
+                'id': f'hook_test_{hook_name}',
+                'category': 'hook_functionality',
+                'status': 'pass',
+                'severity': 'warning',
+                'message': f'{hook_name}: Responds correctly',
+                'fix': None
+            }
+        else:
+            return {
+                'id': f'hook_test_{hook_name}',
+                'category': 'hook_functionality',
+                'status': 'fail',
+                'severity': 'warning',
+                'message': f'{hook_name}: Exited with code {result.returncode}',
+                'fix': {
+                    'description': 'Check hook for errors or reinstall',
+                    'safe': False,
+                    'command': None
+                }
+            }
+    except subprocess.TimeoutExpired:
+        return {
+            'id': f'hook_test_{hook_name}',
+            'category': 'hook_functionality',
+            'status': 'fail',
+            'severity': 'warning',
+            'message': f'{hook_name}: Timed out after 5 seconds',
+            'fix': {
+                'description': 'Check hook for infinite loops or reinstall',
+                'safe': False,
+                'command': None
+            }
+        }
+    except Exception as e:
+        return {
+            'id': f'hook_test_{hook_name}',
+            'category': 'hook_functionality',
+            'status': 'error',
+            'severity': 'warning',
+            'message': f'{hook_name}: Test error ({e})',
+            'fix': None
+        }
+
+
+def _test_all_hooks(hooks_dir: Path) -> list:
+    """Run dry-run tests on all hooks."""
+    tests = [
+        ('check-requirements.py', {'tool_name': 'Read'}),
+        ('handle-session-start.py', {'hook_event_name': 'SessionStart', 'session_id': 'test1234'}),
+        ('handle-stop.py', {'hook_event_name': 'Stop', 'session_id': 'test1234', 'stop_hook_active': False}),
+        ('handle-session-end.py', {'hook_event_name': 'SessionEnd', 'session_id': 'test1234'}),
+    ]
+    return [_test_hook_dry_run(hook, test_input, hooks_dir) for hook, test_input in tests]
+
+
 def cmd_doctor(args) -> int:
     """
-    Run environment diagnostics for the requirements framework.
+    Run comprehensive environment diagnostics for the requirements framework.
 
     Args:
-        args: Parsed arguments with optional --verbose flag
+        args: Parsed arguments with --verbose, --json flags
 
     Returns:
         Exit code (0 if all checks pass, 1 if issues found)
     """
     verbose = hasattr(args, 'verbose') and args.verbose
+    json_output = hasattr(args, 'json') and args.json
 
-    project_dir = get_project_dir()
     claude_dir = Path.home() / ".claude"
     hooks_dir = claude_dir / "hooks"
+    settings_file = claude_dir / "settings.local.json"
 
+    # Run all checks
+    all_checks = []
+
+    # Environment checks
+    all_checks.append(_check_python_version())
+    all_checks.append(_check_pyyaml_available())
+
+    # Hook file checks
+    all_checks.extend(_check_all_hook_files(hooks_dir))
+
+    # Hook registration checks
+    all_checks.extend(_check_all_hook_registrations(settings_file))
+
+    # CLI checks
+    all_checks.append(_check_path_configured())
+    all_checks.append(_check_req_command())
+
+    # Plugin check
+    all_checks.append(_check_plugin_installation())
+
+    # Hook functionality tests (dry-run)
+    all_checks.extend(_test_all_hooks(hooks_dir))
+
+    # Analyze results
+    critical_issues = [c for c in all_checks if c['status'] in ['fail', 'error'] and c['severity'] == 'critical']
+    warnings = [c for c in all_checks if c['status'] in ['fail', 'error'] and c['severity'] == 'warning']
+    info_items = [c for c in all_checks if c['status'] == 'pass' or c['severity'] == 'info']
+
+    passed = len([c for c in all_checks if c['status'] == 'pass'])
+    total = len(all_checks)
+
+    # JSON output mode
+    if json_output:
+        result = {
+            'status': 'fail' if critical_issues or warnings else 'pass',
+            'exit_code': 1 if critical_issues else 0,
+            'summary': {
+                'total': total,
+                'passed': passed,
+                'warnings': len(warnings),
+                'critical': len(critical_issues)
+            },
+            'checks': all_checks
+        }
+        print(json.dumps(result, indent=2))
+        return 1 if critical_issues else 0
+
+    # Default/Verbose output mode
     print(header("🩺 Requirements Framework Health Check"))
     print()
 
-    problems = []
-    info_items = []
-    status_ok = True
-
-    # Hook registration check
-    hook_ok, hook_msg = _check_hook_registration(claude_dir)
-    status_ok &= hook_ok
-    if not hook_ok:
-        problems.append(("❌ CRITICAL", hook_msg, "Re-run ./install.sh to register hooks"))
-    elif verbose:
-        info_items.append(("✅", hook_msg))
-
-    # Executable bits
-    for script_name in ["check-requirements.py", "requirements-cli.py"]:
-        ok, msg = _check_executable(hooks_dir / script_name)
-        status_ok &= ok
-        if not ok:
-            problems.append(("❌ CRITICAL", msg, f"Fix: chmod +x ~/.claude/hooks/{script_name}"))
-        elif verbose:
-            info_items.append(("✅", msg))
-
-    # Project config (informational only - not fatal)
-    config_ok, config_msg = _check_project_config(project_dir)
-    if not config_ok:
-        info_items.append(("ℹ️", config_msg + " (optional)"))
-    elif verbose:
-        info_items.append(("✅", config_msg))
-
-    # Sync status
-    repo_dir = _find_repo_dir(args.repo)
-    if repo_dir:
-        results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
-        for relative, message in results:
-            if message.startswith("✓"):
-                if verbose:
-                    info_items.append(("✅", f"{relative}: {message}"))
-            elif message.startswith(("↑", "↓", "⚠", "✗")):
-                # Determine severity and specific fix from message
-                if message.startswith("↑"):
-                    severity = "⚠️  WARNING"
-                    fix = "Run: ./sync.sh deploy"
-                elif message.startswith("↓"):
-                    severity = "⚠️  WARNING"
-                    fix = "Run: ./sync.sh pull"
-                elif message.startswith("⚠"):
-                    severity = "⚠️  WARNING"
-                    fix = "Run: ./sync.sh status for details"
-                else:  # ✗
-                    severity = "❌ CRITICAL"
-                    fix = "Check file permissions or re-install"
-
-                problems.append((severity, f"{relative}: {message}", fix))
-                status_ok = False
-            else:
-                if verbose:
-                    info_items.append(("ℹ️", f"{relative}: {message}"))
-
-        # Add specific actions if provided
-        if actions and verbose:
-            for action in actions:
-                info_items.append(("💡", f"Recommended: {action}"))
-    else:
-        # Report repo not found as warning (always, not just in verbose)
-        problems.append(("⚠️  WARNING", "Could not locate repository copy", "Set --repo to specify path or run from repo directory"))
-
-    # Display results
-    if problems:
-        print(error("❌ Issues Found:"))
+    # Show issues if any
+    if critical_issues:
+        print(error("❌ CRITICAL Issues:"))
         print()
-        for severity, msg, fix in problems:
-            print(f"  {severity}: {msg}")
-            if fix:
-                print(dim(f"     Fix: {fix}"))
+        for check in critical_issues:
+            print(f"  ❌ {check['message']}")
+            if check['fix']:
+                print(dim(f"     Fix: {check['fix']['description']}"))
             print()
+
+    if warnings:
+        print(error("⚠️  Warnings:"))
+        print()
+        for check in warnings:
+            print(f"  ⚠️  {check['message']}")
+            if check['fix']:
+                print(dim(f"     Fix: {check['fix']['description']}"))
+            print()
+
+    # Summary
+    if not critical_issues and not warnings:
+        print(success("✅ All checks passed!"))
+        print()
+        print(f"  {passed}/{total} checks completed successfully")
     else:
-        print(success("✅ All checks passed"))
+        print(f"  Status: {passed}/{total} checks passed")
+        if critical_issues:
+            print(f"  Critical issues: {len(critical_issues)}")
+        if warnings:
+            print(f"  Warnings: {len(warnings)}")
         print()
 
+    # Verbose mode: show all checks
     if verbose and info_items:
         print(header("ℹ️  All Checks:"))
         print()
-        for icon, msg in info_items:
-            print(f"  {icon} {msg}")
+        for check in all_checks:
+            icon = "✅" if check['status'] == 'pass' else "❌" if check['severity'] == 'critical' else "⚠️"
+            print(f"  {icon} {check['message']}")
         print()
 
-    if not verbose and not problems:
+    # Hints
+    if not verbose and (critical_issues or warnings):
         print(hint("💡 Use 'req doctor --verbose' for full diagnostics"))
+        print(hint("💡 Use 'req doctor --json' for machine-readable output"))
 
-    return 0 if status_ok else 1
+    return 1 if critical_issues else 0
 
 
 def cmd_sessions(args) -> int:
@@ -1806,9 +2148,10 @@ Environment Variables:
     subparsers.add_parser('verify', help='Verify framework installation is working correctly')
 
     # doctor
-    doctor_parser = subparsers.add_parser('doctor', help='Verify hook installation and sync status')
+    doctor_parser = subparsers.add_parser('doctor', help='Run comprehensive framework diagnostics')
     doctor_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
     doctor_parser.add_argument('--verbose', '-v', action='store_true', help='Show all checks including passing ones')
+    doctor_parser.add_argument('--json', action='store_true', help='Output results in JSON format for scripting')
 
     args = parser.parse_args()
 
