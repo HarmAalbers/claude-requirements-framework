@@ -2,6 +2,7 @@
 # =====================================
 # This file is committed to the repo - team members see it.
 # Personal overrides go in requirements.local.yaml (gitignored)
+# Test change for codex_reviewer blocking verification
 
 version: "1.0"
 
