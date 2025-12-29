@@ -233,7 +233,7 @@ Run `/pre-pr-review:quality-check` for comprehensive review.
             },
 
             'codex_reviewer': {
-                'enabled': False,  # Optional (requires Codex CLI)
+                'enabled': True,  # Optional (requires Codex CLI)
                 'type': 'blocking',
                 'scope': 'single_use',
                 'trigger_tools': [
