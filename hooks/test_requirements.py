@@ -208,6 +208,133 @@ def test_session_registry(runner: TestRunner):
             session.get_registry_path = original_get_registry_path
 
 
+def test_session_id_normalization(runner: TestRunner):
+    """Test session ID normalization handles all formats."""
+    print("\n📦 Testing session ID normalization...")
+    from session import normalize_session_id
+
+    # Test full UUID with dashes → 8 chars
+    full_uuid = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+    result = normalize_session_id(full_uuid)
+    runner.test("Full UUID with dashes → 8 chars", result == "cad0ac4d", f"Got: {result}")
+
+    # Test full UUID without dashes → 8 chars
+    full_uuid_nodash = "cad0ac4d393345ad9a1c14aec05bb940"
+    result = normalize_session_id(full_uuid_nodash)
+    runner.test("Full UUID no dashes → 8 chars", result == "cad0ac4d", f"Got: {result}")
+
+    # Test already 8-char ID (idempotent)
+    short_id = "08345d22"
+    result = normalize_session_id(short_id)
+    runner.test("8-char ID unchanged", result == short_id, f"Got: {result}")
+
+    # Test shorter ID remains unchanged
+    tiny_id = "abc"
+    result = normalize_session_id(tiny_id)
+    runner.test("Short ID unchanged", result == tiny_id, f"Got: {result}")
+
+    # Test idempotency
+    test_id = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+    once = normalize_session_id(test_id)
+    twice = normalize_session_id(once)
+    runner.test("Normalization is idempotent", once == twice, f"Once: {once}, Twice: {twice}")
+
+    # Test empty string generates new ID
+    result = normalize_session_id("")
+    runner.test("Empty string generates ID", len(result) == 8, f"Got: {result}")
+
+    # Test None generates new ID
+    result = normalize_session_id(None)
+    runner.test("None generates ID", len(result) == 8, f"Got: {result}")
+
+
+def test_get_session_id_normalization(runner: TestRunner):
+    """Test get_session_id() returns normalized IDs."""
+    print("\n📦 Testing get_session_id() normalization...")
+    import os
+    from session import get_session_id, normalize_session_id
+
+    # Test with full UUID in env var
+    full_uuid = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+    old_env = os.environ.get('CLAUDE_SESSION_ID')
+
+    try:
+        os.environ['CLAUDE_SESSION_ID'] = full_uuid
+        session_id = get_session_id()
+
+        runner.test("Env var normalized", session_id == "cad0ac4d", f"Got: {session_id}")
+        runner.test("Returns 8 chars", len(session_id) == 8, f"Length: {len(session_id)}")
+        runner.test("Idempotent normalization", normalize_session_id(session_id) == session_id,
+                   f"normalize({session_id}) = {normalize_session_id(session_id)}")
+    finally:
+        if old_env:
+            os.environ['CLAUDE_SESSION_ID'] = old_env
+        else:
+            os.environ.pop('CLAUDE_SESSION_ID', None)
+
+
+def test_session_key_migration(runner: TestRunner):
+    """Test migration of full UUID session keys to normalized format."""
+    print("\n📦 Testing session key migration...")
+    import tempfile
+    import os
+    from requirements import BranchRequirements
+    from state_storage import save_state
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Create state with FULL UUID session key (old format)
+        branch = "main"
+        full_uuid = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+        normalized = "cad0ac4d"
+
+        old_state = {
+            "version": "1.0",
+            "branch": branch,
+            "project": tmpdir,
+            "created_at": 1234567890,
+            "updated_at": 1234567890,
+            "requirements": {
+                "commit_plan": {
+                    "scope": "session",
+                    "sessions": {
+                        full_uuid: {
+                            "satisfied": True,
+                            "satisfied_at": 1234567890,
+                            "satisfied_by": "cli"
+                        }
+                    }
+                }
+            }
+        }
+
+        save_state(branch, tmpdir, old_state)
+
+        # Load via BranchRequirements (should trigger migration)
+        reqs = BranchRequirements(branch, normalized, tmpdir)
+
+        # Verify migration
+        sessions = reqs._state['requirements']['commit_plan']['sessions']
+        runner.test("Normalized key exists", normalized in sessions, f"Keys: {list(sessions.keys())}")
+        runner.test("Full UUID key removed", full_uuid not in sessions, f"Keys: {list(sessions.keys())}")
+
+        # Verify data preserved
+        if normalized in sessions:
+            runner.test("Data preserved", sessions[normalized]['satisfied'] == True,
+                       f"Data: {sessions[normalized]}")
+            runner.test("Timestamp preserved", sessions[normalized]['satisfied_at'] == 1234567890,
+                       f"Timestamp: {sessions[normalized].get('satisfied_at')}")
+        else:
+            runner.test("Data preserved", False, "Normalized key not found")
+            runner.test("Timestamp preserved", False, "Normalized key not found")
+
+        # Verify requirement is still satisfied
+        runner.test("Still satisfied after migration",
+                   reqs.is_satisfied('commit_plan', 'session'),
+                   "Should be satisfied")
+
+
 def test_git_utils_module(runner: TestRunner):
     """Test git utilities."""
     print("\n📦 Testing git_utils module...")
@@ -4095,6 +4222,9 @@ def main():
 
     test_session_module(runner)
     test_session_registry(runner)
+    test_session_id_normalization(runner)
+    test_get_session_id_normalization(runner)
+    test_session_key_migration(runner)
     test_git_utils_module(runner)
     test_git_root_resolution(runner)
     test_hook_from_subdirectory(runner)
