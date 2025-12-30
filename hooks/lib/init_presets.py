@@ -200,7 +200,7 @@ Consider splitting into smaller PRs for easier review.
                 ],
                 'message': '''📝 **Code review before commit**
 
-Run `/pre-pr-review:pre-commit` to review changes.
+Run `/requirements-framework:pre-commit` to review changes.
 
 **After review**: Proceed with commit.
 ''',
@@ -220,7 +220,7 @@ Run `/pre-pr-review:pre-commit` to review changes.
                 ],
                 'message': '''🔍 **Quality check before PR**
 
-Run `/pre-pr-review:quality-check` for comprehensive review.
+Run `/requirements-framework:quality-check` for comprehensive review.
 
 **After review**: Create PR.
 ''',
