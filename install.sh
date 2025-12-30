@@ -317,6 +317,93 @@ setup_plugin_symlink() {
 # Call plugin setup
 setup_plugin_symlink
 
+# Configure hooks in settings.json (fixes empty hooks override issue)
+configure_settings_json_hooks() {
+    local settings_file="$HOME/.claude/settings.json"
+
+    if [[ ! -f "$settings_file" ]]; then
+        echo "   ⚠️  settings.json not found, skipping"
+        return 0
+    fi
+
+    # Use Python to safely merge hooks into settings.json
+    python3 << 'PYTHON_SCRIPT'
+import json
+import os
+import sys
+
+settings_file = os.path.expanduser("~/.claude/settings.json")
+
+# Required hooks configuration
+REQUIRED_HOOKS = {
+    "PreToolUse": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/check-requirements.py"
+        }]
+    }],
+    "PostToolUse": [{
+        "matcher": "*",
+        "hooks": [
+            {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
+            {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"}
+        ]
+    }],
+    "SessionStart": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-session-start.py"
+        }]
+    }],
+    "Stop": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-stop.py"
+        }]
+    }],
+    "SessionEnd": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-session-end.py"
+        }]
+    }]
+}
+
+try:
+    with open(settings_file, 'r') as f:
+        settings = json.load(f)
+
+    # Get existing hooks or empty dict
+    existing_hooks = settings.get("hooks", {})
+
+    # Merge: add our hooks if not already present or if empty
+    for hook_name, hook_config in REQUIRED_HOOKS.items():
+        if hook_name not in existing_hooks:
+            existing_hooks[hook_name] = hook_config
+        # If exists but empty, replace it
+        elif not existing_hooks[hook_name]:
+            existing_hooks[hook_name] = hook_config
+
+    settings["hooks"] = existing_hooks
+
+    # Ensure disableAllHooks is false
+    settings["disableAllHooks"] = False
+
+    with open(settings_file, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+    print("   ✅ Hooks configured in settings.json")
+
+except Exception as e:
+    print(f"   ⚠️  Could not update settings.json: {e}", file=sys.stderr)
+    # Non-fatal - settings.local.json is also configured
+PYTHON_SCRIPT
+}
+
 # Register hooks in Claude Code settings
 SETTINGS_FILE="$HOME/.claude/settings.local.json"
 
@@ -415,6 +502,11 @@ EOF
     echo "   ✅ Created $SETTINGS_FILE"
 fi
 
+# Also configure settings.json to prevent empty hooks override issue
+echo ""
+echo "📝 Configuring hooks in settings.json..."
+configure_settings_json_hooks
+
 echo ""
 echo "🧪 Verifying installation..."
 echo ""
@@ -476,6 +568,55 @@ EOF
 else
     echo "   ❌ settings.local.json not found"
     VERIFICATION_PASSED=false
+fi
+
+# Test 2b: Check if hooks are registered in settings.json
+echo ""
+echo "2️⃣b Checking settings.json hook configuration..."
+if [ -f "$HOME/.claude/settings.json" ]; then
+    python3 - "$HOME/.claude/settings.json" << 'EOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], 'r') as f:
+        settings = json.load(f)
+
+    required_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd', 'PostToolUse']
+    missing = []
+    empty = []
+
+    hooks = settings.get('hooks', {})
+
+    # Check for empty hooks object (the bug we're fixing)
+    if hooks == {}:
+        print("   ❌ hooks object is empty in settings.json")
+        sys.exit(1)
+
+    for hook in required_hooks:
+        if hook not in hooks:
+            missing.append(hook)
+        elif not hooks[hook]:
+            empty.append(hook)
+
+    if missing:
+        print(f"   ⚠️  Missing hooks in settings.json: {', '.join(missing)}")
+        # Not fatal - settings.local.json may have them
+
+    if empty:
+        print(f"   ⚠️  Empty hooks in settings.json: {', '.join(empty)}")
+
+    if not missing and not empty:
+        print("   ✅ All hooks configured in settings.json")
+
+    sys.exit(0)
+except Exception as e:
+    print(f"   ⚠️  Could not verify settings.json: {e}")
+    # Not fatal - settings.local.json is primary
+    sys.exit(0)
+EOF
+else
+    echo "   ⚠️  settings.json not found (Claude Code may create it later)"
 fi
 
 # Test 3: Check if req command works
