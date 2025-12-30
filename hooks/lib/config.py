@@ -218,6 +218,7 @@ class RequirementsConfig:
         'checklist': {'type': list, 'element_type': str},
         'message': {'type': str},
         'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
+        'satisfied_by_skill': {'type': str},  # Skill name that auto-satisfies this requirement
     }
 
     def _load_cascade(self) -> dict:
@@ -393,6 +394,18 @@ class RequirementsConfig:
 
         # Validate common fields present on all requirements
         self._validate_requirement_schema(req_name, req_config)
+
+        # Validate satisfied_by_skill if present (applies to all types)
+        if 'satisfied_by_skill' in req_config:
+            skill_name = req_config['satisfied_by_skill']
+            if not isinstance(skill_name, str):
+                raise ValueError(
+                    f"Requirement '{req_name}' field 'satisfied_by_skill' must be a string"
+                )
+            if not skill_name.strip():
+                raise ValueError(
+                    f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty"
+                )
 
         if req_type == 'dynamic':
             # Validate dynamic requirement fields
