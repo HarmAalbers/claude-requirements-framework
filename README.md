@@ -326,6 +326,37 @@ requirements:
 
 **Auto-satisfied** when you run `/requirements-framework:codex-review`
 
+### Project-Specific Skills (`satisfied_by_skill`)
+
+Connect any project skill to auto-satisfy a requirement when it completes.
+
+**Use Case**: Projects with custom review skills (e.g., architecture review against ADRs)
+
+```yaml
+# .claude/requirements.yaml (in your project)
+requirements:
+  architecture_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: 'gh\s+pr\s+create'
+    satisfied_by_skill: 'architecture-guardian'  # Your project skill name
+    message: |
+      🏗️ Run the architecture-guardian skill to review against ADRs
+```
+
+**How It Works**:
+1. Define a skill in your project (`.claude/skills/architecture-guardian.md`)
+2. Add `satisfied_by_skill: 'skill-name'` to your requirement config
+3. When the skill completes, the requirement is automatically satisfied
+4. PR creation is allowed (requirement is satisfied)
+
+**Naming Convention**:
+- Project skills: Use skill name from frontmatter (e.g., `'architecture-guardian'`)
+- Plugin skills: Use namespaced format (e.g., `'requirements-framework:pre-commit'`)
+
 ### hooks.stop Configuration
 
 Controls whether sessions can end with unsatisfied requirements.
@@ -882,6 +913,46 @@ enabled: false
 See the `examples/` directory for:
 - `global-requirements.yaml` - Global configuration template
 - `project-requirements.yaml` - Project-specific configuration example
+
+## What's New in v2.3
+
+### 🎯 Project-Specific Skill Requirements (`satisfied_by_skill`)
+
+**Feature**: Connect any project skill to auto-satisfy a requirement when it completes.
+
+Projects can now define custom skills that automatically satisfy requirements, enabling:
+- Architecture review skills that gate PR creation
+- Custom code review workflows per project
+- ADR compliance checks specific to each codebase
+
+**How to Use**:
+```yaml
+# .claude/requirements.yaml
+requirements:
+  architecture_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: 'gh\s+pr\s+create'
+    satisfied_by_skill: 'architecture-guardian'  # NEW FIELD
+    message: |
+      🏗️ Run the architecture-guardian skill before creating PR
+```
+
+**Workflow**:
+1. User exits plan mode → Shows proactive reminder
+2. User runs `/architecture-guardian` skill
+3. `auto-satisfy-skills.py` hook fires → Auto-satisfies `architecture_review`
+4. User runs `gh pr create` → Allowed (requirement satisfied)
+5. `clear-single-use.py` fires → Clears requirement for next PR
+
+**Configuration-Driven**: No framework changes needed for new skills. Just add `satisfied_by_skill` to your requirement config.
+
+**Test Coverage**: 454 tests passing (7 new tests for this feature)
+
+---
 
 ## What's New in v2.2
 
