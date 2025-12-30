@@ -1,7 +1,7 @@
 {
   "name": "requirements-framework",
-  "version": "2.0.3",
-  "description": "Claude Code Requirements Framework - Enforces development workflow requirements (commit planning, ADR review, TDD) through hooks. Features customizable checklists and session management.",
+  "version": "2.0.4",
+  "description": "Claude Code Requirements Framework - Enforces development workflow requirements (commit planning, ADR review, TDD) through hooks. Features customizable checklists, session management, and comprehensive code review agents.",
   "author": {
     "name": "Harm"
   },
@@ -13,10 +13,21 @@
     "skills/requirements-framework-status/skill.md",
     "skills/requirements-framework-usage/skill.md"
   ],
-  "commands": [],
+  "commands": [
+    "commands/pre-commit.md",
+    "commands/quality-check.md"
+  ],
   "agents": [
     "agents/adr-guardian.md",
-    "agents/codex-review-agent.md"
+    "agents/backward-compatibility-checker.md",
+    "agents/code-reviewer.md",
+    "agents/code-simplifier.md",
+    "agents/codex-review-agent.md",
+    "agents/comment-analyzer.md",
+    "agents/silent-failure-hunter.md",
+    "agents/test-analyzer.md",
+    "agents/tool-validator.md",
+    "agents/type-design-analyzer.md"
   ],
   "hooks": []
 }

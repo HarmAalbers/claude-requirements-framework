@@ -187,7 +187,7 @@ requirements:
     message: |
       📝 **Code review required before committing**
 
-      Run `/pre-pr-review:pre-commit` to review your code changes before committing.
+      Run `/requirements-framework:pre-commit` to review your code changes before committing.
 
       **Why this matters**:
       - Catches bugs and issues before they're committed
@@ -214,7 +214,7 @@ requirements:
     message: |
       🔍 **Quality check required before creating PR**
 
-      Run `/pre-pr-review:quality-check` for comprehensive review before creating a PR.
+      Run `/requirements-framework:quality-check` for comprehensive review before creating a PR.
 
       **Why this matters**:
       - Catches issues before PR review begins
