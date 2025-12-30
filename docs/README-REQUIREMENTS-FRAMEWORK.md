@@ -438,9 +438,39 @@ req status  # Should show satisfied
 
 ## Advanced Features
 
-### Auto-Satisfy (Phase 2 - Not Yet Implemented)
+### Auto-Satisfy with Skills (v2.3)
 
-Automatically satisfy requirements based on patterns:
+Connect project skills to auto-satisfy requirements when they complete:
+
+```yaml
+# .claude/requirements.yaml
+requirements:
+  architecture_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: 'gh\s+pr\s+create'
+    satisfied_by_skill: 'architecture-guardian'  # Skill name from frontmatter
+    message: |
+      🏗️ Run the architecture-guardian skill before creating PR
+```
+
+**Workflow**:
+1. Create a skill in your project (`.claude/skills/architecture-guardian.md`)
+2. Add `satisfied_by_skill: 'skill-name'` to your requirement config
+3. When the skill completes, `auto-satisfy-skills.py` hook auto-satisfies the requirement
+4. Trigger action (e.g., `gh pr create`) is now allowed
+
+**Built-in Mappings** (for framework skills):
+- `requirements-framework:pre-commit` → `pre_commit_review`
+- `requirements-framework:quality-check` → `pre_pr_review`
+- `requirements-framework:codex-review` → `codex_reviewer`
+
+### Auto-Satisfy with Branch Patterns (Future)
+
+Automatically satisfy requirements based on branch naming patterns:
 
 ```yaml
 requirements:
@@ -475,11 +505,15 @@ requirements:
 
 ## Version History
 
-- **v1.0** - Initial MVP with commit_plan requirement
-- **v1.1** - Session registry and auto-detection
-- **v1.2** - Enhanced error messages with session context
-- **v1.3** - Permission bypass fix and session bootstrap fix
+- **v2.3** - **`satisfied_by_skill` field** - Connect project skills to auto-satisfy requirements
+- **v2.2** - Full session lifecycle hooks (SessionStart, Stop, SessionEnd)
+- **v2.1** - Message deduplication for parallel tool calls
+- **v2.0** - Checklists feature, dynamic requirements, guard types
 - **v1.4** - **Plan file whitelisting** (critical fix)
+- **v1.3** - Permission bypass fix and session bootstrap fix
+- **v1.2** - Enhanced error messages with session context
+- **v1.1** - Session registry and auto-detection
+- **v1.0** - Initial MVP with commit_plan requirement
 
 ## Contributing
 
