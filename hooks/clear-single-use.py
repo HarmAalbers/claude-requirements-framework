@@ -37,7 +37,7 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from config import RequirementsConfig, matches_trigger
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from session import get_session_id
+from session import get_session_id, normalize_session_id
 
 
 def main() -> int:
@@ -86,8 +86,9 @@ def main() -> int:
         if not branch:
             return 0  # Detached HEAD
 
-        # Get session ID
-        session_id = input_data.get('session_id') or get_session_id()
+        # Get session ID (normalize to ensure consistent 8-char format)
+        raw_session = input_data.get('session_id')
+        session_id = normalize_session_id(raw_session) if raw_session else get_session_id()
 
         # Load config
         config = RequirementsConfig(project_dir)

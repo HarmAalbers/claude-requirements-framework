@@ -18,6 +18,50 @@ import uuid
 from pathlib import Path
 
 
+def normalize_session_id(session_id: str) -> str:
+    """
+    Normalize session ID to 8-character hex format.
+
+    Ensures consistent session ID format across all code paths (env var,
+    PPID-based, and generated). This fixes the bug where CLAUDE_SESSION_ID
+    provides full UUIDs but PPID fallback generates 8-char IDs, causing
+    state mismatch.
+
+    Handles:
+    - Full UUIDs with dashes: "cad0ac4d-3933-45ad-9a1c-14aec05bb940" → "cad0ac4d"
+    - Full UUIDs without dashes: "cad0ac4d393345ad9a1c14aec05bb940" → "cad0ac4d"
+    - Already 8-char IDs: "08345d22" → "08345d22" (idempotent)
+    - Short IDs: "abc" → "abc" (unchanged)
+    - Invalid/empty input: "" → generates new 8-char ID
+
+    Args:
+        session_id: Session identifier in any format
+
+    Returns:
+        8-character hex session ID
+
+    Example:
+        >>> normalize_session_id("cad0ac4d-3933-45ad-9a1c-14aec05bb940")
+        'cad0ac4d'
+        >>> normalize_session_id("08345d22")
+        '08345d22'
+    """
+    if not session_id or not isinstance(session_id, str):
+        # Generate new ID for invalid input
+        return uuid.uuid4().hex[:8]
+
+    # Remove dashes (UUIDs like cad0ac4d-3933-45ad-9a1c-14aec05bb940)
+    clean = session_id.replace('-', '')
+
+    # Take first 8 hex chars
+    # If already 8 or less, return as-is (idempotent)
+    # If longer (full UUID), take first 8
+    if len(clean) <= 8:
+        return clean
+    else:
+        return clean[:8]
+
+
 def get_session_id() -> str:
     """
     Get or generate a stable session ID.
@@ -25,12 +69,15 @@ def get_session_id() -> str:
     Returns the same ID for the duration of a Claude Code session,
     but different IDs for different sessions.
 
+    All return paths normalize to 8-character hex format for consistency.
+
     Returns:
         str: 8-character hex session identifier
     """
     # Strategy 1: Check environment variable
+    # Claude Code provides full UUIDs, which we normalize to 8 chars
     if 'CLAUDE_SESSION_ID' in os.environ:
-        return os.environ['CLAUDE_SESSION_ID']
+        return normalize_session_id(os.environ['CLAUDE_SESSION_ID'])
 
     # Strategy 2: Use parent process ID (stable for CLI session)
     # The parent PID is the Claude Code process, which stays constant
@@ -43,7 +90,7 @@ def get_session_id() -> str:
         try:
             session_id = session_file.read_text().strip()
             if session_id and len(session_id) == 8:
-                return session_id
+                return normalize_session_id(session_id)  # Defensive normalization
         except (OSError, IOError):
             pass  # Fall through to generate new
 
@@ -56,7 +103,7 @@ def get_session_id() -> str:
     except (OSError, IOError):
         pass
 
-    return session_id
+    return normalize_session_id(session_id)  # Defensive normalization
 
 
 def clear_session_cache() -> None:

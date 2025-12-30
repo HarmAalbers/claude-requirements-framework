@@ -55,13 +55,79 @@ class BranchRequirements:
 
         Args:
             branch: Git branch name
-            session_id: Current session identifier
+            session_id: Current session identifier (will be normalized to 8-char format)
             project_dir: Project root directory
         """
+        # Normalize session_id to ensure consistent 8-char format
+        try:
+            from .session import normalize_session_id
+        except ImportError:
+            from session import normalize_session_id
+
         self.branch = branch
-        self.session_id = session_id
+        self.session_id = normalize_session_id(session_id)
         self.project_dir = project_dir
         self._state = load_state(branch, project_dir)
+
+        # Migrate old state with full UUID session keys to normalized 8-char format
+        self._migrate_session_keys()
+
+    def _migrate_session_keys(self) -> None:
+        """
+        Migrate session keys from full UUID format to 8-char normalized format.
+
+        This is a one-time migration for existing state files that may contain
+        full UUID session keys (from when CLAUDE_SESSION_ID provided full UUIDs).
+        Runs on every load but is idempotent and fail-safe.
+
+        Example transformation:
+            "cad0ac4d-3933-45ad-9a1c-14aec05bb940" → "cad0ac4d"
+
+        Handles conflicts by keeping the newer timestamp if both formats exist.
+        """
+        try:
+            from .session import normalize_session_id
+        except ImportError:
+            from session import normalize_session_id
+
+        migrated = False
+
+        for req_name, req_state in self._state['requirements'].items():
+            if 'sessions' not in req_state:
+                continue
+
+            sessions = req_state['sessions']
+            old_keys = list(sessions.keys())
+
+            for old_key in old_keys:
+                normalized_key = normalize_session_id(old_key)
+
+                # Skip if already normalized (idempotent)
+                if old_key == normalized_key:
+                    continue
+
+                # Handle conflicts: if normalized key already exists, keep newer
+                if normalized_key in sessions:
+                    old_data = sessions[old_key]
+                    new_data = sessions[normalized_key]
+
+                    old_time = old_data.get('satisfied_at', 0)
+                    new_time = new_data.get('satisfied_at', 0)
+
+                    # Keep whichever has the newer timestamp
+                    if old_time > new_time:
+                        sessions[normalized_key] = old_data
+                else:
+                    # No conflict: move data to normalized key
+                    sessions[normalized_key] = sessions[old_key]
+
+                # Remove old key
+                del sessions[old_key]
+                migrated = True
+
+        # Save migrated state
+        if migrated:
+            self._save()
 
     def _save(self) -> None:
         """Save current state to disk."""
