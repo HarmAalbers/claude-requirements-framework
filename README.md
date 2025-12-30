@@ -13,7 +13,7 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 421 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 447 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
 - **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
 
@@ -229,6 +229,178 @@ requirements:
 
       ADRs are in: /path/to/ADR/
 ```
+
+### protected_branch (Guard Type)
+
+Prevents direct edits on protected branches (main/master).
+
+**Type**: Guard - Checks conditions rather than requiring manual satisfaction
+
+```yaml
+requirements:
+  protected_branch:
+    enabled: true
+    type: guard
+    guard_type: protected_branch
+    protected_branches:
+      - master
+      - main
+```
+
+### branch_size_limit (Dynamic Type)
+
+Automatically calculates branch size and blocks large PRs.
+
+**Type**: Dynamic - Calculated automatically, not manually satisfied
+
+```yaml
+requirements:
+  branch_size_limit:
+    enabled: true
+    type: dynamic
+    calculator: branch_size_calculator
+    scope: session
+    thresholds:
+      warn: 250   # Log warning (non-blocking)
+      block: 400  # Block with denial message
+    cache_ttl: 60  # Recalculate every 60 seconds
+    approval_ttl: 3600  # 1 hour approval via `req approve`
+```
+
+### pre_commit_review (Single-Use Scope)
+
+Requires code review before every commit.
+
+**Scope**: single_use - Must re-satisfy before EACH commit
+
+```yaml
+requirements:
+  pre_commit_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "git\\s+(commit|cherry-pick|revert|merge)"
+    message: |
+      Run `/requirements-framework:pre-commit` to review your code
+```
+
+**Auto-satisfied** when you run `/requirements-framework:pre-commit`
+
+### pre_pr_review (Single-Use Scope)
+
+Requires comprehensive quality check before creating each PR.
+
+```yaml
+requirements:
+  pre_pr_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "gh\\s+pr\\s+create"
+    message: |
+      Run `/requirements-framework:quality-check` for comprehensive review
+```
+
+**Auto-satisfied** when you run `/requirements-framework:quality-check`
+
+### codex_reviewer (AI-Powered Review)
+
+Requires AI-powered code review before creating PRs.
+
+```yaml
+requirements:
+  codex_reviewer:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "gh\\s+pr\\s+create"
+    message: |
+      Run `/requirements-framework:codex-review` for AI-powered review
+```
+
+**Auto-satisfied** when you run `/requirements-framework:codex-review`
+
+### hooks.stop Configuration
+
+Controls whether sessions can end with unsatisfied requirements.
+
+```yaml
+hooks:
+  stop:
+    verify_requirements: true  # Block session end if requirements unsatisfied
+```
+
+When enabled, the Stop hook prevents Claude Code sessions from ending until all session-scoped requirements are satisfied.
+
+---
+
+## Plugin Components
+
+The requirements framework includes a comprehensive plugin with specialized agents, orchestrator commands, and management skills.
+
+### Agents (10)
+
+**Workflow Enforcement**:
+- **adr-guardian** - Validates plans and code against Architecture Decision Records (BLOCKING authority)
+- **codex-review-agent** - Orchestrates OpenAI Codex CLI for AI-powered code review
+
+**Pre-Commit Review Suite** (8 specialized reviewers):
+- **tool-validator** - Executes pyright/ruff/eslint to catch CI errors locally (Haiku model)
+- **code-reviewer** - CLAUDE.md compliance, bug detection, code quality (Opus model, confidence ≥80)
+- **silent-failure-hunter** - Error handling audit with zero tolerance for silent failures (Sonnet model)
+- **test-analyzer** - Test coverage quality with CRITICAL gap detection for code without tests
+- **type-design-analyzer** - Type invariants and encapsulation analysis with 4-dimensional rating
+- **comment-analyzer** - Documentation accuracy and comment rot detection
+- **code-simplifier** - Final code polish for clarity and maintainability (Sonnet model)
+- **backward-compatibility-checker** - Schema migration detection with Alembic verification (Sonnet model)
+
+### Commands (2)
+
+**`/requirements-framework:pre-commit [aspects]`**
+
+Fast pre-commit review with smart agent selection:
+- **Default** (no args): tool-validator + code-reviewer + silent-failure-hunter
+- **Arguments**: `tools`, `code`, `errors`, `compat`, `tests`, `types`, `comments`, `simplify`, `all`, `parallel`
+- **Integrated with**: `pre_commit_review` requirement (auto-satisfies on completion)
+- **Execution**: Deterministic workflow with blocking gates (tool errors stop AI review)
+
+Examples:
+```bash
+/requirements-framework:pre-commit              # Fast essential checks
+/requirements-framework:pre-commit tools        # Just CI tools
+/requirements-framework:pre-commit all parallel # Comprehensive + fast
+/requirements-framework:pre-commit tests types  # Specific aspects
+```
+
+**`/requirements-framework:quality-check [parallel]`**
+
+Comprehensive pre-PR review with all 8 review agents:
+- **Smart selection**: Conditionally runs agents based on file types (tests, types, comments, schemas)
+- **Deterministic execution**: 10-step workflow with enforced order and file type detection
+- **Blocking gate**: Tool-validator must pass before AI review
+- **Integrated with**: `pre_pr_review` requirement (auto-satisfies on completion)
+
+Examples:
+```bash
+/requirements-framework:quality-check           # Thorough sequential
+/requirements-framework:quality-check parallel  # Fast comprehensive
+```
+
+### Skills (5)
+
+- **codex-review** - AI-powered code review workflow using OpenAI Codex CLI
+- **requirements-framework-builder** - Framework management, extension, and status checking
+- **requirements-framework-development** - Framework development workflow and sync operations
+- **requirements-framework-status** - Status reporting and progress tracking
+- **requirements-framework-usage** - Usage help, troubleshooting, and configuration guidance
+
+---
 
 ## Configuration System
 
@@ -485,7 +657,7 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (421 tests, 100% passing):
+The framework includes comprehensive tests (447 tests, 100% passing):
 
 ```bash
 # Run all tests
@@ -496,7 +668,7 @@ python3 test_requirements.py
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 421/421 tests passed
+# Results: 447/447 tests passed
 ```
 
 Test categories:
@@ -526,7 +698,7 @@ Test categories:
 │   ├── handle-stop.py              # Stop hook (requirement verification)
 │   ├── handle-session-end.py       # SessionEnd hook (cleanup)
 │   ├── requirements-cli.py         # CLI tool (req command)
-│   ├── test_requirements.py        # Test suite (148 tests)
+│   ├── test_requirements.py        # Test suite (447 tests)
 │   └── lib/
 │       ├── config.py               # Configuration cascade + hook config
 │       ├── git_utils.py            # Git operations
@@ -734,7 +906,7 @@ The framework now supports the complete Claude Code session lifecycle with four 
 - Removes session from registry
 - Optional session state cleanup (disabled by default)
 
-**Test Coverage**: 27 new tests (147 total after removing obsolete main/master skip test)
+**Test Coverage**: Comprehensive test suite (447 total tests, 100% passing)
 
 ---
 

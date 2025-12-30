@@ -26,16 +26,27 @@ The framework exists in two places that must stay synchronized:
 
 Always run `./sync.sh status` before committing to ensure both locations are in sync.
 
-### Session Lifecycle (Four Hooks)
+### Session Lifecycle (Five Hooks)
 ```
 SessionStart (handle-session-start.py)
     → Clean stale sessions
+    → Update registry with current session
     → Inject full status into context
 
 PreToolUse (check-requirements.py) - triggered on Edit/Write
     → Load config (global → project → local cascade)
     → Check requirements against session/branch state
     → Allow or block with message
+
+PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
+    → Auto-satisfy requirements when review skills complete
+    → Maps: /requirements-framework:pre-commit → pre_commit_review
+    → Maps: /requirements-framework:quality-check → pre_pr_review
+    → Maps: /requirements-framework:codex-review → codex_reviewer
+
+PostToolUse (clear-single-use.py) - after certain Bash commands
+    → Clears single_use requirements after trigger commands
+    → Example: Clears pre_commit_review after git commit
 
 Stop (handle-stop.py) - when Claude finishes
     → Check stop_hook_active flag (prevent loops!)
@@ -59,7 +70,7 @@ SessionEnd (handle-session-end.py) - session ends
 - `hooks/handle-session-end.py` - SessionEnd hook (cleanup)
 - `hooks/requirements-cli.py` - `req` command implementation
 - `hooks/ruff_check.py` - Ruff linter hook
-- `hooks/test_requirements.py` - Comprehensive test suite (147 tests)
+- `hooks/test_requirements.py` - Comprehensive test suite (447 tests)
 - `hooks/test_branch_size_calculator.py` - Branch size calculator tests
 - `hooks/lib/requirements.py` - Core BranchRequirements API
 - `hooks/lib/config.py` - Configuration loader with cascade logic + hook config

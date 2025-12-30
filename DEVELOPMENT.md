@@ -126,6 +126,9 @@ git push
 │   ├── handle-session-start.py        → ~/.claude/hooks/handle-session-start.py
 │   ├── handle-stop.py                 → ~/.claude/hooks/handle-stop.py
 │   ├── handle-session-end.py          → ~/.claude/hooks/handle-session-end.py
+│   ├── auto-satisfy-skills.py         → ~/.claude/hooks/auto-satisfy-skills.py
+│   ├── clear-single-use.py            → ~/.claude/hooks/clear-single-use.py
+│   ├── handle-plan-exit.py            → ~/.claude/hooks/handle-plan-exit.py
 │   ├── requirements-cli.py            → ~/.claude/hooks/requirements-cli.py
 │   ├── ruff_check.py                  → ~/.claude/hooks/ruff_check.py
 │   ├── test_requirements.py           → ~/.claude/hooks/test_requirements.py
@@ -289,7 +292,7 @@ python3 hooks/test_requirements.py
 # Expected output:
 # 🧪 Requirements Framework Test Suite
 # ==================================================
-# Results: 147/147 tests passed
+# Results: 447/447 tests passed
 ```
 
 ### Integration Testing
