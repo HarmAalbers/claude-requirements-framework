@@ -4213,6 +4213,320 @@ def test_edge_cases(runner: TestRunner):
         runner.test("Read invalid structure doesn't crash", result is not None)
 
 
+def test_permission_errors_fail_open(runner: TestRunner):
+    """Test fail-open behavior with file permission errors.
+
+    Validates that permission denied scenarios don't crash the framework.
+    Tests OSError/IOError handling in registry_client, state_storage, and message_dedup_cache.
+
+    Skipped on Windows - POSIX permissions don't apply.
+    """
+    import platform
+
+    # Skip on Windows - POSIX permissions not applicable
+    if platform.system() == 'Windows':
+        print("\n📦 Skipping permission tests (Windows platform)")
+        return
+
+    print("\n📦 Testing permission error fail-open behavior...")
+
+    from registry_client import RegistryClient
+    from state_storage import load_state, save_state, delete_state, get_state_path
+    from message_dedup_cache import MessageDedupCache
+
+    # ========== REGISTRY_CLIENT TESTS (4 tests) ==========
+
+    # Test 1: Read-only parent directory prevents write/update
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry_dir = Path(tmpdir) / "registry_dir"
+        registry_dir.mkdir()
+        registry_path = registry_dir / "test.json"
+        client = RegistryClient(registry_path)
+
+        # Create initial registry
+        client.write({"version": "1.0", "sessions": {"abc123": {"pid": 1234}}})
+
+        try:
+            # Make parent directory read-only (prevents temp file creation)
+            registry_dir.chmod(0o555)
+
+            # Attempt write - should fail gracefully (can't create temp file)
+            success = client.write({"version": "1.0", "sessions": {}})
+            runner.test("Read-only dir prevents registry write", success is False)
+
+            # update() should also fail gracefully
+            def add_session(r):
+                r["sessions"]["new"] = {"pid": 999}
+                return r
+
+            success = client.update(add_session)
+            runner.test("update() with read-only dir fails gracefully", success is False)
+
+        finally:
+            try:
+                registry_dir.chmod(0o755)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 2: Unreadable registry file (0o000)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry_path = Path(tmpdir) / "unreadable-test.json"
+        client = RegistryClient(registry_path)
+        client.write({"version": "1.0", "sessions": {"test": {"pid": 999}}})
+
+        try:
+            registry_path.chmod(0o000)  # No permissions
+
+            # Should return empty registry
+            result = client.read()
+            runner.test("Unreadable registry returns empty dict",
+                       result == {"version": "1.0", "sessions": {}})
+
+        finally:
+            try:
+                registry_path.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 3: Read-only parent directory - can't create new file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        readonly_dir = Path(tmpdir) / "readonly_dir"
+        readonly_dir.mkdir()
+        registry_path = readonly_dir / "new-registry.json"
+        client = RegistryClient(registry_path)
+
+        try:
+            readonly_dir.chmod(0o555)  # Read + execute only
+
+            # Can't create new file
+            success = client.write({"version": "1.0", "sessions": {}})
+            runner.test("Can't create registry in read-only dir", success is False)
+
+            # Read returns empty
+            result = client.read()
+            runner.test("Read from read-only dir returns empty",
+                       result == {"version": "1.0", "sessions": {}})
+
+        finally:
+            try:
+                readonly_dir.chmod(0o755)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 4: Write-only file (can't read)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry_path = Path(tmpdir) / "writeonly-test.json"
+        client = RegistryClient(registry_path)
+        client.write({"version": "1.0", "sessions": {"test": {"pid": 1}}})
+
+        try:
+            registry_path.chmod(0o222)  # Write only
+
+            # Can't read write-only file
+            result = client.read()
+            runner.test("Write-only file returns empty registry",
+                       result == {"version": "1.0", "sessions": {}})
+
+        finally:
+            try:
+                registry_path.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # ========== STATE_STORAGE TESTS (4 tests) ==========
+
+    # Test 5: Read-only state file - save should fail silently
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = Path(tmpdir) / ".git"
+        git_dir.mkdir()
+
+        save_state("main", tmpdir, {"test": "data", "version": "1.0"})
+        state_path = get_state_path("main", tmpdir)
+
+        try:
+            state_path.chmod(0o444)
+
+            # save_state should fail silently (fail-open, no exception)
+            save_state("main", tmpdir, {"new": "data", "version": "1.0"})
+            runner.test("save_state() with read-only file doesn't crash", True)
+
+        finally:
+            try:
+                state_path.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 6: Unreadable state file - load should return empty state
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = Path(tmpdir) / ".git"
+        git_dir.mkdir()
+
+        save_state("main", tmpdir, {"test": "data", "version": "1.0"})
+        state_path = get_state_path("main", tmpdir)
+
+        try:
+            state_path.chmod(0o000)
+
+            # Should return empty state
+            state = load_state("main", tmpdir)
+            runner.test("Unreadable state file returns empty state",
+                       state.get("requirements", {}) == {})
+
+        finally:
+            try:
+                state_path.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 7: Read-only requirements directory - can't save
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = Path(tmpdir) / ".git"
+        git_dir.mkdir()
+        req_dir = git_dir / "requirements"
+        req_dir.mkdir()
+
+        try:
+            req_dir.chmod(0o555)
+
+            # Can't save in read-only dir (should fail silently - fail-open)
+            save_state("feature", tmpdir, {"test": "data", "version": "1.0"})
+            runner.test("save_state() in read-only dir doesn't crash", True)
+
+            # Load returns empty
+            state = load_state("feature", tmpdir)
+            runner.test("load_state() from read-only dir returns empty",
+                       state.get("requirements", {}) == {})
+
+        finally:
+            try:
+                req_dir.chmod(0o755)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # Test 8: delete_state with read-only directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = Path(tmpdir) / ".git"
+        git_dir.mkdir()
+        req_dir = git_dir / "requirements"
+        req_dir.mkdir()
+
+        save_state("delete-test", tmpdir, {"test": "data", "version": "1.0"})
+        state_path = get_state_path("delete-test", tmpdir)
+
+        try:
+            req_dir.chmod(0o555)
+
+            # delete should fail silently (fail-open, no exception)
+            delete_state("delete-test", tmpdir)
+            runner.test("delete_state() in read-only dir doesn't crash", True)
+
+            # File should still exist
+            runner.test("State file persists in read-only dir", state_path.exists())
+
+        finally:
+            try:
+                req_dir.chmod(0o755)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+
+    # ========== MESSAGE_DEDUP_CACHE TESTS (4 tests) ==========
+
+    # Test 9: Read-only cache file - should fail-open (return True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = MessageDedupCache()
+        original_cache_file = cache.cache_file
+        cache.cache_file = Path(tmpdir) / "test-cache.json"
+
+        try:
+            # Prime cache
+            cache.should_show_message("key1", "message1")
+
+            cache.cache_file.chmod(0o444)
+
+            # Should fail-open (return True)
+            should_show = cache.should_show_message("key2", "message2")
+            runner.test("should_show_message() with read-only cache returns True",
+                       should_show is True)
+
+        finally:
+            try:
+                if cache.cache_file.exists():
+                    cache.cache_file.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+            cache.cache_file = original_cache_file
+
+    # Test 10: Unreadable cache file - should return True (fail-open)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = MessageDedupCache()
+        original_cache_file = cache.cache_file
+        cache.cache_file = Path(tmpdir) / "unreadable-cache.json"
+
+        try:
+            cache.should_show_message("key1", "message1")
+
+            cache.cache_file.chmod(0o000)
+
+            # Should return True (fail-open)
+            should_show = cache.should_show_message("key1", "message1")
+            runner.test("Unreadable cache returns True", should_show is True)
+
+        finally:
+            try:
+                if cache.cache_file.exists():
+                    cache.cache_file.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+            cache.cache_file = original_cache_file
+
+    # Test 11: Read-only temp directory - can't create cache
+    with tempfile.TemporaryDirectory() as tmpdir:
+        readonly_temp = Path(tmpdir) / "readonly_temp"
+        readonly_temp.mkdir()
+
+        cache = MessageDedupCache()
+        original_cache_file = cache.cache_file
+        cache.cache_file = readonly_temp / "new-cache.json"
+
+        try:
+            readonly_temp.chmod(0o555)
+
+            # Can't create cache in read-only directory
+            should_show = cache.should_show_message("key1", "message1")
+            runner.test("Cache creation in read-only dir returns True",
+                       should_show is True)
+
+        finally:
+            try:
+                readonly_temp.chmod(0o755)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+            cache.cache_file = original_cache_file
+
+    # Test 12: Write-only cache file - can't read
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = MessageDedupCache()
+        original_cache_file = cache.cache_file
+        cache.cache_file = Path(tmpdir) / "writeonly-cache.json"
+
+        try:
+            cache.should_show_message("key1", "message1")
+
+            cache.cache_file.chmod(0o222)
+
+            # Can't read write-only file
+            should_show = cache.should_show_message("key1", "message1")
+            runner.test("Write-only cache file returns True", should_show is True)
+
+        finally:
+            try:
+                if cache.cache_file.exists():
+                    cache.cache_file.chmod(0o644)
+            except OSError:
+                pass  # Cleanup failure shouldn't mask test failures
+            cache.cache_file = original_cache_file
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -4297,6 +4611,9 @@ def main():
 
     # NEW: Edge case tests (Phase 3 extended)
     test_edge_cases(runner)
+
+    # Permission error fail-open tests
+    test_permission_errors_fail_open(runner)
 
     # Codex reviewer requirement tests
     test_codex_reviewer_requirement(runner)
