@@ -34,13 +34,40 @@ from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id
 
-# Skill to requirement mapping
+# Default skill to requirement mapping (for backwards compatibility)
 # Maps skill names to the requirement they satisfy
-SKILL_REQUIREMENTS = {
-    'pre-pr-review:pre-commit': 'pre_commit_review',
-    'pre-pr-review:quality-check': 'pre_pr_review',
+# Uses requirements-framework: namespace per ADR-006
+DEFAULT_SKILL_MAPPINGS = {
+    'requirements-framework:pre-commit': 'pre_commit_review',
+    'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
 }
+
+
+def get_skill_requirement_mappings(config: RequirementsConfig) -> dict:
+    """
+    Build skill → requirement mapping from configuration.
+
+    Scans all enabled requirements for 'satisfied_by_skill' field and builds
+    a reverse mapping from skill name to requirement name.
+
+    Args:
+        config: Loaded RequirementsConfig instance
+
+    Returns:
+        Dict mapping skill names to requirement names
+    """
+    mappings = {}
+
+    for req_name in config.get_all_requirements():
+        if not config.is_requirement_enabled(req_name):
+            continue
+
+        skill_name = config.get_attribute(req_name, 'satisfied_by_skill')
+        if skill_name and isinstance(skill_name, str):
+            mappings[skill_name] = req_name
+
+    return mappings
 
 
 def main() -> int:
@@ -71,11 +98,8 @@ def main() -> int:
         tool_input = input_data.get('tool_input', {})
         skill_name = tool_input.get('skill', '')
 
-        # Check if this skill maps to a requirement
-        if skill_name not in SKILL_REQUIREMENTS:
+        if not skill_name:
             return 0
-
-        req_name = SKILL_REQUIREMENTS[skill_name]
 
         # Get project context
         project_dir = resolve_project_root(verbose=False)
@@ -99,8 +123,19 @@ def main() -> int:
         # Get session ID
         session_id = input_data.get('session_id') or get_session_id()
 
-        # Load config to check if requirement is enabled and get scope
+        # Load config
         config = RequirementsConfig(project_dir)
+
+        # Build skill → requirement mappings from config + defaults
+        # Config mappings take precedence over defaults
+        skill_mappings = DEFAULT_SKILL_MAPPINGS.copy()
+        skill_mappings.update(get_skill_requirement_mappings(config))
+
+        # Check if this skill maps to a requirement
+        if skill_name not in skill_mappings:
+            return 0
+
+        req_name = skill_mappings[skill_name]
 
         if not config.is_requirement_enabled(req_name):
             return 0  # Requirement not enabled
@@ -130,8 +165,13 @@ def _log_error(message: str) -> None:
         with open(error_log, 'a') as f:
             f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
             f.write(f"{message}\n")
-    except Exception:
-        pass  # Last resort: fail silently
+    except Exception as log_error:
+        # Last resort: write to stderr so there's SOME visibility
+        try:
+            print(f"Warning: Could not write to error log: {log_error}", file=sys.stderr)
+            print(f"Original error: {message[:200]}...", file=sys.stderr)
+        except Exception:
+            pass  # Truly last resort - fail silently
 
 
 if __name__ == '__main__':

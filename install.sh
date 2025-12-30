@@ -347,7 +347,8 @@ REQUIRED_HOOKS = {
         "matcher": "*",
         "hooks": [
             {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
-            {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"}
+            {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
+            {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
         ]
     }],
     "SessionStart": [{
@@ -457,6 +458,15 @@ settings['hooks']['SessionEnd'] = [{
     }]
 }]
 
+settings['hooks']['PostToolUse'] = [{
+    "matcher": "*",
+    "hooks": [
+        {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
+        {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
+        {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
+    ]
+}]
+
 with open(settings_file, 'w') as f:
     json.dump(settings, f, indent=2)
 
@@ -474,6 +484,14 @@ else
         "type": "command",
         "command": "~/.claude/hooks/check-requirements.py"
       }]
+    }],
+    "PostToolUse": [{
+      "matcher": "*",
+      "hooks": [
+        {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
+        {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
+        {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
+      ]
     }],
     "SessionStart": [{
       "matcher": "*",

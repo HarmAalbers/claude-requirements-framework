@@ -3881,6 +3881,132 @@ def test_codex_reviewer_requirement(runner: TestRunner):
         runner.test("Allows Edit tool when satisfied", result is None)
 
 
+def test_satisfied_by_skill_field(runner: TestRunner):
+    """Test satisfied_by_skill configuration field."""
+    print("\n🎯 Testing satisfied_by_skill field...")
+
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True)
+        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmpdir, capture_output=True)
+        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmpdir, capture_output=True)
+
+        # Create .claude directory
+        os.makedirs(f"{tmpdir}/.claude")
+
+        # Test 1: Valid satisfied_by_skill field
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'arch_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'single_use',
+                    'trigger_tools': ['Bash'],
+                    'satisfied_by_skill': 'architecture-guardian',
+                    'message': 'Test message'
+                }
+            }
+        }
+
+        config_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
+        with open(config_file, 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        runner.test("Config loads with valid satisfied_by_skill",
+                   config.get_attribute('arch_review', 'satisfied_by_skill') == 'architecture-guardian')
+        runner.test("No validation errors for valid config", len(config.get_validation_errors()) == 0)
+
+        # Test 2: Invalid satisfied_by_skill (non-string)
+        invalid_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'arch_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'satisfied_by_skill': 123,  # Should be string
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(invalid_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid satisfied_by_skill (non-string) rejected",
+                   any('must be str' in e or 'must be a string' in e for e in errors))
+
+        # Test 3: Invalid satisfied_by_skill (empty string)
+        empty_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'arch_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'satisfied_by_skill': '',  # Empty string
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(empty_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid satisfied_by_skill (empty string) rejected",
+                   any('cannot be empty' in e for e in errors))
+
+        # Test 4: Invalid satisfied_by_skill (whitespace only)
+        whitespace_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'arch_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'satisfied_by_skill': '   ',  # Whitespace only
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(whitespace_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid satisfied_by_skill (whitespace only) rejected",
+                   any('cannot be empty' in e for e in errors))
+
+        # Test 5: Requirement without satisfied_by_skill is valid
+        no_skill_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(no_skill_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        runner.test("Requirement without satisfied_by_skill is valid",
+                   len(config.get_validation_errors()) == 0)
+        runner.test("satisfied_by_skill returns None when not set",
+                   config.get_attribute('commit_plan', 'satisfied_by_skill') is None)
+
+
 def test_edge_cases(runner: TestRunner):
     """Test edge cases: concurrent access, permissions, Windows compatibility."""
     print("\n📦 Testing edge cases...")
@@ -4044,6 +4170,9 @@ def main():
 
     # Codex reviewer requirement tests
     test_codex_reviewer_requirement(runner)
+
+    # Satisfied by skill field tests
+    test_satisfied_by_skill_field(runner)
 
     return runner.summary()
 

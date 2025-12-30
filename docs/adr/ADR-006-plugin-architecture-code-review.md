@@ -146,13 +146,33 @@ The framework plugin structure now includes:
 - `/pre-pr-review:quality-check` → `/requirements-framework:quality-check`
 
 ### Auto-Satisfaction Mapping (hooks/auto-satisfy-skills.py)
+
+**Default mappings** (backwards compatible):
 ```python
-SKILL_REQUIREMENTS = {
+DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
 }
 ```
+
+**Configurable mappings** (v2.1.0+):
+Projects can define custom skill→requirement mappings using `satisfied_by_skill`:
+```yaml
+# In project's .claude/requirements.yaml
+requirements:
+  architecture_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - tool: Bash
+        command_pattern: 'gh\s+pr\s+create'
+    satisfied_by_skill: 'architecture-guardian'  # Custom project skill
+```
+
+When the specified skill completes, the requirement is automatically satisfied.
+This enables project-specific workflows without modifying framework code.
 
 ### Global Config Updates (examples/global-requirements.yaml)
 ```yaml
@@ -175,7 +195,7 @@ New agents/commands must:
 - Be added to `.claude/plugins/requirements-framework/`
 - Be registered in `plugin.json`
 - Use `/requirements-framework:` namespace
-- If auto-satisfying: Added to SKILL_REQUIREMENTS mapping
+- If auto-satisfying: Added to DEFAULT_SKILL_MAPPINGS or use `satisfied_by_skill` in config
 
 ## Related ADRs
 

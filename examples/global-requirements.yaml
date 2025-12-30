@@ -251,6 +251,36 @@ requirements:
       - "AI review completed"
       - "Critical findings addressed"
 
+# ============================================================================
+# PROJECT-SPECIFIC SKILL REQUIREMENTS
+# ============================================================================
+# Projects can configure their own skills to auto-satisfy requirements using
+# the 'satisfied_by_skill' field. This enables project-specific workflows
+# without modifying the framework code.
+#
+# Example: In solarmonkey-app's .claude/requirements.yaml:
+#
+#   architecture_review:
+#     enabled: true
+#     type: blocking
+#     scope: single_use
+#     trigger_tools:
+#       - tool: Bash
+#         command_pattern: 'gh\s+pr\s+create'
+#     satisfied_by_skill: 'architecture-guardian'  # ← Project-specific skill
+#     message: |
+#       🏗️ Run the architecture-guardian skill to review against ADRs
+#
+# When the specified skill completes, the requirement is automatically
+# satisfied. This provides a seamless workflow similar to the built-in
+# pre-commit and quality-check skills.
+#
+# Skill naming conventions:
+# - Project skills: Use skill name from YAML frontmatter (e.g., 'architecture-guardian')
+# - Plugin skills: Use namespaced format (e.g., 'plugin-name:skill-name')
+#
+# The 'satisfied_by_skill' field works with all requirement types and scopes.
+
 # Hooks configuration
 hooks:
   stop:
