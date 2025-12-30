@@ -4220,12 +4220,19 @@ def test_permission_errors_fail_open(runner: TestRunner):
     Tests OSError/IOError handling in registry_client, state_storage, and message_dedup_cache.
 
     Skipped on Windows - POSIX permissions don't apply.
+    Skipped when running as root - root can override POSIX DAC restrictions.
     """
     import platform
+    import os
 
     # Skip on Windows - POSIX permissions not applicable
     if platform.system() == 'Windows':
         print("\n📦 Skipping permission tests (Windows platform)")
+        return
+
+    # Skip when running as root - root can override permission restrictions
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        print("\n📦 Skipping permission tests (running as root)")
         return
 
     print("\n📦 Testing permission error fail-open behavior...")
