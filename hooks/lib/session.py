@@ -179,7 +179,7 @@ def update_registry(session_id: str, project_dir: str, branch: str) -> None:
     client = RegistryClient(registry_path)
 
     def update_session(registry):
-        """Update or add session with inline stale cleanup."""
+        """Update or add session with inline stale cleanup and ID normalization migration."""
         sessions = registry.get("sessions", {})
 
         # Clean up stale entries (dead processes) - check ppid (Claude session) not pid (hook)
@@ -189,6 +189,24 @@ def update_registry(session_id: str, project_dir: str, branch: str) -> None:
                 stale_ids.append(sid)
 
         for sid in stale_ids:
+            del sessions[sid]
+
+        # MIGRATION: Check for duplicate entries with same PPID but different session IDs
+        # This handles the case where a session existed before session ID normalization
+        # Example: "cad0ac4d-3933-..." (old) and "cad0ac4d" (new) both exist for same PPID
+        current_ppid = os.getppid()
+        duplicate_ids = []
+        for sid, sess_data in sessions.items():
+            if sid != session_id and sess_data.get("ppid") == current_ppid:
+                # Found an existing entry for this session with a different ID
+                # Check if it's a non-normalized version of the current session_id
+                normalized = normalize_session_id(sid)
+                if normalized == session_id:
+                    # This is the same session, just with old UUID format
+                    duplicate_ids.append(sid)
+
+        # Remove duplicate entries (old UUID format entries for same PPID)
+        for sid in duplicate_ids:
             del sessions[sid]
 
         # Update or add current session
