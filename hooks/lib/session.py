@@ -17,6 +17,11 @@ import uuid
 from pathlib import Path
 
 
+class SessionNotFoundError(RuntimeError):
+    """Raised when no matching Claude Code session is found in the registry."""
+    pass
+
+
 def normalize_session_id(session_id: str) -> str:
     """
     Normalize session ID to 8-character hex format.
@@ -76,7 +81,7 @@ def get_session_id() -> str:
         str: 8-character hex session identifier
 
     Raises:
-        RuntimeError: If no matching session found in registry
+        SessionNotFoundError: If no matching session found in registry
     """
     from git_utils import resolve_project_root
 
@@ -85,7 +90,7 @@ def get_session_id() -> str:
 
     # Check if registry exists
     if not registry_path.exists():
-        raise RuntimeError(
+        raise SessionNotFoundError(
             f"❌ No active Claude Code session found!\n\n"
             f"💡 Session registry not found at: {registry_path}\n"
             f"💡 Are you running this from within a Claude Code session?\n\n"
@@ -96,17 +101,24 @@ def get_session_id() -> str:
     try:
         with open(registry_path) as f:
             registry = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        raise RuntimeError(
+    except json.JSONDecodeError as e:
+        raise SessionNotFoundError(
             f"❌ Failed to read session registry!\n\n"
             f"💡 Registry path: {registry_path}\n"
-            f"💡 Error: {e}\n\n"
+            f"💡 JSON parse error: {e}\n\n"
             f"Try restarting Claude Code to rebuild the registry."
-        )
+        ) from e
+    except OSError as e:
+        raise SessionNotFoundError(
+            f"❌ Failed to read session registry!\n\n"
+            f"💡 Registry path: {registry_path}\n"
+            f"💡 File error: {e}\n\n"
+            f"Try restarting Claude Code to rebuild the registry."
+        ) from e
 
     sessions = registry.get("sessions", {})
     if not sessions:
-        raise RuntimeError(
+        raise SessionNotFoundError(
             f"❌ No active Claude Code sessions in registry!\n\n"
             f"💡 Registry exists but contains no sessions\n"
             f"💡 Try running a command in Claude Code first to populate the registry"
@@ -138,7 +150,7 @@ def get_session_id() -> str:
         for sid, sd in sessions.items()
     )
 
-    raise RuntimeError(
+    raise SessionNotFoundError(
         f"❌ No Claude Code session found for this shell!\n\n"
         f"💡 Current PPID: {ppid}\n"
         f"💡 Current Project: {project_dir or '(not in git repo)'}\n\n"

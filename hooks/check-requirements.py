@@ -202,9 +202,15 @@ def main() -> int:
     raw_session = input_data.get('session_id')
     if not raw_session:
         # This should NEVER happen - Claude Code always provides session_id
-        # If it does, fail open with a logged warning
+        # If it does, fail open with visible warning
         logger = get_logger()
-        logger.error("No session_id in hook input!", input_keys=list(input_data.keys()))
+        logger.error("CRITICAL: No session_id in hook input!", input_keys=list(input_data.keys()))
+        print(
+            "⚠️ Requirements framework error: Missing session ID from Claude Code.\n"
+            "   Requirements checking is disabled for this operation.\n"
+            "   This may be a bug - please report with ~/.claude/logs/requirements.log",
+            file=sys.stderr
+        )
         return 0  # Fail open - don't block work
 
     session_id = normalize_session_id(raw_session)

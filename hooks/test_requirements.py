@@ -66,11 +66,12 @@ def test_session_module(runner: TestRunner):
     import os
 
     # Test that get_session_id() raises error when no registry
+    from session import SessionNotFoundError
     try:
-        # Should raise RuntimeError since we're not in a Claude Code session
+        # Should raise SessionNotFoundError since we're not in a Claude Code session
         session_id = get_session_id()
         runner.test("get_session_id raises without registry", False, f"Should have raised, got: {session_id}")
-    except RuntimeError as e:
+    except SessionNotFoundError as e:
         runner.test("get_session_id raises helpful error", "No Claude Code session" in str(e))
 
     # Test clear cache (should still work even though we don't use temp files anymore)
@@ -265,10 +266,11 @@ def test_get_session_id_normalization(runner: TestRunner):
 
         # Should still raise error because we're not in a real session
         # (even though env var is set, it's ignored by get_session_id())
+        from session import SessionNotFoundError
         try:
             session_id = get_session_id()
             runner.test("get_session_id ignores env var", False, f"Should have raised, got: {session_id}")
-        except RuntimeError:
+        except SessionNotFoundError:
             runner.test("get_session_id ignores env var, uses registry only", True)
 
     finally:

@@ -28,7 +28,7 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from config import RequirementsConfig, load_yaml_or_json
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from session import get_session_id, get_active_sessions, cleanup_stale_sessions
+from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
 import time
@@ -80,7 +80,7 @@ def cmd_status(args) -> int:
     else:
         try:
             session_id = get_session_id()
-        except RuntimeError as e:
+        except SessionNotFoundError as e:
             # Status is informational - show warning but allow to continue
             print(warning("⚠️  No Claude Code session detected"), file=sys.stderr)
             print(dim("    Showing requirements state without session context"), file=sys.stderr)
@@ -415,7 +415,7 @@ def cmd_satisfy(args) -> int:
             try:
                 session_id = get_session_id()
                 print(success(f"✨ Auto-detected Claude session: {session_id}"))
-            except RuntimeError as e:
+            except SessionNotFoundError as e:
                 print(str(e), file=sys.stderr)
                 return 1
 
@@ -551,7 +551,7 @@ def cmd_clear(args) -> int:
     else:
         try:
             session_id = get_session_id()
-        except RuntimeError as e:
+        except SessionNotFoundError as e:
             print(str(e), file=sys.stderr)
             return 1
 
