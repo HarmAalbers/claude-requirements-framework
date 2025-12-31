@@ -69,8 +69,12 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
         lines.append("  No requirements configured")
 
     lines.append("")
+    lines.append(f"**Project**: `{reqs.project_dir}`")
     lines.append(f"**Branch**: `{branch}`")
     lines.append(f"**Session**: `{session_id}`")
+    lines.append("")
+    lines.append("⚠️  **Requirements state is PER-PROJECT**")
+    lines.append("Satisfying in one project won't affect another!")
     lines.append("")
     lines.append("💡 **Commands**:")
     lines.append("  • `req status` - View detailed status")
@@ -91,9 +95,16 @@ def main() -> int:
     except json.JSONDecodeError:
         pass
 
-    # Get session ID from input or generate (normalize to ensure consistent 8-char format)
+    # Get session ID from stdin (Claude Code always provides this)
     raw_session = input_data.get('session_id')
-    session_id = normalize_session_id(raw_session) if raw_session else get_session_id()
+    if not raw_session:
+        # This should NEVER happen - Claude Code always provides session_id
+        # If it does, fail open with a logged warning
+        logger = get_logger(base_context={"hook": "SessionStart"})
+        logger.error("No session_id in hook input!", input_keys=list(input_data.keys()))
+        return 0  # Fail open
+
+    session_id = normalize_session_id(raw_session)
 
     # Initialize logger (basic until we have config)
     logger = get_logger(base_context={"session": session_id, "hook": "SessionStart"})

@@ -64,46 +64,89 @@ def normalize_session_id(session_id: str) -> str:
 
 def get_session_id() -> str:
     """
-    Get or generate a stable session ID.
+    Get session ID from registry by matching PPID and project directory.
 
-    Returns the same ID for the duration of a Claude Code session,
-    but different IDs for different sessions.
+    IMPORTANT: This should ONLY be used by CLI commands, NOT by hooks!
+    Hooks should always read session_id from stdin JSON.
 
-    All return paths normalize to 8-character hex format for consistency.
+    This function uses the session registry (maintained by hooks) to find
+    the active Claude Code session for the current process and project.
+    If no matching session is found, raises RuntimeError with helpful message.
 
     Returns:
         str: 8-character hex session identifier
+
+    Raises:
+        RuntimeError: If no matching session found in registry
     """
-    # Strategy 1: Check environment variable
-    # Claude Code provides full UUIDs, which we normalize to 8 chars
-    if 'CLAUDE_SESSION_ID' in os.environ:
-        return normalize_session_id(os.environ['CLAUDE_SESSION_ID'])
+    from git_utils import resolve_project_root
 
-    # Strategy 2: Use parent process ID (stable for CLI session)
-    # The parent PID is the Claude Code process, which stays constant
-    # for all hook invocations within a single session
     ppid = os.getppid()
-    session_file = Path(f"/tmp/claude-session-{ppid}.id")
+    registry_path = get_registry_path()
 
-    # Try to read existing session ID for this parent process
-    if session_file.exists():
-        try:
-            session_id = session_file.read_text().strip()
-            if session_id and len(session_id) == 8:
-                return normalize_session_id(session_id)  # Defensive normalization
-        except (OSError, IOError):
-            pass  # Fall through to generate new
+    # Check if registry exists
+    if not registry_path.exists():
+        raise RuntimeError(
+            f"❌ No active Claude Code session found!\n\n"
+            f"💡 Session registry not found at: {registry_path}\n"
+            f"💡 Are you running this from within a Claude Code session?\n\n"
+            f"If you're running from a shell, make sure it was spawned by Claude Code."
+        )
 
-    # Strategy 3: Generate new session ID
-    session_id = uuid.uuid4().hex[:8]
-
-    # Best-effort cache (don't fail if we can't write)
+    # Load registry
     try:
-        session_file.write_text(session_id)
-    except (OSError, IOError):
-        pass
+        with open(registry_path) as f:
+            registry = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(
+            f"❌ Failed to read session registry!\n\n"
+            f"💡 Registry path: {registry_path}\n"
+            f"💡 Error: {e}\n\n"
+            f"Try restarting Claude Code to rebuild the registry."
+        )
 
-    return normalize_session_id(session_id)  # Defensive normalization
+    sessions = registry.get("sessions", {})
+    if not sessions:
+        raise RuntimeError(
+            f"❌ No active Claude Code sessions in registry!\n\n"
+            f"💡 Registry exists but contains no sessions\n"
+            f"💡 Try running a command in Claude Code first to populate the registry"
+        )
+
+    # Get current project directory
+    try:
+        project_dir = resolve_project_root(verbose=False)
+    except Exception:
+        # Not in a git repo - match by PPID only
+        project_dir = None
+
+    # Find session matching BOTH ppid AND project (if we have a project)
+    for session_id, sess_data in sessions.items():
+        ppid_match = sess_data.get("ppid") == ppid
+
+        if project_dir:
+            project_match = sess_data.get("project_dir") == project_dir
+            if ppid_match and project_match:
+                return normalize_session_id(session_id)
+        else:
+            # No project dir - match by PPID only
+            if ppid_match:
+                return normalize_session_id(session_id)
+
+    # No match found - show helpful error
+    session_list = "\n".join(
+        f"  • {sid}: {sd.get('project_dir', 'unknown')} (PPID {sd.get('ppid', '?')})"
+        for sid, sd in sessions.items()
+    )
+
+    raise RuntimeError(
+        f"❌ No Claude Code session found for this shell!\n\n"
+        f"💡 Current PPID: {ppid}\n"
+        f"💡 Current Project: {project_dir or '(not in git repo)'}\n\n"
+        f"Active sessions:\n{session_list}\n\n"
+        f"💡 Use --session flag to specify session explicitly, or\n"
+        f"💡 Run this command from a shell within Claude Code"
+    )
 
 
 def clear_session_cache() -> None:

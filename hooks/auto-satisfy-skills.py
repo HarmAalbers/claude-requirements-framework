@@ -120,9 +120,14 @@ def main() -> int:
         if not branch:
             return 0  # Detached HEAD
 
-        # Get session ID (normalize to ensure consistent 8-char format)
+        # Get session ID from stdin (Claude Code always provides this)
         raw_session = input_data.get('session_id')
-        session_id = normalize_session_id(raw_session) if raw_session else get_session_id()
+        if not raw_session:
+            # This should NEVER happen - Claude Code always provides session_id
+            logger.error("No session_id in hook input!", input_keys=list(input_data.keys()))
+            return 0  # Fail open
+
+        session_id = normalize_session_id(raw_session)
 
         # Load config
         config = RequirementsConfig(project_dir)

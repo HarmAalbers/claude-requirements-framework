@@ -61,17 +61,19 @@ class TestRunner:
 def test_session_module(runner: TestRunner):
     """Test session management."""
     print("\n📦 Testing session module...")
-    from session import get_session_id, clear_session_cache
+    from session import get_session_id, clear_session_cache, update_registry, get_registry_path
+    import tempfile
+    import os
 
-    # Test session ID generation
-    session1 = get_session_id()
-    runner.test("Session ID generated", len(session1) == 8, f"Got: {session1}")
+    # Test that get_session_id() raises error when no registry
+    try:
+        # Should raise RuntimeError since we're not in a Claude Code session
+        session_id = get_session_id()
+        runner.test("get_session_id raises without registry", False, f"Should have raised, got: {session_id}")
+    except RuntimeError as e:
+        runner.test("get_session_id raises helpful error", "No Claude Code session" in str(e))
 
-    # Test session ID stability
-    session2 = get_session_id()
-    runner.test("Session ID stable", session1 == session2, f"{session1} != {session2}")
-
-    # Test clear cache
+    # Test clear cache (should still work even though we don't use temp files anymore)
     clear_session_cache()
     runner.test("Clear cache runs", True)
 
@@ -249,23 +251,26 @@ def test_session_id_normalization(runner: TestRunner):
 
 
 def test_get_session_id_normalization(runner: TestRunner):
-    """Test get_session_id() returns normalized IDs."""
-    print("\n📦 Testing get_session_id() normalization...")
+    """Test get_session_id() no longer uses env vars."""
+    print("\n📦 Testing get_session_id() no longer uses env vars...")
     import os
     from session import get_session_id, normalize_session_id
 
-    # Test with full UUID in env var
+    # Test that env var is ignored (get_session_id() only uses registry now)
     full_uuid = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
     old_env = os.environ.get('CLAUDE_SESSION_ID')
 
     try:
         os.environ['CLAUDE_SESSION_ID'] = full_uuid
-        session_id = get_session_id()
 
-        runner.test("Env var normalized", session_id == "cad0ac4d", f"Got: {session_id}")
-        runner.test("Returns 8 chars", len(session_id) == 8, f"Length: {len(session_id)}")
-        runner.test("Idempotent normalization", normalize_session_id(session_id) == session_id,
-                   f"normalize({session_id}) = {normalize_session_id(session_id)}")
+        # Should still raise error because we're not in a real session
+        # (even though env var is set, it's ignored by get_session_id())
+        try:
+            session_id = get_session_id()
+            runner.test("get_session_id ignores env var", False, f"Should have raised, got: {session_id}")
+        except RuntimeError:
+            runner.test("get_session_id ignores env var, uses registry only", True)
+
     finally:
         if old_env:
             os.environ['CLAUDE_SESSION_ID'] = old_env
@@ -444,7 +449,7 @@ def test_hook_from_subdirectory(runner: TestRunner):
         env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_PROJECT_DIR'}
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": "subdirtest"}),
             cwd=subdir,  # Run from subdirectory
             capture_output=True,
             text=True,
@@ -497,9 +502,9 @@ def test_cli_from_subdirectory(runner: TestRunner):
         runner.test("CLI status from subdir runs", result.returncode == 0, result.stderr)
         runner.test("CLI status shows branch", "feature/cli-subdir" in result.stdout, result.stdout)
 
-        # Test satisfy from subdirectory
+        # Test satisfy from subdirectory (use --session flag since we're not in Claude Code)
         result = subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", "test1234"],
             cwd=subdir,
             capture_output=True,
             text=True,
@@ -1194,9 +1199,9 @@ def test_cli_commands(runner: TestRunner):
         runner.test("Status runs", result.returncode == 0, result.stderr)
         runner.test("Status shows branch", "test-branch" in result.stdout, result.stdout)
 
-        # Test satisfy command
+        # Test satisfy command (use --session since we're not in Claude Code)
         result = subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", "testcli1"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Satisfy runs", result.returncode == 0, result.stderr)
@@ -1204,14 +1209,14 @@ def test_cli_commands(runner: TestRunner):
 
         # Test status after satisfy (use --verbose to see all requirements)
         result = subprocess.run(
-            ["python3", str(cli_path), "status", "--verbose"],
+            ["python3", str(cli_path), "status", "--verbose", "--session", "testcli1"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Status shows satisfied", "✅" in result.stdout, result.stdout)
 
-        # Test clear command
+        # Test clear command (use --session)
         result = subprocess.run(
-            ["python3", str(cli_path), "clear", "commit_plan"],
+            ["python3", str(cli_path), "clear", "commit_plan", "--session", "testcli1"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Clear runs", result.returncode == 0, result.stderr)
@@ -1294,26 +1299,27 @@ def test_cli_status_modes(runner: TestRunner):
         runner.test("Summary status runs", result.returncode == 0)
         runner.test("Summary shows counts", "0/2" in result.stdout or "requirements satisfied" in result.stdout, result.stdout)
 
-        # Test 3: Satisfy and check focused hides satisfied
+        # Test 3: Satisfy and check focused hides satisfied (use --session)
+        test_session = "modetest"
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
 
         result = subprocess.run(
-            ["python3", str(cli_path), "status"],
+            ["python3", str(cli_path), "status", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Focused shows remaining unsatisfied", "adr_reviewed" in result.stdout, result.stdout)
 
-        # Test 4: Summary when all satisfied
+        # Test 4: Summary when all satisfied (use same session)
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "adr_reviewed"],
+            ["python3", str(cli_path), "satisfy", "adr_reviewed", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
 
         result = subprocess.run(
-            ["python3", str(cli_path), "status", "--summary"],
+            ["python3", str(cli_path), "status", "--summary", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Summary shows all satisfied", "✅ All" in result.stdout and "requirements satisfied" in result.stdout, result.stdout)
@@ -1381,13 +1387,7 @@ def test_cli_sessions_command(runner: TestRunner):
             runner.test("Satisfy with --session runs", result.returncode == 0, result.stderr)
             runner.test("Satisfy with --session succeeds", "✅" in result.stdout or "satisfied" in result.stdout.lower(), result.stdout)
 
-            # Test satisfy with CLAUDE_SESSION_ID env var
-            result = subprocess.run(
-                ["python3", str(cli_path), "satisfy", "commit_plan"],
-                cwd=tmpdir, capture_output=True, text=True,
-                env={**os.environ, "CLAUDE_PROJECT_DIR": tmpdir, "CLAUDE_SESSION_ID": test_session_id}
-            )
-            runner.test("Satisfy with env var runs", result.returncode == 0, result.stderr)
+            # Note: CLAUDE_SESSION_ID env var is no longer used - removed test
 
             # Test status with --session flag
             result = subprocess.run(
@@ -1927,26 +1927,27 @@ def test_hook_behavior(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test with config (should prompt)
+        # Test with config (should prompt) - provide session_id
+        test_session = "hooktest"
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("With config = pass", result.returncode == 0)
         runner.test("With config = denies", '"permissionDecision": "deny"' in result.stdout, f"Got: {result.stdout}")
 
-        # Satisfy the requirement
+        # Satisfy the requirement (use --session flag)
         cli_path = Path(__file__).parent / "requirements-cli.py"
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", test_session],
             cwd=tmpdir, capture_output=True
         )
 
-        # Test after satisfy (should pass silently)
+        # Test after satisfy (should pass silently) - use same session_id
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("After satisfy = no output", result.stdout.strip() == "", f"Got: {result.stdout}")
@@ -2000,10 +2001,11 @@ def test_checklist_rendering(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_with_checklist, f)
 
-        # Test hook output contains checklist
+        # Test hook output contains checklist (provide session_id)
+        test_session = "checklist1"
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Hook runs with checklist", result.returncode == 0)
@@ -2170,20 +2172,20 @@ def test_session_start_hook(runner: TestRunner):
         subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
         subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
 
-        # Test without config - should suggest req init on startup
+        # Test without config - should suggest req init on startup (provide session_id)
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            input=json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"starttest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart no config = pass", result.returncode == 0)
         runner.test("SessionStart suggests init", "req init" in result.stdout,
                    f"Expected 'req init' in output, got: {result.stdout[:200]}")
 
-        # Test without config on resume (should NOT suggest init)
+        # Test without config on resume (should NOT suggest init) - provide session_id
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"SessionStart","source":"resume"}',
+            input=json.dumps({"hook_event_name":"SessionStart","source":"resume","session_id":"resumetest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart resume = no init suggestion",
@@ -2206,10 +2208,10 @@ def test_session_start_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test outputs status when inject_context=True
+        # Test outputs status when inject_context=True (provide session_id)
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            input=json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"statustest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart outputs status", "Requirements" in result.stdout or "commit_plan" in result.stdout,
@@ -2281,8 +2283,8 @@ def test_stop_hook(runner: TestRunner):
 
         # Mark requirement as triggered (simulating Edit/Write tool use)
         from requirements import BranchRequirements
-        from session import get_session_id
-        test_session_id = get_session_id()
+        # Use explicit session ID for tests instead of get_session_id()
+        test_session_id = "test1234"
         reqs = BranchRequirements("feature/test", test_session_id, tmpdir)
         reqs.mark_triggered("commit_plan", "session")
 
@@ -2389,25 +2391,26 @@ def test_session_end_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # First satisfy the requirement to create state
+        # First satisfy the requirement to create state (use --session)
+        test_session = "endtest1"
         cli_path = Path(__file__).parent / "requirements-cli.py"
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", test_session],
             cwd=tmpdir, capture_output=True
         )
 
-        # Run session end (should preserve state by default)
+        # Run session end (should preserve state by default) - provide session_id
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"SessionEnd","reason":"clear"}',
+            input=json.dumps({"hook_event_name":"SessionEnd","reason":"clear","session_id":test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionEnd = pass", result.returncode == 0)
         runner.test("SessionEnd = silent", result.stdout.strip() == "")
 
-        # Check state is preserved (clear_session_state=False)
+        # Check state is preserved (clear_session_state=False) - use same session
         status_result = subprocess.run(
-            ["python3", str(cli_path), "status"],
+            ["python3", str(cli_path), "status", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
         # CLI outputs ✅ for satisfied requirements
@@ -2546,8 +2549,8 @@ def test_stop_hook_triggered_only(runner: TestRunner):
 
         # Test 2: Manually mark requirement as triggered, then stop should block
         from requirements import BranchRequirements
-        from session import get_session_id
-        session_id = get_session_id()
+        # Use explicit session ID for tests instead of get_session_id()
+        session_id = "test5678"
         reqs = BranchRequirements("feature/test", session_id, tmpdir)
         reqs.mark_triggered("commit_plan", "session")
 
@@ -2598,8 +2601,8 @@ def test_stop_hook_triggered_only(runner: TestRunner):
 
         # Trigger only one requirement, leave others untriggered
         from requirements import BranchRequirements
-        from session import get_session_id
-        session_id = get_session_id()
+        # Use explicit session ID for tests instead of get_session_id()
+        session_id = "test9abc"
         reqs = BranchRequirements("feature/multi", session_id, tmpdir)
         reqs.mark_triggered("commit_plan", "session")
         # adr_reviewed and code_quality are NOT triggered
@@ -2652,10 +2655,11 @@ def test_batched_requirements_blocking(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test hook output contains both requirements
+        # Test hook output contains both requirements (provide session_id)
+        test_session = "batchtest"
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
 
@@ -2700,20 +2704,21 @@ def test_cli_satisfy_multiple(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test satisfy with multiple requirements
+        # Test satisfy with multiple requirements (use --session)
+        test_session = "multisess"
         result = subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan", "adr_reviewed"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "adr_reviewed", "--session", test_session],
             cwd=tmpdir, capture_output=True, text=True
         )
 
         runner.test("Multiple satisfy succeeds", result.returncode == 0, result.stderr)
         runner.test("Shows success message", "✅" in result.stdout, result.stdout)
 
-        # Verify both were satisfied
+        # Verify both were satisfied (pass session_id to hook)
         hook_path = Path(__file__).parent / "check-requirements.py"
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("No blocking after multiple satisfy", result.stdout.strip() == "",
@@ -2938,16 +2943,17 @@ def test_partial_satisfaction(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Satisfy only commit_plan
+        # Satisfy only commit_plan (use --session)
+        test_session = "partialtest"
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", test_session],
             cwd=tmpdir, capture_output=True
         )
 
-        # Hook should only block on adr_reviewed
+        # Hook should only block on adr_reviewed (provide session_id)
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": test_session}),
             cwd=tmpdir, capture_output=True, text=True
         )
 
@@ -3282,10 +3288,10 @@ def test_guard_hook_integration(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test hook blocks on master
+        # Test hook blocks on master (provide session_id)
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"tool_name":"Edit"}',
+            input=json.dumps({"tool_name":"Edit", "session_id": "guardtest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
 

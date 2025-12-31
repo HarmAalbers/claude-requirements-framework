@@ -74,11 +74,17 @@ def cmd_status(args) -> int:
         print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
-    # Get session ID (explicit flag, env var, or PPID)
+    # Get session ID (explicit flag or registry lookup)
     if hasattr(args, 'session') and args.session:
         session_id = args.session
     else:
-        session_id = get_session_id()
+        try:
+            session_id = get_session_id()
+        except RuntimeError as e:
+            # Status is informational - show warning but allow to continue
+            print(warning("⚠️  No Claude Code session detected"), file=sys.stderr)
+            print(dim("    Showing requirements state without session context"), file=sys.stderr)
+            session_id = "no-session"
 
     # Check for summary mode
     summary_mode = hasattr(args, 'summary') and args.summary
@@ -404,29 +410,14 @@ def cmd_satisfy(args) -> int:
             session_id = args.session
             print(info(f"🎯 Using explicit session: {session_id}"))
 
-        # Priority 2: CLAUDE_SESSION_ID env var
-        elif 'CLAUDE_SESSION_ID' in os.environ:
-            session_id = os.environ['CLAUDE_SESSION_ID']
-            print(info(f"🔍 Using env session: {session_id}"))
-
-        # Priority 3: Auto-detect from registry
+        # Priority 2: Auto-detect from registry
         else:
-            matches = get_active_sessions(project_dir=project_dir, branch=branch)
-
-            if len(matches) == 1:
-                session_id = matches[0]['id']
-                print(success(f"✨ Auto-detected Claude session: {session_id}"))
-            elif len(matches) > 1:
-                print(warning("⚠️  Multiple Claude Code sessions found:"), file=sys.stderr)
-                for i, sess in enumerate(matches, 1):
-                    print(dim(f"   {i}. {sess['id']} [PID {sess['pid']}]"), file=sys.stderr)
-                print(hint("\n💡 Use --session flag, or use --branch to satisfy all sessions"), file=sys.stderr)
-                return 1
-            else:
-                # No matches - fall back to PPID
+            try:
                 session_id = get_session_id()
-                print(warning(f"⚠️  No active Claude session detected. Using terminal session: {session_id}"))
-                print(hint("💡 This may not satisfy requirements in Claude Code."))
+                print(success(f"✨ Auto-detected Claude session: {session_id}"))
+            except RuntimeError as e:
+                print(str(e), file=sys.stderr)
+                return 1
 
     # Get config for scope
     config = RequirementsConfig(project_dir)
@@ -554,11 +545,15 @@ def cmd_clear(args) -> int:
         print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
-    # Get session ID (explicit flag, env var, or PPID)
+    # Get session ID (explicit flag or registry lookup)
     if hasattr(args, 'session') and args.session:
         session_id = args.session
     else:
-        session_id = get_session_id()
+        try:
+            session_id = get_session_id()
+        except RuntimeError as e:
+            print(str(e), file=sys.stderr)
+            return 1
 
     reqs = BranchRequirements(branch, session_id, project_dir)
 
