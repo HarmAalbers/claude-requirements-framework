@@ -3526,6 +3526,124 @@ def test_cli_config_command(runner: TestRunner):
         runner.test("config --set JSON value runs", result.returncode == 0, result.stderr)
 
 
+def test_cli_config_show_command(runner: TestRunner):
+    """Test req config show command."""
+    print("\n📦 Testing CLI config show command...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+
+        # Create multi-level config cascade
+        os.makedirs(f"{tmpdir}/.claude")
+
+        # Project config
+        project_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": True,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(project_config, f)
+
+        # Local override
+        local_config = {
+            "requirements": {
+                "commit_plan": {
+                    "scope": "branch"  # Override scope
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.local.yaml", 'w') as f:
+            json.dump(local_config, f)
+
+        # Test 1: req config show
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "show"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config show runs", result.returncode == 0, result.stderr)
+
+        # Validate JSON output
+        try:
+            # Extract JSON from output (skip header lines)
+            json_start = result.stdout.find('{')
+            if json_start != -1:
+                try:
+                    parsed = json.loads(result.stdout[json_start:])
+                except json.JSONDecodeError as e:
+                    runner.test("config show valid JSON", False, f"JSON decode error: {e}")
+                else:
+                    runner.test("config show valid JSON", isinstance(parsed, dict))
+                    runner.test("config show has requirements", "requirements" in parsed)
+
+                    # Use .get() to safely access nested keys
+                    requirements = parsed.get("requirements", {})
+                    commit_plan = requirements.get("commit_plan", {})
+                    runner.test("config show has commit_plan",
+                               "commit_plan" in requirements)
+
+                    # Check that local override was applied
+                    if "scope" in commit_plan:
+                        runner.test("config show merged local override",
+                                   commit_plan["scope"] == "branch")
+                    else:
+                        runner.test("config show merged local override", False,
+                                   "scope not found in commit_plan")
+            else:
+                runner.test("config show contains JSON", False, "No JSON in output")
+        except Exception as e:
+            runner.test("config show valid JSON", False,
+                       f"Unexpected error: {type(e).__name__}: {e}")
+
+        # Test 2: req config (no args - should also show full config)
+        result = subprocess.run(
+            ["python3", str(cli_path), "config"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config (no args) runs", result.returncode == 0, result.stderr)
+        runner.test("config (no args) shows full config",
+                   "requirements" in result.stdout)
+
+        # Test 3: req config show --sources
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "show", "--sources"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config show --sources runs", result.returncode == 0, result.stderr)
+        runner.test("config show --sources mentions levels",
+                   "GLOBAL" in result.stdout or "PROJECT" in result.stdout)
+        runner.test("config show --sources shows merged",
+                   "MERGED RESULT" in result.stdout)
+
+        # Test 4: Verify existing req config <name> still works
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "commit_plan"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config <requirement> still works", result.returncode == 0)
+        runner.test("config <requirement> shows specific req",
+                   "commit_plan" in result.stdout)
+
+        # Test 5: Write flags without requirement name should error
+        result = subprocess.run(
+            ["python3", str(cli_path), "config", "--enable"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("config --enable without name errors", result.returncode != 0)
+        runner.test("config --enable without name shows error",
+                   "required" in result.stderr.lower() or "missing" in result.stderr.lower(),
+                   result.stderr[:200])
+
+
 def test_init_presets_module(runner: TestRunner):
     """Test init presets module."""
     print("\n📦 Testing init presets module...")
@@ -4812,6 +4930,7 @@ def main():
 
     # CLI config command tests
     test_cli_config_command(runner)
+    test_cli_config_show_command(runner)
 
     # NEW: Cache and logger module tests (Phase 1)
     test_message_dedup_cache(runner)

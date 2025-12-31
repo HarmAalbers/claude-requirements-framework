@@ -26,7 +26,7 @@ lib_path = Path(__file__).resolve().parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from config import RequirementsConfig
+from config import RequirementsConfig, load_yaml_or_json
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions
 from state_storage import list_all_states
@@ -1667,6 +1667,10 @@ def cmd_config(args) -> int:
     config = RequirementsConfig(project_dir)
     requirement_name = args.requirement
 
+    # Check for "show" mode (display full merged config)
+    if not requirement_name or requirement_name == 'show':
+        return _cmd_config_show(config, args)
+
     # Check if any write flags present
     has_write_flags = (
         args.enable or args.disable or
@@ -1820,6 +1824,131 @@ def cmd_config(args) -> int:
         import traceback
         traceback.print_exc()
         return 1
+
+
+def _cmd_config_show(config: RequirementsConfig, args) -> int:
+    """Show full merged configuration from all cascade levels."""
+
+    # Handle --sources mode separately
+    if args.sources:
+        return _cmd_config_show_with_sources(config, args)
+
+    try:
+        # Get fully merged config
+        merged_config = config.get_raw_config()
+
+        # Display header
+        print(header("📋 Requirements Framework Configuration"))
+        print(dim("─" * 60))
+        print(dim("Merged from: global → project → local"))
+        print()
+
+        # Output JSON
+        output = json.dumps(merged_config, indent=2, sort_keys=False)
+        print(output)
+
+    except TypeError as e:
+        print(error(f"❌ Config contains non-serializable value: {e}"), file=sys.stderr)
+        print(dim("   Check your config files for invalid types"), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(error(f"❌ Failed to load config: {e}"), file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _cmd_config_show_with_sources(config: RequirementsConfig, args) -> int:
+    """Show configuration with source file breakdown."""
+    project_dir = config.project_dir
+
+    # Load each level separately
+    global_file = Path.home() / '.claude' / 'requirements.yaml'
+    project_file = Path(project_dir) / '.claude' / 'requirements.yaml'
+    local_file = Path(project_dir) / '.claude' / 'requirements.local.yaml'
+
+    sources = {}
+    for name, path in [
+        ('global', global_file),
+        ('project', project_file),
+        ('local', local_file)
+    ]:
+        if path.exists():
+            try:
+                sources[name] = load_yaml_or_json(path)
+            except (OSError, IOError) as e:
+                print(warning(f"⚠️  Failed to read {name} config: {path}"), file=sys.stderr)
+                print(dim(f"   Error: {e}"), file=sys.stderr)
+                sources[name] = {}
+            except (json.JSONDecodeError, ValueError) as e:
+                print(warning(f"⚠️  Failed to parse {name} config: {path}"), file=sys.stderr)
+                print(dim(f"   Error: {e}"), file=sys.stderr)
+                sources[name] = {}
+            except Exception as e:
+                print(warning(f"⚠️  Unexpected error loading {name} config: {path}"), file=sys.stderr)
+                print(dim(f"   Error: {type(e).__name__}: {e}"), file=sys.stderr)
+                sources[name] = {}
+        else:
+            sources[name] = {}
+
+    # Display each level
+    print(header("📋 Configuration Sources"))
+    print(dim("─" * 60))
+
+    for level in ['global', 'project', 'local']:
+        config_data = sources[level]
+        file_path = _get_config_path(level, project_dir)
+
+        print()
+        print(bold(f"{level.upper()} ({file_path}):"))
+        if config_data:
+            try:
+                print(json.dumps(config_data, indent=2))
+            except TypeError as e:
+                print(error(f"❌ Non-serializable value in {level} config: {e}"), file=sys.stderr)
+                print(dim("  (skipped)"))
+        else:
+            print(dim("  (not present)"))
+
+    # Show merged result
+    print()
+    print(header("MERGED RESULT:"))
+    print(dim("─" * 60))
+    try:
+        merged = config.get_raw_config()
+        print(json.dumps(merged, indent=2))
+    except TypeError as e:
+        print(error(f"❌ Merged config contains non-serializable value: {e}"), file=sys.stderr)
+        print(dim("   Check your config files for invalid types"), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(error(f"❌ Failed to load merged config: {e}"), file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _get_config_path(level: str, project_dir: str) -> str:
+    """Get config file path for given level.
+
+    Args:
+        level: One of 'global', 'project', or 'local'
+        project_dir: Project directory path
+
+    Returns:
+        File path as string
+
+    Raises:
+        ValueError: If level is not a valid option
+    """
+    if level == 'global':
+        return str(Path.home() / '.claude' / 'requirements.yaml')
+    elif level == 'project':
+        return str(Path(project_dir) / '.claude' / 'requirements.yaml')
+    elif level == 'local':
+        return str(Path(project_dir) / '.claude' / 'requirements.local.yaml')
+
+    raise ValueError(f"Invalid config level: {level!r}. Must be 'global', 'project', or 'local'")
 
 
 def _detect_init_context(args, project_dir: str) -> str:
@@ -2184,7 +2313,8 @@ Environment Variables:
 
     # config
     config_parser = subparsers.add_parser('config', help='View or modify requirement configuration')
-    config_parser.add_argument('requirement', help='Requirement name')
+    config_parser.add_argument('requirement', nargs='?',
+                              help='Requirement name (or "show" to display full config)')
     config_parser.add_argument('--enable', action='store_true', help='Enable requirement')
     config_parser.add_argument('--disable', action='store_true', help='Disable requirement')
     config_parser.add_argument('--scope', choices=['session', 'branch', 'permanent', 'single_use'],
@@ -2195,6 +2325,8 @@ Environment Variables:
     config_parser.add_argument('--project', action='store_true', help='Modify project config')
     config_parser.add_argument('--local', action='store_true', help='Modify local config')
     config_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
+    config_parser.add_argument('--sources', action='store_true',
+                              help='Show which file each setting comes from')
 
     # verify
     subparsers.add_parser('verify', help='Verify framework installation is working correctly')
