@@ -1802,11 +1802,14 @@ def cmd_config(args) -> int:
                 requirement_overrides={requirement_name: updates}
             )
         else:
-            # For project config, need to write differently
-            # For now, only support local (will add project support later)
-            print(warning("⚠️  Project config modification not yet implemented"))
-            print(dim("   Use --local flag to modify local config"))
-            return 1
+            # Project config modification
+            try:
+                file_path = config.write_project_override(
+                    requirement_overrides={requirement_name: updates}
+                )
+            except ImportError as e:
+                print(error(f"❌ {e}"), file=sys.stderr)
+                return 1
 
         print(success(f"✅ Updated {requirement_name}"))
         print(dim(f"   Modified: {file_path}"))

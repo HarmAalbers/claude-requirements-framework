@@ -777,6 +777,150 @@ def test_write_local_config(runner: TestRunner):
         )
 
 
+def test_write_project_config(runner: TestRunner):
+    """Test writing project config modifications."""
+    print("\n📝 Testing write_project_config and write_project_override...")
+    from config import RequirementsConfig, load_yaml_or_json
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        claude_dir = Path(tmpdir) / '.claude'
+        claude_dir.mkdir()
+
+        # Test 1: Write new project config with enabled=True
+        config = RequirementsConfig(tmpdir)
+        file_path = config.write_project_override(enabled=True)
+
+        project_file = claude_dir / 'requirements.yaml'
+        runner.test("Project config file created", project_file.exists())
+
+        # Verify YAML format (not JSON)
+        runner.test("Uses YAML extension", project_file.suffix == '.yaml')
+
+        project_config = load_yaml_or_json(project_file)
+        runner.test("Enabled field set to True", project_config.get('enabled') == True)
+        runner.test("Version field added", project_config.get('version') == '1.0')
+        runner.test("Inherit flag added by default", project_config.get('inherit') == True)
+
+        # Test 2: Update existing config (preserve inherit)
+        # First, manually set inherit to False
+        existing = load_yaml_or_json(project_file)
+        existing['inherit'] = False
+        try:
+            import yaml
+            with open(project_file, 'w') as f:
+                yaml.safe_dump(existing, f)
+        except ImportError:
+            with open(project_file, 'w') as f:
+                json.dump(existing, f)
+
+        # Now update enabled
+        file_path = config.write_project_override(enabled=False)
+        project_config = load_yaml_or_json(project_file)
+
+        runner.test("Enabled field updated to False", project_config.get('enabled') == False)
+        runner.test("Inherit False preserved", project_config.get('inherit') == False)
+
+        # Test 3: Write requirement-level override
+        file_path = config.write_project_override(
+            requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
+        )
+
+        project_config = load_yaml_or_json(project_file)
+        runner.test(
+            "Requirement override added",
+            project_config.get('requirements', {}).get('adr_reviewed', {}).get('adr_path') == '/docs/adr'
+        )
+        runner.test(
+            "Framework enabled preserved",
+            project_config.get('enabled') == False  # From test 2
+        )
+        runner.test(
+            "Inherit preserved across updates",
+            project_config.get('inherit') == False  # Still False from test 2
+        )
+
+        # Test 4: Add new requirement to existing config
+        file_path = config.write_project_override(
+            requirement_overrides={'commit_plan': {'enabled': True, 'scope': 'session'}}
+        )
+
+        project_config = load_yaml_or_json(project_file)
+        commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
+        runner.test("New requirement added", commit_plan.get('enabled') == True)
+        runner.test("New requirement scope set", commit_plan.get('scope') == 'session')
+        runner.test("Previous requirement preserved",
+                   'adr_reviewed' in project_config.get('requirements', {}))
+
+        # Test 5: Update existing requirement fields
+        file_path = config.write_project_override(
+            requirement_overrides={
+                'commit_plan': {'scope': 'branch', 'message': 'Custom message'}
+            }
+        )
+
+        project_config = load_yaml_or_json(project_file)
+        commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
+        runner.test("Requirement scope updated", commit_plan.get('scope') == 'branch')
+        runner.test("Requirement message added", commit_plan.get('message') == 'Custom message')
+        runner.test("Requirement enabled preserved", commit_plan.get('enabled') == True)
+
+        # Test 6: Verify project override affects config loading
+        config_reloaded = RequirementsConfig(tmpdir)
+        runner.test(
+            "Project override affects is_enabled()",
+            config_reloaded.is_enabled() == False  # Still False from test 2
+        )
+        runner.test(
+            "Requirement override affects is_requirement_enabled()",
+            config_reloaded.is_requirement_enabled('commit_plan') == True
+        )
+
+        # Test 7: Preserve existing hooks section
+        existing = load_yaml_or_json(project_file)
+        existing['hooks'] = {
+            'stop': {'verify_requirements': True}
+        }
+        try:
+            import yaml
+            with open(project_file, 'w') as f:
+                yaml.safe_dump(existing, f)
+        except ImportError:
+            with open(project_file, 'w') as f:
+                json.dump(existing, f)
+
+        file_path = config.write_project_override(
+            requirement_overrides={'github_ticket': {'enabled': True}}
+        )
+
+        project_config = load_yaml_or_json(project_file)
+        runner.test("Hooks section preserved", 'hooks' in project_config)
+        runner.test("Hook config preserved",
+                   project_config.get('hooks', {}).get('stop', {}).get('verify_requirements') == True)
+
+        # Test 8: Test with fresh config (no existing file)
+        new_tmpdir = tempfile.mkdtemp()
+        try:
+            new_claude_dir = Path(new_tmpdir) / '.claude'
+            new_claude_dir.mkdir()
+
+            new_config = RequirementsConfig(new_tmpdir)
+            file_path = new_config.write_project_override(
+                requirement_overrides={'test_req': {'enabled': True}}
+            )
+
+            new_project_file = new_claude_dir / 'requirements.yaml'
+            runner.test("Creates new project config", new_project_file.exists())
+
+            new_project_config = load_yaml_or_json(new_project_file)
+            runner.test("New config has inherit: true", new_project_config.get('inherit') == True)
+            runner.test("New config has version", new_project_config.get('version') == '1.0')
+            runner.test("New config has requirement", 'test_req' in new_project_config.get('requirements', {}))
+        finally:
+            import shutil
+            shutil.rmtree(new_tmpdir)
+
+
 def test_cli_enable_disable(runner: TestRunner):
     """Test req enable/disable CLI commands."""
     print("\n🔧 Testing CLI enable/disable commands...")
@@ -853,6 +997,65 @@ requirements:
                        f"Exit code: {result.returncode}")
             runner.test("Error message shown", "❌" in result.stderr,
                        f"Stderr: {result.stderr}")
+
+
+def test_cli_config_project_modify(runner: TestRunner):
+    """Test req config command with --project flag."""
+    print("\n🔧 Testing CLI config --project command...")
+    import subprocess
+    from pathlib import Path
+    from config import load_yaml_or_json
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True)
+        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmpdir, capture_output=True, check=True)
+        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmpdir, capture_output=True, check=True)
+
+        # Create basic project config
+        claude_dir = Path(tmpdir) / '.claude'
+        claude_dir.mkdir()
+
+        config_file = claude_dir / 'requirements.yaml'
+        config_file.write_text('''version: "1.0"
+enabled: true
+inherit: true
+requirements:
+  commit_plan:
+    enabled: true
+    scope: session
+''')
+
+        cli_path = Path(__file__).parent / 'requirements-cli.py'
+
+        # Test: Modify requirement in project config
+        result = subprocess.run(
+            ['python3', str(cli_path), 'config', 'adr_reviewed',
+             '--project', '--set', 'adr_path=/docs/adr', '--yes'],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
+            env={'CLAUDE_PROJECT_DIR': tmpdir, 'PATH': os.environ.get('PATH', '')}
+        )
+
+        runner.test("Config project command succeeded", result.returncode == 0,
+                   f"stdout: {result.stdout}, stderr: {result.stderr}")
+
+        # Verify project config updated
+        project_config = load_yaml_or_json(config_file)
+
+        runner.test("Project config updated",
+                   project_config.get('requirements', {}).get('adr_reviewed', {}).get('adr_path') == '/docs/adr')
+        runner.test("Inherit flag preserved",
+                   project_config.get('inherit') == True)
+        runner.test("Existing requirement preserved",
+                   'commit_plan' in project_config.get('requirements', {}))
+
+        # Verify local config NOT created
+        local_file = claude_dir / 'requirements.local.yaml'
+        local_json = claude_dir / 'requirements.local.json'
+        runner.test("Local config not created",
+                   not local_file.exists() and not local_json.exists())
 
 
 def test_requirements_manager(runner: TestRunner):
@@ -4554,7 +4757,9 @@ def main():
     test_state_storage_module(runner)
     test_config_module(runner)
     test_write_local_config(runner)
+    test_write_project_config(runner)
     test_cli_enable_disable(runner)
+    test_cli_config_project_modify(runner)
     test_requirements_manager(runner)
     test_branch_level_override(runner)
     test_branch_level_override_with_ttl(runner)
