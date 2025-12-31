@@ -295,6 +295,11 @@ def main() -> int:
             if not matches_trigger(tool_name, tool_input, triggers):
                 continue
 
+            # Mark requirement as triggered for Stop hook verification
+            # (do this before checking satisfaction - triggered != satisfied)
+            scope = config.get_scope(req_name)
+            reqs.mark_triggered(req_name, scope)
+
             # Get strategy for requirement type (blocking, dynamic, etc.)
             req_type = config.get_requirement_type(req_name)
             strategy = STRATEGIES.get(req_type)

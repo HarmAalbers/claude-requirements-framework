@@ -210,6 +210,75 @@ class BranchRequirements:
         # Unknown scope defaults to not satisfied
         return False
 
+    def mark_triggered(self, req_name: str, scope: str = 'session') -> None:
+        """
+        Mark requirement as triggered for the current session.
+
+        Called by PreToolUse hook when a tool matches a requirement's trigger pattern.
+        This records that the requirement is relevant to the current session,
+        so the Stop hook knows to verify it before allowing session end.
+
+        Args:
+            req_name: Requirement name
+            scope: One of 'session', 'branch', 'permanent', 'single_use'
+        """
+        req_state = self._get_req_state(req_name)
+        req_state['scope'] = scope
+        now = int(time.time())
+
+        if scope in ('session', 'single_use'):
+            # Session/single_use: store under current session ID
+            if 'sessions' not in req_state:
+                req_state['sessions'] = {}
+
+            if self.session_id not in req_state['sessions']:
+                req_state['sessions'][self.session_id] = {}
+
+            session_state = req_state['sessions'][self.session_id]
+
+            # Only set triggered if not already set (idempotent - preserve timestamp)
+            if not session_state.get('triggered', False):
+                session_state['triggered'] = True
+                session_state['triggered_at'] = now
+                self._save()
+
+        elif scope in ('branch', 'permanent'):
+            # Branch/permanent: store at requirement level
+            if not req_state.get('triggered', False):
+                req_state['triggered'] = True
+                req_state['triggered_at'] = now
+                self._save()
+
+    def is_triggered(self, req_name: str, scope: str = 'session') -> bool:
+        """
+        Check if requirement was triggered during the current session.
+
+        Used by Stop hook to determine which requirements to verify.
+        Only triggered requirements need satisfaction verification.
+
+        Args:
+            req_name: Requirement name
+            scope: One of 'session', 'branch', 'permanent', 'single_use'
+
+        Returns:
+            True if requirement was triggered this session, False otherwise
+        """
+        req_state = self._get_req_state(req_name)
+
+        if scope in ('session', 'single_use'):
+            # Session/single_use: check current session's triggered state
+            sessions = req_state.get('sessions', {})
+            if self.session_id not in sessions:
+                return False
+            return sessions[self.session_id].get('triggered', False)
+
+        elif scope in ('branch', 'permanent'):
+            # Branch/permanent: check at requirement level
+            return req_state.get('triggered', False)
+
+        # Unknown scope defaults to not triggered (fail-open)
+        return False
+
     def satisfy(
         self,
         req_name: str,
@@ -238,11 +307,14 @@ class BranchRequirements:
             if 'sessions' not in req_state:
                 req_state['sessions'] = {}
 
-            session_state = {
-                'satisfied': True,
-                'satisfied_at': now,
-                'satisfied_by': method,
-            }
+            # Preserve existing session state (especially triggered field)
+            if self.session_id not in req_state['sessions']:
+                req_state['sessions'][self.session_id] = {}
+
+            session_state = req_state['sessions'][self.session_id]
+            session_state['satisfied'] = True
+            session_state['satisfied_at'] = now
+            session_state['satisfied_by'] = method
 
             if metadata:
                 session_state['metadata'] = metadata
@@ -251,8 +323,6 @@ class BranchRequirements:
                 session_state['expires_at'] = now + ttl
             else:
                 session_state['expires_at'] = None
-
-            req_state['sessions'][self.session_id] = session_state
 
         else:
             # Branch or permanent scope

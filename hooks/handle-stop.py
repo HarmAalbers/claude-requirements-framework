@@ -124,6 +124,12 @@ def main() -> int:
             if scope not in verify_scopes:
                 continue
 
+            # Only check requirements that were triggered this session
+            # (research-only sessions skip requirements they never triggered)
+            if not reqs.is_triggered(req_name, scope):
+                logger.debug("Skipping untriggered requirement", requirement=req_name, scope=scope)
+                continue
+
             if not reqs.is_satisfied(req_name, scope):
                 unsatisfied.append(req_name)
 

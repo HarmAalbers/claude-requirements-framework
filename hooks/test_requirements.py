@@ -2279,10 +2279,18 @@ def test_stop_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        # Test blocks when requirements unsatisfied
+        # Mark requirement as triggered (simulating Edit/Write tool use)
+        from requirements import BranchRequirements
+        from session import get_session_id
+        test_session_id = get_session_id()
+        reqs = BranchRequirements("feature/test", test_session_id, tmpdir)
+        reqs.mark_triggered("commit_plan", "session")
+
+        # Test blocks when requirements triggered but unsatisfied
+        stop_input = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": test_session_id})
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            input=stop_input,
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Stop blocks when unsatisfied", '"decision": "block"' in result.stdout,
@@ -2302,12 +2310,12 @@ def test_stop_hook(runner: TestRunner):
         # Test allows when requirements satisfied
         cli_path = Path(__file__).parent / "requirements-cli.py"
         subprocess.run(
-            ["python3", str(cli_path), "satisfy", "commit_plan"],
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", test_session_id],
             cwd=tmpdir, capture_output=True
         )
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            input=stop_input,
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Stop allows when satisfied", result.stdout.strip() == "",
@@ -2325,7 +2333,7 @@ def test_stop_hook(runner: TestRunner):
         )
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            input=stop_input,
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Stop disabled by config", result.stdout.strip() == "",
@@ -2415,6 +2423,200 @@ def test_session_end_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionEnd non-git = pass", result.returncode == 0)
+
+
+def test_triggered_requirements(runner: TestRunner):
+    """Test triggered state tracking for requirements."""
+    print("\n📦 Testing triggered requirements...")
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Simulate git repo
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Test 1: is_triggered initially False
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        runner.test("is_triggered initially False",
+                   not reqs.is_triggered("commit_plan", "session"))
+
+        # Test 2: mark_triggered sets triggered to True
+        reqs.mark_triggered("commit_plan", "session")
+        runner.test("is_triggered True after mark_triggered",
+                   reqs.is_triggered("commit_plan", "session"))
+
+        # Test 3: Different session sees different triggered state
+        reqs2 = BranchRequirements("feature/test", "session-2", tmpdir)
+        runner.test("is_triggered False for different session",
+                   not reqs2.is_triggered("commit_plan", "session"))
+
+        # Test 4: Triggered state persists across BranchRequirements instances
+        reqs3 = BranchRequirements("feature/test", "session-1", tmpdir)
+        runner.test("is_triggered persists across instances",
+                   reqs3.is_triggered("commit_plan", "session"))
+
+        # Test 5: Branch-scoped triggered state
+        reqs.mark_triggered("github_ticket", "branch")
+        runner.test("Branch triggered state set",
+                   reqs.is_triggered("github_ticket", "branch"))
+        # Create fresh instance to verify branch state is visible to other sessions
+        reqs2_fresh = BranchRequirements("feature/test", "session-2", tmpdir)
+        runner.test("Branch triggered visible to other sessions",
+                   reqs2_fresh.is_triggered("github_ticket", "branch"))
+
+        # Test 6: single_use scope behaves like session for triggered
+        reqs.mark_triggered("pre_commit_review", "single_use")
+        runner.test("single_use triggered for same session",
+                   reqs.is_triggered("pre_commit_review", "single_use"))
+        runner.test("single_use not triggered for different session",
+                   not reqs2.is_triggered("pre_commit_review", "single_use"))
+
+        # Test 7: mark_triggered is idempotent (doesn't change timestamp on repeat call)
+        import unittest.mock as mock
+        reqs4 = BranchRequirements("idempotent/branch", "session-x", tmpdir)
+        with mock.patch('time.time', return_value=1000.0):
+            reqs4.mark_triggered("test_req", "session")
+        # Reload and check timestamp
+        reqs4_reload = BranchRequirements("idempotent/branch", "session-x", tmpdir)
+        status = reqs4_reload.get_status()
+        first_triggered_at = status['requirements'].get('test_req', {}).get('sessions', {}).get('session-x', {}).get('triggered_at')
+
+        with mock.patch('time.time', return_value=2000.0):
+            reqs4_reload.mark_triggered("test_req", "session")
+        # Reload again and verify timestamp didn't change
+        reqs4_final = BranchRequirements("idempotent/branch", "session-x", tmpdir)
+        status_final = reqs4_final.get_status()
+        second_triggered_at = status_final['requirements'].get('test_req', {}).get('sessions', {}).get('session-x', {}).get('triggered_at')
+        runner.test("mark_triggered is idempotent",
+                   first_triggered_at == second_triggered_at,
+                   f"First: {first_triggered_at}, Second: {second_triggered_at}")
+
+        # Test 8: Triggered state is independent of satisfied state
+        reqs5 = BranchRequirements("independent/branch", "session-i", tmpdir)
+        reqs5.mark_triggered("independent_req", "session")
+        runner.test("Triggered but not satisfied",
+                   reqs5.is_triggered("independent_req", "session") and
+                   not reqs5.is_satisfied("independent_req", "session"))
+        reqs5.satisfy("independent_req", "session")
+        runner.test("Both triggered and satisfied",
+                   reqs5.is_triggered("independent_req", "session") and
+                   reqs5.is_satisfied("independent_req", "session"))
+
+
+def test_stop_hook_triggered_only(runner: TestRunner):
+    """Test that Stop hook only checks triggered requirements."""
+    print("\n📦 Testing Stop hook triggered-only behavior...")
+
+    hook_path = Path(__file__).parent / "handle-stop.py"
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    # Skip if hook doesn't exist
+    if not hook_path.exists():
+        runner.test("Stop hook exists", False, "Hook file not found")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Create config with requirements
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test 1: Stop allows when requirement NOT triggered (research session)
+        # Don't trigger anything - just run stop hook
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"Stop","stop_hook_active":false}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop allows untriggered requirements",
+                   result.stdout.strip() == "",
+                   f"Expected empty output for research session, got: {result.stdout}")
+
+        # Test 2: Manually mark requirement as triggered, then stop should block
+        from requirements import BranchRequirements
+        from session import get_session_id
+        session_id = get_session_id()
+        reqs = BranchRequirements("feature/test", session_id, tmpdir)
+        reqs.mark_triggered("commit_plan", "session")
+
+        # Pass session_id in stdin so subprocess uses same session
+        stop_input = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": session_id})
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop blocks triggered+unsatisfied",
+                   '"decision": "block"' in result.stdout,
+                   f"Expected block, got: {result.stdout}")
+
+        # Test 3: Satisfy requirement, then stop should allow
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", session_id],
+            cwd=tmpdir, capture_output=True
+        )
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop allows triggered+satisfied",
+                   result.stdout.strip() == "",
+                   f"Expected empty output, got: {result.stdout}")
+
+    # Test 4: Multiple requirements - only check triggered ones
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/multi"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"},
+                "adr_reviewed": {"enabled": True, "scope": "session", "message": "ADR!"},
+                "code_quality": {"enabled": True, "scope": "session", "message": "Quality!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Trigger only one requirement, leave others untriggered
+        from requirements import BranchRequirements
+        from session import get_session_id
+        session_id = get_session_id()
+        reqs = BranchRequirements("feature/multi", session_id, tmpdir)
+        reqs.mark_triggered("commit_plan", "session")
+        # adr_reviewed and code_quality are NOT triggered
+
+        # Pass session_id in stdin so subprocess uses same session
+        stop_input = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": session_id})
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        # Should only mention commit_plan, not adr_reviewed or code_quality
+        runner.test("Stop only checks triggered requirement",
+                   "commit_plan" in result.stdout and
+                   "adr_reviewed" not in result.stdout and
+                   "code_quality" not in result.stdout,
+                   f"Got: {result.stdout}")
 
 
 def test_batched_requirements_blocking(runner: TestRunner):
@@ -4896,6 +5098,10 @@ def main():
     test_session_start_hook(runner)
     test_stop_hook(runner)
     test_session_end_hook(runner)
+
+    # Triggered requirements tests (Stop hook research-session fix)
+    test_triggered_requirements(runner)
+    test_stop_hook_triggered_only(runner)
 
     # Batched requirements tests
     test_batched_requirements_blocking(runner)
