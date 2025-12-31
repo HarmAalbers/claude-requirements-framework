@@ -193,6 +193,75 @@ def write_local_config(project_dir: str, config_data: dict) -> str:
         return str(local_file_json)
 
 
+def write_project_config(project_dir: str, config_data: dict) -> str:
+    """
+    Write configuration to project file.
+
+    Writes to .claude/requirements.yaml (version-controlled). Unlike local config,
+    only supports YAML (no JSON fallback) to maintain consistency with `req init`.
+
+    Args:
+        project_dir: Project directory
+        config_data: Configuration data to write
+
+    Returns:
+        Path to the file that was written (relative to cwd if possible)
+
+    Raises:
+        OSError: If write fails
+        ImportError: If PyYAML not available (required for project config)
+    """
+    from pathlib import Path
+    import tempfile
+    import os
+
+    # Ensure .claude directory exists
+    claude_dir = Path(project_dir) / '.claude'
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    # Project config requires YAML (no JSON fallback)
+    project_file = claude_dir / 'requirements.yaml'
+
+    try:
+        import yaml
+    except ImportError:
+        raise ImportError(
+            "PyYAML is required for project config. "
+            "Install with: pip install pyyaml"
+        )
+
+    # Use atomic write pattern (temp file + rename) to prevent corruption
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=claude_dir,
+        prefix='.requirements.yaml.',
+        suffix='.tmp',
+        text=True
+    )
+
+    try:
+        with os.fdopen(temp_fd, 'w') as f:
+            yaml.safe_dump(
+                config_data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True
+            )
+        # Atomic rename (POSIX compliant)
+        os.replace(temp_path, project_file)
+    except Exception:
+        # Cleanup temp file on error
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise
+
+    # Return relative path if possible
+    try:
+        return str(project_file.relative_to(Path.cwd()))
+    except ValueError:
+        return str(project_file)
+
+
 class RequirementsConfig:
     """
     Configuration manager for requirements framework.
@@ -563,6 +632,86 @@ class RequirementsConfig:
 
         # Write to file using the write_local_config helper
         file_path = write_local_config(self.project_dir, existing_config)
+
+        return file_path
+
+    def write_project_override(self, enabled: Optional[bool] = None,
+                              requirement_overrides: Optional[dict] = None,
+                              preserve_inherit: bool = True) -> str:
+        """
+        Write project configuration to .claude/requirements.yaml.
+
+        This modifies the version-controlled project config. Changes affect
+        all team members. Use write_local_override() for personal preferences.
+
+        Args:
+            enabled: Framework enabled state (None = don't change)
+            requirement_overrides: Dict of requirement names to their config
+                                  e.g., {'commit_plan': {'enabled': False}}
+                                  or {'adr_reviewed': {'adr_path': '/docs/adr'}}
+            preserve_inherit: Keep existing 'inherit' flag (default: True)
+
+        Returns:
+            Path to file that was written (relative to cwd if possible)
+
+        Raises:
+            OSError: If write fails
+            ImportError: If PyYAML not available
+
+        Example:
+            # Enable framework in project config
+            config.write_project_override(enabled=True)
+
+            # Add requirement field to project config
+            config.write_project_override(
+                requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
+            )
+        """
+        from pathlib import Path
+
+        project_file = Path(self.project_dir) / '.claude' / 'requirements.yaml'
+
+        # Load existing project config (NOT cascade - only project file)
+        existing_config = {}
+        if project_file.exists():
+            existing_config = load_yaml_or_json(project_file)
+
+        # Update framework enabled state
+        if enabled is not None:
+            existing_config['enabled'] = enabled
+
+        # Handle inherit flag (KEY DIFFERENCE from local config)
+        if preserve_inherit:
+            # Add inherit: true if not present (default for project configs)
+            if 'inherit' not in existing_config:
+                existing_config['inherit'] = True
+            # Otherwise keep existing value
+
+        # Update requirement-level overrides
+        if requirement_overrides:
+            if 'requirements' not in existing_config:
+                existing_config['requirements'] = {}
+
+            for req_name, req_update in requirement_overrides.items():
+                if req_name not in existing_config['requirements']:
+                    existing_config['requirements'][req_name] = {}
+
+                # Handle both boolean (simple enable/disable) and dict (full config) values
+                if isinstance(req_update, bool):
+                    existing_config['requirements'][req_name]['enabled'] = req_update
+                elif isinstance(req_update, dict):
+                    # Merge dict updates (preserves existing fields not in update)
+                    for key, value in req_update.items():
+                        existing_config['requirements'][req_name][key] = value
+                else:
+                    existing_config['requirements'][req_name]['enabled'] = req_update
+
+        # Ensure version field exists
+        if 'version' not in existing_config:
+            existing_config['version'] = '1.0'
+
+        # Write to file using write_project_config helper
+        file_path = write_project_config(self.project_dir, existing_config)
 
         return file_path
 
