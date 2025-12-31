@@ -1667,10 +1667,6 @@ def cmd_config(args) -> int:
     config = RequirementsConfig(project_dir)
     requirement_name = args.requirement
 
-    # Check for "show" mode (display full merged config)
-    if not requirement_name or requirement_name == 'show':
-        return _cmd_config_show(config, args)
-
     # Check if any write flags present
     has_write_flags = (
         args.enable or args.disable or
@@ -1678,6 +1674,16 @@ def cmd_config(args) -> int:
         args.message is not None or
         (hasattr(args, 'set') and args.set is not None)
     )
+
+    # Write flags require a requirement name
+    if has_write_flags and not requirement_name:
+        print(error("❌ Requirement name required when using write flags"), file=sys.stderr)
+        print(dim("   Usage: req config <requirement> --enable|--disable|--scope|..."), file=sys.stderr)
+        return 1
+
+    # Check for "show" mode (display full merged config)
+    if not requirement_name or requirement_name == 'show':
+        return _cmd_config_show(config, args)
 
     # Check if requirement exists (unless we're trying to enable a new one)
     req_config = config.get_requirement(requirement_name)

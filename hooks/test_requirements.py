@@ -3530,7 +3530,7 @@ def test_cli_config_show_command(runner: TestRunner):
     """Test req config show command."""
     print("\n📦 Testing CLI config show command...")
 
-    cli_path = Path(__file__).parent / "requirements-cli.py"
+    cli_path = (Path(__file__).parent / "requirements-cli.py").resolve()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Initialize git repo
