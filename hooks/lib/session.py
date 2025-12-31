@@ -127,8 +127,8 @@ def get_session_id() -> str:
     # Get current project directory
     try:
         project_dir = resolve_project_root(verbose=False)
-    except Exception:
-        # Not in a git repo - match by PPID only
+    except (OSError, RuntimeError):
+        # Not in a git repo or permission denied - match by PPID only
         project_dir = None
 
     # Find session matching BOTH ppid AND project (if we have a project)

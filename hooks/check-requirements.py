@@ -195,8 +195,9 @@ def main() -> int:
                 f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} JSON PARSE ERROR ---\n")
                 f.write(f"error: {e}\n")
                 f.write(f"stdin: {stdin_content[:500] if stdin_content else 'empty'}\n")
-        except Exception:
-            pass  # Don't let debug logging break the hook
+        except (OSError, IOError):
+            # Debug logging failed (permission denied, disk full, etc.) - acceptable to skip
+            pass
 
     # Get session_id from stdin (Claude Code always provides this)
     raw_session = input_data.get('session_id')
