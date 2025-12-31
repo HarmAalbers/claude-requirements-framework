@@ -5,12 +5,11 @@ Session ID management for requirements framework.
 A session represents a single Claude Code CLI session. Requirements with
 'session' scope need to be satisfied once per session.
 
-Strategy for obtaining session ID:
-1. Check CLAUDE_SESSION_ID environment variable (if set by Claude Code)
-2. Use parent process ID as stable identifier (same PID = same session)
-3. Generate and cache in temp file as fallback
+Session ID detection:
+- Hooks: Read session_id from stdin JSON (always provided by Claude Code)
+- CLI: Look up session in registry by PPID and project directory
+- Registry is maintained by hooks at ~/.claude/sessions.json
 """
-import fcntl
 import json
 import os
 import time
