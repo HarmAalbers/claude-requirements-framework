@@ -26,6 +26,8 @@ Usage:
 import copy
 from typing import Dict, Any, Optional
 
+from config_utils import deep_merge
+
 
 # Preset definitions
 PRESETS: Dict[str, Dict[str, Any]] = {
@@ -291,27 +293,6 @@ def get_preset(name: str) -> Dict[str, Any]:
     """
     preset = PRESETS.get(name, PRESETS['minimal'])
     return copy.deepcopy(preset)
-
-
-def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively merge two dictionaries.
-
-    Override values take precedence. Nested dicts are merged recursively.
-
-    Args:
-        base: Base dictionary
-        override: Override dictionary
-
-    Returns:
-        Merged dictionary (base is modified in place and returned)
-    """
-    for key, value in override.items():
-        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-            deep_merge(base[key], value)
-        else:
-            base[key] = copy.deepcopy(value)
-    return base
 
 
 def generate_config(preset_name: str,
