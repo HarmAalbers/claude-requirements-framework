@@ -2853,7 +2853,7 @@ def test_cli_satisfy_branch_flag_dynamic(runner: TestRunner):
         # for a NEW session (the key test!)
         sys.path.insert(0, str(Path(__file__).parent / 'lib'))
         from requirements import BranchRequirements
-        from requirement_strategies import DynamicRequirementStrategy
+        from dynamic_strategy import DynamicRequirementStrategy
         from config import RequirementsConfig
 
         reqs = BranchRequirements("feature/dynamic-test", "brand-new-session-xyz", tmpdir)
@@ -2976,7 +2976,8 @@ def test_guard_strategy_blocks_protected_branch(runner: TestRunner):
 
     # Import will fail until implemented
     try:
-        from requirement_strategies import GuardRequirementStrategy, STRATEGIES
+        from guard_strategy import GuardRequirementStrategy
+        from strategy_registry import STRATEGIES
     except ImportError:
         runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
         return
@@ -3039,7 +3040,7 @@ def test_guard_strategy_allows_feature_branch(runner: TestRunner):
     print("\n📦 Testing guard strategy allows feature branch...")
 
     try:
-        from requirement_strategies import GuardRequirementStrategy
+        from guard_strategy import GuardRequirementStrategy
     except ImportError:
         runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
         return
@@ -3092,7 +3093,7 @@ def test_guard_strategy_respects_custom_branch_list(runner: TestRunner):
     print("\n📦 Testing guard strategy respects custom branch list...")
 
     try:
-        from requirement_strategies import GuardRequirementStrategy
+        from guard_strategy import GuardRequirementStrategy
     except ImportError:
         runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
         return
@@ -3155,7 +3156,7 @@ def test_guard_strategy_approval_bypasses_check(runner: TestRunner):
     print("\n📦 Testing guard strategy approval bypass...")
 
     try:
-        from requirement_strategies import GuardRequirementStrategy
+        from guard_strategy import GuardRequirementStrategy
     except ImportError:
         runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
         return
@@ -3214,7 +3215,7 @@ def test_guard_strategy_unknown_guard_type_allows(runner: TestRunner):
     print("\n📦 Testing guard strategy unknown type fails open...")
 
     try:
-        from requirement_strategies import GuardRequirementStrategy
+        from guard_strategy import GuardRequirementStrategy
     except ImportError:
         runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
         return
@@ -4436,7 +4437,7 @@ def test_codex_reviewer_requirement(runner: TestRunner):
     """Test codex_reviewer requirement with single_use scope."""
     print("\n📦 Testing codex_reviewer requirement...")
 
-    from requirement_strategies import BlockingRequirementStrategy
+    from blocking_strategy import BlockingRequirementStrategy
     from requirements import BranchRequirements
     from config import RequirementsConfig
 
