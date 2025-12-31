@@ -46,7 +46,7 @@ from requirements import BranchRequirements
 from config import RequirementsConfig, matches_trigger
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, update_registry, get_active_sessions, normalize_session_id
-from requirement_strategies import STRATEGIES
+from strategy_registry import STRATEGIES
 from logger import get_logger
 
 
