@@ -414,7 +414,7 @@ The requirements framework includes a comprehensive plugin with specialized agen
 - **code-simplifier** - Final code polish for clarity and maintainability (Sonnet model)
 - **backward-compatibility-checker** - Schema migration detection with Alembic verification (Sonnet model)
 
-### Commands (2)
+### Commands (3)
 
 **`/requirements-framework:pre-commit [aspects]`**
 
@@ -446,9 +446,22 @@ Examples:
 /requirements-framework:quality-check parallel  # Fast comprehensive
 ```
 
-### Skills (5)
+**`/requirements-framework:codex-review [focus]`**
 
-- **codex-review** - AI-powered code review workflow using OpenAI Codex CLI
+AI-powered code review using OpenAI Codex CLI:
+- **Focus areas**: `security`, `performance`, `bugs`, `style`, `all` (default)
+- **Autonomous agent**: Handles prerequisites, scope detection, and error recovery
+- **Integrated with**: `codex_reviewer` requirement (auto-satisfies on completion)
+- **Requirements**: OpenAI Codex CLI (`npm install -g @openai/codex` + `codex login`)
+
+Examples:
+```bash
+/requirements-framework:codex-review            # All focus areas
+/requirements-framework:codex-review security   # Security vulnerabilities
+/requirements-framework:codex-review performance # Performance optimization
+```
+
+### Skills (4)
 - **requirements-framework-builder** - Framework management, extension, and status checking
 - **requirements-framework-development** - Framework development workflow and sync operations
 - **requirements-framework-status** - Status reporting and progress tracking

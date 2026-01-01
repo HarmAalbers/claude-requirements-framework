@@ -7,7 +7,6 @@
   },
   "repository": "https://github.com/HarmAalbers/claude-requirements-framework",
   "skills": [
-    "skills/codex-review/skill.md",
     "skills/requirements-framework-builder/skill.md",
     "skills/requirements-framework-development/skill.md",
     "skills/requirements-framework-status/skill.md",
@@ -15,7 +14,8 @@
   ],
   "commands": [
     "commands/pre-commit.md",
-    "commands/quality-check.md"
+    "commands/quality-check.md",
+    "commands/codex-review.md"
   ],
   "agents": [
     "agents/adr-guardian.md",
