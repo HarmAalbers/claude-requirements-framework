@@ -61,7 +61,7 @@ configure_codex_requirement() {
     echo "What it does:"
     echo "  - Runs OpenAI Codex review before 'gh pr create'"
     echo "  - Checks for bugs, security issues, and code quality"
-    echo "  - Uses the /requirements-framework:codex-review skill"
+    echo "  - Uses the /requirements-framework:codex-review command"
     echo ""
     echo "Requirements:"
     echo "  - Codex CLI must be installed: npm install -g @openai/codex"

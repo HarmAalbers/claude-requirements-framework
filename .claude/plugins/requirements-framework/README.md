@@ -158,6 +158,45 @@ Comprehensive pre-PR review with all 8 agents.
 10. Review Complete → auto-satisfy → pre_pr_review satisfied
 ```
 
+#### /requirements-framework:codex-review [focus]
+
+AI-powered code review using OpenAI Codex CLI.
+
+**Features:**
+- **Autonomous agent**: Handles prerequisites, scope detection, error recovery
+- **Focus areas**: `security`, `performance`, `bugs`, `style`, `all` (default)
+- **Smart scope detection**: Automatically reviews uncommitted changes or branch diff
+- **Comprehensive error handling**: Guides through installation, authentication, API issues
+
+**Arguments:**
+- `security` - Focus on security vulnerabilities
+- `performance` - Focus on performance optimization
+- `bugs` - Focus on potential bugs and logic errors
+- `style` - Focus on code style and best practices
+- `all` - All focus areas (default)
+
+**Examples:**
+```bash
+/requirements-framework:codex-review            # All focus areas
+/requirements-framework:codex-review security   # Security-focused
+/requirements-framework:codex-review performance # Performance-focused
+```
+
+**Integration:** Auto-satisfies `codex_reviewer` requirement when complete
+
+**Requirements:** OpenAI Codex CLI (`npm install -g @openai/codex` + `codex login`)
+
+**Workflow:**
+```
+1. Parse focus area argument
+2. Launch codex-review-agent (autonomous)
+   - Check prerequisites (codex installed/authenticated)
+   - Detect scope (uncommitted vs branch changes)
+   - Execute codex review with focus
+   - Parse and present results by severity
+3. Auto-satisfy requirement (if successful)
+```
+
 ### 📚 Skills
 
 Skills trigger automatically from natural language:
@@ -181,11 +220,6 @@ Skills trigger automatically from natural language:
 - **Triggers**: "Fix requirements framework bug", "sync requirements framework", "requirements development workflow"
 - **Provides**: Development workflow, sync.sh usage, TDD guidance, contributing help
 - **Use when**: Developing the framework itself, fixing bugs, syncing changes
-
-**codex-review**
-- **Triggers**: "Run Codex review", "AI-powered code review"
-- **Provides**: OpenAI Codex CLI orchestration workflow
-- **Use when**: Wanting advanced AI review beyond standard agents
 
 ## Usage
 
@@ -419,11 +453,11 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 │   ├── test-analyzer.md
 │   ├── tool-validator.md
 │   └── type-design-analyzer.md
-├── commands/ (2 commands)
+├── commands/ (3 commands)
 │   ├── pre-commit.md
-│   └── quality-check.md
-└── skills/ (5 skills)
-    ├── codex-review/
+│   ├── quality-check.md
+│   └── codex-review.md
+└── skills/ (4 skills)
     ├── requirements-framework-builder/
     ├── requirements-framework-development/
     ├── requirements-framework-status/
