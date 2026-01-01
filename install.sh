@@ -305,6 +305,23 @@ setup_plugin_symlink() {
         if [ -f "$plugin_target/.claude-plugin/plugin.json" ]; then
             local plugin_version=$(python3 -c "import json; print(json.load(open('$plugin_target/.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "unknown")
             echo "   Plugin version: $plugin_version"
+
+            # Count components
+            local agent_count=$(ls -1 "$plugin_source/agents"/*.md 2>/dev/null | wc -l | tr -d ' ')
+            local command_count=$(ls -1 "$plugin_source/commands"/*.md 2>/dev/null | wc -l | tr -d ' ')
+            local skill_count=$(ls -1 "$plugin_source/skills" 2>/dev/null | wc -l | tr -d ' ')
+
+            echo "   Components: $agent_count agents, $command_count commands, $skill_count skills"
+            echo ""
+            echo "   📝 Verify plugin loaded:"
+            echo "      1. Start Claude Code session"
+            echo "      2. Type: /requirements-framework:"
+            echo "      3. Should autocomplete to pre-commit and quality-check"
+            echo ""
+            echo "   📖 Plugin documentation:"
+            echo "      • Installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
+            echo "      • Plugin README: $plugin_source/README.md"
+            echo "      • Components: $REPO_DIR/README.md#plugin-components"
         fi
     else
         echo "❌ Failed to create plugin symlink"
@@ -797,8 +814,11 @@ echo "      cd your-project"
 echo "      req init minimal   # Creates .claude/requirements.yaml"
 echo ""
 echo "📖 Documentation:"
-echo "   • README: $REPO_DIR/README.md"
-echo "   • Plugin skills: /requirements-framework:*"
+echo "   • Main README: $REPO_DIR/README.md"
+echo "   • Plugin installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
+echo "   • Plugin README: $REPO_DIR/.claude/plugins/requirements-framework/README.md"
+echo "   • Plugin commands: /requirements-framework:pre-commit, /requirements-framework:quality-check"
+echo "   • Plugin skills: Type 'show requirements framework status' in Claude Code"
 echo "   • Config reference: $REPO_DIR/examples/"
 echo ""
 echo "🎯 Quick Start:"

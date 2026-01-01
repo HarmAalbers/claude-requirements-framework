@@ -33,7 +33,30 @@ cd ~/tools/claude-requirements-framework
 The installer will:
 1. Copy hooks to `~/.claude/hooks/`
 2. Install the global configuration to `~/.claude/requirements.yaml`
-3. Register all four hooks (PreToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
+3. Register all hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
+4. Create plugin symlink at `~/.claude/plugins/requirements-framework`
+
+### Verify Plugin Installation
+
+After running `install.sh`, verify the plugin loaded successfully:
+
+```bash
+# Check plugin appears in Claude Code
+# Start a new session and type:
+/requirements-framework:
+
+# Should autocomplete to:
+# - /requirements-framework:pre-commit [aspects]
+# - /requirements-framework:quality-check [parallel]
+
+# Or check the symlink:
+ls -la ~/.claude/plugins/requirements-framework
+```
+
+For detailed installation, troubleshooting, and component reference:
+- **[Plugin Installation Guide](docs/PLUGIN-INSTALLATION.md)** - Comprehensive reference
+- **[Plugin README](.claude/plugins/requirements-framework/README.md)** - Plugin-specific docs
+- **[Plugin Components](#plugin-components)** (below) - Agent/command/skill descriptions
 
 ### Project Setup
 
