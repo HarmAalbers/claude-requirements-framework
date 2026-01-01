@@ -5,6 +5,7 @@ model: claude-sonnet-4-5
 color: yellow
 autonomous: true
 allowed-tools: ["Bash", "Read", "Grep", "Glob"]
+git_hash: 6019272
 ---
 
 # Codex Code Review Agent

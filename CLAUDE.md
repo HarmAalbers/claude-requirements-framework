@@ -81,6 +81,43 @@ SessionEnd (handle-session-end.py) - session ends
 - `hooks/lib/message_dedup_cache.py` - TTL-based deduplication for parallel calls
 - `hooks/lib/logger.py` - Structured JSON logging
 
+## Plugin Component Versioning
+
+All plugin components (agents, commands, skills) include a `git_hash` field in their YAML frontmatter showing the last commit that modified the file. This enables version tracking and A/B testing of component effectiveness.
+
+### Updating Versions
+
+After modifying plugin components:
+
+```bash
+# Update git_hash fields
+./update-plugin-versions.sh
+
+# Verify changes
+./update-plugin-versions.sh --check
+
+# Commit with updated hashes
+git add .
+git commit -m "feat: update code-reviewer agent"
+
+# Deploy to runtime
+./sync.sh deploy
+```
+
+### Hash Format
+
+- `abc1234` - Committed, no modifications
+- `abc1234*` - Committed but has uncommitted changes
+- `uncommitted` - New file, never committed
+
+### Usage Modes
+
+```bash
+./update-plugin-versions.sh           # Update all files
+./update-plugin-versions.sh --check   # Dry-run (show what would change)
+./update-plugin-versions.sh --verify  # Verify hashes are current
+```
+
 ## Development Patterns
 
 ### TDD Workflow

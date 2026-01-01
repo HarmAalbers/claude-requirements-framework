@@ -464,6 +464,36 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
     └── requirements-framework-usage/
 ```
 
+### Component Versioning
+
+All plugin components (agents, commands, skills) include a `git_hash` field in their YAML frontmatter that tracks the last commit that modified each file. This enables:
+
+- **Version tracking**: Know exactly which version of each component was used
+- **A/B testing**: Compare effectiveness of different agent versions
+- **Debugging**: Correlate behavior with specific code versions
+- **Audit trail**: Understand when components were last modified
+
+**Example frontmatter with git_hash:**
+```yaml
+---
+name: code-reviewer
+description: Use this agent to review code...
+model: opus
+color: green
+allowed-tools: ["Bash", "Glob", "Grep", "Read"]
+git_hash: 57d0c1a
+---
+```
+
+**Updating versions** (run after modifying components):
+```bash
+./update-plugin-versions.sh           # Update all git_hash fields
+./update-plugin-versions.sh --check   # Preview changes
+./update-plugin-versions.sh --verify  # Verify hashes are current
+```
+
+See [CLAUDE.md](../../CLAUDE.md#plugin-component-versioning) for complete workflow details.
+
 ### Agent Execution Models
 
 | Agent | Model | Rationale | Confidence Filter |
