@@ -4,6 +4,7 @@ description: Execute linting and type-checking tools on staged changes to catch 
 tools: Bash, Read, Grep, Glob
 model: haiku
 color: blue
+git_hash: 57d0c1a
 ---
 
 # Tool Validator Agent
