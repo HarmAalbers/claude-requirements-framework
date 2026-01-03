@@ -101,8 +101,20 @@ def main() -> int:
                 continue
             req_config = config.get_requirement(req_name)
             scope = req_config.get('scope', 'session')
-            if not reqs.is_satisfied(req_name, scope):
-                unsatisfied.append((req_name, req_config))
+            req_type = config.get_requirement_type(req_name)
+
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                if not reqs.is_guard_satisfied(req_name, config, context):
+                    unsatisfied.append((req_name, req_config))
+            else:
+                if not reqs.is_satisfied(req_name, scope):
+                    unsatisfied.append((req_name, req_config))
 
         if not unsatisfied:
             return 0  # All satisfied, nothing to show

@@ -2624,6 +2624,94 @@ def test_stop_hook_triggered_only(runner: TestRunner):
                    f"Got: {result.stdout}")
 
 
+def test_stop_hook_guard_context_aware(runner: TestRunner):
+    """Test that Stop hook uses context-aware checking for guard requirements."""
+    print("\n📦 Testing Stop hook context-aware guard checking...")
+
+    hook_path = Path(__file__).parent / "handle-stop.py"
+
+    # Skip if hook doesn't exist
+    if not hook_path.exists():
+        runner.test("Stop hook exists", False, "Hook file not found")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo on feature branch
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Create config with protected_branch guard requirement
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "scope": "session",
+                    "protected_branches": ["master", "main"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Test 1: On feature branch, guard should be satisfied (NOT on protected branch)
+        # Mark as triggered so Stop hook checks it
+        from requirements import BranchRequirements
+        session_id = "guard-test-1"
+        reqs = BranchRequirements("feature/test", session_id, tmpdir)
+        reqs.mark_triggered("protected_branch", "session")
+
+        # Stop hook should allow (guard condition passes)
+        stop_input = json.dumps({
+            "hook_event_name": "Stop",
+            "stop_hook_active": False,
+            "session_id": session_id
+        })
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop allows guard on feature branch",
+                   result.stdout.strip() == "",
+                   f"Expected empty (allow), got: {result.stdout}")
+
+    # Test 2: On master branch, guard should NOT be satisfied (ON protected branch)
+    with tempfile.TemporaryDirectory() as tmpdir2:
+        subprocess.run(["git", "init"], cwd=tmpdir2, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "master"], cwd=tmpdir2, capture_output=True)
+
+        os.makedirs(f"{tmpdir2}/.claude")
+        with open(f"{tmpdir2}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Mark as triggered
+        session_id2 = "guard-test-2"
+        reqs2 = BranchRequirements("master", session_id2, tmpdir2)
+        reqs2.mark_triggered("protected_branch", "session")
+
+        # Stop hook should block (guard condition fails)
+        stop_input2 = json.dumps({
+            "hook_event_name": "Stop",
+            "stop_hook_active": False,
+            "session_id": session_id2
+        })
+        result2 = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input2,
+            cwd=tmpdir2, capture_output=True, text=True
+        )
+        runner.test("Stop blocks guard on master branch",
+                   '"decision": "block"' in result2.stdout,
+                   f"Expected block, got: {result2.stdout}")
+
+
 def test_batched_requirements_blocking(runner: TestRunner):
     """Test that multiple unsatisfied requirements are batched into one message."""
     print("\n📦 Testing batched requirements blocking...")
@@ -5188,6 +5276,7 @@ def main():
     # Triggered requirements tests (Stop hook research-session fix)
     test_triggered_requirements(runner)
     test_stop_hook_triggered_only(runner)
+    test_stop_hook_guard_context_aware(runner)
 
     # Batched requirements tests
     test_batched_requirements_blocking(runner)

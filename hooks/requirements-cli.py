@@ -137,10 +137,23 @@ def _cmd_status_summary(project_dir: str, branch: str, session_id: str) -> int:
         else:
             # Blocking/guard requirements - check satisfaction
             scope = config.get_scope(req_name)
-            if reqs.is_satisfied(req_name, scope):
-                satisfied_count += 1
+
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                if reqs.is_guard_satisfied(req_name, config, context):
+                    satisfied_count += 1
+                else:
+                    unsatisfied.append(req_name)
             else:
-                unsatisfied.append(req_name)
+                if reqs.is_satisfied(req_name, scope):
+                    satisfied_count += 1
+                else:
+                    unsatisfied.append(req_name)
 
     total = satisfied_count + len(unsatisfied)
 
@@ -198,8 +211,19 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
         else:
             # Blocking/guard requirements - check satisfaction
             scope = config.get_scope(req_name)
-            if not reqs.is_satisfied(req_name, scope):
-                unsatisfied_blocking.append((req_name, scope))
+
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                if not reqs.is_guard_satisfied(req_name, config, context):
+                    unsatisfied_blocking.append((req_name, scope))
+            else:
+                if not reqs.is_satisfied(req_name, scope):
+                    unsatisfied_blocking.append((req_name, scope))
 
     if not unsatisfied_blocking and not unsatisfied_dynamic:
         print(success("✅ All requirements satisfied"))
@@ -305,7 +329,19 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
         print(header("📌 Blocking Requirements:"))
         for req_name in blocking_reqs:
             scope = config.get_scope(req_name)
-            satisfied = reqs.is_satisfied(req_name, scope)
+            req_type = config.get_requirement_type(req_name)
+
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                satisfied = reqs.is_guard_satisfied(req_name, config, context)
+            else:
+                satisfied = reqs.is_satisfied(req_name, scope)
+
             if satisfied:
                 print(success(f"  ✅ {req_name}") + dim(f" ({scope})"))
             else:

@@ -132,6 +132,7 @@ def main() -> int:
 
             req_config = config.get_requirement(req_name)
             scope = req_config.get('scope', 'session')
+            req_type = config.get_requirement_type(req_name)
 
             # Only check scopes that are configured for verification
             if scope not in verify_scopes:
@@ -143,8 +144,22 @@ def main() -> int:
                 logger.debug("Skipping untriggered requirement", requirement=req_name, scope=scope)
                 continue
 
-            if not reqs.is_satisfied(req_name, scope):
-                unsatisfied.append(req_name)
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                # For guard requirements, evaluate the actual condition
+                # (e.g., "not on protected branch") rather than just checking
+                # if it was manually satisfied
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                if not reqs.is_guard_satisfied(req_name, config, context):
+                    unsatisfied.append(req_name)
+            else:
+                # Regular satisfaction check for blocking/dynamic requirements
+                if not reqs.is_satisfied(req_name, scope):
+                    unsatisfied.append(req_name)
 
         if unsatisfied:
             logger.info("Blocking stop - requirements unsatisfied", requirements=unsatisfied)

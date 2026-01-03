@@ -186,7 +186,47 @@ class GuardRequirementStrategy(RequirementStrategy):
 - Approval mechanism requires understanding session scope
 
 ### Neutral
-- Test count increased from 161 to 170 tests (167 original + 3 for status display)
+- Test count increased from 161 to 172 tests (170 for status + 2 for Stop hook)
+
+## Lessons Learned
+
+### Incomplete Initial Implementation (2026-01-03)
+
+The initial context-aware status display implementation (commit ee8d8a0) only fixed `handle-session-start.py`, missing three other locations that also check requirement satisfaction:
+
+1. **handle-stop.py** - Stop hook verification
+2. **handle-plan-exit.py** - Plan exit status display
+3. **requirements-cli.py** - CLI status commands (3 locations)
+
+**Root Cause**: Focused on the symptom (SessionStart status) rather than the pattern (all requirement checking).
+
+**Correct Approach**: Should have searched for **all usages of `is_satisfied()`** to identify every location that needed updating.
+
+**Fix Applied**: Updated all four files to use context-aware guard checking, ensuring consistent behavior across:
+- Session start status display
+- Stop hook verification (prevents false blocking)
+- Plan exit status display
+- CLI status commands (`req status`)
+
+**Testing**: Added `test_stop_hook_guard_context_aware()` to verify Stop hook doesn't block when guard conditions pass.
+
+### Pattern for Guard Requirements
+
+**Any code that checks requirement satisfaction must consider requirement type:**
+
+```python
+if req_type == 'guard':
+    context = {'branch': branch, 'session_id': session_id, 'project_dir': project_dir}
+    satisfied = reqs.is_guard_satisfied(req_name, config, context)
+else:
+    satisfied = reqs.is_satisfied(req_name, scope)
+```
+
+**Files using this pattern:**
+- `hooks/handle-session-start.py` (status display)
+- `hooks/handle-stop.py` (verification before stop)
+- `hooks/handle-plan-exit.py` (plan exit status)
+- `hooks/requirements-cli.py` (CLI status commands)
 
 ## Extending with New Guard Types
 
