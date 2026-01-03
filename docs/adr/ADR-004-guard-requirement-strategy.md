@@ -63,6 +63,65 @@ req approve protected_branch  # Session-scoped only
 
 Approvals expire when the session ends, ensuring protection is restored for the next session.
 
+### Status Display Behavior
+
+Guard requirements show **context-aware status** at session start:
+
+- ✅ **Satisfied** when guard condition passes (e.g., NOT on protected branch)
+- ⬜ **Unsatisfied** when guard condition fails (e.g., ON protected branch)
+
+This differs from blocking requirements, which only show ✅ when manually satisfied.
+
+#### Example: protected_branch
+
+| Current Branch | Status Display | Reason |
+|----------------|----------------|--------|
+| feature/auth   | ✅ protected_branch | Not on protected branch → condition passes |
+| master         | ⬜ protected_branch | On protected branch → condition fails |
+| main           | ⬜ protected_branch | On protected branch → condition fails |
+
+**After `req approve protected_branch` on master:**
+| Current Branch | Status Display | Reason |
+|----------------|----------------|--------|
+| master         | ✅ protected_branch | Manually approved (session scope) |
+
+Users only need to `req approve protected_branch` when on a protected branch and need emergency override.
+
+#### Implementation
+
+The `BranchRequirements.is_guard_satisfied()` method evaluates guard conditions for status display:
+
+```python
+def is_guard_satisfied(self, req_name: str, config, context: dict) -> bool:
+    """
+    Check if a guard requirement's condition is satisfied.
+
+    Returns:
+        True if guard condition passes or manually approved
+        False if guard condition fails
+    """
+    # Manual approval takes precedence
+    if self.is_satisfied(req_name, scope='session'):
+        return True
+
+    # Evaluate guard condition using strategy
+    strategy = GuardRequirementStrategy()
+    result = strategy.check(req_name, config, self, context)
+    return result is None  # None means satisfied
+```
+
+The SessionStart hook (`handle-session-start.py`) uses this method for guard requirements:
+
+```python
+if req_type == 'guard':
+    context = {'branch': branch, 'session_id': session_id, ...}
+    satisfied = reqs.is_guard_satisfied(req_name, config, context)
+else:
+    satisfied = reqs.is_satisfied(req_name, scope)
+```
+
+This ensures status display reflects the actual guard condition, not just manual satisfaction.
+
 ### Implementation Requirements
 
 1. Guards must **fail-open** on errors (never block due to bugs)
@@ -87,9 +146,12 @@ Approvals expire when the session ends, ensuring protection is restored for the 
 
 ### Files Modified
 
-- `hooks/lib/requirement_strategies.py` - `GuardRequirementStrategy` class
+- `hooks/lib/guard_strategy.py` - `GuardRequirementStrategy` class
+- `hooks/lib/requirements.py` - `is_guard_satisfied()` method for context-aware status
+- `hooks/handle-session-start.py` - Context-aware status display in `format_full_status()`
 - `hooks/lib/config.py` - Validation for `guard` type and `guard_type` field
 - `hooks/check-requirements.py` - Integration with strategy dispatch
+- `hooks/test_requirements.py` - Tests for guard strategy and status display
 - `examples/global-requirements.yaml` - Example configuration
 
 ### Strategy Pattern
@@ -124,7 +186,7 @@ class GuardRequirementStrategy(RequirementStrategy):
 - Approval mechanism requires understanding session scope
 
 ### Neutral
-- Test count increased from 161 to 167 tests
+- Test count increased from 161 to 170 tests (167 original + 3 for status display)
 
 ## Extending with New Guard Types
 

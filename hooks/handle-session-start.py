@@ -61,7 +61,23 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
         has_requirements = True
         req_config = config.get_requirement(req_name)
         scope = req_config.get('scope', 'session')
-        satisfied = reqs.is_satisfied(req_name, scope)
+        req_type = config.get_requirement_type(req_name)
+
+        # Context-aware checking for guard requirements
+        if req_type == 'guard':
+            # For guard requirements, evaluate the actual condition
+            # (e.g., "not on protected branch") rather than just checking
+            # if it was manually satisfied
+            context = {
+                'branch': branch,
+                'session_id': session_id,
+                'project_dir': reqs.project_dir,
+            }
+            satisfied = reqs.is_guard_satisfied(req_name, config, context)
+        else:
+            # Regular satisfaction check for blocking/dynamic requirements
+            satisfied = reqs.is_satisfied(req_name, scope)
+
         status = "✅" if satisfied else "⬜"
         lines.append(f"  {status} **{req_name}** ({scope} scope)")
 

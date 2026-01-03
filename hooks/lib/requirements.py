@@ -210,6 +210,64 @@ class BranchRequirements:
         # Unknown scope defaults to not satisfied
         return False
 
+    def is_guard_satisfied(self, req_name: str, config, context: dict) -> bool:
+        """
+        Check if a guard requirement's condition is satisfied.
+
+        For guard requirements, this evaluates the actual condition
+        (e.g., "not on protected branch") rather than checking if it
+        was manually satisfied.
+
+        This method is used by the SessionStart hook to display context-aware
+        status for guard requirements.
+
+        Args:
+            req_name: Requirement name
+            config: RequirementsConfig instance
+            context: Context dict with branch, session_id, project_dir, etc.
+
+        Returns:
+            True if guard condition is satisfied (condition passes)
+            False if guard condition fails
+
+        Examples:
+            >>> # protected_branch guard on feature branch
+            >>> reqs.is_guard_satisfied("protected_branch", config,
+            ...                        {'branch': 'feature/auth', ...})
+            True  # Not on protected branch → satisfied
+
+            >>> # protected_branch guard on master
+            >>> reqs.is_guard_satisfied("protected_branch", config,
+            ...                        {'branch': 'master', ...})
+            False  # On protected branch → not satisfied
+        """
+        # First check if manually approved (emergency override)
+        # Manual approval takes precedence over condition evaluation
+        if self.is_satisfied(req_name, scope='session'):
+            return True
+
+        # Evaluate guard condition using strategy
+        # Import here to avoid circular dependencies and fail-open on import errors
+        try:
+            from guard_strategy import GuardRequirementStrategy
+        except ImportError:
+            # Fail-open: if guard strategy can't be imported, assume satisfied
+            # This prevents status display errors from breaking the system
+            return True
+
+        try:
+            strategy = GuardRequirementStrategy()
+
+            # Call the guard strategy check method
+            # If check() returns None → condition satisfied (allow)
+            # If check() returns dict → condition failed (block)
+            result = strategy.check(req_name, config, self, context)
+            return result is None  # None means satisfied
+        except Exception:
+            # Fail-open: errors in guard evaluation don't break status display
+            # Assume satisfied to avoid false negatives
+            return True
+
     def mark_triggered(self, req_name: str, scope: str = 'session') -> None:
         """
         Mark requirement as triggered for the current session.

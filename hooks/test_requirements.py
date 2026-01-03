@@ -3311,6 +3311,83 @@ def test_guard_hook_integration(runner: TestRunner):
                        "Guard strategy not implemented - expected in TDD RED phase")
 
 
+def test_guard_status_display_context_aware(runner: TestRunner):
+    """Test that guard requirements show context-aware status."""
+    print("\n📦 Testing guard status display is context-aware...")
+
+    try:
+        from requirements import BranchRequirements
+        from config import RequirementsConfig
+    except ImportError as e:
+        runner.test("Required imports available", False, f"Import error: {e}")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Setup git repo on feature branch
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"],
+                      cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        # Create config with protected_branch
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "test-session", tmpdir)
+
+        # Test 1: On feature branch → should be satisfied
+        context = {
+            'branch': 'feature/test',
+            'session_id': 'test-session',
+            'project_dir': tmpdir
+        }
+
+        # Try to call is_guard_satisfied - will fail until implemented
+        try:
+            satisfied = reqs.is_guard_satisfied("protected_branch", config, context)
+            runner.test("Guard satisfied on feature branch", satisfied,
+                       "Should be satisfied when NOT on protected branch")
+        except AttributeError:
+            runner.test("is_guard_satisfied() method exists", False,
+                       "Method not implemented yet - expected in TDD RED phase")
+            # Can't continue without the method
+            return
+
+        # Test 2: On master branch → should NOT be satisfied
+        reqs_master = BranchRequirements("master", "test-session", tmpdir)
+        context_master = {
+            'branch': 'master',
+            'session_id': 'test-session',
+            'project_dir': tmpdir
+        }
+        satisfied_master = reqs_master.is_guard_satisfied("protected_branch",
+                                                          config, context_master)
+        runner.test("Guard NOT satisfied on master", not satisfied_master,
+                   "Should NOT be satisfied when ON protected branch")
+
+        # Test 3: Emergency override on master → should be satisfied
+        reqs_master.satisfy("protected_branch", scope='session')
+        satisfied_override = reqs_master.is_guard_satisfied("protected_branch",
+                                                            config, context_master)
+        runner.test("Guard satisfied after approval on master", satisfied_override,
+                   "Should be satisfied when manually approved even on protected branch")
+
+
 def test_remove_session_from_registry(runner: TestRunner):
     """Test remove_session_from_registry function."""
     print("\n📦 Testing remove_session_from_registry...")
@@ -5127,6 +5204,7 @@ def main():
     test_guard_strategy_approval_bypasses_check(runner)
     test_guard_strategy_unknown_guard_type_allows(runner)
     test_guard_hook_integration(runner)
+    test_guard_status_display_context_aware(runner)
 
     # Colors module tests
     test_colors_module(runner)

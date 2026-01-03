@@ -4,7 +4,7 @@ description: Detect breaking changes in schemas, APIs, and contracts that break 
 tools: Bash, Read, Grep, Glob
 model: sonnet
 color: orange
-git_hash: 8f2e466
+git_hash: fce3f91
 ---
 
 # Backward Compatibility Checker Agent
