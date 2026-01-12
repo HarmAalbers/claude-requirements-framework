@@ -162,6 +162,38 @@ git commit -m "feat: update code-reviewer agent"
 - **Zero dependencies**: Python stdlib only (PyYAML optional, falls back to JSON)
 - **Strategy pattern**: Extensible requirement types via modular strategy architecture (see `hooks/lib/*_strategy.py`)
 
+## Testing Plugin Components
+
+The framework includes 10 agents, 3 commands, and 4 skills that extend Claude Code's capabilities. To test these components during development:
+
+```bash
+# Launch Claude Code with plugin loaded (official method)
+claude --plugin-dir ~/.claude/plugins/requirements-framework
+
+# This loads the plugin without persistent installation
+# Changes to plugin files are immediately available (live reload)
+```
+
+**Test commands:**
+```
+/requirements-framework:pre-commit [aspects]
+/requirements-framework:quality-check [parallel]
+/requirements-framework:codex-review [scope]
+```
+
+**Test skills** (natural language):
+- "Show requirements framework status"
+- "How to use requirements framework"
+- "Extend requirements framework"
+
+**Test agents** (via Task tool or commands):
+- code-reviewer, tool-validator, silent-failure-hunter
+- test-analyzer, type-design-analyzer, comment-analyzer
+- code-simplifier, backward-compatibility-checker
+- adr-guardian, codex-review-agent
+
+**For persistent installation**, see `docs/PLUGIN-INSTALLATION.md` for marketplace-based setup.
+
 ## Requirement Scopes
 | Scope | Behavior |
 |-------|----------|

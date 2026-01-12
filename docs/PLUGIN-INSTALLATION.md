@@ -32,32 +32,84 @@ The Requirements Framework plugin extends Claude Code with workflow automation a
 
 ## Installation Methods
 
-### Method 1: Via install.sh (Recommended)
+### Method 1: CLI Flag (Recommended for Testing)
 
-The installation script automatically creates the plugin symlink:
+**Official, zero-risk method** for testing plugin components:
+
+```bash
+# Launch Claude Code with plugin temporarily loaded
+claude --plugin-dir ~/.claude/plugins/requirements-framework
+```
+
+**When to use:**
+- ✅ First-time testing to verify plugin structure
+- ✅ Development work with live reload
+- ✅ Quick verification without system modifications
+- ✅ Before committing to persistent installation
+
+**Benefits:**
+- Zero risk - no system file modifications
+- Official, documented Claude Code feature
+- Live reload - changes immediately available
+- Can test multiple plugins simultaneously
+
+**Limitations:**
+- ⚠️ Must use CLI flag every launch
+- ⚠️ Not persistent across sessions
+- ⚠️ May not work with UI-launched Claude Code
+
+**Verification:**
+```
+# In Claude Code session
+Type: /requirements-framework:
+# Should show: pre-commit, quality-check, codex-review
+```
+
+### Method 2: Marketplace Installation (Recommended for Persistent Use)
+
+**Official method** for permanent plugin installation:
+
+**Step 1:** Run install.sh to set up symlink and create marketplace
 
 ```bash
 cd ~/Tools/claude-requirements-framework
 ./install.sh
 ```
 
-**What install.sh does:**
-1. Copies hooks to `~/.claude/hooks/`
-2. Creates plugin symlink at `~/.claude/plugins/requirements-framework/`
-3. Verifies plugin manifest and shows version
-4. Displays component count (agents, commands, skills)
+**Step 2:** Register the local marketplace in Claude Code
 
-**Expected Output:**
 ```
-🔌 Setting up plugin symlink...
-✅ Plugin symlinked: ~/.claude/plugins/requirements-framework
-   → /path/to/repo/plugin
-   Plugin version: 2.0.4
+# In Claude Code session
+/plugin marketplace add /Users/harm/Tools/claude-requirements-framework/.claude-plugin/marketplace.json
 ```
 
-### Method 2: Manual Installation
+**Step 3:** Install the plugin from marketplace
 
-If you prefer manual installation or install.sh isn't available:
+```
+/plugin install requirements-framework@requirements-framework-local
+```
+
+**Step 4:** Verify installation
+
+```
+/requirements-framework:pre-commit
+```
+
+**What gets installed:**
+- Local marketplace registered with Claude Code
+- Plugin copied to cache directory
+- Persistent across Claude Code sessions
+- Updates via reinstall command
+
+**To update:**
+```
+/plugin uninstall requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework-local
+```
+
+### Method 3: Manual Symlink (Legacy)
+
+**Note:** This creates the symlink but does NOT register the plugin with Claude Code. The plugin won't be discoverable without additional steps (Method 1 or 2).
 
 ```bash
 # Create plugins directory
@@ -71,26 +123,12 @@ ln -s ~/Tools/claude-requirements-framework/plugin \
 ls -la ~/.claude/plugins/requirements-framework
 ```
 
-**Verify symlink points to correct location:**
-```bash
-readlink ~/.claude/plugins/requirements-framework
-# Expected: /path/to/repo/plugin
-```
+**Use this only for:**
+- Preparing for Method 1 (CLI flag testing)
+- Setting up before marketplace installation
+- Debugging symlink issues
 
-### Method 3: Development Mode
-
-Development mode is the same as Method 2 (manual installation). The symlink enables live updates:
-
-```bash
-# Same as Method 2
-ln -s ~/Tools/claude-requirements-framework/plugin \
-      ~/.claude/plugins/requirements-framework
-```
-
-**Benefits:**
-- Changes to plugin files immediately reflect in Claude Code
-- No need to reinstall after editing agents/commands/skills
-- Perfect for plugin development and testing
+**This alone does NOT make the plugin available** - you must use Method 1 (CLI flag) or Method 2 (marketplace) to actually load it
 
 ---
 

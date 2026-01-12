@@ -334,6 +334,30 @@ setup_plugin_symlink() {
 # Call plugin setup
 setup_plugin_symlink
 
+# Display marketplace installation instructions
+display_marketplace_instructions() {
+    echo ""
+    echo "📦 Plugin Installation Options:"
+    echo ""
+    echo "   **Option 1: Test with CLI Flag (Recommended for Development)**"
+    echo "   Launch Claude Code with plugin temporarily loaded:"
+    echo "   $ claude --plugin-dir ~/.claude/plugins/requirements-framework"
+    echo ""
+    echo "   **Option 2: Persistent Installation via Marketplace**"
+    echo "   For permanent installation, use the local marketplace:"
+    echo "   1. In Claude Code session, run:"
+    echo "      /plugin marketplace add $REPO_DIR/.claude-plugin/marketplace.json"
+    echo "   2. Then install the plugin:"
+    echo "      /plugin install requirements-framework@requirements-framework-local"
+    echo "   3. Verify:"
+    echo "      /requirements-framework:pre-commit"
+    echo ""
+    echo "   📖 For more details: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
+}
+
+# Show marketplace instructions
+display_marketplace_instructions
+
 # Configure hooks in settings.json (fixes empty hooks override issue)
 configure_settings_json_hooks() {
     local settings_file="$HOME/.claude/settings.json"

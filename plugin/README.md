@@ -292,6 +292,35 @@ Want test review? → /requirements-framework:pre-commit tests
 Want everything? → /requirements-framework:quality-check
 ```
 
+## Testing During Development
+
+To test plugin components without persistent installation, use Claude Code's official `--plugin-dir` flag:
+
+```bash
+# Launch Claude Code with plugin loaded
+claude --plugin-dir ~/.claude/plugins/requirements-framework
+```
+
+**Benefits:**
+- ✅ Zero risk - no system modifications
+- ✅ Live reload - changes immediately available
+- ✅ Instant verification of component structure
+- ✅ Official, documented approach
+
+**Test Checklist:**
+
+1. **Commands** - Type `/requirements-framework:` and verify autocomplete shows 3 commands
+2. **Command execution** - Run `/requirements-framework:pre-commit tools` and verify it works
+3. **Skills** - Say "Show requirements framework status" and verify skill triggers
+4. **Agents** - Check that agents are available via Task tool
+
+**Troubleshooting:**
+- If commands don't autocomplete → Check plugin.json manifest structure
+- If skills don't trigger → Verify skill description patterns match exact phrases
+- If agents unavailable → Check agent markdown files exist in agents/ directory
+
+**For persistent installation**, see [Installation](#installation) section below.
+
 ## Installation
 
 ### Current Installation

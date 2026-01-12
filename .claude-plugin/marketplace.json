@@ -1,0 +1,12 @@
+{
+  "name": "requirements-framework-local",
+  "displayName": "Requirements Framework (Local Development)",
+  "description": "Local marketplace for requirements framework plugin development",
+  "plugins": [{
+    "name": "requirements-framework",
+    "version": "2.0.4",
+    "description": "Claude Code Requirements Framework - Workflow enforcement and code review",
+    "source": "file:///Users/harm/Tools/claude-requirements-framework/plugin",
+    "manifest": "file:///Users/harm/Tools/claude-requirements-framework/plugin/.claude-plugin/plugin.json"
+  }]
+}
