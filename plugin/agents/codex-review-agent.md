@@ -1,11 +1,9 @@
 ---
 name: codex-review-agent
 description: Orchestrates OpenAI Codex code review workflow
-model: claude-sonnet-4-5
-color: yellow
-autonomous: true
-allowed-tools: ["Bash", "Read", "Grep", "Glob"]
-git_hash: fce3f91
+model: inherit
+color: blue
+git_hash: 000fe23*
 ---
 
 # Codex Code Review Agent

@@ -1,10 +1,9 @@
 ---
 name: tool-validator
 description: Execute linting and type-checking tools on staged changes to catch CI errors locally
-tools: Bash, Read, Grep, Glob
-model: haiku
+model: inherit
 color: blue
-git_hash: fce3f91
+git_hash: 000fe23*
 ---
 
 # Tool Validator Agent

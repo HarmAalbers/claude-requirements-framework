@@ -1,10 +1,9 @@
 ---
 name: backward-compatibility-checker
 description: Detect breaking changes in schemas, APIs, and contracts that break existing tests
-tools: Bash, Read, Grep, Glob
-model: sonnet
-color: orange
-git_hash: fce3f91
+model: inherit
+color: blue
+git_hash: 000fe23*
 ---
 
 # Backward Compatibility Checker Agent

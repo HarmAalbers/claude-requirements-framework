@@ -6,28 +6,19 @@
     "name": "Harm"
   },
   "repository": "https://github.com/HarmAalbers/claude-requirements-framework",
-  "skills": [
-    "skills/requirements-framework-builder/skill.md",
-    "skills/requirements-framework-development/skill.md",
-    "skills/requirements-framework-status/skill.md",
-    "skills/requirements-framework-usage/skill.md"
-  ],
-  "commands": [
-    "commands/pre-commit.md",
-    "commands/quality-check.md",
-    "commands/codex-review.md"
-  ],
+  "skills": "./skills/",
+  "commands": "./commands/",
   "agents": [
-    "agents/adr-guardian.md",
-    "agents/backward-compatibility-checker.md",
-    "agents/code-reviewer.md",
-    "agents/code-simplifier.md",
-    "agents/codex-review-agent.md",
-    "agents/comment-analyzer.md",
-    "agents/silent-failure-hunter.md",
-    "agents/test-analyzer.md",
-    "agents/tool-validator.md",
-    "agents/type-design-analyzer.md"
+    "./agents/code-reviewer.md",
+    "./agents/tool-validator.md",
+    "./agents/silent-failure-hunter.md",
+    "./agents/test-analyzer.md",
+    "./agents/type-design-analyzer.md",
+    "./agents/comment-analyzer.md",
+    "./agents/code-simplifier.md",
+    "./agents/backward-compatibility-checker.md",
+    "./agents/adr-guardian.md",
+    "./agents/codex-review-agent.md"
   ],
   "hooks": []
 }
