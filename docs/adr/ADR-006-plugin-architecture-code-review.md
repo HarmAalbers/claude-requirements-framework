@@ -25,7 +25,7 @@ This created a dependency problem:
 
 The framework plugin structure now includes:
 - `/hooks/` - Python hooks and libraries (copied to ~/.claude/hooks/)
-- `/.claude/plugins/requirements-framework/` - Plugin components (symlinked)
+- `/plugin/` - Plugin components (symlinked)
   - `/agents/` - 10 specialized agents
   - `/commands/` - 2 orchestrator commands
   - `/skills/` - 5 management skills
@@ -116,7 +116,7 @@ The framework plugin structure now includes:
 
 ### Plugin Structure
 ```
-.claude/plugins/requirements-framework/
+plugin/
 ├── .claude-plugin/
 │   └── plugin.json (v2.0.4 - updated from v2.0.3)
 ├── agents/ (10 total)
@@ -192,7 +192,7 @@ This architecture is enforced by:
 4. **Global config** - References framework namespace only
 
 New agents/commands must:
-- Be added to `.claude/plugins/requirements-framework/`
+- Be added to `plugin/`
 - Be registered in `plugin.json`
 - Use `/requirements-framework:` namespace
 - If auto-satisfying: Added to DEFAULT_SKILL_MAPPINGS or use `satisfied_by_skill` in config

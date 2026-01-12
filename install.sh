@@ -255,7 +255,7 @@ setup_plugin_symlink() {
     echo ""
     echo "🔌 Setting up plugin symlink..."
 
-    local plugin_source="$REPO_DIR/.claude/plugins/requirements-framework"
+    local plugin_source="$REPO_DIR/plugin"
     local plugin_target="$HOME/.claude/plugins/requirements-framework"
 
     # Check if plugin exists in repo
@@ -320,7 +320,7 @@ setup_plugin_symlink() {
             echo ""
             echo "   📖 Plugin documentation:"
             echo "      • Installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
-            echo "      • Plugin README: $plugin_source/README.md"
+            echo "      • Plugin README: $REPO_DIR/plugin/README.md"
             echo "      • Components: $REPO_DIR/README.md#plugin-components"
         fi
     else
@@ -816,7 +816,7 @@ echo ""
 echo "📖 Documentation:"
 echo "   • Main README: $REPO_DIR/README.md"
 echo "   • Plugin installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
-echo "   • Plugin README: $REPO_DIR/.claude/plugins/requirements-framework/README.md"
+echo "   • Plugin README: $REPO_DIR/plugin/README.md"
 echo "   • Plugin commands: /requirements-framework:pre-commit, /requirements-framework:quality-check"
 echo "   • Plugin skills: Type 'show requirements framework status' in Claude Code"
 echo "   • Config reference: $REPO_DIR/examples/"

@@ -51,7 +51,7 @@ cd ~/Tools/claude-requirements-framework
 ```
 🔌 Setting up plugin symlink...
 ✅ Plugin symlinked: ~/.claude/plugins/requirements-framework
-   → /path/to/repo/.claude/plugins/requirements-framework
+   → /path/to/repo/plugin
    Plugin version: 2.0.4
 ```
 
@@ -64,7 +64,7 @@ If you prefer manual installation or install.sh isn't available:
 mkdir -p ~/.claude/plugins
 
 # Create symlink
-ln -s ~/Tools/claude-requirements-framework/.claude/plugins/requirements-framework \
+ln -s ~/Tools/claude-requirements-framework/plugin \
       ~/.claude/plugins/requirements-framework
 
 # Verify
@@ -74,7 +74,7 @@ ls -la ~/.claude/plugins/requirements-framework
 **Verify symlink points to correct location:**
 ```bash
 readlink ~/.claude/plugins/requirements-framework
-# Expected: /path/to/repo/.claude/plugins/requirements-framework
+# Expected: /path/to/repo/plugin
 ```
 
 ### Method 3: Development Mode
@@ -83,7 +83,7 @@ Development mode is the same as Method 2 (manual installation). The symlink enab
 
 ```bash
 # Same as Method 2
-ln -s ~/Tools/claude-requirements-framework/.claude/plugins/requirements-framework \
+ln -s ~/Tools/claude-requirements-framework/plugin \
       ~/.claude/plugins/requirements-framework
 ```
 
@@ -317,10 +317,10 @@ rm ~/.claude/plugins/requirements-framework
 ```bash
 cd ~/Tools/claude-requirements-framework
 git pull
-git log --oneline -5 .claude/plugins/requirements-framework/
+git log --oneline -5 plugin/
 
 # Verify directory exists
-ls -la .claude/plugins/requirements-framework/.claude-plugin/plugin.json
+ls -la plugin/.claude-plugin/plugin.json
 ```
 
 **If missing:**
@@ -417,7 +417,7 @@ The symlink enables immediate updates without reinstallation:
 
 ```bash
 # 1. Edit agent in repo
-vim ~/Tools/claude-requirements-framework/.claude/plugins/requirements-framework/agents/code-reviewer.md
+vim ~/Tools/claude-requirements-framework/plugin/agents/code-reviewer.md
 
 # 2. Changes are live immediately (symlink)
 # No restart needed - Claude Code auto-reloads plugins
@@ -427,7 +427,7 @@ vim ~/Tools/claude-requirements-framework/.claude/plugins/requirements-framework
 
 # 4. Commit changes
 cd ~/Tools/claude-requirements-framework
-git add .claude/plugins/requirements-framework/agents/code-reviewer.md
+git add plugin/agents/code-reviewer.md
 git commit -m "feat(agent): enhance code-reviewer detection"
 ```
 
@@ -436,7 +436,7 @@ git commit -m "feat(agent): enhance code-reviewer detection"
 **Agent changes:**
 ```bash
 # Edit agent
-vim .claude/plugins/requirements-framework/agents/test-analyzer.md
+vim plugin/agents/test-analyzer.md
 
 # Test via command (agents invoked by commands)
 /requirements-framework:pre-commit tests
@@ -445,7 +445,7 @@ vim .claude/plugins/requirements-framework/agents/test-analyzer.md
 **Command changes:**
 ```bash
 # Edit command
-vim .claude/plugins/requirements-framework/commands/pre-commit.md
+vim plugin/commands/pre-commit.md
 
 # Test directly
 /requirements-framework:pre-commit all
@@ -454,7 +454,7 @@ vim .claude/plugins/requirements-framework/commands/pre-commit.md
 **Skill changes:**
 ```bash
 # Edit skill
-vim .claude/plugins/requirements-framework/skills/requirements-framework-status/skill.md
+vim plugin/skills/requirements-framework-status/skill.md
 
 # Test via natural language
 "Show requirements framework status"
@@ -518,7 +518,7 @@ requirements:
 ### Main Documentation
 - **[Main README](../README.md)** - Framework overview and quick start
 - **[Plugin Components](../README.md#plugin-components)** - Detailed agent/command/skill descriptions
-- **[Plugin README](../.claude/plugins/requirements-framework/README.md)** - Plugin-specific usage guide
+- **[Plugin README](../plugin/README.md)** - Plugin-specific usage guide
 
 ### Architecture
 - **[ADR-006: Plugin Architecture](./adr/ADR-006-plugin-architecture-code-review.md)** - Design decisions for plugin system

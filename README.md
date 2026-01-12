@@ -55,7 +55,7 @@ ls -la ~/.claude/plugins/requirements-framework
 
 For detailed installation, troubleshooting, and component reference:
 - **[Plugin Installation Guide](docs/PLUGIN-INSTALLATION.md)** - Comprehensive reference
-- **[Plugin README](.claude/plugins/requirements-framework/README.md)** - Plugin-specific docs
+- **[Plugin README](plugin/README.md)** - Plugin-specific docs
 - **[Plugin Components](#plugin-components)** (below) - Agent/command/skill descriptions
 
 ### Project Setup
