@@ -43,6 +43,8 @@ __all__ = [
     "HookConfigAccess",
     "ConfigStateAccess",
     "ConfigOverridesWriter",
+    "ConfigIO",
+    "ConfigUtilsIO",
     "matches_trigger",
     "load_yaml",
     "deep_merge",
@@ -242,6 +244,25 @@ class ConfigOverridesWriter(Protocol):
         preserve_inherit: bool = True,
     ) -> str:
         ...
+
+
+class ConfigIO(Protocol):
+    load_yaml: Callable[[Path], RequirementsConfigData]
+    deep_merge: Callable[
+        [MutableMapping[str, Any], Mapping[str, Any]], MutableMapping[str, Any]
+    ]
+    write_local_config: ConfigWriter
+    write_project_config: ConfigWriter
+
+
+@dataclass(frozen=True)
+class ConfigUtilsIO:
+    load_yaml: Callable[[Path], RequirementsConfigData] = load_yaml
+    deep_merge: Callable[
+        [MutableMapping[str, Any], Mapping[str, Any]], MutableMapping[str, Any]
+    ] = deep_merge
+    write_local_config: ConfigWriter = write_local_config
+    write_project_config: ConfigWriter = write_project_config
 
 
 @dataclass(frozen=True)
@@ -670,6 +691,8 @@ class RequirementsConfig:
         requirement_schema: Optional[Mapping[str, RequirementFieldRule]] = None,
         field_validators: Optional[Mapping[str, RequirementFieldValidator]] = None,
         type_validators: Optional[Mapping[str, RequirementTypeValidator]] = None,
+        *,
+        config_io: Optional[ConfigIO] = None,
     ):
         """
         Initialize config for project.
@@ -679,9 +702,11 @@ class RequirementsConfig:
             requirement_schema: Optional schema override for requirement fields
             field_validators: Optional field-specific validators keyed by field name
             type_validators: Optional requirement-type validators keyed by type name
+            config_io: Optional config I/O provider for load/merge/write operations
         """
         self.project_dir: str = project_dir
         self._project_root: Path = Path(project_dir)
+        self._io: ConfigIO = config_io or ConfigUtilsIO()
         self._paths = ConfigPaths(
             project_root=self._project_root,
             claude_dirname=self.CLAUDE_DIRNAME,
@@ -728,7 +753,7 @@ class RequirementsConfig:
 
     def _load_config(self, path: Path) -> RequirementsConfigData:
         """Load configuration from an existing path."""
-        return cast(RequirementsConfigData, load_yaml(path) or {})
+        return cast(RequirementsConfigData, self._io.load_yaml(path) or {})
 
     def _load_config_if_exists(self, path: Path) -> RequirementsConfigData:
         """Load configuration from path if it exists."""
@@ -829,7 +854,7 @@ class RequirementsConfig:
     ) -> RequirementsConfigData:
         """Merge project config into base config with inherit handling."""
         if project_config.get("inherit", True):
-            deep_merge(config, project_config)
+            self._io.deep_merge(config, project_config)
             return config
         return project_config
 
@@ -838,7 +863,7 @@ class RequirementsConfig:
     ) -> None:
         """Apply local overrides onto the current config."""
         if local_config:
-            deep_merge(config, local_config)
+            self._io.deep_merge(config, local_config)
 
     def _validate_and_prune_requirements(self, config: MutableMapping[str, Any]) -> None:
         """Validate requirements and remove invalid entries."""
@@ -940,7 +965,7 @@ class RequirementsConfig:
             existing_config,
             enabled,
             requirement_overrides,
-            write_local_config,
+            self._io.write_local_config,
         )
 
     def write_project_override(
@@ -994,7 +1019,7 @@ class RequirementsConfig:
             existing_config,
             enabled,
             requirement_overrides,
-            write_project_config,
+            self._io.write_project_config,
         )
 
     def get_requirement(self, name: str) -> Optional[RequirementConfigDict]:
