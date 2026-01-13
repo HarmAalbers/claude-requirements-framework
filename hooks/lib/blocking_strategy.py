@@ -63,7 +63,18 @@ class BlockingRequirementStrategy(RequirementStrategy):
         Returns:
             Hook response dict
         """
-        req_config = config.get_requirement(req_name)
+        # Get requirement config using type-safe accessor
+        # For blocking requirements, use get_blocking_config() for type safety
+        # Falls back to get_requirement() if type-specific accessor fails
+        try:
+            req_config = config.get_blocking_config(req_name)
+            if not req_config:
+                # Requirement not found - use generic accessor as fallback
+                req_config = config.get_requirement(req_name)
+        except ValueError:
+            # Not a blocking type - use generic accessor as fallback
+            req_config = config.get_requirement(req_name)
+
         message = req_config.get('message', f'Requirement "{req_name}" not satisfied.')
 
         # Add checklist if present

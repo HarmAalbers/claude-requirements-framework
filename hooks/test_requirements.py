@@ -694,6 +694,126 @@ def test_config_module(runner: TestRunner):
         runner.test("Validation errors captured", len(errors) == 3, f"Got: {errors}")
         runner.test("Invalid requirements removed", config3.get_all_requirements() == [])
 
+        # Test type-safe config accessors (LSP compliance)
+        print("\n📦 Testing type-safe config accessors...")
+
+        # Test 1: Dynamic requirement with missing required fields
+        invalid_dynamic_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "invalid_dynamic": {
+                    "type": "dynamic",
+                    "enabled": True,
+                    # Missing 'calculator' and 'thresholds'
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(invalid_dynamic_config, f)
+
+        config4 = RequirementsConfig(tmpdir)
+        try:
+            result = config4.get_dynamic_config('invalid_dynamic')
+            runner.test("Dynamic config validates required fields", result is None)
+        except ValueError:
+            runner.test("Dynamic config validates required fields", True)
+
+        # Test 2: Guard requirement with missing required field
+        invalid_guard_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "invalid_guard": {
+                    "type": "guard",
+                    "enabled": True,
+                    # Missing 'guard_type'
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(invalid_guard_config, f)
+
+        config5 = RequirementsConfig(tmpdir)
+        try:
+            result = config5.get_guard_config('invalid_guard')
+            runner.test("Guard config validates required fields", result is None)
+        except ValueError:
+            runner.test("Guard config validates required fields", True)
+
+        # Test 3: Blocking requirement works without type-specific fields
+        blocking_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "simple_blocking": {
+                    "type": "blocking",
+                    "enabled": True,
+                    "scope": "session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(blocking_config, f)
+
+        config6 = RequirementsConfig(tmpdir)
+        req_config = config6.get_blocking_config('simple_blocking')
+        runner.test("Blocking config works without type fields", req_config is not None)
+
+        # Test 4: Valid dynamic requirement returns correct config
+        valid_dynamic_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "valid_dynamic": {
+                    "type": "dynamic",
+                    "enabled": True,
+                    "calculator": "branch_size_calculator",
+                    "thresholds": {"block": 100, "warn": 50}
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(valid_dynamic_config, f)
+
+        config7 = RequirementsConfig(tmpdir)
+        dyn_config = config7.get_dynamic_config('valid_dynamic')
+        runner.test("Dynamic config returns valid config", dyn_config is not None)
+        if dyn_config:
+            runner.test("Dynamic config has calculator", dyn_config.get('calculator') == 'branch_size_calculator')
+            runner.test("Dynamic config has thresholds", dyn_config.get('thresholds') == {"block": 100, "warn": 50})
+
+        # Test 5: Valid guard requirement returns correct config
+        valid_guard_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "valid_guard": {
+                    "type": "guard",
+                    "enabled": True,
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(valid_guard_config, f)
+
+        config8 = RequirementsConfig(tmpdir)
+        guard_config = config8.get_guard_config('valid_guard')
+        runner.test("Guard config returns valid config", guard_config is not None)
+        if guard_config:
+            runner.test("Guard config has guard_type", guard_config.get('guard_type') == 'protected_branch')
+
+        # Test 6: Legacy get_attribute still works
+        attr_value = config7.get_attribute('valid_dynamic', 'calculator')
+        runner.test("Legacy get_attribute still works", attr_value == 'branch_size_calculator')
+
 
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""

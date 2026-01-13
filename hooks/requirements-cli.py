@@ -350,11 +350,15 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
         print(header("\n📊 Dynamic Requirements:"))
         for req_name in dynamic_reqs:
             try:
-                # Load calculator
-                calculator_name = config.get_attribute(req_name, 'calculator')
-                if not calculator_name:
-                    print(warning(f"  ⚠️  {req_name}: No calculator configured"))
+                # Get dynamic config using type-safe accessor
+                req_config = config.get_dynamic_config(req_name)
+                if not req_config:
+                    print(warning(f"  ⚠️  {req_name}: Dynamic requirement not found"))
                     continue
+
+                # Type system now guarantees these fields exist
+                calculator_name = req_config['calculator']
+                thresholds = req_config['thresholds']
 
                 calc_module = __import__(f'lib.{calculator_name}', fromlist=[calculator_name])
                 calculator = calc_module.Calculator()
@@ -363,7 +367,6 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
                 result = calculator.calculate(project_dir, branch)
 
                 if result:
-                    thresholds = config.get_attribute(req_name, 'thresholds', {})
                     value = result.get('value', 0)
 
                     # Determine status and color

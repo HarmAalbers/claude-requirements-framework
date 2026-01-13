@@ -52,8 +52,19 @@ class GuardRequirementStrategy(RequirementStrategy):
         if reqs.is_satisfied(req_name, scope='session'):
             return None  # Approved, allow
 
-        # Get guard type and dispatch to handler
-        guard_type = config.get_attribute(req_name, 'guard_type', None)
+        # Get guard type using type-safe accessor
+        try:
+            req_config = config.get_guard_config(req_name)
+            if not req_config:
+                # Requirement not found - fail open
+                return None
+            # Type system now guarantees 'guard_type' field exists
+            guard_type = req_config['guard_type']
+        except ValueError as e:
+            # Invalid config - fail open with warning
+            from lib.logger import log_warning
+            log_warning(f"Invalid guard requirement config for '{req_name}': {e}")
+            return None
 
         if guard_type == 'protected_branch':
             return self._check_protected_branch(req_name, config, context)
@@ -79,10 +90,18 @@ class GuardRequirementStrategy(RequirementStrategy):
         if not branch:
             return None  # No branch info - fail open
 
-        # Get protected branches list (default: master, main)
-        protected_branches = config.get_attribute(
-            req_name, 'protected_branches', ['master', 'main']
-        )
+        # Get protected branches list using type-safe accessor
+        try:
+            req_config = config.get_guard_config(req_name)
+            if not req_config:
+                return None  # Requirement not found - fail open
+            # 'protected_branches' is optional, so use .get() with default
+            protected_branches = req_config.get('protected_branches', ['master', 'main'])
+        except ValueError as e:
+            # Invalid config - fail open with warning
+            from lib.logger import log_warning
+            log_warning(f"Invalid guard requirement config for '{req_name}': {e}")
+            return None
 
         if branch in protected_branches:
             # On protected branch - create denial response

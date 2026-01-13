@@ -58,6 +58,62 @@ class TriggerToolConfig(TypedDict, total=False):
 TriggerSpec = Union[str, TriggerToolConfig]
 
 
+# Type-safe requirement configuration classes
+# These provide explicit contracts for each requirement type with proper LSP compliance
+
+
+class RequirementConfigBase(TypedDict, total=False):
+    """Base configuration fields shared by all requirement types."""
+
+    enabled: bool
+    scope: RequirementScope
+    trigger_tools: list[TriggerSpec]
+    checklist: list[str]
+    message: str
+    satisfied_by_skill: str
+
+
+class BlockingRequirementConfig(RequirementConfigBase, total=False):
+    """Configuration for blocking (manually satisfied) requirements.
+
+    Inherits all base fields with no additional required fields.
+    """
+
+    type: Literal["blocking"]
+
+
+class DynamicRequirementConfig(RequirementConfigBase):
+    """Configuration for dynamic (calculated) requirements.
+
+    Inherits base fields and adds REQUIRED calculator and thresholds fields.
+    """
+
+    type: Literal["dynamic"]
+    calculator: str  # REQUIRED
+    thresholds: dict[str, float]  # REQUIRED
+
+
+class GuardRequirementConfig(RequirementConfigBase):
+    """Configuration for guard (condition-based) requirements.
+
+    Inherits base fields and adds REQUIRED guard_type field.
+    """
+
+    type: Literal["guard"]
+    guard_type: str  # REQUIRED
+    protected_branches: list[str]  # Optional
+
+
+# Union for polymorphic access
+RequirementConfig = Union[
+    BlockingRequirementConfig,
+    DynamicRequirementConfig,
+    GuardRequirementConfig,
+]
+
+
+# Legacy TypedDict - DEPRECATED
+# Use typed configs above for type-safe access to requirement-specific fields
 class RequirementConfigDict(TypedDict, total=False):
     enabled: bool
     scope: RequirementScope
@@ -916,6 +972,14 @@ class RequirementsConfig:
         Generic accessor prevents method explosion (ISP compliance).
         New requirement attributes don't require new methods.
 
+        DEPRECATED for type-specific fields (calculator, guard_type, thresholds):
+        - Use get_dynamic_config() for 'calculator' and 'thresholds' fields
+        - Use get_guard_config() for 'guard_type' field
+        - Use get_blocking_config() for blocking requirements
+
+        Type-safe accessors provide compile-time guarantees and fail-fast validation.
+        Continue using this method for common fields (enabled, scope, message, etc.).
+
         Args:
             req_name: Requirement name
             attr: Attribute name to retrieve
@@ -928,6 +992,111 @@ class RequirementsConfig:
         if req is None:
             return default
         return req.get(attr, default)
+
+    def get_blocking_config(self, req_name: str) -> Optional[BlockingRequirementConfig]:
+        """
+        Get type-safe blocking requirement configuration.
+
+        Returns blocking config with guaranteed base fields only.
+        No type-specific required fields for blocking requirements.
+
+        Args:
+            req_name: Requirement name
+
+        Returns:
+            BlockingRequirementConfig if found and valid, None otherwise
+
+        Raises:
+            ValueError: If requirement exists but is not blocking type
+        """
+        req = self.get_requirement(req_name)
+        if req is None:
+            return None
+
+        req_type = req.get("type", "blocking")
+        if req_type != "blocking":
+            raise ValueError(
+                f"Requirement '{req_name}' is type '{req_type}', expected 'blocking'"
+            )
+
+        # Blocking requirements don't have required type-specific fields
+        return cast(BlockingRequirementConfig, req)
+
+    def get_dynamic_config(self, req_name: str) -> Optional[DynamicRequirementConfig]:
+        """
+        Get type-safe dynamic requirement configuration.
+
+        Returns dynamic config with guaranteed 'calculator' and 'thresholds' fields.
+
+        Args:
+            req_name: Requirement name
+
+        Returns:
+            DynamicRequirementConfig with guaranteed required fields, None if not found
+
+        Raises:
+            ValueError: If requirement exists but is not dynamic type or missing required fields
+        """
+        req = self.get_requirement(req_name)
+        if req is None:
+            return None
+
+        req_type = req.get("type", "blocking")
+        if req_type != "dynamic":
+            raise ValueError(
+                f"Requirement '{req_name}' is type '{req_type}', expected 'dynamic'"
+            )
+
+        # Validate required fields for dynamic requirements
+        calculator = req.get("calculator")
+        if not calculator:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required field 'calculator'"
+            )
+
+        thresholds = req.get("thresholds")
+        if not thresholds:
+            raise ValueError(
+                f"Dynamic requirement '{req_name}' missing required field 'thresholds'"
+            )
+
+        # Type checker now knows these fields exist
+        return cast(DynamicRequirementConfig, req)
+
+    def get_guard_config(self, req_name: str) -> Optional[GuardRequirementConfig]:
+        """
+        Get type-safe guard requirement configuration.
+
+        Returns guard config with guaranteed 'guard_type' field.
+
+        Args:
+            req_name: Requirement name
+
+        Returns:
+            GuardRequirementConfig with guaranteed guard_type field, None if not found
+
+        Raises:
+            ValueError: If requirement exists but is not guard type or missing required field
+        """
+        req = self.get_requirement(req_name)
+        if req is None:
+            return None
+
+        req_type = req.get("type", "blocking")
+        if req_type != "guard":
+            raise ValueError(
+                f"Requirement '{req_name}' is type '{req_type}', expected 'guard'"
+            )
+
+        # Validate required field for guard requirements
+        guard_type = req.get("guard_type")
+        if not guard_type:
+            raise ValueError(
+                f"Guard requirement '{req_name}' missing required field 'guard_type'"
+            )
+
+        # Type checker now knows this field exists
+        return cast(GuardRequirementConfig, req)
 
     def get_requirement_type(self, req_name: str) -> RequirementType:
         """

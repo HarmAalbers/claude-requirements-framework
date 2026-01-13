@@ -147,10 +147,16 @@ class DynamicRequirementStrategy(RequirementStrategy):
         if req_name in self.calculators:
             return self.calculators[req_name]
 
-        # Get calculator module name from config
-        module_name = config.get_attribute(req_name, 'calculator')
-        if not module_name:
-            log_error(f"No calculator configured for '{req_name}'")
+        # Get calculator module name from config using type-safe accessor
+        try:
+            req_config = config.get_dynamic_config(req_name)
+            if not req_config:
+                log_error(f"Dynamic requirement '{req_name}' not found")
+                return None
+            # Type system now guarantees 'calculator' field exists
+            module_name = req_config['calculator']
+        except ValueError as e:
+            log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
             return None
 
         try:
@@ -198,7 +204,18 @@ class DynamicRequirementStrategy(RequirementStrategy):
             None if passes
             Dict with denial response if blocked
         """
-        thresholds = config.get_attribute(req_name, 'thresholds', {})
+        # Get thresholds using type-safe accessor
+        try:
+            req_config = config.get_dynamic_config(req_name)
+            if not req_config:
+                log_error(f"Dynamic requirement '{req_name}' not found")
+                return None
+            # Type system now guarantees 'thresholds' field exists
+            thresholds = req_config['thresholds']
+        except ValueError as e:
+            log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
+            return None
+
         value = result.get('value', 0)
 
         # Check block threshold first (most severe)
