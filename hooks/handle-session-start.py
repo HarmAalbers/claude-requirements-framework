@@ -138,8 +138,7 @@ def main() -> int:
 
         # Check if project has its own config
         project_config_yaml = Path(project_dir) / '.claude' / 'requirements.yaml'
-        project_config_json = Path(project_dir) / '.claude' / 'requirements.json'
-        has_project_config = project_config_yaml.exists() or project_config_json.exists()
+        has_project_config = project_config_yaml.exists()
 
         # Suggest init if no project config (only on startup, not resume/compact)
         source = input_data.get('source', 'startup')

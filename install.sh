@@ -741,11 +741,8 @@ try:
         yaml.safe_load(f)
     sys.exit(0)
 except ImportError:
-    # PyYAML not installed, try JSON fallback
-    import json
-    with open(sys.argv[1], 'r') as f:
-        f.read()
-    sys.exit(0)
+    print("ERROR: PyYAML is required to parse requirements.yaml", file=sys.stderr)
+    sys.exit(1)
 except Exception as e:
     print(f"ERROR: {e}", file=sys.stderr)
     sys.exit(1)

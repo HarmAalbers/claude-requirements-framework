@@ -159,7 +159,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ### Design Principles
 - **Fail-open**: Errors in the hook never block work
-- **Zero dependencies**: Python stdlib only (PyYAML optional, falls back to JSON)
+- **Dependencies**: Python stdlib + PyYAML for YAML config parsing
 - **Strategy pattern**: Extensible requirement types via modular strategy architecture (see `hooks/lib/*_strategy.py`)
 
 ## Testing Plugin Components

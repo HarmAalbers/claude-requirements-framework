@@ -106,9 +106,8 @@ def main() -> int:
 
         # Check if project has requirements config
         config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-        config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-        if not config_file.exists() and not config_file_json.exists():
+        if not config_file.exists():
             return 0  # No requirements config
 
         # Must be a git repo

@@ -698,7 +698,7 @@ def test_config_module(runner: TestRunner):
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""
     print("\n📝 Testing write_local_config and write_local_override...")
-    from config import RequirementsConfig, load_yaml_or_json
+    from config import RequirementsConfig, load_yaml
     from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -725,17 +725,12 @@ def test_write_local_config(runner: TestRunner):
         config.write_local_override(enabled=False)
 
         local_file = claude_dir / 'requirements.local.yaml'
-        local_file_json = claude_dir / 'requirements.local.json'
 
-        # File should exist (either YAML or JSON depending on PyYAML availability)
-        runner.test("Local config file created",
-                   local_file.exists() or local_file_json.exists())
+        # File should exist
+        runner.test("Local config file created", local_file.exists())
 
         # Read back and verify
-        if local_file.exists():
-            local_config = load_yaml_or_json(local_file)
-        else:
-            local_config = load_yaml_or_json(local_file_json)
+        local_config = load_yaml(local_file)
 
         runner.test("Enabled field set to False", not local_config.get('enabled'))
         runner.test("Version field added", local_config.get('version') == '1.0')
@@ -743,10 +738,7 @@ def test_write_local_config(runner: TestRunner):
         # Test 2: Update existing config
         config.write_local_override(enabled=True)
 
-        if local_file.exists():
-            local_config = load_yaml_or_json(local_file)
-        else:
-            local_config = load_yaml_or_json(local_file_json)
+        local_config = load_yaml(local_file)
 
         runner.test("Enabled field updated to True", local_config.get('enabled'))
 
@@ -755,10 +747,7 @@ def test_write_local_config(runner: TestRunner):
             requirement_overrides={'commit_plan': False}
         )
 
-        if local_file.exists():
-            local_config = load_yaml_or_json(local_file)
-        else:
-            local_config = load_yaml_or_json(local_file_json)
+        local_config = load_yaml(local_file)
 
         runner.test(
             "Requirement override added",
@@ -785,8 +774,9 @@ def test_write_local_config(runner: TestRunner):
 def test_write_project_config(runner: TestRunner):
     """Test writing project config modifications."""
     print("\n📝 Testing write_project_config and write_project_override...")
-    from config import RequirementsConfig, load_yaml_or_json
+    from config import RequirementsConfig, load_yaml
     from pathlib import Path
+    import yaml
 
     with tempfile.TemporaryDirectory() as tmpdir:
         claude_dir = Path(tmpdir) / '.claude'
@@ -802,26 +792,21 @@ def test_write_project_config(runner: TestRunner):
         # Verify YAML format (not JSON)
         runner.test("Uses YAML extension", project_file.suffix == '.yaml')
 
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
         runner.test("Enabled field set to True", project_config.get('enabled'))
         runner.test("Version field added", project_config.get('version') == '1.0')
         runner.test("Inherit flag added by default", project_config.get('inherit'))
 
         # Test 2: Update existing config (preserve inherit)
         # First, manually set inherit to False
-        existing = load_yaml_or_json(project_file)
+        existing = load_yaml(project_file)
         existing['inherit'] = False
-        try:
-            import yaml
-            with open(project_file, 'w') as f:
-                yaml.safe_dump(existing, f)
-        except ImportError:
-            with open(project_file, 'w') as f:
-                json.dump(existing, f)
+        with open(project_file, 'w') as f:
+            yaml.safe_dump(existing, f)
 
         # Now update enabled
         config.write_project_override(enabled=False)
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
 
         runner.test("Enabled field updated to False", not project_config.get('enabled'))
         runner.test("Inherit False preserved", not project_config.get('inherit'))
@@ -831,7 +816,7 @@ def test_write_project_config(runner: TestRunner):
             requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
         )
 
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
         runner.test(
             "Requirement override added",
             project_config.get('requirements', {}).get('adr_reviewed', {}).get('adr_path') == '/docs/adr'
@@ -850,7 +835,7 @@ def test_write_project_config(runner: TestRunner):
             requirement_overrides={'commit_plan': {'enabled': True, 'scope': 'session'}}
         )
 
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
         commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
         runner.test("New requirement added", commit_plan.get('enabled'))
         runner.test("New requirement scope set", commit_plan.get('scope') == 'session')
@@ -864,7 +849,7 @@ def test_write_project_config(runner: TestRunner):
             }
         )
 
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
         commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
         runner.test("Requirement scope updated", commit_plan.get('scope') == 'branch')
         runner.test("Requirement message added", commit_plan.get('message') == 'Custom message')
@@ -882,23 +867,18 @@ def test_write_project_config(runner: TestRunner):
         )
 
         # Test 7: Preserve existing hooks section
-        existing = load_yaml_or_json(project_file)
+        existing = load_yaml(project_file)
         existing['hooks'] = {
             'stop': {'verify_requirements': True}
         }
-        try:
-            import yaml
-            with open(project_file, 'w') as f:
-                yaml.safe_dump(existing, f)
-        except ImportError:
-            with open(project_file, 'w') as f:
-                json.dump(existing, f)
+        with open(project_file, 'w') as f:
+            yaml.safe_dump(existing, f)
 
         config.write_project_override(
             requirement_overrides={'github_ticket': {'enabled': True}}
         )
 
-        project_config = load_yaml_or_json(project_file)
+        project_config = load_yaml(project_file)
         runner.test("Hooks section preserved", 'hooks' in project_config)
         runner.test("Hook config preserved",
                    project_config.get('hooks', {}).get('stop', {}).get('verify_requirements'))
@@ -917,7 +897,7 @@ def test_write_project_config(runner: TestRunner):
             new_project_file = new_claude_dir / 'requirements.yaml'
             runner.test("Creates new project config", new_project_file.exists())
 
-            new_project_config = load_yaml_or_json(new_project_file)
+            new_project_config = load_yaml(new_project_file)
             runner.test("New config has inherit: true", new_project_config.get('inherit'))
             runner.test("New config has version", new_project_config.get('version') == '1.0')
             runner.test("New config has requirement", 'test_req' in new_project_config.get('requirements', {}))
@@ -971,9 +951,7 @@ requirements:
 
         # Verify local config created
         local_file = claude_dir / 'requirements.local.yaml'
-        local_file_json = claude_dir / 'requirements.local.json'
-        runner.test("Local config file created",
-                   local_file.exists() or local_file_json.exists())
+        runner.test("Local config file created", local_file.exists())
 
         # Test enable command
         result = subprocess.run(
@@ -1009,7 +987,7 @@ def test_cli_config_project_modify(runner: TestRunner):
     print("\n🔧 Testing CLI config --project command...")
     import subprocess
     from pathlib import Path
-    from config import load_yaml_or_json
+    from config import load_yaml
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Initialize git repo
@@ -1047,7 +1025,7 @@ requirements:
                    f"stdout: {result.stdout}, stderr: {result.stderr}")
 
         # Verify project config updated
-        project_config = load_yaml_or_json(config_file)
+        project_config = load_yaml(config_file)
 
         runner.test("Project config updated",
                    project_config.get('requirements', {}).get('adr_reviewed', {}).get('adr_path') == '/docs/adr')
@@ -1058,9 +1036,7 @@ requirements:
 
         # Verify local config NOT created
         local_file = claude_dir / 'requirements.local.yaml'
-        local_json = claude_dir / 'requirements.local.json'
-        runner.test("Local config not created",
-                   not local_file.exists() and not local_json.exists())
+        runner.test("Local config not created", not local_file.exists())
 
 
 def test_requirements_manager(runner: TestRunner):

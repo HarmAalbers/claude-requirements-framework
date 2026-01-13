@@ -371,11 +371,11 @@ else
     echo "⚠ ~/.claude/hooks directory does not exist (will be created)"
 fi
 
-# PyYAML (optional)
+# PyYAML (required)
 if python3 -c "import yaml" 2>/dev/null; then
-    echo "✓ PyYAML installed (optional)"
+    echo "✓ PyYAML installed"
 else
-    echo "⚠ PyYAML not installed (will use JSON fallback)"
+    echo "✗ PyYAML not installed (required for YAML config)"
 fi
 
 echo ""

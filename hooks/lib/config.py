@@ -7,9 +7,8 @@ Implements cascading configuration:
 2. Project config (.claude/requirements.yaml) - committed to repo
 3. Local overrides (.claude/requirements.local.yaml) - gitignored
 
-Config files can be YAML (if PyYAML available) or JSON (fallback).
+Config files are YAML (PyYAML required).
 """
-import json
 import re
 import sys
 from pathlib import Path
@@ -18,7 +17,7 @@ from typing import Optional
 # Import utilities from config_utils (the canonical location)
 from config_utils import (
     deep_merge,
-    load_yaml_or_json,
+    load_yaml,
     matches_trigger,
     write_local_config,
     write_project_config,
@@ -28,7 +27,7 @@ from config_utils import (
 __all__ = [
     'RequirementsConfig',
     'matches_trigger',
-    'load_yaml_or_json',
+    'load_yaml',
     'deep_merge',
     'write_local_config',
     'write_project_config',
@@ -55,7 +54,7 @@ class RequirementsConfig:
     DEFAULT_VERSION = '1.0'
     CLAUDE_DIRNAME = '.claude'
     PROJECT_CONFIG_FILENAME = 'requirements.yaml'
-    LOCAL_OVERRIDE_FILENAMES = ('requirements.local.yaml', 'requirements.local.json')
+    LOCAL_OVERRIDE_FILENAMES = ('requirements.local.yaml',)
     HOOK_DEFAULTS = {
         'session_start': {
             'inject_context': True,
@@ -110,7 +109,7 @@ class RequirementsConfig:
 
     def _load_config(self, path: Path) -> dict:
         """Load configuration from an existing path."""
-        return load_yaml_or_json(path) or {}
+        return load_yaml(path) or {}
 
     def _load_config_if_exists(self, path: Path) -> dict:
         """Load configuration from path if it exists."""
@@ -777,9 +776,12 @@ class RequirementsConfig:
 
 
 if __name__ == "__main__":
-    import json
     import tempfile
     import os
+    try:
+        import yaml
+    except ImportError as e:
+        raise ImportError("PyYAML is required for config tests.") from e
 
     # Quick test with temp directory
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -798,7 +800,7 @@ if __name__ == "__main__":
         }
 
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(config_content, f)
+            yaml.safe_dump(config_content, f, default_flow_style=False, sort_keys=False)
 
         # Test loading
         config = RequirementsConfig(tmpdir)

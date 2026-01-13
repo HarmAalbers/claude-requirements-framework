@@ -499,7 +499,7 @@ requirements:
 1. **Framework in `~/.claude`** - User-level installation, not per-project
 2. **Projects opt-in via config** - Minimal footprint, versioned config
 3. **State is local** - Never committed, per-branch tracking
-4. **Zero dependencies** - Pure stdlib (PyYAML optional)
+4. **Dependencies** - Python stdlib + PyYAML for YAML config parsing
 5. **Fail-open** - Errors don't block work
 6. **Plan files whitelisted** - No chicken-and-egg problems
 

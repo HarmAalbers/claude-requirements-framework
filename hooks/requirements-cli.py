@@ -26,7 +26,7 @@ lib_path = Path(__file__).resolve().parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from config import RequirementsConfig, load_yaml_or_json
+from config import RequirementsConfig, load_yaml
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
 from state_storage import list_all_states
@@ -174,9 +174,8 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-    if not config_file.exists() and not config_file_json.exists():
+    if not config_file.exists():
         print(info("ℹ️  No requirements configured for this project."))
         print(dim("   Run 'req init' to set up requirements"))
         return 0
@@ -282,9 +281,8 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-    if not config_file.exists() and not config_file_json.exists():
+    if not config_file.exists():
         print(info("ℹ️  No requirements configured for this project."))
         print(dim("   Create .claude/requirements.yaml to enable."))
         return 0
@@ -427,9 +425,8 @@ def cmd_satisfy(args) -> int:
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-    if not config_file.exists() and not config_file_json.exists():
+    if not config_file.exists():
         print(warning("⚠️  No requirements configured for this project."), file=sys.stderr)
         # Still allow satisfying (for testing)
 
@@ -827,10 +824,6 @@ def _check_project_config(project_dir: str) -> tuple[bool, str]:
     if config_path.exists():
         return True, f"Found project config at {config_path}"
 
-    legacy_path = Path(project_dir) / ".claude" / "requirements.json"
-    if legacy_path.exists():
-        return False, "Found requirements.json; migrate to requirements.yaml"
-
     return False, "Missing .claude/requirements.yaml in project"
 
 
@@ -1054,7 +1047,7 @@ def _check_python_version() -> dict:
 
 
 def _check_pyyaml_available() -> dict:
-    """Check if PyYAML is installed (optional)."""
+    """Check if PyYAML is installed."""
     try:
         import yaml
         return {
@@ -1069,11 +1062,11 @@ def _check_pyyaml_available() -> dict:
         return {
             'id': 'pyyaml',
             'category': 'environment',
-            'status': 'pass',  # Not critical
-            'severity': 'info',
-            'message': 'PyYAML not installed (optional - framework uses JSON fallback)',
+            'status': 'fail',
+            'severity': 'critical',
+            'message': 'PyYAML not installed (required for config parsing)',
             'fix': {
-                'description': 'Install PyYAML for better config handling: pip install pyyaml',
+                'description': 'Install PyYAML: pip install pyyaml',
                 'safe': False,
                 'command': None
             }
@@ -1592,9 +1585,8 @@ def cmd_enable(args) -> int:
 
     # Check if project has any config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-    config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-    if not config_file.exists() and not config_file_json.exists():
+    if not config_file.exists():
         print(info("ℹ️  No requirements configured for this project."), file=sys.stderr)
         print(dim("   Create .claude/requirements.yaml to configure requirements."))
         print(dim("   See: ~/.claude/requirements.yaml for examples"))
@@ -1912,7 +1904,7 @@ def _cmd_config_show_with_sources(config: RequirementsConfig, args) -> int:
     ]:
         if path.exists():
             try:
-                sources[name] = load_yaml_or_json(path)
+                sources[name] = load_yaml(path)
             except (OSError, IOError) as e:
                 print(warning(f"⚠️  Failed to read {name} config: {path}"), file=sys.stderr)
                 print(dim(f"   Error: {e}"), file=sys.stderr)

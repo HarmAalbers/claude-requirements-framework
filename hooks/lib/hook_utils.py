@@ -57,9 +57,8 @@ def early_hook_setup(
         try:
             # Check if project has requirements config
             config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-            config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
 
-            if config_file.exists() or config_file_json.exists():
+            if config_file.exists():
                 config = RequirementsConfig(project_dir)
         except Exception as e:
             # Config loading failed - fail open with basic logger

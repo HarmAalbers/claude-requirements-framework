@@ -5,10 +5,9 @@ Configuration utilities for requirements framework.
 This module contains standalone helper functions used by config.py and other
 modules. These utilities handle:
 - Trigger matching for tool invocations
-- Config file I/O (YAML/JSON with fallbacks)
+- Config file I/O (YAML)
 - Dictionary merging for config cascades
 """
-import json
 import os
 import re
 import sys
@@ -69,11 +68,9 @@ def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
     return False
 
 
-def load_yaml_or_json(path: Path) -> dict:
+def load_yaml(path: Path) -> dict:
     """
-    Load config file, preferring YAML if available.
-
-    Falls back to JSON parsing if PyYAML is not installed.
+    Load config file as YAML.
 
     Args:
         path: Path to config file
@@ -84,34 +81,25 @@ def load_yaml_or_json(path: Path) -> dict:
     if not path.exists():
         return {}
 
-    content = path.read_text()
-
-    # Try YAML first
     try:
         import yaml
-        return yaml.safe_load(content) or {}
     except ImportError:
-        pass  # PyYAML not available, try JSON
-    except Exception as e:
-        print(f"⚠️ YAML parse error in {path}: {e}", file=sys.stderr)
+        print(
+            "⚠️ PyYAML is required to load config files. Install with: pip install pyyaml",
+            file=sys.stderr
+        )
         return {}
 
-    # Try JSON
     try:
-        return json.loads(content)
-    except json.JSONDecodeError as e:
-        # Check if it looks like YAML (has colons but no proper JSON structure)
-        if ':' in content and not content.strip().startswith('{'):
-            print(
-                f"⚠️ Config {path} appears to be YAML but PyYAML is not installed. "
-                "Install with: pip install pyyaml",
-                file=sys.stderr
-            )
-        else:
-            print(f"⚠️ JSON parse error in {path}: {e}", file=sys.stderr)
-        return {}
+        content = path.read_text()
     except Exception as e:
-        print(f"⚠️ Could not load {path}: {e}", file=sys.stderr)
+        print(f"⚠️ Could not read {path}: {e}", file=sys.stderr)
+        return {}
+
+    try:
+        return yaml.safe_load(content) or {}
+    except Exception as e:
+        print(f"⚠️ YAML parse error in {path}: {e}", file=sys.stderr)
         return {}
 
 
@@ -140,8 +128,8 @@ def write_local_config(project_dir: str, config_data: dict) -> str:
     """
     Write configuration to local override file.
 
-    Tries to write YAML if PyYAML is available, otherwise falls back to JSON.
-    The local config file is gitignored and overrides project/global config.
+    Writes YAML only. The local config file is gitignored and overrides
+    project/global config.
 
     Args:
         project_dir: Project directory
@@ -152,50 +140,43 @@ def write_local_config(project_dir: str, config_data: dict) -> str:
 
     Raises:
         OSError: If write fails
+        ImportError: If PyYAML not available (required for local config)
     """
     # Ensure .claude directory exists
     claude_dir = Path(project_dir) / '.claude'
     claude_dir.mkdir(parents=True, exist_ok=True)
 
-    # Try to write as YAML first (preferred format)
     local_file = claude_dir / 'requirements.local.yaml'
+
     try:
         import yaml
-        with open(local_file, 'w') as f:
-            yaml.safe_dump(
-                config_data,
-                f,
-                default_flow_style=False,
-                sort_keys=False,
-                allow_unicode=True
-            )
-        # Return relative path if possible
-        try:
-            return str(local_file.relative_to(Path.cwd()))
-        except ValueError:
-            return str(local_file)
     except ImportError:
-        # PyYAML not available - fallback to JSON
-        pass
+        raise ImportError(
+            "PyYAML is required for local config. "
+            "Install with: pip install pyyaml"
+        )
 
-    # Fallback to JSON
-    local_file_json = claude_dir / 'requirements.local.json'
-    with open(local_file_json, 'w') as f:
-        json.dump(config_data, f, indent=2)
+    with open(local_file, 'w') as f:
+        yaml.safe_dump(
+            config_data,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True
+        )
 
     # Return relative path if possible
     try:
-        return str(local_file_json.relative_to(Path.cwd()))
+        return str(local_file.relative_to(Path.cwd()))
     except ValueError:
-        return str(local_file_json)
+        return str(local_file)
 
 
 def write_project_config(project_dir: str, config_data: dict) -> str:
     """
     Write configuration to project file.
 
-    Writes to .claude/requirements.yaml (version-controlled). Unlike local config,
-    only supports YAML (no JSON fallback) to maintain consistency with `req init`.
+    Writes to .claude/requirements.yaml (version-controlled) in YAML format.
 
     Args:
         project_dir: Project directory
@@ -212,7 +193,7 @@ def write_project_config(project_dir: str, config_data: dict) -> str:
     claude_dir = Path(project_dir) / '.claude'
     claude_dir.mkdir(parents=True, exist_ok=True)
 
-    # Project config requires YAML (no JSON fallback)
+    # Project config requires YAML
     project_file = claude_dir / 'requirements.yaml'
 
     try:
