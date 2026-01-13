@@ -9,6 +9,7 @@ Implements cascading configuration:
 
 Config files can be YAML (if PyYAML available) or JSON (fallback).
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -41,6 +42,30 @@ class RequirementsConfig:
     Loads and merges configuration from global, project, and local sources.
     """
 
+    REQUIREMENT_SCHEMA = {
+        'enabled': {'type': bool},
+        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent', 'single_use'}},
+        'trigger_tools': {'type': list},  # Can be strings OR dicts (validated separately)
+        'checklist': {'type': list, 'element_type': str},
+        'message': {'type': str},
+        'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
+        'satisfied_by_skill': {'type': str},  # Skill name that auto-satisfies this requirement
+    }
+    DEFAULT_TRIGGER_TOOLS = ('Edit', 'Write', 'MultiEdit')
+    DEFAULT_VERSION = '1.0'
+    HOOK_DEFAULTS = {
+        'session_start': {
+            'inject_context': True,
+        },
+        'stop': {
+            'verify_requirements': True,
+            'verify_scopes': ['session'],
+        },
+        'session_end': {
+            'clear_session_state': False,
+        },
+    }
+
     def __init__(self, project_dir: str):
         """
         Initialize config for project.
@@ -52,15 +77,46 @@ class RequirementsConfig:
         self.validation_errors: list[str] = []
         self._config = self._load_cascade()
 
-    REQUIREMENT_SCHEMA = {
-        'enabled': {'type': bool},
-        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent', 'single_use'}},
-        'trigger_tools': {'type': list},  # Can be strings OR dicts (validated separately)
-        'checklist': {'type': list, 'element_type': str},
-        'message': {'type': str},
-        'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
-        'satisfied_by_skill': {'type': str},  # Skill name that auto-satisfies this requirement
-    }
+    def _load_config_if_exists(self, path: Path) -> dict:
+        """Load configuration from path if it exists."""
+        if not path.exists():
+            return {}
+        return load_yaml_or_json(path) or {}
+
+    def _load_first_existing_config(self, paths: list[Path]) -> dict:
+        """Load the first existing config file from a list of paths."""
+        for path in paths:
+            if path.exists():
+                return load_yaml_or_json(path) or {}
+        return {}
+
+    def _default_trigger_tools(self) -> list[str]:
+        """Return a new list of default trigger tools."""
+        return list(self.DEFAULT_TRIGGER_TOOLS)
+
+    def _ensure_version(self, config: dict) -> None:
+        """Ensure the config has a version field."""
+        if 'version' not in config:
+            config['version'] = self.DEFAULT_VERSION
+
+    def _apply_requirement_overrides(self, config: dict,
+                                     requirement_overrides: Optional[dict]) -> None:
+        """Apply requirement-level overrides to a config dict."""
+        if not requirement_overrides:
+            return
+
+        requirements = config.setdefault('requirements', {})
+        for req_name, req_update in requirement_overrides.items():
+            req_config = requirements.setdefault(req_name, {})
+
+            # Handle both boolean (simple enable/disable) and dict (full config) values
+            if isinstance(req_update, bool):
+                req_config['enabled'] = req_update
+            elif isinstance(req_update, dict):
+                # Merge dict updates (preserves existing fields not in update)
+                req_config.update(req_update)
+            else:
+                req_config['enabled'] = req_update
 
     def _load_cascade(self) -> dict:
         """
@@ -81,31 +137,31 @@ class RequirementsConfig:
 
         # 1. Global defaults
         global_file = Path.home() / '.claude' / 'requirements.yaml'
-        if global_file.exists():
-            global_config = load_yaml_or_json(global_file)
-            if global_config:
-                config = global_config.copy()
+        global_config = self._load_config_if_exists(global_file)
+        if global_config:
+            config = global_config.copy()
 
         # 2. Project config (versioned)
-        project_file = Path(self.project_dir) / '.claude' / 'requirements.yaml'
-        if project_file.exists():
-            project_config = load_yaml_or_json(project_file)
-
-            if project_config:
-                # Check inherit flag (default: True)
-                if project_config.get('inherit', True):
-                    # Deep merge project into global
-                    deep_merge(config, project_config)
-                else:
-                    # Replace entirely (no inheritance)
-                    config = project_config
+        project_dir = Path(self.project_dir) / '.claude'
+        project_file = project_dir / 'requirements.yaml'
+        project_config = self._load_config_if_exists(project_file)
+        if project_config:
+            # Check inherit flag (default: True)
+            if project_config.get('inherit', True):
+                # Deep merge project into global
+                deep_merge(config, project_config)
+            else:
+                # Replace entirely (no inheritance)
+                config = project_config
 
         # 3. Local overrides (gitignored)
-        local_file = Path(self.project_dir) / '.claude' / 'requirements.local.yaml'
-        if local_file.exists():
-            local_config = load_yaml_or_json(local_file)
-            if local_config:
-                deep_merge(config, local_config)
+        local_files = [
+            project_dir / 'requirements.local.yaml',
+            project_dir / 'requirements.local.json',
+        ]
+        local_config = self._load_first_existing_config(local_files)
+        if local_config:
+            deep_merge(config, local_config)
 
         # 4. Validate dynamic requirements (fail-safe: remove invalid ones)
         requirements = config.get('requirements', {})
@@ -363,44 +419,24 @@ class RequirementsConfig:
                 requirement_overrides={'commit_plan': False}
             )
         """
-        from pathlib import Path
-
-        local_file = Path(self.project_dir) / '.claude' / 'requirements.local.yaml'
-        local_file_json = Path(self.project_dir) / '.claude' / 'requirements.local.json'
+        local_dir = Path(self.project_dir) / '.claude'
+        local_files = [
+            local_dir / 'requirements.local.yaml',
+            local_dir / 'requirements.local.json',
+        ]
 
         # Load existing local config if it exists
-        existing_config = {}
-        if local_file.exists():
-            existing_config = load_yaml_or_json(local_file)
-        elif local_file_json.exists():
-            existing_config = load_yaml_or_json(local_file_json)
+        existing_config = self._load_first_existing_config(local_files)
 
         # Update framework enabled state
         if enabled is not None:
             existing_config['enabled'] = enabled
 
         # Update requirement-level overrides
-        if requirement_overrides:
-            if 'requirements' not in existing_config:
-                existing_config['requirements'] = {}
-
-            for req_name, req_update in requirement_overrides.items():
-                if req_name not in existing_config['requirements']:
-                    existing_config['requirements'][req_name] = {}
-
-                # Handle both boolean (simple enable/disable) and dict (full config) values
-                if isinstance(req_update, bool):
-                    existing_config['requirements'][req_name]['enabled'] = req_update
-                elif isinstance(req_update, dict):
-                    # Merge dict updates (preserves existing fields not in update)
-                    for key, value in req_update.items():
-                        existing_config['requirements'][req_name][key] = value
-                else:
-                    existing_config['requirements'][req_name]['enabled'] = req_update
+        self._apply_requirement_overrides(existing_config, requirement_overrides)
 
         # Ensure version field exists
-        if 'version' not in existing_config:
-            existing_config['version'] = '1.0'
+        self._ensure_version(existing_config)
 
         # Write to file using the write_local_config helper
         file_path = write_local_config(self.project_dir, existing_config)
@@ -439,14 +475,10 @@ class RequirementsConfig:
                 requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
             )
         """
-        from pathlib import Path
-
         project_file = Path(self.project_dir) / '.claude' / 'requirements.yaml'
 
         # Load existing project config (NOT cascade - only project file)
-        existing_config = {}
-        if project_file.exists():
-            existing_config = load_yaml_or_json(project_file)
+        existing_config = self._load_config_if_exists(project_file)
 
         # Update framework enabled state
         if enabled is not None:
@@ -460,27 +492,10 @@ class RequirementsConfig:
             # Otherwise keep existing value
 
         # Update requirement-level overrides
-        if requirement_overrides:
-            if 'requirements' not in existing_config:
-                existing_config['requirements'] = {}
-
-            for req_name, req_update in requirement_overrides.items():
-                if req_name not in existing_config['requirements']:
-                    existing_config['requirements'][req_name] = {}
-
-                # Handle both boolean (simple enable/disable) and dict (full config) values
-                if isinstance(req_update, bool):
-                    existing_config['requirements'][req_name]['enabled'] = req_update
-                elif isinstance(req_update, dict):
-                    # Merge dict updates (preserves existing fields not in update)
-                    for key, value in req_update.items():
-                        existing_config['requirements'][req_name][key] = value
-                else:
-                    existing_config['requirements'][req_name]['enabled'] = req_update
+        self._apply_requirement_overrides(existing_config, requirement_overrides)
 
         # Ensure version field exists
-        if 'version' not in existing_config:
-            existing_config['version'] = '1.0'
+        self._ensure_version(existing_config)
 
         # Write to file using write_project_config helper
         file_path = write_project_config(self.project_dir, existing_config)
@@ -548,7 +563,7 @@ class RequirementsConfig:
         """
         req = self.get_requirement(name)
         if req:
-            triggers = req.get('trigger_tools', ['Edit', 'Write', 'MultiEdit'])
+            triggers = req.get('trigger_tools', self._default_trigger_tools())
             # For backwards compatibility, extract tool names from complex triggers
             result = []
             for t in triggers:
@@ -557,7 +572,7 @@ class RequirementsConfig:
                 elif isinstance(t, dict):
                     result.append(t.get('tool', ''))
             return result
-        return ['Edit', 'Write', 'MultiEdit']
+        return self._default_trigger_tools()
 
     def get_triggers(self, name: str) -> list:
         """
@@ -580,8 +595,8 @@ class RequirementsConfig:
         """
         req = self.get_requirement(name)
         if req:
-            return req.get('trigger_tools', ['Edit', 'Write', 'MultiEdit'])
-        return ['Edit', 'Write', 'MultiEdit']
+            return req.get('trigger_tools', self._default_trigger_tools())
+        return self._default_trigger_tools()
 
     def get_message(self, name: str) -> str:
         """
@@ -655,20 +670,6 @@ class RequirementsConfig:
                 # Check requirements before stopping
                 pass
         """
-        # Built-in defaults (opt-out, not opt-in)
-        builtin_defaults = {
-            'session_start': {
-                'inject_context': True,
-            },
-            'stop': {
-                'verify_requirements': True,
-                'verify_scopes': ['session'],
-            },
-            'session_end': {
-                'clear_session_state': False,
-            },
-        }
-
         # Get hooks config section
         hooks_config = self._config.get('hooks', {})
         hook_specific = hooks_config.get(hook_name, {})
@@ -681,7 +682,12 @@ class RequirementsConfig:
             return default
 
         # Fall back to built-in default
-        return builtin_defaults.get(hook_name, {}).get(key)
+        default_value = self.HOOK_DEFAULTS.get(hook_name, {}).get(key)
+        if isinstance(default_value, list):
+            return list(default_value)
+        if isinstance(default_value, dict):
+            return default_value.copy()
+        return default_value
 
     def get_attribute(self, req_name: str, attr: str, default=None):
         """
@@ -732,37 +738,7 @@ class RequirementsConfig:
         req = self.get_requirement(req_name)
         if not req or req.get('type') != 'dynamic':
             return  # Not dynamic, skip validation
-
-        # Required: calculator
-        if not req.get('calculator'):
-            raise ValueError(
-                f"Dynamic requirement '{req_name}' missing required 'calculator' field"
-            )
-
-        # Required: thresholds.block
-        thresholds = req.get('thresholds', {})
-        if 'block' not in thresholds:
-            raise ValueError(
-                f"Dynamic requirement '{req_name}' missing required 'thresholds.block' field"
-            )
-
-        # Validate thresholds are positive numbers
-        for key, value in thresholds.items():
-            if not isinstance(value, (int, float)) or value < 0:
-                raise ValueError(
-                    f"Dynamic requirement '{req_name}' threshold '{key}' "
-                    f"must be a positive number, got: {value} ({type(value).__name__})"
-                )
-
-        # Validate calculator module exists (try import)
-        calculator = req['calculator']
-        try:
-            __import__(calculator)
-        except ImportError:
-            raise ValueError(
-                f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
-                f"Expected file: ~/.claude/hooks/lib/{calculator}.py"
-            )
+        self._validate_dynamic_fields(req_name, req)
 
 
 if __name__ == "__main__":
