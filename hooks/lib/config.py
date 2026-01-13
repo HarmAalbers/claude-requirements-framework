@@ -108,253 +108,82 @@ class RequirementFieldRule:
     element_type: Optional[type] = None
 
 
-class RequirementsConfig:
-    """
-    Configuration manager for requirements framework.
+@dataclass(frozen=True)
+class ConfigPaths:
+    project_root: Path
+    claude_dirname: str
+    project_config_filename: str
+    local_override_filenames: tuple[str, ...]
 
-    Loads and merges configuration from global, project, and local sources.
-    """
+    def global_config_path(self) -> Path:
+        return Path.home() / self.claude_dirname / self.project_config_filename
 
-    REQUIREMENT_SCHEMA: dict[str, RequirementFieldRule] = {
-        "enabled": RequirementFieldRule(bool),
-        "scope": RequirementFieldRule(
-            str, allowed={"session", "branch", "permanent", "single_use"}
-        ),
-        "trigger_tools": RequirementFieldRule(list),  # Validated separately
-        "checklist": RequirementFieldRule(list, element_type=str),
-        "message": RequirementFieldRule(str),
-        "type": RequirementFieldRule(str, allowed={"blocking", "dynamic", "guard"}),
-        "satisfied_by_skill": RequirementFieldRule(str),
-    }
-    DEFAULT_TRIGGER_TOOLS: tuple[str, ...] = ("Edit", "Write", "MultiEdit")
-    DEFAULT_VERSION: str = "1.0"
-    CLAUDE_DIRNAME: str = ".claude"
-    PROJECT_CONFIG_FILENAME: str = "requirements.yaml"
-    LOCAL_OVERRIDE_FILENAMES: tuple[str, ...] = ("requirements.local.yaml",)
-    HOOK_DEFAULTS: HooksConfigDict = {
-        "session_start": {
-            "inject_context": True,
-        },
-        "stop": {
-            "verify_requirements": True,
-            "verify_scopes": ["session"],
-        },
-        "session_end": {
-            "clear_session_state": False,
-        },
-    }
+    def project_config_dir(self) -> Path:
+        return self.project_root / self.claude_dirname
 
-    def __init__(self, project_dir: str):
-        """
-        Initialize config for project.
+    def project_config_path(self) -> Path:
+        return self.project_config_dir() / self.project_config_filename
 
-        Args:
-            project_dir: Project root directory
-        """
-        self.project_dir: str = project_dir
-        self._project_root: Path = Path(project_dir)
-        self.validation_errors: list[str] = []
-        self._config: RequirementsConfigData = self._load_cascade()
+    def local_override_paths(self) -> list[Path]:
+        claude_dir = self.project_config_dir()
+        return [claude_dir / filename for filename in self.local_override_filenames]
 
-    def _base_config(self) -> RequirementsConfigData:
-        """Return a fresh default config skeleton."""
-        return {
-            "requirements": {},
-            "logging": {
-                "level": "error",
-                "destinations": ["file"],
-            },
-        }
 
-    def _global_config_path(self) -> Path:
-        """Return path to the global config file."""
-        return Path.home() / self.CLAUDE_DIRNAME / self.PROJECT_CONFIG_FILENAME
+@dataclass(frozen=True)
+class ValidationIssue:
+    requirement: str
+    error: ValueError
 
-    def _project_config_dir(self) -> Path:
-        """Return path to the project .claude directory."""
-        return self._project_root / self.CLAUDE_DIRNAME
 
-    def _project_config_path(self) -> Path:
-        """Return path to the project config file."""
-        return self._project_config_dir() / self.PROJECT_CONFIG_FILENAME
+class RequirementValidator:
+    def __init__(self, schema: Mapping[str, RequirementFieldRule]) -> None:
+        self._schema = schema
 
-    def _local_override_paths(self) -> list[Path]:
-        """Return candidate local override file paths."""
-        claude_dir = self._project_config_dir()
-        return [claude_dir / filename for filename in self.LOCAL_OVERRIDE_FILENAMES]
-
-    def _load_config(self, path: Path) -> RequirementsConfigData:
-        """Load configuration from an existing path."""
-        return cast(RequirementsConfigData, load_yaml(path) or {})
-
-    def _load_config_if_exists(self, path: Path) -> RequirementsConfigData:
-        """Load configuration from path if it exists."""
-        if not path.exists():
-            return cast(RequirementsConfigData, {})
-        return self._load_config(path)
-
-    def _load_first_existing_config(self, paths: list[Path]) -> RequirementsConfigData:
-        """Load the first existing config file from a list of paths."""
-        for path in paths:
-            if path.exists():
-                return self._load_config(path)
-        return cast(RequirementsConfigData, {})
-
-    def _default_trigger_tools(self) -> list[str]:
-        """Return a new list of default trigger tools."""
-        return list(self.DEFAULT_TRIGGER_TOOLS)
-
-    def _get_trigger_config(self, name: str) -> list[TriggerSpec]:
-        """Return trigger config for a requirement with defaults."""
-        triggers = self.get_attribute(
-            name, "trigger_tools", self._default_trigger_tools()
-        )
-        return cast(list[TriggerSpec], triggers)
-
-    def _extract_trigger_tool_names(self, triggers: list[TriggerSpec]) -> list[str]:
-        """Extract tool names from trigger definitions for legacy callers."""
-        tool_names = []
-        for trigger in triggers:
-            if isinstance(trigger, str):
-                tool_names.append(trigger)
-            elif isinstance(trigger, dict):
-                tool_names.append(trigger.get("tool", ""))
-        return tool_names
-
-    def _ensure_version(self, config: MutableMapping[str, Any]) -> None:
-        """Ensure the config has a version field."""
-        if "version" not in config:
-            config["version"] = self.DEFAULT_VERSION
-
-    def _apply_requirement_overrides(
-        self,
-        config: MutableMapping[str, Any],
-        requirement_overrides: Optional[RequirementOverrides],
-    ) -> None:
-        """Apply requirement-level overrides to a config dict."""
-        if not requirement_overrides:
-            return
-
-        requirements = cast(
-            MutableMapping[str, RequirementConfigDict],
-            config.setdefault("requirements", {}),
-        )
-        for req_name, req_update in requirement_overrides.items():
-            req_config = requirements.setdefault(req_name, {})
-
-            # Handle both boolean (simple enable/disable) and dict (full config) values
-            if isinstance(req_update, bool):
-                req_config["enabled"] = req_update
-            elif isinstance(req_update, dict):
-                # Merge dict updates (preserves existing fields not in update)
-                req_config.update(req_update)
-            else:
-                req_config["enabled"] = req_update
-
-    def _apply_override_updates(
-        self,
-        config: MutableMapping[str, Any],
-        enabled: Optional[bool],
-        requirement_overrides: Optional[RequirementOverrides],
-    ) -> None:
-        """Apply common override updates for enabled and requirements."""
-        if enabled is not None:
-            config["enabled"] = enabled
-
-        self._apply_requirement_overrides(config, requirement_overrides)
-        self._ensure_version(config)
-
-    def _write_override_config(
-        self,
-        config: RequirementsConfigData,
-        enabled: Optional[bool],
-        requirement_overrides: Optional[RequirementOverrides],
-        writer: ConfigWriter,
-    ) -> str:
-        """Apply overrides and persist config with the provided writer."""
-        self._apply_override_updates(config, enabled, requirement_overrides)
-        return writer(self.project_dir, config)
-
-    def _record_validation_error(self, error: ValueError) -> None:
-        """Track and emit a validation error."""
-        message = str(error)
-        print(f"⚠️ Config validation error: {message}", file=sys.stderr)
-        self.validation_errors.append(message)
-
-    def _merge_project_config(
-        self, config: RequirementsConfigData, project_config: RequirementsConfigData
-    ) -> RequirementsConfigData:
-        """Merge project config into base config with inherit handling."""
-        if project_config.get("inherit", True):
-            deep_merge(config, project_config)
-            return config
-        return project_config
-
-    def _apply_local_overrides(
-        self, config: MutableMapping[str, Any], local_config: RequirementsConfigData
-    ) -> None:
-        """Apply local overrides onto the current config."""
-        if local_config:
-            deep_merge(config, local_config)
-
-    def _validate_and_prune_requirements(self, config: MutableMapping[str, Any]) -> None:
-        """Validate requirements and remove invalid entries."""
-        requirements = cast(
-            MutableMapping[str, RequirementConfigDict],
-            config.get("requirements", {}),
-        )
-        invalid_requirements = []
-
+    def validate_requirements(
+        self, requirements: MutableMapping[str, RequirementConfigDict]
+    ) -> list[ValidationIssue]:
+        issues: list[ValidationIssue] = []
         for req_name in list(requirements.keys()):
             try:
-                self._validate_requirement_config(req_name, requirements[req_name])
-            except ValueError as e:
-                self._record_validation_error(e)
-                invalid_requirements.append(req_name)
+                self.validate_requirement(req_name, requirements[req_name])
+            except ValueError as error:
+                issues.append(ValidationIssue(req_name, error))
+        return issues
 
-        for req_name in invalid_requirements:
-            del requirements[req_name]
-            print(f"⚠️ Disabled invalid requirement: {req_name}", file=sys.stderr)
+    def validate_requirement(self, req_name: str, req_config: Mapping[str, Any]) -> None:
+        req_type = req_config.get("type", "blocking")
 
-    def _load_cascade(self) -> RequirementsConfigData:
-        """
-        Load configuration cascade: global → project → local.
+        # Validate common fields present on all requirements
+        self._validate_requirement_schema(req_name, req_config)
 
-        Also validates requirements to catch configuration errors early.
+        # Validate satisfied_by_skill if present (applies to all types)
+        self._validate_satisfied_by_skill(req_name, req_config)
 
-        Returns:
-            Merged and validated configuration dictionary
-        """
-        config = self._base_config()
+        validators = {
+            "dynamic": self._validate_dynamic_fields,
+            "blocking": self._validate_blocking_fields,
+            "guard": self._validate_guard_fields,
+        }
+        validator = validators.get(req_type)
+        if not validator:
+            raise ValueError(
+                f"Requirement '{req_name}' has unknown type '{req_type}'. "
+                f"Valid types: 'blocking', 'dynamic', 'guard'"
+            )
+        validator(req_name, req_config)
 
-        # 1. Global defaults
-        global_config = self._load_config_if_exists(self._global_config_path())
-        if global_config:
-            config = cast(RequirementsConfigData, global_config.copy())
-
-        # 2. Project config (versioned)
-        project_config = self._load_config_if_exists(self._project_config_path())
-        if project_config:
-            config = self._merge_project_config(config, project_config)
-
-        # 3. Local overrides (gitignored)
-        local_config = self._load_first_existing_config(self._local_override_paths())
-        self._apply_local_overrides(config, local_config)
-
-        # 4. Validate requirements (fail-safe: remove invalid ones)
-        self._validate_and_prune_requirements(config)
-
-        return config
-
-    def get_validation_errors(self) -> list[str]:
-        """Return any validation errors encountered while loading config."""
-        return list(self.validation_errors)
+    def validate_dynamic_requirement(
+        self, req_name: str, req_config: Mapping[str, Any]
+    ) -> None:
+        if req_config.get("type") != "dynamic":
+            return
+        self._validate_dynamic_fields(req_name, req_config)
 
     def _validate_requirement_schema(
         self, req_name: str, req_config: Mapping[str, Any]
     ) -> None:
         """Validate common requirement fields against schema."""
-        for field, rules in self.REQUIREMENT_SCHEMA.items():
+        for field, rules in self._schema.items():
             if field not in req_config:
                 continue
 
@@ -477,40 +306,6 @@ class RequirementsConfig:
         if protected is not None and not isinstance(protected, list):
             raise ValueError(f"Requirement '{req_name}' protected_branches must be a list")
 
-    def _validate_requirement_config(
-        self, req_name: str, req_config: Mapping[str, Any]
-    ) -> None:
-        """
-        Validate requirement configuration.
-
-        Args:
-            req_name: Requirement name
-            req_config: Requirement configuration dict
-
-        Raises:
-            ValueError: If configuration is invalid
-        """
-        req_type = req_config.get("type", "blocking")
-
-        # Validate common fields present on all requirements
-        self._validate_requirement_schema(req_name, req_config)
-
-        # Validate satisfied_by_skill if present (applies to all types)
-        self._validate_satisfied_by_skill(req_name, req_config)
-
-        validators = {
-            "dynamic": self._validate_dynamic_fields,
-            "blocking": self._validate_blocking_fields,
-            "guard": self._validate_guard_fields,
-        }
-        validator = validators.get(req_type)
-        if not validator:
-            raise ValueError(
-                f"Requirement '{req_name}' has unknown type '{req_type}'. "
-                f"Valid types: 'blocking', 'dynamic', 'guard'"
-            )
-        validator(req_name, req_config)
-
     def _validate_dynamic_fields(
         self, req_name: str, req_config: Mapping[str, Any]
     ) -> None:
@@ -554,6 +349,232 @@ class RequirementsConfig:
                 f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
                 f"Expected file: ~/.claude/hooks/lib/{calculator}.py"
             )
+
+
+class RequirementsConfig:
+    """
+    Configuration manager for requirements framework.
+
+    Loads and merges configuration from global, project, and local sources.
+    """
+
+    REQUIREMENT_SCHEMA: dict[str, RequirementFieldRule] = {
+        "enabled": RequirementFieldRule(bool),
+        "scope": RequirementFieldRule(
+            str, allowed={"session", "branch", "permanent", "single_use"}
+        ),
+        "trigger_tools": RequirementFieldRule(list),  # Validated separately
+        "checklist": RequirementFieldRule(list, element_type=str),
+        "message": RequirementFieldRule(str),
+        "type": RequirementFieldRule(str, allowed={"blocking", "dynamic", "guard"}),
+        "satisfied_by_skill": RequirementFieldRule(str),
+    }
+    DEFAULT_TRIGGER_TOOLS: tuple[str, ...] = ("Edit", "Write", "MultiEdit")
+    DEFAULT_VERSION: str = "1.0"
+    CLAUDE_DIRNAME: str = ".claude"
+    PROJECT_CONFIG_FILENAME: str = "requirements.yaml"
+    LOCAL_OVERRIDE_FILENAMES: tuple[str, ...] = ("requirements.local.yaml",)
+    HOOK_DEFAULTS: HooksConfigDict = {
+        "session_start": {
+            "inject_context": True,
+        },
+        "stop": {
+            "verify_requirements": True,
+            "verify_scopes": ["session"],
+        },
+        "session_end": {
+            "clear_session_state": False,
+        },
+    }
+
+    def __init__(self, project_dir: str):
+        """
+        Initialize config for project.
+
+        Args:
+            project_dir: Project root directory
+        """
+        self.project_dir: str = project_dir
+        self._project_root: Path = Path(project_dir)
+        self._paths = ConfigPaths(
+            project_root=self._project_root,
+            claude_dirname=self.CLAUDE_DIRNAME,
+            project_config_filename=self.PROJECT_CONFIG_FILENAME,
+            local_override_filenames=self.LOCAL_OVERRIDE_FILENAMES,
+        )
+        self._validator = RequirementValidator(self.REQUIREMENT_SCHEMA)
+        self.validation_errors: list[str] = []
+        self._config: RequirementsConfigData = self._load_cascade()
+
+    def _base_config(self) -> RequirementsConfigData:
+        """Return a fresh default config skeleton."""
+        return {
+            "requirements": {},
+            "logging": {
+                "level": "error",
+                "destinations": ["file"],
+            },
+        }
+
+    def _load_config(self, path: Path) -> RequirementsConfigData:
+        """Load configuration from an existing path."""
+        return cast(RequirementsConfigData, load_yaml(path) or {})
+
+    def _load_config_if_exists(self, path: Path) -> RequirementsConfigData:
+        """Load configuration from path if it exists."""
+        if not path.exists():
+            return cast(RequirementsConfigData, {})
+        return self._load_config(path)
+
+    def _load_first_existing_config(self, paths: list[Path]) -> RequirementsConfigData:
+        """Load the first existing config file from a list of paths."""
+        for path in paths:
+            if path.exists():
+                return self._load_config(path)
+        return cast(RequirementsConfigData, {})
+
+    def _default_trigger_tools(self) -> list[str]:
+        """Return a new list of default trigger tools."""
+        return list(self.DEFAULT_TRIGGER_TOOLS)
+
+    def _get_trigger_config(self, name: str) -> list[TriggerSpec]:
+        """Return trigger config for a requirement with defaults."""
+        triggers = self.get_attribute(
+            name, "trigger_tools", self._default_trigger_tools()
+        )
+        return cast(list[TriggerSpec], triggers)
+
+    def _extract_trigger_tool_names(self, triggers: list[TriggerSpec]) -> list[str]:
+        """Extract tool names from trigger definitions for legacy callers."""
+        tool_names = []
+        for trigger in triggers:
+            if isinstance(trigger, str):
+                tool_names.append(trigger)
+            elif isinstance(trigger, dict):
+                tool_names.append(trigger.get("tool", ""))
+        return tool_names
+
+    def _ensure_version(self, config: MutableMapping[str, Any]) -> None:
+        """Ensure the config has a version field."""
+        if "version" not in config:
+            config["version"] = self.DEFAULT_VERSION
+
+    def _apply_requirement_overrides(
+        self,
+        config: MutableMapping[str, Any],
+        requirement_overrides: Optional[RequirementOverrides],
+    ) -> None:
+        """Apply requirement-level overrides to a config dict."""
+        if not requirement_overrides:
+            return
+
+        requirements = cast(
+            MutableMapping[str, RequirementConfigDict],
+            config.setdefault("requirements", {}),
+        )
+        for req_name, req_update in requirement_overrides.items():
+            req_config = requirements.setdefault(req_name, {})
+
+            # Handle both boolean (simple enable/disable) and dict (full config) values
+            if isinstance(req_update, bool):
+                req_config["enabled"] = req_update
+            elif isinstance(req_update, dict):
+                # Merge dict updates (preserves existing fields not in update)
+                req_config.update(req_update)
+            else:
+                req_config["enabled"] = req_update
+
+    def _apply_override_updates(
+        self,
+        config: MutableMapping[str, Any],
+        enabled: Optional[bool],
+        requirement_overrides: Optional[RequirementOverrides],
+    ) -> None:
+        """Apply common override updates for enabled and requirements."""
+        if enabled is not None:
+            config["enabled"] = enabled
+
+        self._apply_requirement_overrides(config, requirement_overrides)
+        self._ensure_version(config)
+
+    def _write_override_config(
+        self,
+        config: RequirementsConfigData,
+        enabled: Optional[bool],
+        requirement_overrides: Optional[RequirementOverrides],
+        writer: ConfigWriter,
+    ) -> str:
+        """Apply overrides and persist config with the provided writer."""
+        self._apply_override_updates(config, enabled, requirement_overrides)
+        return writer(self.project_dir, config)
+
+    def _record_validation_error(self, error: ValueError) -> None:
+        """Track and emit a validation error."""
+        message = str(error)
+        print(f"⚠️ Config validation error: {message}", file=sys.stderr)
+        self.validation_errors.append(message)
+
+    def _merge_project_config(
+        self, config: RequirementsConfigData, project_config: RequirementsConfigData
+    ) -> RequirementsConfigData:
+        """Merge project config into base config with inherit handling."""
+        if project_config.get("inherit", True):
+            deep_merge(config, project_config)
+            return config
+        return project_config
+
+    def _apply_local_overrides(
+        self, config: MutableMapping[str, Any], local_config: RequirementsConfigData
+    ) -> None:
+        """Apply local overrides onto the current config."""
+        if local_config:
+            deep_merge(config, local_config)
+
+    def _validate_and_prune_requirements(self, config: MutableMapping[str, Any]) -> None:
+        """Validate requirements and remove invalid entries."""
+        requirements = cast(
+            MutableMapping[str, RequirementConfigDict],
+            config.get("requirements", {}),
+        )
+        issues = self._validator.validate_requirements(requirements)
+        for issue in issues:
+            self._record_validation_error(issue.error)
+            del requirements[issue.requirement]
+            print(f"⚠️ Disabled invalid requirement: {issue.requirement}", file=sys.stderr)
+
+    def _load_cascade(self) -> RequirementsConfigData:
+        """
+        Load configuration cascade: global → project → local.
+
+        Also validates requirements to catch configuration errors early.
+
+        Returns:
+            Merged and validated configuration dictionary
+        """
+        config = self._base_config()
+
+        # 1. Global defaults
+        global_config = self._load_config_if_exists(self._paths.global_config_path())
+        if global_config:
+            config = cast(RequirementsConfigData, global_config.copy())
+
+        # 2. Project config (versioned)
+        project_config = self._load_config_if_exists(self._paths.project_config_path())
+        if project_config:
+            config = self._merge_project_config(config, project_config)
+
+        # 3. Local overrides (gitignored)
+        local_config = self._load_first_existing_config(self._paths.local_override_paths())
+        self._apply_local_overrides(config, local_config)
+
+        # 4. Validate requirements (fail-safe: remove invalid ones)
+        self._validate_and_prune_requirements(config)
+
+        return config
+
+    def get_validation_errors(self) -> list[str]:
+        """Return any validation errors encountered while loading config."""
+        return list(self.validation_errors)
 
     def is_enabled(self) -> bool:
         """
@@ -603,7 +624,7 @@ class RequirementsConfig:
             )
         """
         # Load existing local config if it exists
-        existing_config = self._load_first_existing_config(self._local_override_paths())
+        existing_config = self._load_first_existing_config(self._paths.local_override_paths())
 
         return self._write_override_config(
             existing_config,
@@ -647,7 +668,7 @@ class RequirementsConfig:
                 requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
             )
         """
-        project_file = self._project_config_path()
+        project_file = self._paths.project_config_path()
 
         # Load existing project config (NOT cascade - only project file)
         existing_config = self._load_config_if_exists(project_file)
@@ -889,7 +910,7 @@ class RequirementsConfig:
         req = self.get_requirement(req_name)
         if not req or req.get("type") != "dynamic":
             return  # Not dynamic, skip validation
-        self._validate_dynamic_fields(req_name, req)
+        self._validator.validate_dynamic_requirement(req_name, req)
 
 
 if __name__ == "__main__":
