@@ -31,10 +31,10 @@ Registry Structure:
 import fcntl
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Callable, Optional
 
+from logger import get_logger
 
 class RegistryClient:
     """
@@ -92,11 +92,11 @@ class RegistryClient:
             return registry
         except json.JSONDecodeError as e:
             # Corrupted registry - log for debugging
-            print(f"⚠️ Registry corrupted ({self.registry_path}): {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Registry corrupted ({self.registry_path}): {e}")
             return {"version": "1.0", "sessions": {}}
         except (OSError, IOError) as e:
             # I/O or permission errors - log for debugging
-            print(f"⚠️ Registry read error ({self.registry_path}): {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Registry read error ({self.registry_path}): {e}")
             return {"version": "1.0", "sessions": {}}
 
     def write(self, registry: dict) -> bool:
@@ -143,12 +143,14 @@ class RegistryClient:
             return True
         except (OSError, IOError) as e:
             # Fail-open: clean up temp file but don't raise
-            print(f"⚠️ Registry write error ({self.registry_path}): {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Registry write error ({self.registry_path}): {e}")
             if temp_path.exists():
                 try:
                     temp_path.unlink()
                 except OSError as cleanup_err:
-                    print(f"⚠️ Failed to cleanup temp file ({temp_path}): {cleanup_err}", file=sys.stderr)
+                    get_logger().warning(
+                        f"⚠️ Failed to cleanup temp file ({temp_path}): {cleanup_err}"
+                    )
             return False
 
     def update(self, update_fn: Callable[[dict], Optional[dict]]) -> bool:
@@ -189,12 +191,12 @@ class RegistryClient:
             return self.write(updated)
         except (OSError, IOError, json.JSONDecodeError) as e:
             # Expected I/O errors from read/write - fail open
-            print(f"⚠️ Registry update I/O error: {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Registry update I/O error: {e}")
             return False
         except Exception as e:
             # Unexpected errors from update_fn - indicates programming bug
-            print(f"⚠️ Registry update function error: {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Registry update function error: {e}")
             # In production, we still fail-open, but log the full error
             import traceback
-            print(traceback.format_exc(), file=sys.stderr)
+            get_logger().warning(traceback.format_exc())
             return False

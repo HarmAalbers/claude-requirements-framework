@@ -376,7 +376,30 @@ The framework uses **fail-open** design:
 - Timeout → Log error, allow operation
 - Corrupted state → Rebuild state, allow operation
 
-**Errors are logged to**: `~/.claude/requirements-errors.log`
+**Logs are written to**: `~/.claude/requirements.log`
+
+Console output (warnings/notices) is configurable via `.claude/requirements.yaml`.
+All structured logs still live in `~/.claude/requirements.log`:
+
+```yaml
+console:
+  level: warning
+  destinations: [stderr]
+  file: ~/.claude/requirements-console.log
+```
+
+Defaults are silent (no console output); enable `stderr` if you want inline warnings.
+
+Debugging example (write verbose logs to file and surface warnings locally):
+
+```yaml
+logging:
+  level: debug
+  destinations: [file]
+console:
+  level: warning
+  destinations: [stderr]
+```
 
 ## Permission Precedence
 
@@ -422,7 +445,7 @@ req status  # Should show satisfied
 2. Check no wildcard permissions: `cat ~/.claude/settings.local.json | grep "Edit(\*)\|Write(\*)"`
 3. Check project has config: `ls .claude/requirements.yaml`
 4. Check branch is not main/master: `git branch --show-current`
-5. Check errors: `tail ~/.claude/requirements-errors.log`
+5. Check errors: `tail ~/.claude/requirements.log`
 
 ### Plan Files Still Blocked
 
@@ -529,7 +552,7 @@ Framework code lives in `~/.claude/hooks/`. To update:
 
 - **Plan**: `~/.claude/plans/unified-requirements-framework-v2.md`
 - **Progress**: `~/.claude/requirements-framework-progress.json`
-- **Error Log**: `~/.claude/requirements-errors.log`
+- **Log File**: `~/.claude/requirements.log`
 - **Session Registry**: `~/.claude/sessions.json`
 
 ---

@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from console import emit_text
 
 def get_git_root() -> Path | None:
     """Get the root directory of the current git repository."""
@@ -135,22 +136,22 @@ def main():
 
     # Check if project has ruff configured
     if not project_has_ruff_config(project_root):
-        print(
+        emit_text(
             f"⚠️  No ruff configuration found in {project_root}\n"
             f"   Add [tool.ruff] to pyproject.toml, or create ruff.toml\n"
             f"   To disable this hook for this project, add to .claude/settings.local.json:\n"
             f'   {{"hooks": {{"Stop": []}}}}',
-            file=sys.stderr,
+            stream=sys.stderr,
         )
         sys.exit(2)  # Block and show message to user
 
     # Find how to run ruff
     ruff_cmd = find_ruff_command(project_root)
     if not ruff_cmd:
-        print(
+        emit_text(
             f"⚠️  Ruff is configured but not installed in {project_root}\n"
             f"   Install with: uv add --dev ruff  OR  pip install ruff",
-            file=sys.stderr,
+            stream=sys.stderr,
         )
         sys.exit(2)  # Block and show message to user
 
@@ -161,7 +162,7 @@ def main():
 
     # Show what we're doing
     cmd_display = " ".join(ruff_cmd)
-    print(f"🔍 Running `{cmd_display} check` on {len(files)} file(s)...")
+    emit_text(f"🔍 Running `{cmd_display} check` on {len(files)} file(s)...")
 
     # Run ruff check from project root (so it picks up config)
     result = subprocess.run(
@@ -171,9 +172,9 @@ def main():
     )
 
     if result.returncode == 0:
-        print("✅ No issues found")
+        emit_text("✅ No issues found")
     else:
-        print(f"⚠️  Ruff found issues (exit code {result.returncode})")
+        emit_text(f"⚠️  Ruff found issues (exit code {result.returncode})")
 
     sys.exit(0)  # Don't block Claude
 

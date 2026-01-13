@@ -48,6 +48,7 @@ from session import update_registry, get_active_sessions, normalize_session_id
 from strategy_registry import STRATEGIES
 from logger import get_logger
 from hook_utils import early_hook_setup
+from console import emit_json
 
 
 def should_skip_plan_file(file_path: str) -> bool:
@@ -170,7 +171,7 @@ def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str
     """
     # Use the new batched function with a single requirement
     response = create_batched_denial([(req_name, config)], session_id, project_dir, branch)
-    print(json.dumps(response))
+    emit_json(response)
 
 
 def main() -> int:
@@ -187,17 +188,12 @@ def main() -> int:
         if stdin_content:
             input_data = json.loads(stdin_content)
     except json.JSONDecodeError as e:
-        # Log parsing errors to help debug hook issues
-        debug_log = Path.home() / '.claude' / 'hook-debug.log'
-        try:
-            import time
-            with open(debug_log, 'a') as f:
-                f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} JSON PARSE ERROR ---\n")
-                f.write(f"error: {e}\n")
-                f.write(f"stdin: {stdin_content[:500] if stdin_content else 'empty'}\n")
-        except (OSError, IOError):
-            # Debug logging failed (permission denied, disk full, etc.) - acceptable to skip
-            pass
+        logger = get_logger(base_context={"hook": "PreToolUse"})
+        logger.error(
+            "Hook input JSON parse error",
+            error=str(e),
+            stdin_preview=stdin_content[:500] if stdin_content else "empty",
+        )
 
     # Get session_id from stdin (Claude Code always provides this)
     raw_session = input_data.get('session_id')
@@ -206,11 +202,10 @@ def main() -> int:
         # If it does, fail open with visible warning
         logger = get_logger()
         logger.error("CRITICAL: No session_id in hook input!", input_keys=list(input_data.keys()))
-        print(
-            "⚠️ Requirements framework error: Missing session ID from Claude Code.\n"
-            "   Requirements checking is disabled for this operation.\n"
-            "   This may be a bug - please report with ~/.claude/logs/requirements.log",
-            file=sys.stderr
+        logger = get_logger(base_context={"hook": "PreToolUse"})
+        logger.error(
+            "Missing session ID from hook input; requirements checking disabled",
+            input_keys=list(input_data.keys()),
         )
         return 0  # Fail open - don't block work
 
@@ -347,7 +342,7 @@ def main() -> int:
                 count=len(unsatisfied),
             )
             response = create_batched_denial(unsatisfied, session_id, project_dir, branch)
-            print(json.dumps(response))
+            emit_json(response)
             return 0
 
         # All requirements satisfied or passed
@@ -356,7 +351,6 @@ def main() -> int:
     except Exception as e:
         # FAIL OPEN with visible warning
         error_msg = f"Requirements check error: {e}"
-        print(f"⚠️ {error_msg}", file=sys.stderr)
         logger.error("Unhandled requirements error", error=str(e))
         return 0
 

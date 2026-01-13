@@ -10,38 +10,27 @@ These utilities are separated to avoid code duplication and maintain consistency
 across different strategy types.
 """
 
-import sys
-import time
-
+from logger import get_logger
 
 def log_error(message: str, exc_info: bool = False) -> None:
     """
-    Log error message to stderr and error log file.
+    Log error message to the central logger.
 
     Args:
         message: Error message
         exc_info: Whether to include traceback
     """
-    print(f"⚠️ {message}", file=sys.stderr)
-
+    logger = get_logger()
     if exc_info:
         import traceback
-        from pathlib import Path
-
-        try:
-            log_file = Path.home() / '.claude' / 'requirements-errors.log'
-            with open(log_file, 'a') as f:
-                f.write(f"\n{'='*60}\n")
-                f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Error: {message}\n")
-                f.write(traceback.format_exc())
-        except Exception:
-            pass  # Silent fail for logging
+        logger.error(f"⚠️ {message}", traceback=traceback.format_exc())
+    else:
+        logger.error(f"⚠️ {message}")
 
 
 def log_warning(message: str) -> None:
-    """Log warning message."""
-    print(f"⚠️ {message}", file=sys.stderr)
+    """Log warning message to the central logger."""
+    get_logger().warning(f"⚠️ {message}")
 
 
 def create_denial_response(message: str) -> dict:

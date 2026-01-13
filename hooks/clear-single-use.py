@@ -37,7 +37,8 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from config import RequirementsConfig, matches_trigger
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from session import get_session_id, normalize_session_id
+from session import normalize_session_id
+from logger import get_logger
 
 
 def main() -> int:
@@ -60,6 +61,7 @@ def main() -> int:
             return 0
 
         tool_name = input_data.get('tool_name', '')
+        logger = get_logger(base_context={"hook": "ClearSingleUse"})
 
         # Only process Bash tool completions
         if tool_name != 'Bash':
@@ -115,7 +117,10 @@ def main() -> int:
             if matches_trigger(tool_name, tool_input, triggers):
                 # This command triggered the requirement - clear it
                 if reqs.clear_single_use(req_name):
-                    print(f"🔄 Cleared single_use requirement '{req_name}'", file=sys.stderr)
+                    logger.info(
+                        "Cleared single_use requirement",
+                        requirement=req_name,
+                    )
 
     except Exception as e:
         # Fail silently - don't block on clear errors
@@ -126,15 +131,11 @@ def main() -> int:
 
 
 def _log_error(message: str) -> None:
-    """Log error to file for debugging."""
+    """Log error for debugging via the central logger."""
     try:
-        import time
-        error_log = Path.home() / '.claude' / 'clear-single-use-errors.log'
-        with open(error_log, 'a') as f:
-            f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-            f.write(f"{message}\n")
+        get_logger(base_context={"hook": "ClearSingleUse"}).error(message)
     except Exception:
-        pass  # Last resort: fail silently
+        pass
 
 
 if __name__ == '__main__':

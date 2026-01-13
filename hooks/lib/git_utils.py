@@ -7,10 +7,11 @@ Provides safe, timeout-protected git operations for:
 - Listing all branches
 - Checking if directory is a git repo
 """
-import subprocess
 import os
+import subprocess
 from typing import Optional
 
+from logger import get_logger
 
 def run_git(cmd: str, cwd: Optional[str] = None) -> tuple[int, str, str]:
     """
@@ -130,8 +131,6 @@ def resolve_project_root(start_dir: Optional[str] = None, verbose: bool = True) 
     Returns:
         Absolute path to project root directory
     """
-    import sys
-
     # Priority 1: Explicit CLAUDE_PROJECT_DIR
     if 'CLAUDE_PROJECT_DIR' in os.environ:
         return os.environ['CLAUDE_PROJECT_DIR']
@@ -143,12 +142,12 @@ def resolve_project_root(start_dir: Optional[str] = None, verbose: bool = True) 
     if git_root:
         # Log if we resolved to a different directory than cwd
         if verbose and os.path.realpath(git_root) != os.path.realpath(cwd):
-            print(f"📂 Resolved project root: {git_root} (from {cwd})", file=sys.stderr)
+            get_logger().info(f"📂 Resolved project root: {git_root} (from {cwd})")
         return git_root
 
     # Priority 3: Fallback to cwd (not in git repo)
     if verbose:
-        print(f"⚠️ Not in git repo, using cwd: {cwd}", file=sys.stderr)
+        get_logger().warning(f"⚠️ Not in git repo, using cwd: {cwd}")
     return cwd
 
 

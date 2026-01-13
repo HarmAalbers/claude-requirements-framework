@@ -1052,7 +1052,7 @@ def main():
 
         # Log to file for debugging
         try:
-            log_file = Path.home() / '.claude' / 'requirements-errors.log'
+            log_file = Path.home() / '.claude' / 'requirements.log'
             with open(log_file, 'a') as f:
                 f.write(f"\n{'='*60}\n")
                 f.write(f"Error at {time.time()}\n")
@@ -2283,7 +2283,7 @@ cat ~/.claude/settings.json | grep check-requirements
 # Should see: "command": "python3 ~/.claude/hooks/check-requirements.py"
 
 # 5. Check for errors
-tail -f ~/.claude/requirements-errors.log
+tail -f ~/.claude/requirements.log
 # Framework logs errors here
 
 # 6. Test hook manually

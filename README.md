@@ -541,6 +541,33 @@ logging:
 Defaults keep the existing fail-open behavior: level `error` with file logging to
 `~/.claude/requirements.log` so normal runs stay quiet unless something fails.
 
+### Console Output Configuration
+
+Configure non-JSON console output (warnings, notices, debug messages). This is
+separate from hook protocol output (JSON responses/context injection), which
+always goes to stdout. All structured logs still live in `~/.claude/requirements.log`.
+
+```yaml
+console:
+  level: warning              # One of: debug, info, warning, error
+  destinations: [stderr]      # Any of: stdout, stderr, file
+  file: ~/.claude/requirements-console.log  # Optional custom output path
+```
+
+Defaults are silent (no console output). Enable stderr output if you want to see
+warnings inline during CLI runs.
+
+Debugging example (write verbose logs to file and surface warnings locally):
+
+```yaml
+logging:
+  level: debug
+  destinations: [file]
+console:
+  level: warning
+  destinations: [stderr]
+```
+
 ### Hook Configuration
 
 Configure behavior for each hook:

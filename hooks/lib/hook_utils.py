@@ -4,7 +4,8 @@ from typing import Optional, Tuple
 
 from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from logger import get_logger, JsonLogger
+from logger import configure_logger, get_logger, JsonLogger
+from console import configure_console
 
 
 def early_hook_setup(
@@ -68,6 +69,8 @@ def early_hook_setup(
 
     # Create logger with config (if available)
     logging_config = config.get_logging_config() if config else None
-    logger = get_logger(logging_config, base_context=base_context)
+    console_config = config.get_console_config() if config else None
+    configure_console(console_config)
+    logger = configure_logger(logging_config, base_context=base_context)
 
     return project_dir, branch, config, logger

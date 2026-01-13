@@ -10,9 +10,10 @@ modules. These utilities handle:
 """
 import os
 import re
-import sys
 import tempfile
 from pathlib import Path
+
+from logger import get_logger
 
 
 def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
@@ -59,7 +60,7 @@ def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
                         return True
                 except re.error:
                     # Invalid regex - log and skip
-                    print(f"⚠️ Invalid regex pattern: {pattern}", file=sys.stderr)
+                    get_logger().warning(f"⚠️ Invalid regex pattern: {pattern}")
                     continue
             elif 'command_pattern' not in trigger:
                 # Tool matches, no command pattern required
@@ -84,22 +85,21 @@ def load_yaml(path: Path) -> dict:
     try:
         import yaml
     except ImportError:
-        print(
-            "⚠️ PyYAML is required to load config files. Install with: pip install pyyaml",
-            file=sys.stderr
+        get_logger().error(
+            "⚠️ PyYAML is required to load config files. Install with: pip install pyyaml"
         )
         return {}
 
     try:
         content = path.read_text()
     except Exception as e:
-        print(f"⚠️ Could not read {path}: {e}", file=sys.stderr)
+        get_logger().warning(f"⚠️ Could not read {path}: {e}")
         return {}
 
     try:
         return yaml.safe_load(content) or {}
     except Exception as e:
-        print(f"⚠️ YAML parse error in {path}: {e}", file=sys.stderr)
+        get_logger().warning(f"⚠️ YAML parse error in {path}: {e}")
         return {}
 
 

@@ -30,11 +30,11 @@ State File Format (JSON):
 import fcntl
 import json
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Optional
 
+from logger import get_logger
 
 def get_state_dir(project_dir: str) -> Path:
     """
@@ -151,7 +151,7 @@ def load_state(branch: str, project_dir: str) -> dict:
                 fcntl.flock(f, fcntl.LOCK_UN)
     except (json.JSONDecodeError, OSError, IOError) as e:
         # Corrupted or unreadable - return empty state
-        print(f"⚠️ State file issue for {branch}: {e}", file=sys.stderr)
+        get_logger().warning(f"⚠️ State file issue for {branch}: {e}")
         return create_empty_state(branch, project_dir)
 
 
@@ -186,7 +186,7 @@ def save_state(branch: str, project_dir: str, state: dict) -> None:
         # Atomic rename (POSIX guarantees atomicity)
         temp_path.rename(path)
     except OSError as e:
-        print(f"⚠️ Could not save state for {branch}: {e}", file=sys.stderr)
+        get_logger().warning(f"⚠️ Could not save state for {branch}: {e}")
         # Clean up temp file if it exists
         if temp_path.exists():
             try:
@@ -208,7 +208,7 @@ def delete_state(branch: str, project_dir: str) -> None:
         try:
             path.unlink()
         except OSError as e:
-            print(f"⚠️ Could not delete state for {branch}: {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Could not delete state for {branch}: {e}")
 
 
 def list_all_states(project_dir: str) -> list[tuple[str, Path]]:

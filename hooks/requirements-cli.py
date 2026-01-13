@@ -31,6 +31,7 @@ from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
+from console import emit_text
 import time
 
 
@@ -44,6 +45,26 @@ SYNC_FILES = [
     "lib/session.py",
     "lib/state_storage.py",
 ]
+
+
+def out(*args, **kwargs) -> None:
+    """Emit CLI output through a single helper."""
+    stream = kwargs.pop("file", sys.stdout)
+    sep = kwargs.pop("sep", " ")
+    end = kwargs.pop("end", "\n")
+    if kwargs:
+        raise TypeError(f"unexpected keyword arguments: {', '.join(kwargs.keys())}")
+
+    message = sep.join(str(arg) for arg in args)
+    if end == "\n":
+        emit_text(message, stream=stream)
+        return
+
+    try:
+        stream.write(f"{message}{end}")
+        stream.flush()
+    except Exception:
+        pass
 
 
 def get_project_dir() -> str:
@@ -65,13 +86,13 @@ def cmd_status(args) -> int:
 
     # Check if git repo
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
+        out(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Get session ID (explicit flag or registry lookup)
@@ -82,8 +103,8 @@ def cmd_status(args) -> int:
             session_id = get_session_id()
         except SessionNotFoundError as e:
             # Status is informational - show warning but allow to continue
-            print(warning("⚠️  No Claude Code session detected"), file=sys.stderr)
-            print(dim("    Showing requirements state without session context"), file=sys.stderr)
+            out(warning("⚠️  No Claude Code session detected"), file=sys.stderr)
+            out(dim("    Showing requirements state without session context"), file=sys.stderr)
             session_id = "no-session"
 
     # Check for summary mode
@@ -107,12 +128,12 @@ def _cmd_status_summary(project_dir: str, branch: str, session_id: str) -> int:
     config = RequirementsConfig(project_dir)
 
     if not config.is_enabled():
-        print(dim("Requirements framework disabled"))
+        out(dim("Requirements framework disabled"))
         return 0
 
     all_reqs = config.get_all_requirements()
     if not all_reqs:
-        print(dim("No requirements configured"))
+        out(dim("No requirements configured"))
         return 0
 
     reqs = BranchRequirements(branch, session_id, project_dir)
@@ -158,37 +179,37 @@ def _cmd_status_summary(project_dir: str, branch: str, session_id: str) -> int:
     total = satisfied_count + len(unsatisfied)
 
     if unsatisfied:
-        print(warning(f"⚠️  {satisfied_count}/{total} requirements satisfied ({', '.join(unsatisfied)} needed)"))
+        out(warning(f"⚠️  {satisfied_count}/{total} requirements satisfied ({', '.join(unsatisfied)} needed)"))
         return 0  # Status command succeeds regardless
     else:
-        print(success(f"✅ All {total} requirements satisfied"))
+        out(success(f"✅ All {total} requirements satisfied"))
         return 0
 
 
 def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) -> int:
     """Focused view - show only unsatisfied requirements."""
     # Header
-    print(header("📋 Requirements Status"))
-    print(f"Branch: {bold(branch)}")
-    print()
+    out(header("📋 Requirements Status"))
+    out(f"Branch: {bold(branch)}")
+    out()
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
 
     if not config_file.exists():
-        print(info("ℹ️  No requirements configured for this project."))
-        print(dim("   Run 'req init' to set up requirements"))
+        out(info("ℹ️  No requirements configured for this project."))
+        out(dim("   Run 'req init' to set up requirements"))
         return 0
 
     config = RequirementsConfig(project_dir)
 
     if not config.is_enabled():
-        print(warning("⚠️  Requirements framework disabled"))
+        out(warning("⚠️  Requirements framework disabled"))
         return 0
 
     all_reqs = config.get_all_requirements()
     if not all_reqs:
-        print(info("ℹ️  No requirements defined."))
+        out(info("ℹ️  No requirements defined."))
         return 0
 
     reqs = BranchRequirements(branch, session_id, project_dir)
@@ -225,35 +246,35 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
                     unsatisfied_blocking.append((req_name, scope))
 
     if not unsatisfied_blocking and not unsatisfied_dynamic:
-        print(success("✅ All requirements satisfied"))
-        print()
-        print(hint("💡 Use 'req status --verbose' for full details"))
+        out(success("✅ All requirements satisfied"))
+        out()
+        out(hint("💡 Use 'req status --verbose' for full details"))
         return 0
 
     # Show unsatisfied blocking requirements
     if unsatisfied_blocking:
-        print(error("❌ Unsatisfied Requirements:"))
-        print()
+        out(error("❌ Unsatisfied Requirements:"))
+        out()
 
         for req_name, scope in unsatisfied_blocking:
-            print(f"  • {bold(req_name)} ({dim(scope)} scope)")
-            print(dim(f"    → req satisfy {req_name}"))
-        print()
+            out(f"  • {bold(req_name)} ({dim(scope)} scope)")
+            out(dim(f"    → req satisfy {req_name}"))
+        out()
 
     # Show unapproved dynamic requirements (informational)
     if unsatisfied_dynamic:
-        print(warning("⚠️  Dynamic Requirements (not yet approved):"))
-        print()
+        out(warning("⚠️  Dynamic Requirements (not yet approved):"))
+        out()
         for req_name in unsatisfied_dynamic:
-            print(f"  • {bold(req_name)} (needs approval after calculation)")
-            print(dim(f"    → req satisfy {req_name}"))
-        print()
+            out(f"  • {bold(req_name)} (needs approval after calculation)")
+            out(dim(f"    → req satisfy {req_name}"))
+        out()
 
     # Show combined satisfy hint
     all_unsatisfied_names = [r[0] for r in unsatisfied_blocking] + unsatisfied_dynamic
     if all_unsatisfied_names:
-        print(hint(f"💡 Satisfy all: req satisfy {' '.join(all_unsatisfied_names)}"))
-    print(dim("   Use 'req status --verbose' for full details"))
+        out(hint(f"💡 Satisfy all: req satisfy {' '.join(all_unsatisfied_names)}"))
+    out(dim("   Use 'req status --verbose' for full details"))
 
     return 0  # Status command succeeds even with unsatisfied requirements
 
@@ -261,49 +282,49 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
 def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) -> int:
     """Verbose view - show all details (original behavior)."""
     # Header
-    print(header("📋 Requirements Status"))
-    print(dim(f"{'─' * 40}"))
-    print(f"Branch:  {bold(branch)}")
-    print(f"Session: {dim(session_id)}")
-    print(f"Project: {dim(project_dir)}")
+    out(header("📋 Requirements Status"))
+    out(dim(f"{'─' * 40}"))
+    out(f"Branch:  {bold(branch)}")
+    out(f"Session: {dim(session_id)}")
+    out(f"Project: {dim(project_dir)}")
 
     # Show active Claude sessions for context
     active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
     if active_sessions:
-        print(info(f"\n🔍 Active Claude Sessions for {branch}:"))
+        out(info(f"\n🔍 Active Claude Sessions for {branch}:"))
         for sess in active_sessions:
             marker = "→" if sess['id'] == session_id else " "
             age_mins = int((time.time() - sess['last_active']) // 60)
             age_str = f"{age_mins}m ago" if age_mins > 0 else "just now"
-            print(dim(f"  {marker} {sess['id']} [PID {sess['pid']}, {age_str}]"))
+            out(dim(f"  {marker} {sess['id']} [PID {sess['pid']}, {age_str}]"))
 
-    print()
+    out()
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
 
     if not config_file.exists():
-        print(info("ℹ️  No requirements configured for this project."))
-        print(dim("   Create .claude/requirements.yaml to enable."))
+        out(info("ℹ️  No requirements configured for this project."))
+        out(dim("   Create .claude/requirements.yaml to enable."))
         return 0
 
     config = RequirementsConfig(project_dir)
 
     validation_errors = config.get_validation_errors()
     if validation_errors:
-        print(warning("⚠️  Configuration validation failed:"))
+        out(warning("⚠️  Configuration validation failed:"))
         for err in validation_errors:
-            print(dim(f"   - {err}"))
-        print(dim("   Fix .claude/requirements.yaml and rerun `req status`."))
-        print()
+            out(dim(f"   - {err}"))
+        out(dim("   Fix .claude/requirements.yaml and rerun `req status`."))
+        out()
 
     if not config.is_enabled():
-        print(warning("⚠️  Requirements framework disabled for this project"))
+        out(warning("⚠️  Requirements framework disabled for this project"))
         return 0
 
     all_reqs = config.get_all_requirements()
     if not all_reqs:
-        print(info("ℹ️  No requirements defined in config."))
+        out(info("ℹ️  No requirements defined in config."))
         return 0
 
     # Initialize requirements manager
@@ -324,7 +345,7 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     # Show blocking requirements
     if blocking_reqs:
-        print(header("📌 Blocking Requirements:"))
+        out(header("📌 Blocking Requirements:"))
         for req_name in blocking_reqs:
             scope = config.get_scope(req_name)
             req_type = config.get_requirement_type(req_name)
@@ -341,19 +362,19 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
                 satisfied = reqs.is_satisfied(req_name, scope)
 
             if satisfied:
-                print(success(f"  ✅ {req_name}") + dim(f" ({scope})"))
+                out(success(f"  ✅ {req_name}") + dim(f" ({scope})"))
             else:
-                print(error(f"  ❌ {req_name}") + dim(f" ({scope})"))
+                out(error(f"  ❌ {req_name}") + dim(f" ({scope})"))
 
     # Show dynamic requirements
     if dynamic_reqs:
-        print(header("\n📊 Dynamic Requirements:"))
+        out(header("\n📊 Dynamic Requirements:"))
         for req_name in dynamic_reqs:
             try:
                 # Get dynamic config using type-safe accessor
                 req_config = config.get_dynamic_config(req_name)
                 if not req_config:
-                    print(warning(f"  ⚠️  {req_name}: Dynamic requirement not found"))
+                    out(warning(f"  ⚠️  {req_name}: Dynamic requirement not found"))
                     continue
 
                 # Type system now guarantees these fields exist
@@ -371,14 +392,14 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
                     # Determine status and color
                     if value >= thresholds.get('block', float('inf')):
-                        print(error(f"  🛑 {req_name}: {value} changes"))
+                        out(error(f"  🛑 {req_name}: {value} changes"))
                     elif value >= thresholds.get('warn', float('inf')):
-                        print(warning(f"  ⚠️ {req_name}: {value} changes"))
+                        out(warning(f"  ⚠️ {req_name}: {value} changes"))
                     else:
-                        print(success(f"  ✅ {req_name}: {value} changes"))
+                        out(success(f"  ✅ {req_name}: {value} changes"))
 
-                    print(dim(f"      {result.get('summary', '')}"))
-                    print(dim(f"      Base: {result.get('base_branch', 'N/A')}"))
+                    out(dim(f"      {result.get('summary', '')}"))
+                    out(dim(f"      Base: {result.get('base_branch', 'N/A')}"))
 
                     # Show approval status
                     if reqs.is_approved(req_name):
@@ -389,14 +410,14 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
                         if remaining > 0:
                             mins = remaining // 60
                             secs = remaining % 60
-                            print(info(f"      ⏰ Approved ({mins}m {secs}s remaining)"))
+                            out(info(f"      ⏰ Approved ({mins}m {secs}s remaining)"))
                 else:
-                    print(info(f"  ℹ️  {req_name}: Not applicable (skipped)"))
+                    out(info(f"  ℹ️  {req_name}: Not applicable (skipped)"))
             except Exception as e:
-                print(warning(f"  ⚠️  {req_name}: Error calculating ({e})"))
+                out(warning(f"  ⚠️  {req_name}: Error calculating ({e})"))
 
     if not blocking_reqs and not dynamic_reqs:
-        print(info("ℹ️  No requirements configured."))
+        out(info("ℹ️  No requirements configured."))
 
     return 0
 
@@ -414,7 +435,7 @@ def cmd_satisfy(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     # Check if --branch was explicitly provided (triggers branch-level satisfaction)
@@ -423,20 +444,20 @@ def cmd_satisfy(args) -> int:
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
+        out(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Check for config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
 
     if not config_file.exists():
-        print(warning("⚠️  No requirements configured for this project."), file=sys.stderr)
+        out(warning("⚠️  No requirements configured for this project."), file=sys.stderr)
         # Still allow satisfying (for testing)
 
     # Branch-level mode: no session detection needed
     if branch_level_mode:
         session_id = 'branch-override'
-        print(info(f"🌿 Using branch-level satisfaction for: {branch}"))
+        out(info(f"🌿 Using branch-level satisfaction for: {branch}"))
     else:
         # Smart session detection
         session_id = None
@@ -444,15 +465,15 @@ def cmd_satisfy(args) -> int:
         # Priority 1: Explicit --session flag
         if hasattr(args, 'session') and args.session:
             session_id = args.session
-            print(info(f"🎯 Using explicit session: {session_id}"))
+            out(info(f"🎯 Using explicit session: {session_id}"))
 
         # Priority 2: Auto-detect from registry
         else:
             try:
                 session_id = get_session_id()
-                print(success(f"✨ Auto-detected Claude session: {session_id}"))
+                out(success(f"✨ Auto-detected Claude session: {session_id}"))
             except SessionNotFoundError as e:
-                print(str(e), file=sys.stderr)
+                out(str(e), file=sys.stderr)
                 return 1
 
     # Get config for scope
@@ -464,7 +485,7 @@ def cmd_satisfy(args) -> int:
         try:
             metadata = json.loads(args.metadata)
         except json.JSONDecodeError:
-            print(error("❌ Invalid JSON metadata"), file=sys.stderr)
+            out(error("❌ Invalid JSON metadata"), file=sys.stderr)
             return 1
 
     # Initialize requirements manager
@@ -477,7 +498,7 @@ def cmd_satisfy(args) -> int:
     for req_name in requirements:
         # Check if requirement exists in config
         if req_name not in config.get_all_requirements():
-            print(error(f"❌ Unknown requirement: '{req_name}'"), file=sys.stderr)
+            out(error(f"❌ Unknown requirement: '{req_name}'"), file=sys.stderr)
 
             # Provide did-you-mean suggestions
             available = config.get_all_requirements()
@@ -487,18 +508,18 @@ def cmd_satisfy(args) -> int:
                 close_matches = difflib.get_close_matches(req_name, available, n=3, cutoff=0.6)
 
                 if close_matches:
-                    print("", file=sys.stderr)
-                    print(info("Did you mean?"), file=sys.stderr)
+                    out("", file=sys.stderr)
+                    out(info("Did you mean?"), file=sys.stderr)
                     for match in close_matches:
-                        print(f"  → {match}", file=sys.stderr)
+                        out(f"  → {match}", file=sys.stderr)
 
-                print("", file=sys.stderr)
-                print(dim("Where to define requirements:"), file=sys.stderr)
-                print(dim("  • Global:  ~/.claude/requirements.yaml"), file=sys.stderr)
-                print(dim("  • Project: .claude/requirements.yaml"), file=sys.stderr)
-                print(dim("  • Local:   .claude/requirements.local.yaml"), file=sys.stderr)
-                print("", file=sys.stderr)
-                print(hint(f"💡 Run 'req init' to set up project requirements"), file=sys.stderr)
+                out("", file=sys.stderr)
+                out(dim("Where to define requirements:"), file=sys.stderr)
+                out(dim("  • Global:  ~/.claude/requirements.yaml"), file=sys.stderr)
+                out(dim("  • Project: .claude/requirements.yaml"), file=sys.stderr)
+                out(dim("  • Local:   .claude/requirements.local.yaml"), file=sys.stderr)
+                out("", file=sys.stderr)
+                out(hint(f"💡 Run 'req init' to set up project requirements"), file=sys.stderr)
             # Still allow satisfying (manual override)
 
         # Handle based on requirement type
@@ -509,8 +530,8 @@ def cmd_satisfy(args) -> int:
                 # Branch-level mode: use branch scope for dynamic requirements too
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
-                    print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+                    out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
+                    out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Dynamic requirement - use approval workflow with TTL
                 ttl = config.get_attribute(req_name, 'approval_ttl', 300)
@@ -524,37 +545,37 @@ def cmd_satisfy(args) -> int:
                 mins = ttl // 60
                 secs = ttl % 60
                 if len(requirements) == 1:
-                    print(success(f"✅ Approved '{req_name}' for {branch}"))
-                    print(dim(f"   Duration: {mins}m {secs}s (session scope)"))
-                    print(dim(f"   Session: {session_id}"))
+                    out(success(f"✅ Approved '{req_name}' for {branch}"))
+                    out(dim(f"   Duration: {mins}m {secs}s (session scope)"))
+                    out(dim(f"   Session: {session_id}"))
         else:
             # Blocking requirement - standard satisfaction
             if branch_level_mode:
                 # Force branch scope when --branch is explicit
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
-                    print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+                    out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
+                    out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Use config's scope (existing behavior)
                 scope = config.get_scope(req_name)
                 reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
-                    print(success(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)"))
+                    out(success(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)"))
 
         satisfied_count += 1
 
     # Summary for multiple requirements
     if len(requirements) > 1:
         if branch_level_mode:
-            print(success(f"✅ Satisfied {satisfied_count} requirement(s) at branch level"))
-            print(dim(f"   Branch: {branch}"))
-            print(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+            out(success(f"✅ Satisfied {satisfied_count} requirement(s) at branch level"))
+            out(dim(f"   Branch: {branch}"))
+            out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
         else:
-            print(success(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}"))
+            out(success(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}"))
         for req_name in requirements:
             scope = 'branch' if branch_level_mode else config.get_scope(req_name)
-            print(dim(f"   - {req_name} ({scope} scope)"))
+            out(dim(f"   - {req_name} ({scope} scope)"))
 
     return 0
 
@@ -572,13 +593,13 @@ def cmd_clear(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     branch = args.branch or get_current_branch(project_dir)
 
     if not branch:
-        print(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
+        out(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
     # Get session ID (explicit flag or registry lookup)
@@ -588,20 +609,20 @@ def cmd_clear(args) -> int:
         try:
             session_id = get_session_id()
         except SessionNotFoundError as e:
-            print(str(e), file=sys.stderr)
+            out(str(e), file=sys.stderr)
             return 1
 
     reqs = BranchRequirements(branch, session_id, project_dir)
 
     if args.all:
         reqs.clear_all()
-        print(success(f"✅ Cleared all requirements for {branch}"))
+        out(success(f"✅ Cleared all requirements for {branch}"))
     else:
         if not args.requirement:
-            print(error("❌ Specify requirement name or use --all"), file=sys.stderr)
+            out(error("❌ Specify requirement name or use --all"), file=sys.stderr)
             return 1
         reqs.clear(args.requirement)
-        print(success(f"✅ Cleared '{args.requirement}' for {branch}"))
+        out(success(f"✅ Cleared '{args.requirement}' for {branch}"))
 
     return 0
 
@@ -619,17 +640,17 @@ def cmd_list(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     states = list_all_states(project_dir)
 
     if not states:
-        print(info("ℹ️  No tracked branches in this project."))
+        out(info("ℹ️  No tracked branches in this project."))
         return 0
 
-    print(header(f"📋 Tracked Branches ({len(states)})"))
-    print(dim(f"{'─' * 40}"))
+    out(header(f"📋 Tracked Branches ({len(states)})"))
+    out(dim(f"{'─' * 40}"))
 
     for branch, path in states:
         # Load state to show requirement count
@@ -637,9 +658,9 @@ def cmd_list(args) -> int:
             with open(path) as f:
                 state = json.load(f)
                 req_count = len(state.get('requirements', {}))
-                print(f"  {bold(branch)}: {dim(f'{req_count} requirement(s)')}")
+                out(f"  {bold(branch)}: {dim(f'{req_count} requirement(s)')}")
         except Exception:
-            print(f"  {bold(branch)}: {warning('(error reading state)')}")
+            out(f"  {bold(branch)}: {warning('(error reading state)')}")
 
     return 0
 
@@ -657,12 +678,12 @@ def cmd_prune(args) -> int:
     project_dir = get_project_dir()
 
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
-    print(info("🧹 Cleaning up stale state files..."))
+    out(info("🧹 Cleaning up stale state files..."))
     count = BranchRequirements.cleanup_stale_branches(project_dir)
-    print(success(f"✅ Removed {count} state file(s) for deleted branches"))
+    out(success(f"✅ Removed {count} state file(s) for deleted branches"))
 
     return 0
 
@@ -677,16 +698,16 @@ def _load_settings_file(claude_dir: Path) -> tuple[Path | None, dict]:
                 content = path.read_text()
                 return path, json.loads(content)
             except PermissionError:
-                print(f"❌ Cannot read {path}: Permission denied", file=sys.stderr)
+                out(f"❌ Cannot read {path}: Permission denied", file=sys.stderr)
                 return path, {}
             except UnicodeDecodeError as e:
-                print(f"❌ {path} contains invalid UTF-8: {e}", file=sys.stderr)
+                out(f"❌ {path} contains invalid UTF-8: {e}", file=sys.stderr)
                 return path, {}
             except json.JSONDecodeError:
-                print(f"❌ {path} is not valid JSON", file=sys.stderr)
+                out(f"❌ {path} is not valid JSON", file=sys.stderr)
                 return path, {}
             except (OSError, IOError) as e:
-                print(f"❌ Error reading {path}: {e}", file=sys.stderr)
+                out(f"❌ Error reading {path}: {e}", file=sys.stderr)
                 return path, {}
     return None, {}
 
@@ -896,13 +917,13 @@ def cmd_verify(args) -> int:
     Returns:
         0 if verification passed, 1 if issues found
     """
-    print(header("🧪 Verifying Requirements Framework Installation"))
-    print()
+    out(header("🧪 Verifying Requirements Framework Installation"))
+    out()
 
     issues_found = False
 
     # Test 1: Check hook files exist
-    print(info("1. Checking hook files..."))
+    out(info("1. Checking hook files..."))
     hook_files = [
         "check-requirements.py",
         "handle-session-start.py",
@@ -917,24 +938,24 @@ def cmd_verify(args) -> int:
         hook_path = hooks_dir / hook_file
         if not hook_path.exists():
             missing_files.append(hook_file)
-            print(error(f"  ❌ Missing: {hook_file}"))
+            out(error(f"  ❌ Missing: {hook_file}"))
             issues_found = True
         elif not os.access(hook_path, os.X_OK):
-            print(warning(f"  ⚠️  Not executable: {hook_file}"))
-            print(dim(f"     Fix: chmod +x ~/.claude/hooks/{hook_file}"))
+            out(warning(f"  ⚠️  Not executable: {hook_file}"))
+            out(dim(f"     Fix: chmod +x ~/.claude/hooks/{hook_file}"))
             issues_found = True
 
     if not missing_files:
-        print(success("  ✅ All hook files present and executable"))
+        out(success("  ✅ All hook files present and executable"))
 
     # Test 2: Check hook registration
-    print()
-    print(info("2. Checking hook registration..."))
+    out()
+    out(info("2. Checking hook registration..."))
     settings_file = Path.home() / '.claude' / 'settings.local.json'
 
     if not settings_file.exists():
-        print(error("  ❌ settings.local.json not found"))
-        print(dim("     Run: ./install.sh to register hooks"))
+        out(error("  ❌ settings.local.json not found"))
+        out(dim("     Run: ./install.sh to register hooks"))
         issues_found = True
     else:
         try:
@@ -948,19 +969,19 @@ def cmd_verify(args) -> int:
             for hook_type in expected_hooks:
                 if hook_type not in hooks_config:
                     missing_hooks.append(hook_type)
-                    print(error(f"  ❌ {hook_type} hook not registered"))
+                    out(error(f"  ❌ {hook_type} hook not registered"))
                     issues_found = True
 
             if not missing_hooks:
-                print(success("  ✅ All hooks registered in settings"))
+                out(success("  ✅ All hooks registered in settings"))
 
         except (json.JSONDecodeError, OSError) as e:
-            print(error(f"  ❌ Cannot read settings.local.json: {e}"))
+            out(error(f"  ❌ Cannot read settings.local.json: {e}"))
             issues_found = True
 
     # Test 3: Test PreToolUse hook responds
-    print()
-    print(info("3. Testing PreToolUse hook response..."))
+    out()
+    out(info("3. Testing PreToolUse hook response..."))
     hook_path = hooks_dir / "check-requirements.py"
 
     if hook_path.exists():
@@ -974,55 +995,55 @@ def cmd_verify(args) -> int:
         )
 
         if result.returncode == 0:
-            print(success("  ✅ PreToolUse hook responds correctly"))
+            out(success("  ✅ PreToolUse hook responds correctly"))
         else:
-            print(error(f"  ❌ Hook exited with code {result.returncode}"))
+            out(error(f"  ❌ Hook exited with code {result.returncode}"))
             if result.stderr:
-                print(dim(f"     Error: {result.stderr[:200]}"))
+                out(dim(f"     Error: {result.stderr[:200]}"))
             issues_found = True
     else:
-        print(warning("  ⚠️  Skipped (hook file missing)"))
+        out(warning("  ⚠️  Skipped (hook file missing)"))
 
     # Test 4: Check req command accessibility
-    print()
-    print(info("4. Checking 'req' command..."))
+    out()
+    out(info("4. Checking 'req' command..."))
     req_link = Path.home() / '.local' / 'bin' / 'req'
 
     if req_link.exists():
-        print(success("  ✅ 'req' command is accessible"))
+        out(success("  ✅ 'req' command is accessible"))
     else:
-        print(warning("  ⚠️  'req' symlink not found"))
-        print(dim("     Run: ./install.sh to create symlink"))
+        out(warning("  ⚠️  'req' symlink not found"))
+        out(dim("     Run: ./install.sh to create symlink"))
 
     # Check PATH
     local_bin = str(Path.home() / '.local' / 'bin')
     if local_bin not in os.environ.get('PATH', ''):
-        print(warning("  ⚠️  ~/.local/bin not in PATH"))
-        print(dim("     Add: export PATH=\"$HOME/.local/bin:$PATH\""))
+        out(warning("  ⚠️  ~/.local/bin not in PATH"))
+        out(dim("     Add: export PATH=\"$HOME/.local/bin:$PATH\""))
 
     # Test 5: Check config exists
-    print()
-    print(info("5. Checking configuration..."))
+    out()
+    out(info("5. Checking configuration..."))
     global_config = Path.home() / '.claude' / 'requirements.yaml'
 
     if global_config.exists():
-        print(success("  ✅ Global config exists"))
+        out(success("  ✅ Global config exists"))
     else:
-        print(warning("  ⚠️  No global config"))
-        print(dim("     Run: ./install.sh to install default config"))
+        out(warning("  ⚠️  No global config"))
+        out(dim("     Run: ./install.sh to install default config"))
 
     # Summary
-    print()
-    print("=" * 50)
+    out()
+    out("=" * 50)
     if issues_found:
-        print(error("❌ Verification failed - issues found"))
-        print()
-        print(hint("💡 Run './install.sh' to fix installation issues"))
+        out(error("❌ Verification failed - issues found"))
+        out()
+        out(hint("💡 Run './install.sh' to fix installation issues"))
         return 1
     else:
-        print(success("✅ Framework fully functional!"))
-        print()
-        print(hint("💡 Next: Run 'req init' in your project to set up requirements"))
+        out(success("✅ Framework fully functional!"))
+        out()
+        out(hint("💡 Next: Run 'req init' in your project to set up requirements"))
         return 0
 
 
@@ -1471,58 +1492,58 @@ def cmd_doctor(args) -> int:
             },
             'checks': all_checks
         }
-        print(json.dumps(result, indent=2))
+        out(json.dumps(result, indent=2))
         return 1 if critical_issues else 0
 
     # Default/Verbose output mode
-    print(header("🩺 Requirements Framework Health Check"))
-    print()
+    out(header("🩺 Requirements Framework Health Check"))
+    out()
 
     # Show issues if any
     if critical_issues:
-        print(error("❌ CRITICAL Issues:"))
-        print()
+        out(error("❌ CRITICAL Issues:"))
+        out()
         for check in critical_issues:
-            print(f"  ❌ {check['message']}")
+            out(f"  ❌ {check['message']}")
             if check['fix']:
-                print(dim(f"     Fix: {check['fix']['description']}"))
-            print()
+                out(dim(f"     Fix: {check['fix']['description']}"))
+            out()
 
     if warnings:
-        print(error("⚠️  Warnings:"))
-        print()
+        out(error("⚠️  Warnings:"))
+        out()
         for check in warnings:
-            print(f"  ⚠️  {check['message']}")
+            out(f"  ⚠️  {check['message']}")
             if check['fix']:
-                print(dim(f"     Fix: {check['fix']['description']}"))
-            print()
+                out(dim(f"     Fix: {check['fix']['description']}"))
+            out()
 
     # Summary
     if not critical_issues and not warnings:
-        print(success("✅ All checks passed!"))
-        print()
-        print(f"  {passed}/{total} checks completed successfully")
+        out(success("✅ All checks passed!"))
+        out()
+        out(f"  {passed}/{total} checks completed successfully")
     else:
-        print(f"  Status: {passed}/{total} checks passed")
+        out(f"  Status: {passed}/{total} checks passed")
         if critical_issues:
-            print(f"  Critical issues: {len(critical_issues)}")
+            out(f"  Critical issues: {len(critical_issues)}")
         if warnings:
-            print(f"  Warnings: {len(warnings)}")
-        print()
+            out(f"  Warnings: {len(warnings)}")
+        out()
 
     # Verbose mode: show all checks
     if verbose and info_items:
-        print(header("ℹ️  All Checks:"))
-        print()
+        out(header("ℹ️  All Checks:"))
+        out()
         for check in all_checks:
             icon = "✅" if check['status'] == 'pass' else "❌" if check['severity'] == 'critical' else "⚠️"
-            print(f"  {icon} {check['message']}")
-        print()
+            out(f"  {icon} {check['message']}")
+        out()
 
     # Hints
     if not verbose and (critical_issues or warnings):
-        print(hint("💡 Use 'req doctor --verbose' for full diagnostics"))
-        print(hint("💡 Use 'req doctor --json' for machine-readable output"))
+        out(hint("💡 Use 'req doctor --verbose' for full diagnostics"))
+        out(hint("💡 Use 'req doctor --json' for machine-readable output"))
 
     return 1 if critical_issues else 0
 
@@ -1547,19 +1568,19 @@ def cmd_sessions(args) -> int:
     sessions = get_active_sessions(project_dir=project_dir)
 
     if not sessions:
-        print(info("ℹ️  No active Claude Code sessions found."))
+        out(info("ℹ️  No active Claude Code sessions found."))
         return 0
 
     # Display sessions
-    print(header(f"📋 Active Claude Code Sessions ({len(sessions)})"))
-    print(dim(f"{'─' * 60}"))
+    out(header(f"📋 Active Claude Code Sessions ({len(sessions)})"))
+    out(dim(f"{'─' * 60}"))
 
     for sess in sessions:
         age_mins = int((time.time() - sess['last_active']) // 60)
         age_str = f"{age_mins}m ago" if age_mins > 0 else "just now"
 
-        print(f"  {bold(sess['id'])} - {dim(sess['project_dir'])}")
-        print(dim(f"             {sess['branch']} [PID {sess['pid']}, {age_str}]"))
+        out(f"  {bold(sess['id'])} - {dim(sess['project_dir'])}")
+        out(dim(f"             {sess['branch']} [PID {sess['pid']}, {age_str}]"))
 
     return 0
 
@@ -1582,17 +1603,17 @@ def cmd_enable(args) -> int:
 
     # Check if in git repo
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
-        print(dim("   Requirements framework only works in git repositories"))
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        out(dim("   Requirements framework only works in git repositories"))
         return 1
 
     # Check if project has any config
     config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
 
     if not config_file.exists():
-        print(info("ℹ️  No requirements configured for this project."), file=sys.stderr)
-        print(dim("   Create .claude/requirements.yaml to configure requirements."))
-        print(dim("   See: ~/.claude/requirements.yaml for examples"))
+        out(info("ℹ️  No requirements configured for this project."), file=sys.stderr)
+        out(dim("   Create .claude/requirements.yaml to configure requirements."))
+        out(dim("   See: ~/.claude/requirements.yaml for examples"))
         return 1
 
     config = RequirementsConfig(project_dir)
@@ -1602,20 +1623,20 @@ def cmd_enable(args) -> int:
 
     if requirement_name:
         # Phase 2: Requirement-level enable (future enhancement)
-        print(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
-        print(dim("   Use: req enable  (without requirement name)"))
+        out(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
+        out(dim("   Use: req enable  (without requirement name)"))
         return 1
 
     # Enable framework
     try:
         file_path = config.write_local_override(enabled=True)
-        print(success("✅ Requirements framework enabled for this project"))
-        print(dim(f"   Modified: {file_path}"))
-        print()
-        print(hint("💡 Run 'req status' to see current requirements"))
+        out(success("✅ Requirements framework enabled for this project"))
+        out(dim(f"   Modified: {file_path}"))
+        out()
+        out(hint("💡 Run 'req status' to see current requirements"))
         return 0
     except Exception as e:
-        print(error(f"❌ Failed to enable framework: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to enable framework: {e}"), file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
@@ -1639,8 +1660,8 @@ def cmd_disable(args) -> int:
 
     # Check if in git repo
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
-        print(dim("   Requirements framework only works in git repositories"))
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        out(dim("   Requirements framework only works in git repositories"))
         return 1
 
     config = RequirementsConfig(project_dir)
@@ -1650,21 +1671,21 @@ def cmd_disable(args) -> int:
 
     if requirement_name:
         # Phase 2: Requirement-level disable (future enhancement)
-        print(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
-        print(dim("   Use: req disable  (without requirement name)"))
+        out(error("❌ Requirement-level enable/disable not yet implemented"), file=sys.stderr)
+        out(dim("   Use: req disable  (without requirement name)"))
         return 1
 
     # Disable framework
     try:
         file_path = config.write_local_override(enabled=False)
-        print(success("✅ Requirements framework disabled for this project"))
-        print(dim(f"   Modified: {file_path}"))
-        print()
-        print(hint("💡 This only affects your local environment (file is gitignored)"))
-        print(hint("💡 To re-enable: req enable"))
+        out(success("✅ Requirements framework disabled for this project"))
+        out(dim(f"   Modified: {file_path}"))
+        out()
+        out(hint("💡 This only affects your local environment (file is gitignored)"))
+        out(hint("💡 To re-enable: req enable"))
         return 0
     except Exception as e:
-        print(error(f"❌ Failed to disable framework: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to disable framework: {e}"), file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
@@ -1686,7 +1707,7 @@ def cmd_config(args) -> int:
 
     # Check if git repo
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
+        out(error("❌ Not in a git repository"), file=sys.stderr)
         return 1
 
     # Load config
@@ -1703,8 +1724,8 @@ def cmd_config(args) -> int:
 
     # Write flags require a requirement name
     if has_write_flags and not requirement_name:
-        print(error("❌ Requirement name required when using write flags"), file=sys.stderr)
-        print(dim("   Usage: req config <requirement> --enable|--disable|--scope|..."), file=sys.stderr)
+        out(error("❌ Requirement name required when using write flags"), file=sys.stderr)
+        out(dim("   Usage: req config <requirement> --enable|--disable|--scope|..."), file=sys.stderr)
         return 1
 
     # Check for "show" mode (display full merged config)
@@ -1714,16 +1735,16 @@ def cmd_config(args) -> int:
     # Check if requirement exists (unless we're trying to enable a new one)
     req_config = config.get_requirement(requirement_name)
     if not req_config and not has_write_flags:
-        print(error(f"❌ Requirement '{requirement_name}' not found"), file=sys.stderr)
+        out(error(f"❌ Requirement '{requirement_name}' not found"), file=sys.stderr)
         available = config.get_all_requirements()
         if available:
-            print(dim(f"   Available: {', '.join(available)}"))
+            out(dim(f"   Available: {', '.join(available)}"))
         return 1
 
     # Read-only mode: show current config
     if not has_write_flags:
-        print(header(f"📋 Configuration: {requirement_name}"))
-        print(dim("─" * 50))
+        out(header(f"📋 Configuration: {requirement_name}"))
+        out(dim("─" * 50))
 
         # Show all fields with nice formatting
         for key, value in req_config.items():
@@ -1731,27 +1752,27 @@ def cmd_config(args) -> int:
                 # Show truncated message
                 if len(str(value)) > 100:
                     lines = str(value).split('\n')
-                    print(f"{bold(key)}: {lines[0][:80]}...")
+                    out(f"{bold(key)}: {lines[0][:80]}...")
                 else:
-                    print(f"{bold(key)}: {value}")
+                    out(f"{bold(key)}: {value}")
             elif isinstance(value, list):
-                print(f"{bold(key)}:")
+                out(f"{bold(key)}:")
                 for item in value:
-                    print(f"  - {item}")
+                    out(f"  - {item}")
             elif isinstance(value, dict):
-                print(f"{bold(key)}:")
+                out(f"{bold(key)}:")
                 for k, v in value.items():
-                    print(f"  {k}: {v}")
+                    out(f"  {k}: {v}")
             else:
-                print(f"{bold(key)}: {value}")
+                out(f"{bold(key)}: {value}")
 
         # Show if it's enabled
-        print()
+        out()
         is_enabled = config.is_requirement_enabled(requirement_name)
         if is_enabled:
-            print(success(f"✅ Currently enabled"))
+            out(success(f"✅ Currently enabled"))
         else:
-            print(dim(f"⚠️  Currently disabled"))
+            out(dim(f"⚠️  Currently disabled"))
 
         return 0
 
@@ -1787,8 +1808,8 @@ def cmd_config(args) -> int:
     if hasattr(args, 'set') and args.set:
         for item in args.set:
             if '=' not in item:
-                print(error(f"❌ Invalid --set format: {item}"), file=sys.stderr)
-                print(dim("   Use: --set KEY=VALUE"), file=sys.stderr)
+                out(error(f"❌ Invalid --set format: {item}"), file=sys.stderr)
+                out(dim("   Use: --set KEY=VALUE"), file=sys.stderr)
                 return 1
             key, value = item.split('=', 1)
             key = key.strip()
@@ -1804,9 +1825,9 @@ def cmd_config(args) -> int:
                 updates[key] = value
 
     # Show preview
-    print()
-    print(header(f"Preview changes to {requirement_name}:"))
-    print(dim("─" * 50))
+    out()
+    out(header(f"Preview changes to {requirement_name}:"))
+    out(dim("─" * 50))
 
     for key, new_value in updates.items():
         old_value = req_config.get(key, "(not set)") if req_config else "(not set)"
@@ -1816,19 +1837,19 @@ def cmd_config(args) -> int:
         if isinstance(new_value, str) and len(new_value) > 60:
             new_value = new_value[:60] + "..."
 
-        print(f"  {bold(key)}:")
-        print(f"    {dim('Before:')} {old_value}")
-        print(f"    {success('After:')} {new_value}")
+        out(f"  {bold(key)}:")
+        out(f"    {dim('Before:')} {old_value}")
+        out(f"    {success('After:')} {new_value}")
 
-    print()
+    out()
     target_file = "requirements.local.yaml" if modify_local else "requirements.yaml"
-    print(dim(f"Target: .claude/{target_file}"))
-    print()
+    out(dim(f"Target: .claude/{target_file}"))
+    out()
 
     # Confirm
     if not args.yes:
         if not confirm("Apply these changes?", default=True):
-            print(info("ℹ️  Cancelled"))
+            out(info("ℹ️  Cancelled"))
             return 0
 
     # Write changes
@@ -1844,15 +1865,15 @@ def cmd_config(args) -> int:
                     requirement_overrides={requirement_name: updates}
                 )
             except ImportError as e:
-                print(error(f"❌ {e}"), file=sys.stderr)
+                out(error(f"❌ {e}"), file=sys.stderr)
                 return 1
 
-        print(success(f"✅ Updated {requirement_name}"))
-        print(dim(f"   Modified: {file_path}"))
+        out(success(f"✅ Updated {requirement_name}"))
+        out(dim(f"   Modified: {file_path}"))
         return 0
 
     except Exception as e:
-        print(error(f"❌ Failed to update config: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to update config: {e}"), file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
@@ -1870,21 +1891,21 @@ def _cmd_config_show(config: RequirementsConfig, args) -> int:
         merged_config = config.get_raw_config()
 
         # Display header
-        print(header("📋 Requirements Framework Configuration"))
-        print(dim("─" * 60))
-        print(dim("Merged from: global → project → local"))
-        print()
+        out(header("📋 Requirements Framework Configuration"))
+        out(dim("─" * 60))
+        out(dim("Merged from: global → project → local"))
+        out()
 
         # Output JSON
         output = json.dumps(merged_config, indent=2, sort_keys=False)
-        print(output)
+        out(output)
 
     except TypeError as e:
-        print(error(f"❌ Config contains non-serializable value: {e}"), file=sys.stderr)
-        print(dim("   Check your config files for invalid types"), file=sys.stderr)
+        out(error(f"❌ Config contains non-serializable value: {e}"), file=sys.stderr)
+        out(dim("   Check your config files for invalid types"), file=sys.stderr)
         return 1
     except Exception as e:
-        print(error(f"❌ Failed to load config: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to load config: {e}"), file=sys.stderr)
         return 1
 
     return 0
@@ -1909,52 +1930,52 @@ def _cmd_config_show_with_sources(config: RequirementsConfig, args) -> int:
             try:
                 sources[name] = load_yaml(path)
             except (OSError, IOError) as e:
-                print(warning(f"⚠️  Failed to read {name} config: {path}"), file=sys.stderr)
-                print(dim(f"   Error: {e}"), file=sys.stderr)
+                out(warning(f"⚠️  Failed to read {name} config: {path}"), file=sys.stderr)
+                out(dim(f"   Error: {e}"), file=sys.stderr)
                 sources[name] = {}
             except (json.JSONDecodeError, ValueError) as e:
-                print(warning(f"⚠️  Failed to parse {name} config: {path}"), file=sys.stderr)
-                print(dim(f"   Error: {e}"), file=sys.stderr)
+                out(warning(f"⚠️  Failed to parse {name} config: {path}"), file=sys.stderr)
+                out(dim(f"   Error: {e}"), file=sys.stderr)
                 sources[name] = {}
             except Exception as e:
-                print(warning(f"⚠️  Unexpected error loading {name} config: {path}"), file=sys.stderr)
-                print(dim(f"   Error: {type(e).__name__}: {e}"), file=sys.stderr)
+                out(warning(f"⚠️  Unexpected error loading {name} config: {path}"), file=sys.stderr)
+                out(dim(f"   Error: {type(e).__name__}: {e}"), file=sys.stderr)
                 sources[name] = {}
         else:
             sources[name] = {}
 
     # Display each level
-    print(header("📋 Configuration Sources"))
-    print(dim("─" * 60))
+    out(header("📋 Configuration Sources"))
+    out(dim("─" * 60))
 
     for level in ['global', 'project', 'local']:
         config_data = sources[level]
         file_path = _get_config_path(level, project_dir)
 
-        print()
-        print(bold(f"{level.upper()} ({file_path}):"))
+        out()
+        out(bold(f"{level.upper()} ({file_path}):"))
         if config_data:
             try:
-                print(json.dumps(config_data, indent=2))
+                out(json.dumps(config_data, indent=2))
             except TypeError as e:
-                print(error(f"❌ Non-serializable value in {level} config: {e}"), file=sys.stderr)
-                print(dim("  (skipped)"))
+                out(error(f"❌ Non-serializable value in {level} config: {e}"), file=sys.stderr)
+                out(dim("  (skipped)"))
         else:
-            print(dim("  (not present)"))
+            out(dim("  (not present)"))
 
     # Show merged result
-    print()
-    print(header("MERGED RESULT:"))
-    print(dim("─" * 60))
+    out()
+    out(header("MERGED RESULT:"))
+    out(dim("─" * 60))
     try:
         merged = config.get_raw_config()
-        print(json.dumps(merged, indent=2))
+        out(json.dumps(merged, indent=2))
     except TypeError as e:
-        print(error(f"❌ Merged config contains non-serializable value: {e}"), file=sys.stderr)
-        print(dim("   Check your config files for invalid types"), file=sys.stderr)
+        out(error(f"❌ Merged config contains non-serializable value: {e}"), file=sys.stderr)
+        out(dim("   Check your config files for invalid types"), file=sys.stderr)
         return 1
     except Exception as e:
-        print(error(f"❌ Failed to load merged config: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to load merged config: {e}"), file=sys.stderr)
         return 1
 
     return 0
@@ -2002,8 +2023,8 @@ def _detect_init_context(args, project_dir: str) -> str:
             return 'global'
     except (OSError, RuntimeError) as e:
         # Path resolution failed - log warning and default to project
-        print(warning(f"⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
-        print(dim(f"   Error: {e}"), file=sys.stderr)
+        out(warning(f"⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
+        out(dim(f"   Error: {e}"), file=sys.stderr)
 
     # Default: project
     return 'project'
@@ -2077,8 +2098,8 @@ def cmd_init(args) -> int:
 
     # Check if git repo
     if not is_git_repo(project_dir):
-        print(error("❌ Not in a git repository"), file=sys.stderr)
-        print(dim("   Requirements framework only works in git repositories"))
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        out(dim("   Requirements framework only works in git repositories"))
         return 1
 
     # Detect context (global/project/local)
@@ -2105,47 +2126,47 @@ def cmd_init(args) -> int:
     if not args.yes and not args.preview:
         # Show context-specific header
         if context == 'global':
-            print(header("🌍 Global Requirements Framework Setup"))
-            print(dim("   Setting up defaults for all your projects"))
+            out(header("🌍 Global Requirements Framework Setup"))
+            out(dim("   Setting up defaults for all your projects"))
         elif context == 'local':
-            print(header("📝 Local Requirements Override Setup"))
-            print(dim("   Creating personal overrides (gitignored)"))
+            out(header("📝 Local Requirements Override Setup"))
+            out(dim("   Creating personal overrides (gitignored)"))
         else:  # project
-            print(header("🚀 Project Requirements Setup"))
+            out(header("🚀 Project Requirements Setup"))
             if global_config.exists():
-                print(dim("   Configuring project-specific requirements"))
+                out(dim("   Configuring project-specific requirements"))
             else:
-                print(dim("   Setting up project requirements"))
-        print(dim("─" * 50))
-        print()
+                out(dim("   Setting up project requirements"))
+        out(dim("─" * 50))
+        out()
 
         # Context-specific detection info
-        print(info("Detecting environment:"))
-        print(success(f"  ✓ Git repository at {project_dir}"))
+        out(info("Detecting environment:"))
+        out(success(f"  ✓ Git repository at {project_dir}"))
 
         if context == 'global':
             if global_config.exists():
-                print(warning(f"  ⚠ Global config exists"))
+                out(warning(f"  ⚠ Global config exists"))
         else:
             if claude_dir.exists():
-                print(success("  ✓ .claude/ directory exists"))
+                out(success("  ✓ .claude/ directory exists"))
             else:
-                print(dim("  ○ .claude/ directory will be created"))
+                out(dim("  ○ .claude/ directory will be created"))
 
             if context == 'project' and global_config.exists():
-                print(success(f"  ✓ Global config found"))
-                print(dim("     Project will inherit from global defaults"))
+                out(success(f"  ✓ Global config found"))
+                out(dim("     Project will inherit from global defaults"))
 
             if project_config.exists():
-                print(warning(f"  ⚠ Project config exists"))
+                out(warning(f"  ⚠ Project config exists"))
             if local_config.exists() and context == 'local':
-                print(warning(f"  ⚠ Local config exists"))
+                out(warning(f"  ⚠ Local config exists"))
 
         if context == 'project' and not global_config.exists():
-            print(warning("  ⚠ No global config found"))
-            print(dim("     Tip: Run 'req init' to create global defaults first"))
+            out(warning("  ⚠ No global config found"))
+            out(dim("     Tip: Run 'req init' to create global defaults first"))
 
-        print()
+        out()
 
         # Ask: preset or custom feature selection?
         if not args.preset:
@@ -2194,26 +2215,26 @@ def cmd_init(args) -> int:
         # Generate YAML
         yaml_content = config_to_yaml(config)
 
-        print()
-        print(header("Preview:"))
-        print(dim("─" * 50))
+        out()
+        out(header("Preview:"))
+        out(dim("─" * 50))
         # Show first 20 lines of config
         lines = yaml_content.split('\n')[:20]
         for line in lines:
-            print(line)
+            out(line)
         if len(yaml_content.split('\n')) > 20:
-            print(dim("  ... (truncated)"))
-        print(dim("─" * 50))
-        print()
+            out(dim("  ... (truncated)"))
+        out(dim("─" * 50))
+        out()
 
         # Confirm
         if target_file.exists() and not args.force:
             if not confirm(f"Overwrite existing {target_file.name}?", default=False):
-                print(info("ℹ️  Cancelled"))
+                out(info("ℹ️  Cancelled"))
                 return 0
         else:
             if not confirm(f"Create {target_file.name}?", default=True):
-                print(info("ℹ️  Cancelled"))
+                out(info("ℹ️  Cancelled"))
                 return 0
     else:
         # Non-interactive mode
@@ -2224,17 +2245,17 @@ def cmd_init(args) -> int:
         # Preview mode (non-interactive)
         if args.preview:
             context_name = context.capitalize()
-            print(header(f"📋 Preview: {context_name} config ({preset} preset)"))
-            print(dim("─" * 50))
-            print(yaml_content)
-            print(dim("─" * 50))
-            print(info(f"ℹ️  Would create: {target_file}"))
+            out(header(f"📋 Preview: {context_name} config ({preset} preset)"))
+            out(dim("─" * 50))
+            out(yaml_content)
+            out(dim("─" * 50))
+            out(info(f"ℹ️  Would create: {target_file}"))
             return 0
 
         # Check for existing config (non-interactive mode only)
         if target_file.exists() and not args.force:
-            print(warning(f"⚠️  Config already exists: {target_file}"))
-            print(hint("💡 Use --force to overwrite"))
+            out(warning(f"⚠️  Config already exists: {target_file}"))
+            out(hint("💡 Use --force to overwrite"))
             return 0
 
     # Create parent directory if needed
@@ -2244,16 +2265,16 @@ def cmd_init(args) -> int:
     try:
         target_file.write_text(yaml_content)
         context_name = context.capitalize() if context != 'project' else 'project'
-        print(success(f"✅ Created {context_name} config ({preset} preset)"))
-        print(dim(f"   {target_file}"))
-        print()
-        print(hint("💡 Next steps:"))
-        print(dim("   • Run 'req status' to see your requirements"))
-        print(dim("   • Make changes - you'll be prompted to satisfy requirements"))
-        print(dim(f"   • Edit {target_file.name} to customize"))
+        out(success(f"✅ Created {context_name} config ({preset} preset)"))
+        out(dim(f"   {target_file}"))
+        out()
+        out(hint("💡 Next steps:"))
+        out(dim("   • Run 'req status' to see your requirements"))
+        out(dim("   • Make changes - you'll be prompted to satisfy requirements"))
+        out(dim(f"   • Edit {target_file.name} to customize"))
         return 0
     except Exception as e:
-        print(error(f"❌ Failed to create config: {e}"), file=sys.stderr)
+        out(error(f"❌ Failed to create config: {e}"), file=sys.stderr)
         return 1
 
 

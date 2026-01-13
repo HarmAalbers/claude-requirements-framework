@@ -109,6 +109,23 @@ class JsonLogger:
                 pass
 
 
+_LOGGER_STATE: dict[str, object] = {
+    "level_name": None,
+    "level": None,
+    "handlers": None,
+    "context": {},
+}
+
+
+def _merge_context(base_context: Optional[dict], extra_context: Optional[dict]) -> dict:
+    merged = dict(base_context or {})
+    if extra_context:
+        for key, value in extra_context.items():
+            if value is not None:
+                merged[key] = value
+    return merged
+
+
 def _build_handlers(logging_config: dict) -> list[Handler]:
     destinations = logging_config.get("destinations", ["file"])
     if isinstance(destinations, str):
@@ -133,6 +150,33 @@ def _build_handlers(logging_config: dict) -> list[Handler]:
     return handlers
 
 
+def configure_logger(
+    logging_config: Optional[dict] = None,
+    base_context: Optional[dict] = None,
+) -> JsonLogger:
+    """
+    Configure and return a shared JsonLogger instance.
+
+    Args:
+        logging_config: Config dict with optional keys: level, destinations, file
+        base_context: Default context fields to include in every record
+
+    Returns:
+        JsonLogger instance with configured handlers
+    """
+    cfg = logging_config or {}
+    level_name = str(cfg.get("level", "error")).lower()
+    handlers = _build_handlers(cfg)
+    context = _merge_context({}, base_context)
+
+    _LOGGER_STATE["level_name"] = level_name
+    _LOGGER_STATE["level"] = LEVELS.get(level_name, LEVELS["error"])
+    _LOGGER_STATE["handlers"] = handlers
+    _LOGGER_STATE["context"] = context
+
+    return JsonLogger(level=level_name, handlers=handlers, context=context)
+
+
 def get_logger(logging_config: Optional[dict] = None, base_context: Optional[dict] = None) -> JsonLogger:
     """
     Create a configured JsonLogger instance.
@@ -144,8 +188,13 @@ def get_logger(logging_config: Optional[dict] = None, base_context: Optional[dic
     Returns:
         JsonLogger instance with configured handlers
     """
-    cfg = logging_config or {}
-    level = cfg.get("level", "error")
-    handlers = _build_handlers(cfg)
+    if logging_config is not None:
+        return configure_logger(logging_config, base_context)
 
-    return JsonLogger(level=level, handlers=handlers, context=base_context or {})
+    handlers = _LOGGER_STATE.get("handlers")
+    level_name = _LOGGER_STATE.get("level_name")
+    if handlers and level_name:
+        context = _merge_context(_LOGGER_STATE.get("context"), base_context)
+        return JsonLogger(level=level_name, handlers=handlers, context=context)
+
+    return configure_logger({}, base_context)

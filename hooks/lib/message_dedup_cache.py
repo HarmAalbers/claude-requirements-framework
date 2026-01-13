@@ -36,12 +36,12 @@ Cache file structure:
 import hashlib
 import json
 import os
-import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Optional
 
+from logger import get_logger
 
 class MessageDedupCache:
     """
@@ -85,7 +85,7 @@ class MessageDedupCache:
 
         except Exception as e:
             # Log initialization error but don't fail
-            print(f"⚠️ Failed to initialize message dedup cache: {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Failed to initialize message dedup cache: {e}")
             # Fallback to home directory
             self.cache_file = Path.home() / '.claude' / 'message-dedup.json'
             self.debug = False
@@ -115,23 +115,25 @@ class MessageDedupCache:
             if cached and cached.get('message_hash') == message_hash:
                 # Same message shown recently - suppress to avoid spam
                 if self.debug:
-                    print(f"[DEDUP] Suppressing: {cache_key[:50]}...", file=sys.stderr)
+                    get_logger().debug(f"[DEDUP] Suppressing: {cache_key[:50]}...")
                 return False
 
             # Show message and cache it for future calls
             self._set_entry(cache_key, message_hash)
             if self.debug:
-                print(f"[DEDUP] Showing (first time or expired): {cache_key[:50]}...", file=sys.stderr)
+                get_logger().debug(
+                    f"[DEDUP] Showing (first time or expired): {cache_key[:50]}..."
+                )
             return True
 
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
             # Expected errors - fail-open silently
             if self.debug:
-                print(f"[DEDUP] Expected error (failing open): {e}", file=sys.stderr)
+                get_logger().debug(f"[DEDUP] Expected error (failing open): {e}")
             return True
         except Exception as e:
             # Unexpected errors - log for debugging
-            print(f"⚠️ Unexpected error in message dedup cache: {e}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Unexpected error in message dedup cache: {e}")
             return True  # Still fail-open
 
     def _hash_message(self, message: str) -> str:
@@ -188,7 +190,7 @@ class MessageDedupCache:
         except json.JSONDecodeError as e:
             # Corrupted cache - log and auto-recover
             if self.debug:
-                print(f"[DEDUP] Corrupted cache, resetting: {e}", file=sys.stderr)
+                get_logger().debug(f"[DEDUP] Corrupted cache, resetting: {e}")
             try:
                 self.cache_file.unlink()  # Delete corrupted file
             except OSError:

@@ -11,7 +11,6 @@ Config files are YAML (PyYAML required).
 """
 
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -35,6 +34,8 @@ from config_utils import (
     write_local_config,
     write_project_config,
 )
+from console import configure_console
+from logger import configure_logger, get_logger
 
 # Re-export for backwards compatibility - external code can still import from config
 __all__ = [
@@ -138,6 +139,13 @@ class RequirementConfigDict(TypedDict, total=False):
 class LoggingConfigDict(TypedDict, total=False):
     level: str
     destinations: list[str]
+    file: str
+
+
+class ConsoleConfigDict(TypedDict, total=False):
+    level: str
+    destinations: list[str]
+    file: str
 
 
 class HookConfigDict(TypedDict, total=False):
@@ -156,6 +164,7 @@ class RequirementsConfigData(TypedDict, total=False):
     inherit: bool
     requirements: dict[str, RequirementConfigDict]
     logging: LoggingConfigDict
+    console: ConsoleConfigDict
     hooks: HooksConfigDict
 
 
@@ -226,6 +235,9 @@ class ConfigStateAccess(Protocol):
         ...
 
     def get_logging_config(self) -> LoggingConfigDict:
+        ...
+
+    def get_console_config(self) -> ConsoleConfigDict:
         ...
 
 
@@ -335,6 +347,9 @@ class ConfigStateView(ConfigStateAccess):
 
     def get_logging_config(self) -> LoggingConfigDict:
         return self._config.get_logging_config()
+
+    def get_console_config(self) -> ConsoleConfigDict:
+        return self._config.get_console_config()
 
 
 @dataclass(frozen=True)
@@ -725,6 +740,8 @@ class RequirementsConfig:
         )
         self.validation_errors: list[str] = []
         self._config: RequirementsConfigData = self._load_cascade()
+        configure_console(self._config.get("console"))
+        configure_logger(self._config.get("logging"))
         self._requirements_view = RequirementConfigView(self)
         self._hooks_view = HookConfigView(self)
         self._state_view = ConfigStateView(self)
@@ -753,6 +770,10 @@ class RequirementsConfig:
             "logging": {
                 "level": "error",
                 "destinations": ["file"],
+            },
+            "console": {
+                "level": "error",
+                "destinations": [],
             },
         }
 
@@ -851,7 +872,7 @@ class RequirementsConfig:
     def _record_validation_error(self, error: ValueError) -> None:
         """Track and emit a validation error."""
         message = str(error)
-        print(f"⚠️ Config validation error: {message}", file=sys.stderr)
+        get_logger().warning(f"⚠️ Config validation error: {message}")
         self.validation_errors.append(message)
 
     def _merge_project_config(
@@ -880,7 +901,7 @@ class RequirementsConfig:
         for issue in issues:
             self._record_validation_error(issue.error)
             del requirements[issue.requirement]
-            print(f"⚠️ Disabled invalid requirement: {issue.requirement}", file=sys.stderr)
+            get_logger().warning(f"⚠️ Disabled invalid requirement: {issue.requirement}")
 
     def _load_cascade(self) -> RequirementsConfigData:
         """
@@ -1180,6 +1201,15 @@ class RequirementsConfig:
             Logging config dictionary
         """
         return cast(LoggingConfigDict, self._config.get("logging", {}))
+
+    def get_console_config(self) -> ConsoleConfigDict:
+        """
+        Get console output configuration.
+
+        Returns:
+            Console config dictionary
+        """
+        return cast(ConsoleConfigDict, self._config.get("console", {}))
 
     def get_hook_config(self, hook_name: str, key: str, default: Any = None) -> Any:
         """

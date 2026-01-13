@@ -31,6 +31,7 @@ from requirements import BranchRequirements
 from session import update_registry, normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
+from console import emit_text
 
 
 def main() -> int:
@@ -137,7 +138,7 @@ def main() -> int:
         lines.append("```")
 
         # PostToolUse output goes to Claude's context
-        print("\n".join(lines))
+        emit_text("\n".join(lines))
 
         logger.info("Plan exit - showed requirements", requirements=req_names)
         return 0

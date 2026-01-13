@@ -34,6 +34,7 @@ from requirements import BranchRequirements
 from session import update_registry, cleanup_stale_sessions, normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
+from console import emit_text
 
 
 def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
@@ -143,7 +144,7 @@ def main() -> int:
         # Suggest init if no project config (only on startup, not resume/compact)
         source = input_data.get('source', 'startup')
         if not has_project_config and source == 'startup':
-            print("""💡 **No requirements config found for this project**
+            emit_text("""💡 **No requirements config found for this project**
 
 To set up the requirements framework, run:
   `req init`
@@ -178,7 +179,7 @@ See `req init --help` for options.
         if config.get_hook_config('session_start', 'inject_context', True):
             reqs = BranchRequirements(branch, session_id, project_dir)
             status = format_full_status(reqs, config, session_id, branch)
-            print(status)
+            emit_text(status)
 
         return 0
 

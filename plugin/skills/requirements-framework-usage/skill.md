@@ -935,7 +935,7 @@ Requirements state stored in `.git/requirements/[branch].json`:
 
 ## Key Principles
 
-1. **Fail open** - Errors don't block Claude (logged to `~/.claude/requirements-errors.log`)
+1. **Fail open** - Errors don't block Claude (logged to `~/.claude/requirements.log`)
 2. **Skip main/master** - Never block production branches
 3. **User override** - Settings respect user's local overrides
 4. **Session-isolated** - Requirements don't leak across sessions

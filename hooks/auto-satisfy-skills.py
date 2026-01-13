@@ -32,7 +32,8 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from session import get_session_id, normalize_session_id
+from session import normalize_session_id
+from logger import get_logger
 
 # Default skill to requirement mapping (for backwards compatibility)
 # Maps skill names to the requirement they satisfy
@@ -90,6 +91,7 @@ def main() -> int:
             return 0
 
         tool_name = input_data.get('tool_name', '')
+        logger = get_logger(base_context={"hook": "AutoSatisfySkills"})
 
         # Only process Skill tool completions
         if tool_name != 'Skill':
@@ -152,7 +154,11 @@ def main() -> int:
         reqs.satisfy(req_name, scope, method='skill', metadata={'skill': skill_name})
 
         # Output success message (visible to user)
-        print(f"✅ Auto-satisfied '{req_name}' from skill '{skill_name}'", file=sys.stderr)
+        logger.info(
+            "Auto-satisfied requirement from skill",
+            requirement=req_name,
+            skill=skill_name,
+        )
 
     except Exception as e:
         # Fail silently - don't block on auto-satisfy errors
@@ -163,20 +169,11 @@ def main() -> int:
 
 
 def _log_error(message: str) -> None:
-    """Log error to file for debugging."""
+    """Log error for debugging via the central logger."""
     try:
-        import time
-        error_log = Path.home() / '.claude' / 'auto-satisfy-errors.log'
-        with open(error_log, 'a') as f:
-            f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-            f.write(f"{message}\n")
-    except Exception as log_error:
-        # Last resort: write to stderr so there's SOME visibility
-        try:
-            print(f"Warning: Could not write to error log: {log_error}", file=sys.stderr)
-            print(f"Original error: {message[:200]}...", file=sys.stderr)
-        except Exception:
-            pass  # Truly last resort - fail silently
+        get_logger(base_context={"hook": "AutoSatisfySkills"}).error(message)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

@@ -120,8 +120,8 @@ class FeatureSelector:
         Returns:
             Configuration dict ready to write
         """
-        import sys
         from lib.init_presets import get_preset
+        from logger import get_logger
 
         config = {
             'version': '1.0',
@@ -145,11 +145,8 @@ class FeatureSelector:
 
         # Warn about missing features
         if missing_features:
-            try:
-                from lib.colors import warning, hint
-                print(warning(f"⚠️  Features not found: {', '.join(missing_features)}"), file=sys.stderr)
-                print(hint("💡 This may indicate a bug. Please report it."), file=sys.stderr)
-            except ImportError:
-                print(f"Warning: Features not found: {', '.join(missing_features)}", file=sys.stderr)
+            logger = get_logger()
+            logger.warning(f"⚠️ Features not found: {', '.join(missing_features)}")
+            logger.warning("💡 This may indicate a bug. Please report it.")
 
         return config

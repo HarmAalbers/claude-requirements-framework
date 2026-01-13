@@ -37,6 +37,7 @@ from requirements import BranchRequirements
 from session import normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
+from console import emit_json
 
 
 def main() -> int:
@@ -63,12 +64,6 @@ def main() -> int:
         # If it does, fail open with visible warning
         logger = get_logger(base_context={"hook": "Stop"})
         logger.error("CRITICAL: No session_id in hook input!", input_keys=list(input_data.keys()))
-        print(
-            "⚠️ Requirements framework error: Missing session ID from Claude Code.\n"
-            "   Stop hook verification disabled.\n"
-            "   This may be a bug - please report with ~/.claude/logs/requirements.log",
-            file=sys.stderr
-        )
         return 0  # Fail open - allow stop to proceed
 
     session_id = normalize_session_id(raw_session)
@@ -151,7 +146,7 @@ def main() -> int:
                     "`req satisfy <name>` to mark them complete."
                 )
             }
-            print(json.dumps(response))
+            emit_json(response)
         else:
             logger.debug("All requirements satisfied - allowing stop")
 
