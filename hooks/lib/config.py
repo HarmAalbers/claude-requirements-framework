@@ -5,10 +5,11 @@ Configuration loading for requirements framework.
 Implements cascading configuration:
 1. Global defaults (~/.claude/requirements.yaml)
 2. Project config (.claude/requirements.yaml) - committed to repo
-3. Local overrides (.claude/requirements.local.yaml) - gitignored
+3. Local overrides (.claude/requirements.local.yaml) - git ignored
 
 Config files are YAML (PyYAML required).
 """
+
 import re
 import sys
 from pathlib import Path
@@ -25,12 +26,12 @@ from config_utils import (
 
 # Re-export for backwards compatibility - external code can still import from config
 __all__ = [
-    'RequirementsConfig',
-    'matches_trigger',
-    'load_yaml',
-    'deep_merge',
-    'write_local_config',
-    'write_project_config',
+    "RequirementsConfig",
+    "matches_trigger",
+    "load_yaml",
+    "deep_merge",
+    "write_local_config",
+    "write_project_config",
 ]
 
 
@@ -42,29 +43,29 @@ class RequirementsConfig:
     """
 
     REQUIREMENT_SCHEMA = {
-        'enabled': {'type': bool},
-        'scope': {'type': str, 'allowed': {'session', 'branch', 'permanent', 'single_use'}},
-        'trigger_tools': {'type': list},  # Can be strings OR dicts (validated separately)
-        'checklist': {'type': list, 'element_type': str},
-        'message': {'type': str},
-        'type': {'type': str, 'allowed': {'blocking', 'dynamic', 'guard'}},
-        'satisfied_by_skill': {'type': str},  # Skill name that auto-satisfies this requirement
+        "enabled": {"type": bool},
+        "scope": {"type": str, "allowed": {"session", "branch", "permanent", "single_use"}},
+        "trigger_tools": {"type": list},  # Can be strings OR dicts (validated separately)
+        "checklist": {"type": list, "element_type": str},
+        "message": {"type": str},
+        "type": {"type": str, "allowed": {"blocking", "dynamic", "guard"}},
+        "satisfied_by_skill": {"type": str},  # Skill name that auto-satisfies this requirement
     }
-    DEFAULT_TRIGGER_TOOLS = ('Edit', 'Write', 'MultiEdit')
-    DEFAULT_VERSION = '1.0'
-    CLAUDE_DIRNAME = '.claude'
-    PROJECT_CONFIG_FILENAME = 'requirements.yaml'
-    LOCAL_OVERRIDE_FILENAMES = ('requirements.local.yaml',)
+    DEFAULT_TRIGGER_TOOLS = ("Edit", "Write", "MultiEdit")
+    DEFAULT_VERSION = "1.0"
+    CLAUDE_DIRNAME = ".claude"
+    PROJECT_CONFIG_FILENAME = "requirements.yaml"
+    LOCAL_OVERRIDE_FILENAMES = ("requirements.local.yaml",)
     HOOK_DEFAULTS = {
-        'session_start': {
-            'inject_context': True,
+        "session_start": {
+            "inject_context": True,
         },
-        'stop': {
-            'verify_requirements': True,
-            'verify_scopes': ['session'],
+        "stop": {
+            "verify_requirements": True,
+            "verify_scopes": ["session"],
         },
-        'session_end': {
-            'clear_session_state': False,
+        "session_end": {
+            "clear_session_state": False,
         },
     }
 
@@ -83,10 +84,10 @@ class RequirementsConfig:
     def _base_config(self) -> dict:
         """Return a fresh default config skeleton."""
         return {
-            'requirements': {},
-            'logging': {
-                'level': 'error',
-                'destinations': ['file'],
+            "requirements": {},
+            "logging": {
+                "level": "error",
+                "destinations": ["file"],
             },
         }
 
@@ -130,7 +131,7 @@ class RequirementsConfig:
 
     def _get_trigger_config(self, name: str) -> list:
         """Return trigger config for a requirement with defaults."""
-        return self.get_attribute(name, 'trigger_tools', self._default_trigger_tools())
+        return self.get_attribute(name, "trigger_tools", self._default_trigger_tools())
 
     def _extract_trigger_tool_names(self, triggers: list) -> list[str]:
         """Extract tool names from trigger definitions for legacy callers."""
@@ -139,45 +140,47 @@ class RequirementsConfig:
             if isinstance(trigger, str):
                 tool_names.append(trigger)
             elif isinstance(trigger, dict):
-                tool_names.append(trigger.get('tool', ''))
+                tool_names.append(trigger.get("tool", ""))
         return tool_names
 
     def _ensure_version(self, config: dict) -> None:
         """Ensure the config has a version field."""
-        if 'version' not in config:
-            config['version'] = self.DEFAULT_VERSION
+        if "version" not in config:
+            config["version"] = self.DEFAULT_VERSION
 
-    def _apply_requirement_overrides(self, config: dict,
-                                     requirement_overrides: Optional[dict]) -> None:
+    def _apply_requirement_overrides(
+        self, config: dict, requirement_overrides: Optional[dict]
+    ) -> None:
         """Apply requirement-level overrides to a config dict."""
         if not requirement_overrides:
             return
 
-        requirements = config.setdefault('requirements', {})
+        requirements = config.setdefault("requirements", {})
         for req_name, req_update in requirement_overrides.items():
             req_config = requirements.setdefault(req_name, {})
 
             # Handle both boolean (simple enable/disable) and dict (full config) values
             if isinstance(req_update, bool):
-                req_config['enabled'] = req_update
+                req_config["enabled"] = req_update
             elif isinstance(req_update, dict):
                 # Merge dict updates (preserves existing fields not in update)
                 req_config.update(req_update)
             else:
-                req_config['enabled'] = req_update
+                req_config["enabled"] = req_update
 
-    def _apply_override_updates(self, config: dict,
-                                enabled: Optional[bool],
-                                requirement_overrides: Optional[dict]) -> None:
+    def _apply_override_updates(
+        self, config: dict, enabled: Optional[bool], requirement_overrides: Optional[dict]
+    ) -> None:
         """Apply common override updates for enabled and requirements."""
         if enabled is not None:
-            config['enabled'] = enabled
+            config["enabled"] = enabled
 
         self._apply_requirement_overrides(config, requirement_overrides)
         self._ensure_version(config)
 
-    def _write_override_config(self, config: dict, enabled: Optional[bool],
-                               requirement_overrides: Optional[dict], writer) -> str:
+    def _write_override_config(
+        self, config: dict, enabled: Optional[bool], requirement_overrides: Optional[dict], writer
+    ) -> str:
         """Apply overrides and persist config with the provided writer."""
         self._apply_override_updates(config, enabled, requirement_overrides)
         return writer(self.project_dir, config)
@@ -190,7 +193,7 @@ class RequirementsConfig:
 
     def _merge_project_config(self, config: dict, project_config: dict) -> dict:
         """Merge project config into base config with inherit handling."""
-        if project_config.get('inherit', True):
+        if project_config.get("inherit", True):
             deep_merge(config, project_config)
             return config
         return project_config
@@ -202,7 +205,7 @@ class RequirementsConfig:
 
     def _validate_and_prune_requirements(self, config: dict) -> None:
         """Validate requirements and remove invalid entries."""
-        requirements = config.get('requirements', {})
+        requirements = config.get("requirements", {})
         invalid_requirements = []
 
         for req_name in list(requirements.keys()):
@@ -257,21 +260,21 @@ class RequirementsConfig:
                 continue
 
             value = req_config[field]
-            expected_type = rules['type']
+            expected_type = rules["type"]
 
             if expected_type is list:
                 if not isinstance(value, list):
-                    raise ValueError(
-                        f"Requirement '{req_name}' field '{field}' must be a list"
-                    )
+                    raise ValueError(f"Requirement '{req_name}' field '{field}' must be a list")
 
                 # Special handling for trigger_tools - can be strings OR dicts
-                if field == 'trigger_tools':
+                if field == "trigger_tools":
                     self._validate_trigger_tools(req_name, value)
                 else:
-                    element_type = rules.get('element_type')
+                    element_type = rules.get("element_type")
                     if element_type:
-                        invalid_items = [item for item in value if not isinstance(item, element_type)]
+                        invalid_items = [
+                            item for item in value if not isinstance(item, element_type)
+                        ]
                         if invalid_items:
                             raise ValueError(
                                 f"Requirement '{req_name}' field '{field}' must contain only strings"
@@ -282,8 +285,8 @@ class RequirementsConfig:
                         f"Requirement '{req_name}' field '{field}' must be {expected_type.__name__}"
                     )
 
-            if 'allowed' in rules and value not in rules['allowed']:
-                allowed_values = ', '.join(sorted(rules['allowed']))
+            if "allowed" in rules and value not in rules["allowed"]:
+                allowed_values = ", ".join(sorted(rules["allowed"]))
                 raise ValueError(
                     f"Requirement '{req_name}' field '{field}' must be one of: {allowed_values}"
                 )
@@ -309,19 +312,18 @@ class RequirementsConfig:
                 continue
             elif isinstance(trigger, dict):
                 # Complex trigger - validate structure
-                if 'tool' not in trigger:
+                if "tool" not in trigger:
                     raise ValueError(
                         f"Requirement '{req_name}' trigger_tools[{i}]: "
                         f"dict trigger must have 'tool' field"
                     )
-                if not isinstance(trigger['tool'], str):
+                if not isinstance(trigger["tool"], str):
                     raise ValueError(
-                        f"Requirement '{req_name}' trigger_tools[{i}]: "
-                        f"'tool' must be a string"
+                        f"Requirement '{req_name}' trigger_tools[{i}]: 'tool' must be a string"
                     )
                 # Validate command_pattern is valid regex if present
-                if 'command_pattern' in trigger:
-                    pattern = trigger['command_pattern']
+                if "command_pattern" in trigger:
+                    pattern = trigger["command_pattern"]
                     if not isinstance(pattern, str):
                         raise ValueError(
                             f"Requirement '{req_name}' trigger_tools[{i}]: "
@@ -342,22 +344,20 @@ class RequirementsConfig:
 
     def _validate_satisfied_by_skill(self, req_name: str, req_config: dict) -> None:
         """Validate satisfied_by_skill if present."""
-        if 'satisfied_by_skill' not in req_config:
+        if "satisfied_by_skill" not in req_config:
             return
 
-        skill_name = req_config['satisfied_by_skill']
+        skill_name = req_config["satisfied_by_skill"]
         if not isinstance(skill_name, str):
             raise ValueError(
                 f"Requirement '{req_name}' field 'satisfied_by_skill' must be a string"
             )
         if not skill_name.strip():
-            raise ValueError(
-                f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty"
-            )
+            raise ValueError(f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty")
 
     def _validate_blocking_fields(self, req_name: str, req_config: dict) -> None:
         """Validate blocking requirement specific fields."""
-        enabled = req_config.get('enabled')
+        enabled = req_config.get("enabled")
         if enabled is not None and not isinstance(enabled, bool):
             raise ValueError(
                 f"Requirement '{req_name}' enabled must be boolean, got {type(enabled).__name__}"
@@ -365,16 +365,12 @@ class RequirementsConfig:
 
     def _validate_guard_fields(self, req_name: str, req_config: dict) -> None:
         """Validate guard requirement specific fields."""
-        guard_type = req_config.get('guard_type')
+        guard_type = req_config.get("guard_type")
         if not guard_type:
-            raise ValueError(
-                f"Guard requirement '{req_name}' must have 'guard_type' field"
-            )
-        protected = req_config.get('protected_branches')
+            raise ValueError(f"Guard requirement '{req_name}' must have 'guard_type' field")
+        protected = req_config.get("protected_branches")
         if protected is not None and not isinstance(protected, list):
-            raise ValueError(
-                f"Requirement '{req_name}' protected_branches must be a list"
-            )
+            raise ValueError(f"Requirement '{req_name}' protected_branches must be a list")
 
     def _validate_requirement_config(self, req_name: str, req_config: dict) -> None:
         """
@@ -387,7 +383,7 @@ class RequirementsConfig:
         Raises:
             ValueError: If configuration is invalid
         """
-        req_type = req_config.get('type', 'blocking')
+        req_type = req_config.get("type", "blocking")
 
         # Validate common fields present on all requirements
         self._validate_requirement_schema(req_name, req_config)
@@ -396,9 +392,9 @@ class RequirementsConfig:
         self._validate_satisfied_by_skill(req_name, req_config)
 
         validators = {
-            'dynamic': self._validate_dynamic_fields,
-            'blocking': self._validate_blocking_fields,
-            'guard': self._validate_guard_fields,
+            "dynamic": self._validate_dynamic_fields,
+            "blocking": self._validate_blocking_fields,
+            "guard": self._validate_guard_fields,
         }
         validator = validators.get(req_type)
         if not validator:
@@ -420,14 +416,14 @@ class RequirementsConfig:
             ValueError: If dynamic configuration is invalid
         """
         # Required: calculator
-        if not req_config.get('calculator'):
+        if not req_config.get("calculator"):
             raise ValueError(
                 f"Dynamic requirement '{req_name}' missing required 'calculator' field"
             )
 
         # Required: thresholds.block
-        thresholds = req_config.get('thresholds', {})
-        if 'block' not in thresholds:
+        thresholds = req_config.get("thresholds", {})
+        if "block" not in thresholds:
             raise ValueError(
                 f"Dynamic requirement '{req_name}' missing required 'thresholds.block' field"
             )
@@ -441,7 +437,7 @@ class RequirementsConfig:
                 )
 
         # Validate calculator module exists (try import)
-        calculator = req_config['calculator']
+        calculator = req_config["calculator"]
         try:
             __import__(calculator)
         except ImportError:
@@ -457,10 +453,11 @@ class RequirementsConfig:
         Returns:
             True if enabled, False if disabled
         """
-        return self._config.get('enabled', True)
+        return self._config.get("enabled", True)
 
-    def write_local_override(self, enabled: Optional[bool] = None,
-                            requirement_overrides: Optional[dict] = None) -> str:
+    def write_local_override(
+        self, enabled: Optional[bool] = None, requirement_overrides: Optional[dict] = None
+    ) -> str:
         """
         Write local configuration override to .claude/requirements.local.yaml.
 
@@ -504,9 +501,12 @@ class RequirementsConfig:
             write_local_config,
         )
 
-    def write_project_override(self, enabled: Optional[bool] = None,
-                              requirement_overrides: Optional[dict] = None,
-                              preserve_inherit: bool = True) -> str:
+    def write_project_override(
+        self,
+        enabled: Optional[bool] = None,
+        requirement_overrides: Optional[dict] = None,
+        preserve_inherit: bool = True,
+    ) -> str:
         """
         Write project configuration to .claude/requirements.yaml.
 
@@ -544,8 +544,8 @@ class RequirementsConfig:
         # Handle inherit flag (KEY DIFFERENCE from local config)
         if preserve_inherit:
             # Add inherit: true if not present (default for project configs)
-            if 'inherit' not in existing_config:
-                existing_config['inherit'] = True
+            if "inherit" not in existing_config:
+                existing_config["inherit"] = True
             # Otherwise keep existing value
 
         return self._write_override_config(
@@ -565,7 +565,7 @@ class RequirementsConfig:
         Returns:
             Requirement config dict or None if not found
         """
-        return self._config.get('requirements', {}).get(name)
+        return self._config.get("requirements", {}).get(name)
 
     def get_all_requirements(self) -> list[str]:
         """
@@ -574,7 +574,7 @@ class RequirementsConfig:
         Returns:
             List of requirement names
         """
-        return list(self._config.get('requirements', {}).keys())
+        return list(self._config.get("requirements", {}).keys())
 
     def is_requirement_enabled(self, name: str) -> bool:
         """
@@ -587,7 +587,7 @@ class RequirementsConfig:
             True if requirement exists and is enabled
         """
         req = self.get_requirement(name)
-        return req is not None and req.get('enabled', False)
+        return req is not None and req.get("enabled", False)
 
     def get_scope(self, name: str) -> str:
         """
@@ -599,7 +599,7 @@ class RequirementsConfig:
         Returns:
             Scope string: "session", "branch", "permanent", or "single_use"
         """
-        return self.get_attribute(name, 'scope', 'session')
+        return self.get_attribute(name, "scope", "session")
 
     def get_trigger_tools(self, name: str) -> list[str]:
         """
@@ -648,7 +648,7 @@ class RequirementsConfig:
             Message string
         """
         default_message = f'Requirement "{name}" not satisfied.'
-        return self.get_attribute(name, 'message', default_message)
+        return self.get_attribute(name, "message", default_message)
 
     def get_checklist(self, name: str) -> list[str]:
         """
@@ -660,7 +660,7 @@ class RequirementsConfig:
         Returns:
             List of checklist items (empty list if none configured)
         """
-        return self.get_attribute(name, 'checklist', [])
+        return self.get_attribute(name, "checklist", [])
 
     def get_raw_config(self) -> dict:
         """
@@ -678,7 +678,7 @@ class RequirementsConfig:
         Returns:
             Logging config dictionary
         """
-        return self._config.get('logging', {})
+        return self._config.get("logging", {})
 
     def get_hook_config(self, hook_name: str, key: str, default=None):
         """
@@ -705,7 +705,7 @@ class RequirementsConfig:
                 pass
         """
         # Get hooks config section
-        hooks_config = self._config.get('hooks', {})
+        hooks_config = self._config.get("hooks", {})
         hook_specific = hooks_config.get(hook_name, {})
 
         # Priority: explicit config > provided default > built-in default
@@ -754,7 +754,7 @@ class RequirementsConfig:
             'blocking' (manually satisfied), 'dynamic' (calculated), or 'guard'
             Default: 'blocking' for backwards compatibility
         """
-        return self.get_attribute(req_name, 'type', 'blocking')
+        return self.get_attribute(req_name, "type", "blocking")
 
     def validate_dynamic_requirement(self, req_name: str) -> None:
         """
@@ -770,7 +770,7 @@ class RequirementsConfig:
             ValueError: If configuration is invalid
         """
         req = self.get_requirement(req_name)
-        if not req or req.get('type') != 'dynamic':
+        if not req or req.get("type") != "dynamic":
             return  # Not dynamic, skip validation
         self._validate_dynamic_fields(req_name, req)
 
@@ -778,6 +778,7 @@ class RequirementsConfig:
 if __name__ == "__main__":
     import tempfile
     import os
+
     try:
         import yaml
     except ImportError as e:
@@ -794,12 +795,12 @@ if __name__ == "__main__":
                 "test_req": {
                     "enabled": True,
                     "scope": "session",
-                    "message": "Test requirement not satisfied"
+                    "message": "Test requirement not satisfied",
                 }
-            }
+            },
         }
 
-        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+        with open(f"{tmpdir}/.claude/requirements.yaml", "w") as f:
             yaml.safe_dump(config_content, f, default_flow_style=False, sort_keys=False)
 
         # Test loading
