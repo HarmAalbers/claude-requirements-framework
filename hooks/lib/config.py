@@ -77,6 +77,36 @@ class RequirementsConfig:
         self.validation_errors: list[str] = []
         self._config = self._load_cascade()
 
+    def _base_config(self) -> dict:
+        """Return a fresh default config skeleton."""
+        return {
+            'requirements': {},
+            'logging': {
+                'level': 'error',
+                'destinations': ['file'],
+            },
+        }
+
+    def _global_config_path(self) -> Path:
+        """Return path to the global config file."""
+        return Path.home() / '.claude' / 'requirements.yaml'
+
+    def _project_config_dir(self) -> Path:
+        """Return path to the project .claude directory."""
+        return Path(self.project_dir) / '.claude'
+
+    def _project_config_path(self) -> Path:
+        """Return path to the project config file."""
+        return self._project_config_dir() / 'requirements.yaml'
+
+    def _local_override_paths(self) -> list[Path]:
+        """Return candidate local override file paths."""
+        project_dir = self._project_config_dir()
+        return [
+            project_dir / 'requirements.local.yaml',
+            project_dir / 'requirements.local.json',
+        ]
+
     def _load_config_if_exists(self, path: Path) -> dict:
         """Load configuration from path if it exists."""
         if not path.exists():
@@ -118,33 +148,56 @@ class RequirementsConfig:
             else:
                 req_config['enabled'] = req_update
 
+    def _apply_override_updates(self, config: dict,
+                                enabled: Optional[bool],
+                                requirement_overrides: Optional[dict]) -> None:
+        """Apply common override updates for enabled and requirements."""
+        if enabled is not None:
+            config['enabled'] = enabled
+
+        self._apply_requirement_overrides(config, requirement_overrides)
+        self._ensure_version(config)
+
+    def _record_validation_error(self, error: ValueError) -> None:
+        """Track and emit a validation error."""
+        message = str(error)
+        print(f"⚠️ Config validation error: {message}", file=sys.stderr)
+        self.validation_errors.append(message)
+
+    def _validate_and_prune_requirements(self, config: dict) -> None:
+        """Validate requirements and remove invalid entries."""
+        requirements = config.get('requirements', {})
+        invalid_requirements = []
+
+        for req_name in list(requirements.keys()):
+            try:
+                self._validate_requirement_config(req_name, requirements[req_name])
+            except ValueError as e:
+                self._record_validation_error(e)
+                invalid_requirements.append(req_name)
+
+        for req_name in invalid_requirements:
+            del requirements[req_name]
+            print(f"⚠️ Disabled invalid requirement: {req_name}", file=sys.stderr)
+
     def _load_cascade(self) -> dict:
         """
         Load configuration cascade: global → project → local.
 
-        Also validates dynamic requirements to catch configuration errors early.
+        Also validates requirements to catch configuration errors early.
 
         Returns:
             Merged and validated configuration dictionary
         """
-        config = {
-            'requirements': {},
-            'logging': {
-                'level': 'error',
-                'destinations': ['file'],
-            },
-        }
+        config = self._base_config()
 
         # 1. Global defaults
-        global_file = Path.home() / '.claude' / 'requirements.yaml'
-        global_config = self._load_config_if_exists(global_file)
+        global_config = self._load_config_if_exists(self._global_config_path())
         if global_config:
             config = global_config.copy()
 
         # 2. Project config (versioned)
-        project_dir = Path(self.project_dir) / '.claude'
-        project_file = project_dir / 'requirements.yaml'
-        project_config = self._load_config_if_exists(project_file)
+        project_config = self._load_config_if_exists(self._project_config_path())
         if project_config:
             # Check inherit flag (default: True)
             if project_config.get('inherit', True):
@@ -155,30 +208,12 @@ class RequirementsConfig:
                 config = project_config
 
         # 3. Local overrides (gitignored)
-        local_files = [
-            project_dir / 'requirements.local.yaml',
-            project_dir / 'requirements.local.json',
-        ]
-        local_config = self._load_first_existing_config(local_files)
+        local_config = self._load_first_existing_config(self._local_override_paths())
         if local_config:
             deep_merge(config, local_config)
 
-        # 4. Validate dynamic requirements (fail-safe: remove invalid ones)
-        requirements = config.get('requirements', {})
-        invalid_requirements = []
-
-        for req_name in list(requirements.keys()):
-            try:
-                self._validate_requirement_config(req_name, requirements[req_name])
-            except ValueError as e:
-                print(f"⚠️ Config validation error: {e}", file=sys.stderr)
-                self.validation_errors.append(str(e))
-                invalid_requirements.append(req_name)
-
-        # Remove invalid requirements (fail-safe approach)
-        for req_name in invalid_requirements:
-            del config['requirements'][req_name]
-            print(f"⚠️ Disabled invalid requirement: {req_name}", file=sys.stderr)
+        # 4. Validate requirements (fail-safe: remove invalid ones)
+        self._validate_and_prune_requirements(config)
 
         return config
 
@@ -276,6 +311,42 @@ class RequirementsConfig:
                     f"must be string or dict, got {type(trigger).__name__}"
                 )
 
+    def _validate_satisfied_by_skill(self, req_name: str, req_config: dict) -> None:
+        """Validate satisfied_by_skill if present."""
+        if 'satisfied_by_skill' not in req_config:
+            return
+
+        skill_name = req_config['satisfied_by_skill']
+        if not isinstance(skill_name, str):
+            raise ValueError(
+                f"Requirement '{req_name}' field 'satisfied_by_skill' must be a string"
+            )
+        if not skill_name.strip():
+            raise ValueError(
+                f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty"
+            )
+
+    def _validate_blocking_fields(self, req_name: str, req_config: dict) -> None:
+        """Validate blocking requirement specific fields."""
+        enabled = req_config.get('enabled')
+        if enabled is not None and not isinstance(enabled, bool):
+            raise ValueError(
+                f"Requirement '{req_name}' enabled must be boolean, got {type(enabled).__name__}"
+            )
+
+    def _validate_guard_fields(self, req_name: str, req_config: dict) -> None:
+        """Validate guard requirement specific fields."""
+        guard_type = req_config.get('guard_type')
+        if not guard_type:
+            raise ValueError(
+                f"Guard requirement '{req_name}' must have 'guard_type' field"
+            )
+        protected = req_config.get('protected_branches')
+        if protected is not None and not isinstance(protected, list):
+            raise ValueError(
+                f"Requirement '{req_name}' protected_branches must be a list"
+            )
+
     def _validate_requirement_config(self, req_name: str, req_config: dict) -> None:
         """
         Validate requirement configuration.
@@ -293,40 +364,15 @@ class RequirementsConfig:
         self._validate_requirement_schema(req_name, req_config)
 
         # Validate satisfied_by_skill if present (applies to all types)
-        if 'satisfied_by_skill' in req_config:
-            skill_name = req_config['satisfied_by_skill']
-            if not isinstance(skill_name, str):
-                raise ValueError(
-                    f"Requirement '{req_name}' field 'satisfied_by_skill' must be a string"
-                )
-            if not skill_name.strip():
-                raise ValueError(
-                    f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty"
-                )
+        self._validate_satisfied_by_skill(req_name, req_config)
 
         if req_type == 'dynamic':
             # Validate dynamic requirement fields
             self._validate_dynamic_fields(req_name, req_config)
         elif req_type == 'blocking':
-            # Blocking requirements are simple - just check enabled is bool
-            enabled = req_config.get('enabled')
-            if enabled is not None and not isinstance(enabled, bool):
-                raise ValueError(
-                    f"Requirement '{req_name}' enabled must be boolean, got {type(enabled).__name__}"
-                )
+            self._validate_blocking_fields(req_name, req_config)
         elif req_type == 'guard':
-            # Guard requirements - validate guard_type is present
-            guard_type = req_config.get('guard_type')
-            if not guard_type:
-                raise ValueError(
-                    f"Guard requirement '{req_name}' must have 'guard_type' field"
-                )
-            # Validate protected_branches is a list if present
-            protected = req_config.get('protected_branches')
-            if protected is not None and not isinstance(protected, list):
-                raise ValueError(
-                    f"Requirement '{req_name}' protected_branches must be a list"
-                )
+            self._validate_guard_fields(req_name, req_config)
         else:
             raise ValueError(
                 f"Requirement '{req_name}' has unknown type '{req_type}'. "
@@ -419,24 +465,11 @@ class RequirementsConfig:
                 requirement_overrides={'commit_plan': False}
             )
         """
-        local_dir = Path(self.project_dir) / '.claude'
-        local_files = [
-            local_dir / 'requirements.local.yaml',
-            local_dir / 'requirements.local.json',
-        ]
-
         # Load existing local config if it exists
-        existing_config = self._load_first_existing_config(local_files)
+        existing_config = self._load_first_existing_config(self._local_override_paths())
 
-        # Update framework enabled state
-        if enabled is not None:
-            existing_config['enabled'] = enabled
-
-        # Update requirement-level overrides
-        self._apply_requirement_overrides(existing_config, requirement_overrides)
-
-        # Ensure version field exists
-        self._ensure_version(existing_config)
+        # Apply overrides and ensure version field exists
+        self._apply_override_updates(existing_config, enabled, requirement_overrides)
 
         # Write to file using the write_local_config helper
         file_path = write_local_config(self.project_dir, existing_config)
@@ -475,14 +508,10 @@ class RequirementsConfig:
                 requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
             )
         """
-        project_file = Path(self.project_dir) / '.claude' / 'requirements.yaml'
+        project_file = self._project_config_path()
 
         # Load existing project config (NOT cascade - only project file)
         existing_config = self._load_config_if_exists(project_file)
-
-        # Update framework enabled state
-        if enabled is not None:
-            existing_config['enabled'] = enabled
 
         # Handle inherit flag (KEY DIFFERENCE from local config)
         if preserve_inherit:
@@ -491,11 +520,8 @@ class RequirementsConfig:
                 existing_config['inherit'] = True
             # Otherwise keep existing value
 
-        # Update requirement-level overrides
-        self._apply_requirement_overrides(existing_config, requirement_overrides)
-
-        # Ensure version field exists
-        self._ensure_version(existing_config)
+        # Apply overrides and ensure version field exists
+        self._apply_override_updates(existing_config, enabled, requirement_overrides)
 
         # Write to file using write_project_config helper
         file_path = write_project_config(self.project_dir, existing_config)
