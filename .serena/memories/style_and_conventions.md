@@ -1,0 +1,5 @@
+- Python 3.9 target.
+- Ruff config: line length 100; lint rules E/F/W; E501 ignored.
+- Docstrings are common for modules/functions; type hints used in code (e.g., `Path | None`).
+- Naming: snake_case for functions/variables/files; CapWords for classes; UPPER_SNAKE_CASE for constants.
+- Dependencies: stdlib + PyYAML (no heavy framework).

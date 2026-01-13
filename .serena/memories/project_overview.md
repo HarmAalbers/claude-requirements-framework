@@ -1,0 +1,5 @@
+- Purpose: hook-based requirements framework for Claude Code that enforces workflow steps before edits/stop; CLI `req` manages requirements.
+- Features: PreToolUse, Stop, SessionStart, SessionEnd, PostToolUse hooks; config cascade (global -> project -> local); message deduplication; plugin agents/skills/commands.
+- Two-location system: repo at `~/Tools/claude-requirements-framework/` is source of truth; deployed hooks live in `~/.claude/hooks/`.
+- Tech stack: Python 3.9 scripts + shell scripts; YAML config via PyYAML; Ruff for lint.
+- Design principles: fail-open (errors never block work); strategy pattern for requirement types; session/branch/permanent scopes.
