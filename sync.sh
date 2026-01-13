@@ -20,15 +20,14 @@ Sync the requirements framework between the git repository and deployed location
 
 Commands:
   deploy        Copy from repository → ~/.claude/hooks (default)
-  pull          Copy from ~/.claude/hooks → repository
   diff          Show differences between repository and deployed
   status        Show sync status
   help          Show this help message
 
 Examples:
   $0 deploy     # Deploy changes from repo to ~/.claude/hooks
-  $0 pull       # Pull deployed changes back to repo
   $0 diff       # See what's different
+  $0 status     # Check sync status
 EOF
     exit 0
 }
@@ -79,14 +78,8 @@ show_status() {
             if diff -q "$repo_file" "$deploy_file" > /dev/null 2>&1; then
                 echo -e "  ${GREEN}✓${NC} $file - In sync"
             else
-                # Files differ - check git status to determine direction
-                if git -C "$REPO_DIR" diff --quiet -- "hooks/$file" 2>/dev/null; then
-                    # Repo file matches git HEAD, so deployed has changes
-                    echo -e "  ${YELLOW}↓${NC} $file - Deployed has changes (run './sync.sh pull')"
-                else
-                    # Repo file has uncommitted changes
-                    echo -e "  ${YELLOW}↑${NC} $file - Repository has changes (run './sync.sh deploy')"
-                fi
+                # Files differ - repository is source of truth
+                echo -e "  ${YELLOW}↑${NC} $file - Out of sync (run './sync.sh deploy' to update deployed)"
                 has_issues=true
             fi
         fi
@@ -162,45 +155,12 @@ deploy_to_hooks() {
     echo ""
 }
 
-pull_from_hooks() {
-    echo -e "${BLUE}📥 Pulling from ~/.claude/hooks → repository${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-    # Create hooks/lib directory if it doesn't exist
-    mkdir -p "$REPO_DIR/hooks/lib"
-
-    # Copy main hook files (all .py files in deployed/)
-    echo "Copying hook files..."
-    for f in "$DEPLOY_DIR/"*.py; do
-        [ -f "$f" ] && cp -v "$f" "$REPO_DIR/hooks/"
-    done
-
-    # Copy library files
-    echo ""
-    echo "Copying library files..."
-    cp -v "$DEPLOY_DIR/lib/"*.py "$REPO_DIR/hooks/lib/"
-
-    echo ""
-    echo -e "${GREEN}✓ Pull complete!${NC}"
-    echo ""
-    echo -e "${YELLOW}⚠ Don't forget to commit changes:${NC}"
-    echo "  cd $REPO_DIR"
-    echo "  git status"
-    echo "  git add ."
-    echo "  git commit -m \"Sync from deployed version\""
-    echo ""
-}
-
 # Main script
 COMMAND="${1:-deploy}"
 
 case "$COMMAND" in
     deploy)
         deploy_to_hooks
-        ;;
-    pull)
-        pull_from_hooks
         ;;
     diff)
         show_diff
