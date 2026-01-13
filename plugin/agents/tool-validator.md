@@ -3,7 +3,7 @@ name: tool-validator
 description: Execute linting and type-checking tools on staged changes to catch CI errors locally
 model: inherit
 color: blue
-git_hash: 000fe23*
+git_hash: 88b2d4b
 ---
 
 # Tool Validator Agent

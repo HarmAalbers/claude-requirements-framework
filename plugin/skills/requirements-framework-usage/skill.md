@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-usage
 description: This skill should be used when the user asks about "using requirements framework", "how to configure requirements", "add requirement checklist", "customize requirements", "requirements not working", "bypass requirements", "satisfy requirements", or needs help with the requirements framework CLI (req command). Also triggers on questions about requirement scopes, session management, or troubleshooting hooks.
-git_hash: 000fe23
+git_hash: 88b2d4b*
 ---
 
 # Requirements Framework Usage
@@ -629,11 +629,8 @@ cd ~/Tools/claude-requirements-framework
 # Check sync status
 ./sync.sh status
 
-# Deploy repo → ~/.claude/hooks
+# Deploy development repo → production ~/.claude/hooks
 ./sync.sh deploy
-
-# Pull ~/.claude/hooks → repo
-./sync.sh pull
 
 # See differences
 ./sync.sh diff

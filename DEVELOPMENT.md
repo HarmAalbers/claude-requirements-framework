@@ -29,9 +29,6 @@ cd ~/Tools/claude-requirements-framework
 # Deploy changes from repo → ~/.claude/hooks
 ./sync.sh deploy
 
-# Pull changes from ~/.claude/hooks → repo
-./sync.sh pull
-
 # See what's different
 ./sync.sh diff
 ```
@@ -64,7 +61,7 @@ git push
 
 ### Workflow 2: Quick Fix in Production
 
-**Edit in ~/.claude/hooks → Pull to repo → Commit**
+**Edit in ~/.claude/hooks → Copy back to repo → Deploy → Commit**
 
 If you need to quickly fix something in the deployed version:
 
@@ -75,11 +72,14 @@ vim ~/.claude/hooks/check-requirements.py
 # 2. Test immediately (it's already active)
 python3 ~/.claude/hooks/test_requirements.py
 
-# 3. Pull changes back to repository
+# 3. Copy changes back to repository (manual)
 cd ~/Tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
 
-# 4. Commit the changes
+# 4. Deploy from repo to ensure both locations match
+./sync.sh deploy
+
+# 5. Commit the changes
 git add .
 git commit -m "Fix: emergency bug fix"
 git push
@@ -170,15 +170,14 @@ Deployed:    /Users/harm/.claude/hooks
 
 File Status:
   ✓ check-requirements.py - In sync
-  ↑ requirements-cli.py - Repository is newer
-  ↓ test_requirements.py - Deployed is newer
+  ↑ requirements-cli.py - Out of sync (run './sync.sh deploy' to update deployed)
   ⚠ lib/config.py - Not deployed
+  ✗ lib/old_module.py - Missing in repository (exists in deployed)
 ```
 
 **Symbols**:
 - `✓` - Files are in sync
-- `↑` - Repository is newer (deploy to update)
-- `↓` - Deployed is newer (pull to update repo)
+- `↑` - Out of sync (deploy to update)
 - `⚠` - Not deployed (exists in repository only)
 - `✗` - Missing in repository (exists in deployed only)
 
@@ -189,14 +188,6 @@ Copies all files from repository → `~/.claude/hooks/`
 - Overwrites deployed files
 - Sets executable permissions
 - Useful after making changes in the repo
-
-### `sync.sh pull`
-
-Copies all files from `~/.claude/hooks/` → repository
-
-- Overwrites repository files
-- Useful after making quick fixes in production
-- Reminds you to commit changes
 
 ### `sync.sh diff`
 
@@ -325,15 +316,18 @@ req satisfy commit_plan
 cd ~/Tools/claude-requirements-framework
 ./sync.sh status
 
-# Pull changes to repository
-./sync.sh pull
+# Review differences
+./sync.sh diff
+
+# Copy any deployed changes you want to keep back into the repo
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
 
 # Review changes
 git diff
 
 # Commit if good
 git add .
-git commit -m "Sync: pull changes from deployed version"
+git commit -m "Sync: reconcile deployed changes"
 git push
 ```
 
@@ -365,9 +359,12 @@ vim ~/.claude/hooks/check-requirements.py
 # Test immediately (no deploy needed)
 python3 ~/.claude/hooks/test_requirements.py
 
-# Pull to repo when done
+# Copy fix into repo when done
 cd ~/Tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
+
+# Deploy to keep repo as source of truth
+./sync.sh deploy
 
 # Commit and push
 git add .
@@ -397,7 +394,7 @@ cd claude-requirements-framework
 ```bash
 cd ~/Tools/claude-requirements-framework
 ./sync.sh status
-# If you see ↓ (deployed is newer), run: ./sync.sh pull
+# If status shows missing/out-of-sync files, reconcile in repo before committing
 git add .
 git commit -m "Your changes"
 ```
@@ -456,16 +453,17 @@ git push
 ./sync.sh status  # Should show all in sync now
 ```
 
-### Problem: "Deployed is newer" but I made changes in repo
+### Problem: "Missing in repository" after an emergency edit
 
-**Cause**: You edited in ~/.claude/hooks without pulling back
+**Cause**: You edited in `~/.claude/hooks/` without copying changes back
 
-**Solution**: Pull changes first, then review
+**Solution**: Copy changes into the repo, then deploy
 ```bash
-./sync.sh pull
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
+./sync.sh deploy
 git diff  # Review what changed
 git add .
-git commit -m "Sync from deployed"
+git commit -m "Sync: reconcile deployed changes"
 ```
 
 ### Problem: Tests pass in repo but fail when deployed
@@ -503,10 +501,10 @@ Create `.git/hooks/pre-commit` in the repository:
 
 cd ~/Tools/claude-requirements-framework
 
-# Check if deployed is newer
-if ./sync.sh status | grep -q "Deployed is newer"; then
-    echo "⚠️  Warning: Deployed files are newer than repository!"
-    echo "   Run './sync.sh pull' to sync before committing."
+# Check if repo is missing deployed changes
+if ./sync.sh status | grep -q "Missing in repository"; then
+    echo "⚠️  Warning: Repository is missing deployed changes!"
+    echo "   Copy deployed changes into the repo before committing."
     echo ""
     read -p "Continue anyway? (y/N) " -n 1 -r
     echo
@@ -555,7 +553,6 @@ When contributing changes:
 |--------|---------|------|
 | Check status | `./sync.sh status` | Before committing, periodically |
 | Deploy to hooks | `./sync.sh deploy` | After making changes in repo |
-| Pull from hooks | `./sync.sh pull` | After editing in ~/.claude/hooks |
 | See differences | `./sync.sh diff` | When investigating issues |
 | Run tests | `python3 ~/.claude/hooks/test_requirements.py` | After every change |
 

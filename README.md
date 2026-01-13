@@ -155,7 +155,7 @@ Use `req doctor` to verify the framework is installed and synced correctly:
 - Confirms the `PreToolUse` hook is registered in `~/.claude/settings.json`
 - Ensures `check-requirements.py` and `requirements-cli.py` are executable
 - Checks the current project for `.claude/requirements.yaml`
-- Compares repository files to the deployed `~/.claude/hooks` installation and recommends whether to deploy or pull changes
+- Compares repository files to the deployed `~/.claude/hooks` installation and recommends whether to deploy or reconcile differences
 
 Pass `--repo` to point at your repository copy if auto-detection fails:
 
@@ -1183,7 +1183,7 @@ This means `req satisfy` couldn't find your Claude Code session. Solutions:
 
 - The repository is the source of truth
 - Always run `./sync.sh status` before committing
-- Use `./sync.sh pull` to recover deployed changes to repo
+- If you edited deployed files, copy those changes into the repo before deploying
 
 ### Performance Issues
 
@@ -1244,9 +1244,6 @@ cd ~/tools/claude-requirements-framework
 # Deploy changes from repo → ~/.claude/hooks
 ./sync.sh deploy
 
-# Pull changes from ~/.claude/hooks → repo
-./sync.sh pull
-
 # See detailed differences
 ./sync.sh diff
 ```
@@ -1273,17 +1270,20 @@ git push origin master
 
 ```bash
 # 1. Claude edits deployed files (in ~/.claude/hooks/)
-# 2. Pull changes to repository
+# 2. Copy changes into repository (repeat for each file changed)
 cd ~/tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
 
-# 3. Commit
+# 3. Deploy from repo to keep source of truth
+./sync.sh deploy
+
+# 4. Commit
 git add .
 git commit -m "fix: Bug description"
 git push origin master
 ```
 
-**Important**: Always run `./sync.sh status` before committing to ensure you have the latest changes from both locations!
+**Important**: Always run `./sync.sh status` before committing to ensure repo and deployed locations match!
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, TDD practices, and troubleshooting guide.
 

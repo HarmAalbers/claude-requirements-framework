@@ -3,7 +3,7 @@ name: codex-review-agent
 description: Orchestrates OpenAI Codex code review workflow
 model: inherit
 color: blue
-git_hash: 000fe23*
+git_hash: 88b2d4b
 ---
 
 # Codex Code Review Agent

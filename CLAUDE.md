@@ -11,7 +11,6 @@ python3 hooks/test_requirements.py
 # Sync between repo and deployed location (~/.claude/hooks)
 ./sync.sh status   # Check sync status (run before committing!)
 ./sync.sh deploy   # Copy repo → ~/.claude/hooks
-./sync.sh pull     # Copy ~/.claude/hooks → repo
 
 # Installation
 ./install.sh

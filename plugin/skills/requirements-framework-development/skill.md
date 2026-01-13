@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-development
-description: This skill should be used when the user asks to "develop requirements framework", "fix requirements framework bug", "sync requirements framework", "pull/deploy requirements changes", "update framework code", "test framework changes", or needs help with the framework development workflow including sync.sh usage, TDD for framework itself, and contributing changes.
-git_hash: 000fe23
+description: This skill should be used when the user asks to "develop requirements framework", "fix requirements framework bug", "sync requirements framework", "deploy requirements changes", "update framework code", "test framework changes", or needs help with the framework development workflow including sync.sh usage, TDD for framework itself, and contributing changes.
+git_hash: 88b2d4b*
 ---
 
 # Requirements Framework Development
@@ -41,9 +41,6 @@ cd ~/tools/claude-requirements-framework
 # Deploy: Repository → ~/.claude/hooks
 ./sync.sh deploy
 
-# Pull: ~/.claude/hooks → Repository
-./sync.sh pull
-
 # Show differences
 ./sync.sh diff
 ```
@@ -59,16 +56,16 @@ Deployed:    ~/.claude/hooks
 
 File Status:
   ✓ check-requirements.py - In sync
-  ↑ requirements-cli.py - Repository is newer (run deploy)
-  ↓ test_requirements.py - Deployed is newer (run pull)
+  ↑ requirements-cli.py - Out of sync (run './sync.sh deploy' to update deployed)
   ⚠ lib/config.py - Not deployed
+  ✗ lib/old_module.py - Missing in repository (exists in deployed)
 ```
 
 **Symbols**:
 - `✓` = In sync (no action needed)
-- `↑` = Repository newer (run `./sync.sh deploy`)
-- `↓` = Deployed newer (run `./sync.sh pull` then commit)
-- `⚠` = File missing in one location
+- `↑` = Out of sync (run `./sync.sh deploy`)
+- `⚠` = Not deployed (exists in repository only)
+- `✗` = Missing in repository (exists in deployed only)
 
 ## Development Workflows
 
@@ -105,7 +102,7 @@ git push origin master
 
 ### Workflow B: Quick Fix in Production (Emergency)
 
-**Pattern**: Edit in ~/.claude/hooks → Test → Pull → Commit → Push
+**Pattern**: Edit in ~/.claude/hooks → Test → Copy back → Deploy → Commit → Push
 
 ```bash
 # 1. Fix directly in deployed location
@@ -116,11 +113,14 @@ python3 ~/.claude/hooks/test_requirements.py
 
 # 3. Verify fix works in Claude session
 
-# 4. Pull changes back to repository
+# 4. Copy changes back to repository (manual)
 cd ~/tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
 
-# 5. Commit and push
+# 5. Deploy from repo to keep source of truth
+./sync.sh deploy
+
+# 6. Commit and push
 git add .
 git commit -m "fix: Emergency bug fix"
 git push origin master
@@ -132,7 +132,7 @@ git push origin master
 
 ### Workflow C: Claude-Driven Development
 
-**Pattern**: Claude edits in ~/.claude/hooks → Pull → Commit → Push
+**Pattern**: Claude edits in ~/.claude/hooks → Copy back → Deploy → Commit → Push
 
 **This is the workflow we just used!**
 
@@ -140,15 +140,18 @@ git push origin master
 # 1. Claude makes changes to deployed files
 # (Claude edited ~/.claude/hooks/lib/message_dedup_cache.py)
 
-# 2. Pull to repository
+# 2. Copy changes back to repository (manual)
 cd ~/tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/lib/message_dedup_cache.py hooks/lib/message_dedup_cache.py
 
-# 3. Commit
+# 3. Deploy from repo to keep source of truth
+./sync.sh deploy
+
+# 4. Commit
 git add .
 git commit -m "feat: Your commit message"
 
-# 4. Push
+# 5. Push
 git push origin master
 ```
 
@@ -223,7 +226,7 @@ The sync.sh script automatically syncs these files:
 **Steps**:
 1. Identify which file contains the bug
 2. Check sync status: `cd ~/tools/claude-requirements-framework && ./sync.sh status`
-3. If deployed is newer, pull first: `./sync.sh pull`
+3. If deployed differs, review `./sync.sh diff` and copy changes into the repo
 4. Edit the file in repository
 5. Deploy: `./sync.sh deploy`
 6. Run tests: `python3 ~/.claude/hooks/test_requirements.py`
@@ -234,7 +237,7 @@ The sync.sh script automatically syncs these files:
 ### Task: Add New Feature
 
 **Steps**:
-1. Check sync status (pull if needed)
+1. Check sync status (reconcile deployed changes if needed)
 2. Write tests first (TDD): Edit `hooks/test_requirements.py` in repo
 3. Deploy tests: `./sync.sh deploy`
 4. Run tests (should fail - RED)
@@ -261,17 +264,20 @@ The sync.sh script automatically syncs these files:
 # 1. Claude edited files in ~/.claude/hooks/
 # (This happens when Claude develops in the active location)
 
-# 2. Pull changes to repository
+# 2. Copy changes to repository (repeat for each file changed)
 cd ~/tools/claude-requirements-framework
-./sync.sh pull
+cp ~/.claude/hooks/lib/message_dedup_cache.py hooks/lib/message_dedup_cache.py
 
-# 3. Review what changed
+# 3. Deploy from repo to keep source of truth
+./sync.sh deploy
+
+# 4. Review what changed
 git diff
 
-# 4. Run tests to verify
+# 5. Run tests to verify
 python3 hooks/test_requirements.py
 
-# 5. Commit if tests pass
+# 6. Commit if tests pass
 git add .
 git commit -m "feat: <description of what Claude built>"
 git push origin master
@@ -351,9 +357,9 @@ req satisfy commit_plan
 4. Check file actually changed: `./sync.sh diff`
 5. Restart Claude Code session if needed
 
-### Problem: Sync status shows conflicts
+### Problem: Sync status shows differences
 
-**Symptoms**: Both `↑` (repo newer) and `↓` (deployed newer) for different files
+**Symptoms**: `sync.sh status` shows out-of-sync or missing files
 
 **Solution**:
 ```bash
@@ -362,7 +368,7 @@ req satisfy commit_plan
 
 # Choose direction based on which changes to keep:
 # - Keep repo changes: ./sync.sh deploy
-# - Keep deployed changes: ./sync.sh pull
+# - Keep deployed changes: copy them into the repo, then deploy
 # - Manual merge if both have important changes
 ```
 
@@ -425,8 +431,12 @@ git push
 # Fix in deployed location (immediate effect)
 vim ~/.claude/hooks/lib/FILE.py
 
-# Pull to repo
-cd ~/tools/claude-requirements-framework && ./sync.sh pull
+# Copy to repo (manual)
+cd ~/tools/claude-requirements-framework
+cp ~/.claude/hooks/lib/FILE.py hooks/lib/FILE.py
+
+# Deploy from repo to keep source of truth
+./sync.sh deploy
 
 # Commit
 git add . && git commit -m "fix: Bug description" && git push
@@ -435,8 +445,9 @@ git add . && git commit -m "fix: Bug description" && git push
 ### When Claude adds a feature:
 
 ```bash
-# Pull any recent changes first
-cd ~/tools/claude-requirements-framework && ./sync.sh pull
+# Check sync status and reconcile deployed changes if needed
+cd ~/tools/claude-requirements-framework
+./sync.sh status
 
 # Edit in repo
 vim hooks/lib/FILE.py
@@ -455,8 +466,7 @@ git add . && git commit -m "feat: Feature description" && git push
 cd ~/tools/claude-requirements-framework
 ./sync.sh status
 
-# If deployed is newer (↓), pull first
-./sync.sh pull
+# If status shows missing/out-of-sync files, reconcile in repo first
 
 # Then commit
 git add . && git commit -m "Message" && git push
@@ -465,7 +475,7 @@ git add . && git commit -m "Message" && git push
 ## Best Practices for Agents
 
 1. **Check sync status BEFORE committing** - Always run `./sync.sh status`
-2. **Pull before editing in repo** - Ensure you have latest from deployed: `./sync.sh pull`
+2. **Reconcile deployed changes before editing in repo** - Use `./sync.sh diff` if status isn't clean
 3. **Deploy after editing in repo** - Make changes active: `./sync.sh deploy`
 4. **Test after every change** - Run: `python3 ~/.claude/hooks/test_requirements.py`
 5. **Commit atomically** - One logical change per commit
@@ -501,7 +511,7 @@ bash ~/tools/claude-requirements-framework/sync.sh status
 1. **Repository is source of truth** - Always commit from here
 2. **Deployed is active** - Changes here take effect immediately
 3. **sync.sh keeps them aligned** - Use it liberally
-4. **Pull before you push** - Check sync status first
+4. **Check sync status before you push** - Reconcile differences first
 5. **Test after every sync** - Run test suite to verify
 
 ## Example: Full Development Cycle
@@ -509,9 +519,9 @@ bash ~/tools/claude-requirements-framework/sync.sh status
 ```bash
 # Scenario: Add new requirement type
 
-# 1. Pull latest
+# 1. Check sync status
 cd ~/tools/claude-requirements-framework
-./sync.sh pull
+./sync.sh status
 
 # 2. Write test (TDD)
 vim hooks/test_requirements.py
@@ -562,14 +572,15 @@ Update these files when changing the framework:
 
 1. Edit `~/.claude/hooks/check-requirements.py` or relevant file
 2. Test: `python3 ~/.claude/hooks/test_requirements.py`
-3. Pull to repo: `cd ~/tools/claude-requirements-framework && ./sync.sh pull`
-4. Commit: `git add . && git commit -m "fix: Hook spam issue"`
-5. Push: `git push`
+3. Copy to repo: `cd ~/tools/claude-requirements-framework && cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py`
+4. Deploy: `./sync.sh deploy`
+5. Commit: `git add . && git commit -m "fix: Hook spam issue"`
+6. Push: `git push`
 
 ### When User Says: "Add debug mode to the framework"
 
 1. Check sync: `cd ~/tools/claude-requirements-framework && ./sync.sh status`
-2. Pull if needed: `./sync.sh pull`
+2. If needed, review `./sync.sh diff` and copy changes into the repo
 3. Edit in repo: `vim hooks/lib/config.py`
 4. Deploy: `./sync.sh deploy`
 5. Test: `python3 ~/.claude/hooks/test_requirements.py`
@@ -619,11 +630,11 @@ test_requirements.py
 
 ## Workflow Summary
 
-| Scenario | Location to Edit | Sync Command | When to Commit |
-|----------|-----------------|--------------|----------------|
+| Scenario | Location to Edit | Sync Step | When to Commit |
+|----------|-----------------|-----------|----------------|
 | Planned feature | Repository | `./sync.sh deploy` | After testing |
-| Emergency fix | `~/.claude/hooks/` | `./sync.sh pull` | After fix verified |
-| Claude developed | `~/.claude/hooks/` | `./sync.sh pull` | Immediately after |
+| Emergency fix | `~/.claude/hooks/` | Copy to repo, then `./sync.sh deploy` | After fix verified |
+| Claude developed | `~/.claude/hooks/` | Copy to repo, then `./sync.sh deploy` | Immediately after |
 | TDD development | Repository | `./sync.sh deploy` | After GREEN phase |
 
 **Remember**: `./sync.sh status` is your friend - run it frequently!

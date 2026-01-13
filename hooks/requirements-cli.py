@@ -873,13 +873,13 @@ def _compare_repo_and_deployed(repo_dir: Path, deployed_dir: Path) -> tuple[list
                     actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
                 else:
                     results.append((relative, "↓ Deployed is newer"))
-                    actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+                    actions.add("Copy deployed changes into the repo before deploying")
         elif repo_file.exists():
             results.append((relative, "⚠ Not deployed"))
             actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
         elif deployed_file.exists():
             results.append((relative, "✗ Missing in repository"))
-            actions.add("Pull deployed changes into the repo (./sync.sh pull)")
+            actions.add("Copy deployed changes into the repo before deploying")
         else:
             results.append((relative, "✗ Missing in both locations"))
 
@@ -1440,7 +1440,7 @@ def cmd_doctor(args) -> int:
                     'severity': 'warning',
                     'message': f'{relative}: Deployed has changes',
                     'fix': {
-                        'description': 'Run ./sync.sh pull to sync changes',
+                        'description': 'Copy deployed changes into the repo, then deploy',
                         'safe': False,
                         'command': None
                     }
