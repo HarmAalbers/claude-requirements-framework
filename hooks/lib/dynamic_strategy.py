@@ -61,6 +61,18 @@ class DynamicRequirementStrategy(RequirementStrategy):
         self.calculators = {}  # Cache loaded calculator instances
         self.cache = CalculationCache()  # Calculation result cache
 
+    def _get_session_id(self, context: dict) -> str:
+        """
+        Get session id with a safe default.
+
+        Args:
+            context: Context dict
+
+        Returns:
+            Session identifier string
+        """
+        return context.get("session_id", "unknown")
+
     def _get_context_value(self, context: dict, key: str, req_name: str) -> Optional[str]:
         """
         Get a required context value with fail-open behavior.
@@ -79,6 +91,31 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return None
         return value
 
+    def _get_required_context(
+        self,
+        context: dict,
+        req_name: str,
+        *keys: str,
+    ) -> Optional[dict]:
+        """
+        Get required context values with fail-open behavior.
+
+        Args:
+            context: Context dict
+            req_name: Requirement name for logging
+            keys: Required keys to read
+
+        Returns:
+            Dict of values or None if any missing
+        """
+        values = {}
+        for key in keys:
+            value = self._get_context_value(context, key, req_name)
+            if not value:
+                return None
+            values[key] = value
+        return values
+
     def _build_dedup_cache_key(self, context: dict, req_name: str, session_id: str) -> str:
         """
         Build a dedup cache key using available context values.
@@ -91,8 +128,8 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Returns:
             Cache key string
         """
-        project_dir = context.get('project_dir', '')
-        branch = context.get('branch', '')
+        project_dir = context.get("project_dir", "")
+        branch = context.get("branch", "")
         return f"{project_dir}:{branch}:{session_id}:{req_name}"
 
     def _create_block_response(self, req_name: str, message: str, context: dict) -> dict:
@@ -108,17 +145,26 @@ class DynamicRequirementStrategy(RequirementStrategy):
             Hook response dict
         """
         if self.dedup_cache:
-            session_id = context.get('session_id', 'unknown')
+            session_id = self._get_session_id(context)
             cache_key = self._build_dedup_cache_key(context, req_name, session_id)
 
-            if not self.dedup_cache.should_show_message(cache_key, message, ttl=DEDUP_MESSAGE_TTL_SECONDS):
+            if not self.dedup_cache.should_show_message(
+                cache_key,
+                message,
+                ttl=DEDUP_MESSAGE_TTL_SECONDS,
+            ):
                 minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
                 return create_denial_response(minimal_message)
 
         return create_denial_response(message)
 
-    def check(self, req_name: str, config: RequirementsConfig,
-              reqs: BranchRequirements, context: dict) -> Optional[dict]:
+    def check(
+        self,
+        req_name: str,
+        config: RequirementsConfig,
+        reqs: BranchRequirements,
+        context: dict,
+    ) -> Optional[dict]:
         """
         Check dynamic requirement with automatic calculation.
 
@@ -136,7 +182,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
         """
         # 1. Check if satisfied at branch level (via `req satisfy --branch`)
         # This uses is_satisfied with session scope, which now checks branch-level overrides first
-        if reqs.is_satisfied(req_name, scope='session'):
+        if reqs.is_satisfied(req_name, scope="session"):
             return None  # Satisfied at branch level, allow
 
         # 2. Check if approved (TTL-based short-circuit)
@@ -156,8 +202,11 @@ class DynamicRequirementStrategy(RequirementStrategy):
         # 5. Evaluate thresholds
         return self._evaluate_thresholds(req_name, config, req_config, reqs, result, context)
 
-    def _get_dynamic_config(self, req_name: str,
-                            config: RequirementsConfig) -> Optional[dict]:
+    def _get_dynamic_config(
+        self,
+        req_name: str,
+        config: RequirementsConfig,
+    ) -> Optional[dict]:
         """
         Load and validate dynamic requirement config once.
 
@@ -178,8 +227,13 @@ class DynamicRequirementStrategy(RequirementStrategy):
             log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
             return None
 
-    def _get_result(self, req_name: str, config: RequirementsConfig,
-                   req_config: dict, context: dict) -> Optional[dict]:
+    def _get_result(
+        self,
+        req_name: str,
+        config: RequirementsConfig,
+        req_config: dict,
+        context: dict,
+    ) -> Optional[dict]:
         """
         Get cached or fresh calculation result.
 
@@ -192,14 +246,16 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Returns:
             Calculator result dict or None
         """
-        project_dir = self._get_context_value(context, 'project_dir', req_name)
-        branch = self._get_context_value(context, 'branch', req_name)
-        if not project_dir or not branch:
+        context_values = self._get_required_context(context, req_name, "project_dir", "branch")
+        if not context_values:
             return None
 
+        project_dir = context_values["project_dir"]
+        branch = context_values["branch"]
+
         # Check cache (60s TTL, separate from state)
-        cache_key = f"{project_dir}:{branch}:{req_name}"
-        cache_ttl = config.get_attribute(req_name, 'cache_ttl', DEFAULT_CACHE_TTL_SECONDS)
+        cache_key = self._build_cache_key(project_dir, branch, req_name)
+        cache_ttl = config.get_attribute(req_name, "cache_ttl", DEFAULT_CACHE_TTL_SECONDS)
 
         cached = self.cache.get(cache_key, cache_ttl)
         if cached is not None:
@@ -210,6 +266,43 @@ class DynamicRequirementStrategy(RequirementStrategy):
         if not calculator:
             return None  # Fail open
 
+        return self._run_calculator(calculator, project_dir, branch, cache_key, req_name)
+
+    def _build_cache_key(self, project_dir: str, branch: str, req_name: str) -> str:
+        """
+        Build a cache key for calculation results.
+
+        Args:
+            project_dir: Project root path
+            branch: Git branch name
+            req_name: Requirement name
+
+        Returns:
+            Cache key string
+        """
+        return f"{project_dir}:{branch}:{req_name}"
+
+    def _run_calculator(
+        self,
+        calculator: RequirementCalculator,
+        project_dir: str,
+        branch: str,
+        cache_key: str,
+        req_name: str,
+    ) -> Optional[dict]:
+        """
+        Run calculator and cache the result.
+
+        Args:
+            calculator: Calculator instance
+            project_dir: Project root path
+            branch: Git branch name
+            cache_key: Cache key for results
+            req_name: Requirement name for logging
+
+        Returns:
+            Calculator result dict or None
+        """
         try:
             result = calculator.calculate(project_dir, branch)
             if result is not None:
@@ -220,8 +313,11 @@ class DynamicRequirementStrategy(RequirementStrategy):
             log_error(f"Calculator failed for '{req_name}': {e}", exc_info=True)
             return None  # Fail open
 
-    def _load_calculator(self, req_name: str,
-                        req_config: dict) -> Optional[RequirementCalculator]:
+    def _load_calculator(
+        self,
+        req_name: str,
+        req_config: dict,
+    ) -> Optional[RequirementCalculator]:
         """
         Load and validate calculator instance.
 
@@ -239,14 +335,14 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return self.calculators[req_name]
 
         # Type system now guarantees 'calculator' field exists
-        module_name = req_config['calculator']
+        module_name = req_config["calculator"]
 
         try:
             # Import calculator module
-            module = importlib.import_module(f'lib.{module_name}')
+            module = importlib.import_module(f"lib.{module_name}")
 
             # Get Calculator class
-            calculator_class = getattr(module, 'Calculator', None)
+            calculator_class = getattr(module, "Calculator", None)
             if not calculator_class:
                 log_error(f"Calculator '{module_name}' missing Calculator class")
                 return None
@@ -256,7 +352,9 @@ class DynamicRequirementStrategy(RequirementStrategy):
 
             # Validate implements interface
             if not isinstance(calculator, RequirementCalculator):
-                log_error(f"Calculator '{module_name}' doesn't implement RequirementCalculator interface")
+                log_error(
+                    f"Calculator '{module_name}' doesn't implement RequirementCalculator interface"
+                )
                 return None
 
             # Cache for future use
@@ -270,9 +368,15 @@ class DynamicRequirementStrategy(RequirementStrategy):
             log_error(f"Failed to load calculator '{module_name}': {e}")
             return None
 
-    def _evaluate_thresholds(self, req_name: str, config: RequirementsConfig,
-                            req_config: dict, reqs: BranchRequirements,
-                            result: dict, context: dict) -> Optional[dict]:
+    def _evaluate_thresholds(
+        self,
+        req_name: str,
+        config: RequirementsConfig,
+        req_config: dict,
+        reqs: BranchRequirements,
+        result: dict,
+        context: dict,
+    ) -> Optional[dict]:
         """
         Evaluate calculation result against thresholds.
 
@@ -289,11 +393,11 @@ class DynamicRequirementStrategy(RequirementStrategy):
             Dict with denial response if blocked
         """
         # Type system now guarantees 'thresholds' field exists
-        thresholds = req_config['thresholds']
+        thresholds = req_config["thresholds"]
 
-        value = result.get('value', 0)
-        block_threshold = thresholds.get('block', float('inf'))
-        warn_threshold = thresholds.get('warn', float('inf'))
+        value = result.get("value", 0)
+        block_threshold = thresholds.get("block", float("inf"))
+        warn_threshold = thresholds.get("warn", float("inf"))
 
         # Check block threshold first (most severe)
         if value >= block_threshold:
@@ -305,7 +409,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return self._create_block_response(req_name, message, context)
 
         # Check warn threshold
-        elif value >= warn_threshold:
+        if value >= warn_threshold:
             # WARN - log but allow operation
             log_warning(f"{req_name}: {result.get('summary', value)}")
             return None
@@ -313,8 +417,79 @@ class DynamicRequirementStrategy(RequirementStrategy):
         # Under threshold - allow
         return None
 
-    def _format_block_message(self, req_name: str, config: RequirementsConfig,
-                              thresholds: dict, result: dict, context: dict) -> str:
+    def _build_template_vars(self, req_name: str, thresholds: dict, result: dict) -> dict:
+        """
+        Build template variables for blocking messages.
+
+        Args:
+            req_name: Requirement name
+            thresholds: Thresholds for the requirement
+            result: Calculator result
+
+        Returns:
+            Template variable mapping
+        """
+        value = result.get("value", 0)
+        template_vars = {
+            "req_name": req_name,
+            "total": value,
+            "value": value,
+            "summary": result.get("summary", ""),
+            "base_branch": result.get("base_branch", ""),
+            "warn_threshold": thresholds.get("warn", 0),
+            "block_threshold": thresholds.get("block", 0),
+        }
+
+        # Add all result fields as potential template variables
+        template_vars.update(result)
+
+        return template_vars
+
+    def _format_message_template(self, req_name: str, template: str, template_vars: dict) -> str:
+        """
+        Format template variables into a message string.
+
+        Args:
+            req_name: Requirement name
+            template: Message template
+            template_vars: Template variable mapping
+
+        Returns:
+            Formatted message string
+        """
+        try:
+            return template.format(**template_vars)
+        except KeyError as e:
+            # Template has undefined variable - log and use as-is
+            log_warning(f"Template for '{req_name}' references undefined variable: {e}")
+            return template
+
+    def _approval_instructions(self, req_name: str, session_id: str) -> str:
+        """
+        Build CLI approval instructions.
+
+        Args:
+            req_name: Requirement name
+            session_id: Session identifier
+
+        Returns:
+            Approval instructions string
+        """
+        return (
+            "\n\n💡 **To approve and continue**:"
+            "\n```bash"
+            f"\nreq satisfy {req_name} --session {session_id}"
+            "\n```"
+        )
+
+    def _format_block_message(
+        self,
+        req_name: str,
+        config: RequirementsConfig,
+        thresholds: dict,
+        result: dict,
+        context: dict,
+    ) -> str:
         """
         Format blocking message with template variable substitution.
 
@@ -328,36 +503,14 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Returns:
             Formatted message string
         """
-        template = config.get_attribute(req_name, 'blocking_message',
-                                       'Requirement {req_name} not satisfied')
+        template = config.get_attribute(
+            req_name,
+            "blocking_message",
+            "Requirement {req_name} not satisfied",
+        )
 
-        # Prepare template variables
-        template_vars = {
-            'req_name': req_name,
-            'total': result.get('value', 0),
-            'value': result.get('value', 0),
-            'summary': result.get('summary', ''),
-            'base_branch': result.get('base_branch', ''),
-            'warn_threshold': thresholds.get('warn', 0),
-            'block_threshold': thresholds.get('block', 0),
-        }
+        template_vars = self._build_template_vars(req_name, thresholds, result)
+        message = self._format_message_template(req_name, template, template_vars)
 
-        # Add all result fields as potential template variables
-        template_vars.update(result)
-
-        # Replace template variables
-        try:
-            message = template.format(**template_vars)
-        except KeyError as e:
-            # Template has undefined variable - log and use as-is
-            log_warning(f"Template for '{req_name}' references undefined variable: {e}")
-            message = template
-
-        # Add CLI approval instructions
-        session_id = context.get('session_id', 'unknown')
-        message += f"\n\n💡 **To approve and continue**:"
-        message += f"\n```bash"
-        message += f"\nreq satisfy {req_name} --session {session_id}"
-        message += f"\n```"
-
-        return message
+        session_id = self._get_session_id(context)
+        return message + self._approval_instructions(req_name, session_id)
