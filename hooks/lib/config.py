@@ -53,6 +53,9 @@ class RequirementsConfig:
     }
     DEFAULT_TRIGGER_TOOLS = ('Edit', 'Write', 'MultiEdit')
     DEFAULT_VERSION = '1.0'
+    CLAUDE_DIRNAME = '.claude'
+    PROJECT_CONFIG_FILENAME = 'requirements.yaml'
+    LOCAL_OVERRIDE_FILENAMES = ('requirements.local.yaml', 'requirements.local.json')
     HOOK_DEFAULTS = {
         'session_start': {
             'inject_context': True,
@@ -74,6 +77,7 @@ class RequirementsConfig:
             project_dir: Project root directory
         """
         self.project_dir = project_dir
+        self._project_root = Path(project_dir)
         self.validation_errors: list[str] = []
         self._config = self._load_cascade()
 
@@ -89,35 +93,36 @@ class RequirementsConfig:
 
     def _global_config_path(self) -> Path:
         """Return path to the global config file."""
-        return Path.home() / '.claude' / 'requirements.yaml'
+        return Path.home() / self.CLAUDE_DIRNAME / self.PROJECT_CONFIG_FILENAME
 
     def _project_config_dir(self) -> Path:
         """Return path to the project .claude directory."""
-        return Path(self.project_dir) / '.claude'
+        return self._project_root / self.CLAUDE_DIRNAME
 
     def _project_config_path(self) -> Path:
         """Return path to the project config file."""
-        return self._project_config_dir() / 'requirements.yaml'
+        return self._project_config_dir() / self.PROJECT_CONFIG_FILENAME
 
     def _local_override_paths(self) -> list[Path]:
         """Return candidate local override file paths."""
         claude_dir = self._project_config_dir()
-        return [
-            claude_dir / 'requirements.local.yaml',
-            claude_dir / 'requirements.local.json',
-        ]
+        return [claude_dir / filename for filename in self.LOCAL_OVERRIDE_FILENAMES]
+
+    def _load_config(self, path: Path) -> dict:
+        """Load configuration from an existing path."""
+        return load_yaml_or_json(path) or {}
 
     def _load_config_if_exists(self, path: Path) -> dict:
         """Load configuration from path if it exists."""
         if not path.exists():
             return {}
-        return load_yaml_or_json(path) or {}
+        return self._load_config(path)
 
     def _load_first_existing_config(self, paths: list[Path]) -> dict:
         """Load the first existing config file from a list of paths."""
         for path in paths:
             if path.exists():
-                return self._load_config_if_exists(path)
+                return self._load_config(path)
         return {}
 
     def _default_trigger_tools(self) -> list[str]:
@@ -172,11 +177,29 @@ class RequirementsConfig:
         self._apply_requirement_overrides(config, requirement_overrides)
         self._ensure_version(config)
 
+    def _write_override_config(self, config: dict, enabled: Optional[bool],
+                               requirement_overrides: Optional[dict], writer) -> str:
+        """Apply overrides and persist config with the provided writer."""
+        self._apply_override_updates(config, enabled, requirement_overrides)
+        return writer(self.project_dir, config)
+
     def _record_validation_error(self, error: ValueError) -> None:
         """Track and emit a validation error."""
         message = str(error)
         print(f"⚠️ Config validation error: {message}", file=sys.stderr)
         self.validation_errors.append(message)
+
+    def _merge_project_config(self, config: dict, project_config: dict) -> dict:
+        """Merge project config into base config with inherit handling."""
+        if project_config.get('inherit', True):
+            deep_merge(config, project_config)
+            return config
+        return project_config
+
+    def _apply_local_overrides(self, config: dict, local_config: dict) -> None:
+        """Apply local overrides onto the current config."""
+        if local_config:
+            deep_merge(config, local_config)
 
     def _validate_and_prune_requirements(self, config: dict) -> None:
         """Validate requirements and remove invalid entries."""
@@ -213,18 +236,11 @@ class RequirementsConfig:
         # 2. Project config (versioned)
         project_config = self._load_config_if_exists(self._project_config_path())
         if project_config:
-            # Check inherit flag (default: True)
-            if project_config.get('inherit', True):
-                # Deep merge project into global
-                deep_merge(config, project_config)
-            else:
-                # Replace entirely (no inheritance)
-                config = project_config
+            config = self._merge_project_config(config, project_config)
 
         # 3. Local overrides (gitignored)
         local_config = self._load_first_existing_config(self._local_override_paths())
-        if local_config:
-            deep_merge(config, local_config)
+        self._apply_local_overrides(config, local_config)
 
         # 4. Validate requirements (fail-safe: remove invalid ones)
         self._validate_and_prune_requirements(config)
@@ -482,13 +498,12 @@ class RequirementsConfig:
         # Load existing local config if it exists
         existing_config = self._load_first_existing_config(self._local_override_paths())
 
-        # Apply overrides and ensure version field exists
-        self._apply_override_updates(existing_config, enabled, requirement_overrides)
-
-        # Write to file using the write_local_config helper
-        file_path = write_local_config(self.project_dir, existing_config)
-
-        return file_path
+        return self._write_override_config(
+            existing_config,
+            enabled,
+            requirement_overrides,
+            write_local_config,
+        )
 
     def write_project_override(self, enabled: Optional[bool] = None,
                               requirement_overrides: Optional[dict] = None,
@@ -534,13 +549,12 @@ class RequirementsConfig:
                 existing_config['inherit'] = True
             # Otherwise keep existing value
 
-        # Apply overrides and ensure version field exists
-        self._apply_override_updates(existing_config, enabled, requirement_overrides)
-
-        # Write to file using write_project_config helper
-        file_path = write_project_config(self.project_dir, existing_config)
-
-        return file_path
+        return self._write_override_config(
+            existing_config,
+            enabled,
+            requirement_overrides,
+            write_project_config,
+        )
 
     def get_requirement(self, name: str) -> Optional[dict]:
         """
@@ -584,7 +598,7 @@ class RequirementsConfig:
             name: Requirement name
 
         Returns:
-            Scope string: "session", "branch", or "permanent"
+            Scope string: "session", "branch", "permanent", or "single_use"
         """
         return self.get_attribute(name, 'scope', 'session')
 
@@ -738,7 +752,7 @@ class RequirementsConfig:
             req_name: Requirement name
 
         Returns:
-            'blocking' (manually satisfied) or 'dynamic' (calculated)
+            'blocking' (manually satisfied), 'dynamic' (calculated), or 'guard'
             Default: 'blocking' for backwards compatibility
         """
         return self.get_attribute(req_name, 'type', 'blocking')
