@@ -99,6 +99,8 @@ class RequirementsConfigData(TypedDict, total=False):
 RequirementOverrideValue = Union[bool, RequirementConfigDict, Mapping[str, Any]]
 RequirementOverrides = Mapping[str, RequirementOverrideValue]
 ConfigWriter = Callable[[str, RequirementsConfigData], str]
+RequirementFieldValidator = Callable[[str, Any], None]
+RequirementTypeValidator = Callable[[str, Mapping[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -136,8 +138,38 @@ class ValidationIssue:
 
 
 class RequirementValidator:
-    def __init__(self, schema: Mapping[str, RequirementFieldRule]) -> None:
-        self._schema = schema
+    def __init__(
+        self,
+        schema: Mapping[str, RequirementFieldRule],
+        field_validators: Optional[Mapping[str, RequirementFieldValidator]] = None,
+        type_validators: Optional[Mapping[str, RequirementTypeValidator]] = None,
+    ) -> None:
+        self._schema = dict(schema)
+        self._field_validators: dict[str, RequirementFieldValidator] = {}
+        self._type_validators: dict[str, RequirementTypeValidator] = {}
+
+        # Register built-in validators; callers can extend/override via registries.
+        self.register_field_validator("trigger_tools", self._validate_trigger_tools)
+        self.register_type_validator("dynamic", self._validate_dynamic_fields)
+        self.register_type_validator("blocking", self._validate_blocking_fields)
+        self.register_type_validator("guard", self._validate_guard_fields)
+
+        if field_validators:
+            for field, validator in field_validators.items():
+                self.register_field_validator(field, validator)
+        if type_validators:
+            for req_type, validator in type_validators.items():
+                self.register_type_validator(req_type, validator)
+
+    def register_field_validator(
+        self, field: str, validator: RequirementFieldValidator
+    ) -> None:
+        self._field_validators[field] = validator
+
+    def register_type_validator(
+        self, req_type: str, validator: RequirementTypeValidator
+    ) -> None:
+        self._type_validators[req_type] = validator
 
     def validate_requirements(
         self, requirements: MutableMapping[str, RequirementConfigDict]
@@ -159,16 +191,19 @@ class RequirementValidator:
         # Validate satisfied_by_skill if present (applies to all types)
         self._validate_satisfied_by_skill(req_name, req_config)
 
-        validators = {
-            "dynamic": self._validate_dynamic_fields,
-            "blocking": self._validate_blocking_fields,
-            "guard": self._validate_guard_fields,
-        }
-        validator = validators.get(req_type)
-        if not validator:
+        self._validate_requirement_type(req_name, req_config, req_type)
+
+    def _validate_requirement_type(
+        self, req_name: str, req_config: Mapping[str, Any], req_type: str
+    ) -> None:
+        validator = self._type_validators.get(req_type)
+        if validator is None:
+            allowed_values = ", ".join(
+                f"'{value}'" for value in sorted(self._type_validators.keys())
+            )
             raise ValueError(
                 f"Requirement '{req_name}' has unknown type '{req_type}'. "
-                f"Valid types: 'blocking', 'dynamic', 'guard'"
+                f"Valid types: {allowed_values}"
             )
         validator(req_name, req_config)
 
@@ -177,7 +212,7 @@ class RequirementValidator:
     ) -> None:
         if req_config.get("type") != "dynamic":
             return
-        self._validate_dynamic_fields(req_name, req_config)
+        self._validate_requirement_type(req_name, req_config, "dynamic")
 
     def _validate_requirement_schema(
         self, req_name: str, req_config: Mapping[str, Any]
@@ -194,24 +229,24 @@ class RequirementValidator:
                 if not isinstance(value, list):
                     raise ValueError(f"Requirement '{req_name}' field '{field}' must be a list")
 
-                # Special handling for trigger_tools - can be strings OR dicts
-                if field == "trigger_tools":
-                    self._validate_trigger_tools(req_name, value)
-                else:
-                    element_type = rules.element_type
-                    if element_type:
-                        invalid_items = [
-                            item for item in value if not isinstance(item, element_type)
-                        ]
-                        if invalid_items:
-                            raise ValueError(
-                                f"Requirement '{req_name}' field '{field}' must contain only strings"
-                            )
+                element_type = rules.element_type
+                if element_type:
+                    invalid_items = [
+                        item for item in value if not isinstance(item, element_type)
+                    ]
+                    if invalid_items:
+                        raise ValueError(
+                            f"Requirement '{req_name}' field '{field}' must contain only strings"
+                        )
             else:
                 if not isinstance(value, expected_type):
                     raise ValueError(
                         f"Requirement '{req_name}' field '{field}' must be {expected_type.__name__}"
                     )
+
+            field_validator = self._field_validators.get(field)
+            if field_validator is not None:
+                field_validator(req_name, value)
 
             if rules.allowed is not None and value not in rules.allowed:
                 allowed_values = ", ".join(sorted(rules.allowed))
@@ -387,12 +422,21 @@ class RequirementsConfig:
         },
     }
 
-    def __init__(self, project_dir: str):
+    def __init__(
+        self,
+        project_dir: str,
+        requirement_schema: Optional[Mapping[str, RequirementFieldRule]] = None,
+        field_validators: Optional[Mapping[str, RequirementFieldValidator]] = None,
+        type_validators: Optional[Mapping[str, RequirementTypeValidator]] = None,
+    ):
         """
         Initialize config for project.
 
         Args:
             project_dir: Project root directory
+            requirement_schema: Optional schema override for requirement fields
+            field_validators: Optional field-specific validators keyed by field name
+            type_validators: Optional requirement-type validators keyed by type name
         """
         self.project_dir: str = project_dir
         self._project_root: Path = Path(project_dir)
@@ -402,7 +446,11 @@ class RequirementsConfig:
             project_config_filename=self.PROJECT_CONFIG_FILENAME,
             local_override_filenames=self.LOCAL_OVERRIDE_FILENAMES,
         )
-        self._validator = RequirementValidator(self.REQUIREMENT_SCHEMA)
+        self._validator = RequirementValidator(
+            requirement_schema or self.REQUIREMENT_SCHEMA,
+            field_validators=field_validators,
+            type_validators=type_validators,
+        )
         self.validation_errors: list[str] = []
         self._config: RequirementsConfigData = self._load_cascade()
 
