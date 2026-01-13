@@ -33,11 +33,10 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
-from config import RequirementsConfig
-from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from requirements import BranchRequirements
-from session import get_session_id, normalize_session_id
+from session import normalize_session_id
 from logger import get_logger
+from hook_utils import early_hook_setup
 
 
 def main() -> int:
@@ -74,45 +73,23 @@ def main() -> int:
 
     session_id = normalize_session_id(raw_session)
 
-    # Initialize logger (basic until we have config)
-    logger = get_logger(base_context={"session": session_id, "hook": "Stop"})
+    # Early hook setup: loads config, creates logger with correct level
+    project_dir, branch, config, logger = early_hook_setup(
+        session_id, "Stop", cwd=input_data.get('cwd')
+    )
 
     try:
         # Skip if requirements explicitly disabled
         if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
             return 0
 
-        # Resolve project directory
-        project_dir = input_data.get('cwd') or resolve_project_root(verbose=False)
-        if not project_dir:
+        # Skip if no project context
+        if not project_dir or not branch or not config:
             return 0
-
-        # Skip if not a git repo
-        if not is_git_repo(project_dir):
-            return 0
-
-        # Get current branch
-        branch = get_current_branch(project_dir)
-        if not branch:
-            return 0
-
-        # Load config
-        config = RequirementsConfig(project_dir)
 
         # Skip if framework disabled
         if not config.is_enabled():
             return 0
-
-        # Update logger with config
-        logger = get_logger(
-            config.get_logging_config(),
-            base_context={
-                "session": session_id,
-                "branch": branch,
-                "project_dir": project_dir,
-                "hook": "Stop"
-            }
-        )
 
         # Check if stop verification is enabled (default: True)
         if not config.get_hook_config('stop', 'verify_requirements', True):

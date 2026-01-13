@@ -30,10 +30,10 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from config import RequirementsConfig
-from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from requirements import BranchRequirements
-from session import get_session_id, update_registry, cleanup_stale_sessions, normalize_session_id
+from session import update_registry, cleanup_stale_sessions, normalize_session_id
 from logger import get_logger
+from hook_utils import early_hook_setup
 
 
 def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
@@ -122,39 +122,24 @@ def main() -> int:
 
     session_id = normalize_session_id(raw_session)
 
-    # Initialize logger (basic until we have config)
-    logger = get_logger(base_context={"session": session_id, "hook": "SessionStart"})
+    # Early hook setup: loads config, creates logger with correct level
+    project_dir, branch, config, logger = early_hook_setup(
+        session_id, "SessionStart", cwd=input_data.get('cwd')
+    )
 
     try:
         # Skip if requirements explicitly disabled
         if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
             return 0
 
-        # Resolve project directory
-        project_dir = input_data.get('cwd') or resolve_project_root(verbose=False)
-        if not project_dir:
-            return 0
-
-        # Skip if not a git repo
-        if not is_git_repo(project_dir):
-            return 0
-
-        # Get current branch
-        branch = get_current_branch(project_dir)
-        if not branch:
+        # Skip if no project context
+        if not project_dir or not branch:
             return 0
 
         # Check if project has its own config
         project_config_yaml = Path(project_dir) / '.claude' / 'requirements.yaml'
         project_config_json = Path(project_dir) / '.claude' / 'requirements.json'
         has_project_config = project_config_yaml.exists() or project_config_json.exists()
-
-        # Load config (may fall back to global)
-        config = RequirementsConfig(project_dir)
-
-        # Skip if framework disabled
-        if not config.is_enabled():
-            return 0
 
         # Suggest init if no project config (only on startup, not resume/compact)
         source = input_data.get('source', 'startup')
@@ -169,16 +154,13 @@ See `req init --help` for options.
 """)
             return 0
 
-        # Update logger with config
-        logger = get_logger(
-            config.get_logging_config(),
-            base_context={
-                "session": session_id,
-                "branch": branch,
-                "project_dir": project_dir,
-                "hook": "SessionStart"
-            }
-        )
+        # Skip if config wasn't loaded (shouldn't happen given checks above)
+        if not config:
+            return 0
+
+        # Skip if framework disabled
+        if not config.is_enabled():
+            return 0
 
         logger.info("Session starting", source=source)
 

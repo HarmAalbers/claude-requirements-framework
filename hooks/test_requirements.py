@@ -61,9 +61,7 @@ class TestRunner:
 def test_session_module(runner: TestRunner):
     """Test session management."""
     print("\n📦 Testing session module...")
-    from session import get_session_id, clear_session_cache, update_registry, get_registry_path
-    import tempfile
-    import os
+    from session import get_session_id, clear_session_cache
 
     # Test that get_session_id() raises error when no registry
     from session import SessionNotFoundError
@@ -255,7 +253,7 @@ def test_get_session_id_normalization(runner: TestRunner):
     """Test get_session_id() no longer uses env vars."""
     print("\n📦 Testing get_session_id() no longer uses env vars...")
     import os
-    from session import get_session_id, normalize_session_id
+    from session import get_session_id
 
     # Test that env var is ignored (get_session_id() only uses registry now)
     full_uuid = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
@@ -328,7 +326,7 @@ def test_session_key_migration(runner: TestRunner):
 
         # Verify data preserved
         if normalized in sessions:
-            runner.test("Data preserved", sessions[normalized]['satisfied'] == True,
+            runner.test("Data preserved", sessions[normalized]['satisfied'],
                        f"Data: {sessions[normalized]}")
             runner.test("Timestamp preserved", sessions[normalized]['satisfied_at'] == 1234567890,
                        f"Timestamp: {sessions[normalized].get('satisfied_at')}")
@@ -345,7 +343,7 @@ def test_session_key_migration(runner: TestRunner):
 def test_git_utils_module(runner: TestRunner):
     """Test git utilities."""
     print("\n📦 Testing git_utils module...")
-    from git_utils import run_git, is_git_repo, get_git_root
+    from git_utils import run_git, is_git_repo
 
     # Test run_git with simple command
     code, out, err = run_git("git --version")
@@ -593,7 +591,7 @@ def test_state_storage_module(runner: TestRunner):
 def test_config_module(runner: TestRunner):
     """Test configuration loading."""
     print("\n📦 Testing config module...")
-    from config import RequirementsConfig, load_yaml_or_json, deep_merge
+    from config import RequirementsConfig, deep_merge
 
     # Test deep merge
     base = {"a": 1, "b": {"c": 2}}
@@ -700,7 +698,7 @@ def test_config_module(runner: TestRunner):
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""
     print("\n📝 Testing write_local_config and write_local_override...")
-    from config import RequirementsConfig, load_yaml_or_json, write_local_config
+    from config import RequirementsConfig, load_yaml_or_json
     from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -724,7 +722,7 @@ def test_write_local_config(runner: TestRunner):
 
         # Test 1: Write new local config with enabled=false
         config = RequirementsConfig(tmpdir)
-        file_path = config.write_local_override(enabled=False)
+        config.write_local_override(enabled=False)
 
         local_file = claude_dir / 'requirements.local.yaml'
         local_file_json = claude_dir / 'requirements.local.json'
@@ -739,21 +737,21 @@ def test_write_local_config(runner: TestRunner):
         else:
             local_config = load_yaml_or_json(local_file_json)
 
-        runner.test("Enabled field set to False", local_config.get('enabled') == False)
+        runner.test("Enabled field set to False", not local_config.get('enabled'))
         runner.test("Version field added", local_config.get('version') == '1.0')
 
         # Test 2: Update existing config
-        file_path = config.write_local_override(enabled=True)
+        config.write_local_override(enabled=True)
 
         if local_file.exists():
             local_config = load_yaml_or_json(local_file)
         else:
             local_config = load_yaml_or_json(local_file_json)
 
-        runner.test("Enabled field updated to True", local_config.get('enabled') == True)
+        runner.test("Enabled field updated to True", local_config.get('enabled'))
 
         # Test 3: Write requirement-level override
-        file_path = config.write_local_override(
+        config.write_local_override(
             requirement_overrides={'commit_plan': False}
         )
 
@@ -764,22 +762,22 @@ def test_write_local_config(runner: TestRunner):
 
         runner.test(
             "Requirement override added",
-            local_config.get('requirements', {}).get('commit_plan', {}).get('enabled') == False
+            not local_config.get('requirements', {}).get('commit_plan', {}).get('enabled')
         )
         runner.test(
             "Framework enabled preserved",
-            local_config.get('enabled') == True
+            local_config.get('enabled')
         )
 
         # Test 4: Verify local override actually works in config loading
         config_reloaded = RequirementsConfig(tmpdir)
         runner.test(
             "Local override affects is_enabled()",
-            config_reloaded.is_enabled() == True
+            config_reloaded.is_enabled()
         )
         runner.test(
             "Requirement override affects is_requirement_enabled()",
-            config_reloaded.is_requirement_enabled('commit_plan') == False,
+            not config_reloaded.is_requirement_enabled('commit_plan'),
             f"commit_plan enabled: {config_reloaded.is_requirement_enabled('commit_plan')}"
         )
 
@@ -796,7 +794,7 @@ def test_write_project_config(runner: TestRunner):
 
         # Test 1: Write new project config with enabled=True
         config = RequirementsConfig(tmpdir)
-        file_path = config.write_project_override(enabled=True)
+        config.write_project_override(enabled=True)
 
         project_file = claude_dir / 'requirements.yaml'
         runner.test("Project config file created", project_file.exists())
@@ -805,9 +803,9 @@ def test_write_project_config(runner: TestRunner):
         runner.test("Uses YAML extension", project_file.suffix == '.yaml')
 
         project_config = load_yaml_or_json(project_file)
-        runner.test("Enabled field set to True", project_config.get('enabled') == True)
+        runner.test("Enabled field set to True", project_config.get('enabled'))
         runner.test("Version field added", project_config.get('version') == '1.0')
-        runner.test("Inherit flag added by default", project_config.get('inherit') == True)
+        runner.test("Inherit flag added by default", project_config.get('inherit'))
 
         # Test 2: Update existing config (preserve inherit)
         # First, manually set inherit to False
@@ -822,14 +820,14 @@ def test_write_project_config(runner: TestRunner):
                 json.dump(existing, f)
 
         # Now update enabled
-        file_path = config.write_project_override(enabled=False)
+        config.write_project_override(enabled=False)
         project_config = load_yaml_or_json(project_file)
 
-        runner.test("Enabled field updated to False", project_config.get('enabled') == False)
-        runner.test("Inherit False preserved", project_config.get('inherit') == False)
+        runner.test("Enabled field updated to False", not project_config.get('enabled'))
+        runner.test("Inherit False preserved", not project_config.get('inherit'))
 
         # Test 3: Write requirement-level override
-        file_path = config.write_project_override(
+        config.write_project_override(
             requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
         )
 
@@ -840,27 +838,27 @@ def test_write_project_config(runner: TestRunner):
         )
         runner.test(
             "Framework enabled preserved",
-            project_config.get('enabled') == False  # From test 2
+            not project_config.get('enabled')  # From test 2
         )
         runner.test(
             "Inherit preserved across updates",
-            project_config.get('inherit') == False  # Still False from test 2
+            not project_config.get('inherit')  # Still False from test 2
         )
 
         # Test 4: Add new requirement to existing config
-        file_path = config.write_project_override(
+        config.write_project_override(
             requirement_overrides={'commit_plan': {'enabled': True, 'scope': 'session'}}
         )
 
         project_config = load_yaml_or_json(project_file)
         commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
-        runner.test("New requirement added", commit_plan.get('enabled') == True)
+        runner.test("New requirement added", commit_plan.get('enabled'))
         runner.test("New requirement scope set", commit_plan.get('scope') == 'session')
         runner.test("Previous requirement preserved",
                    'adr_reviewed' in project_config.get('requirements', {}))
 
         # Test 5: Update existing requirement fields
-        file_path = config.write_project_override(
+        config.write_project_override(
             requirement_overrides={
                 'commit_plan': {'scope': 'branch', 'message': 'Custom message'}
             }
@@ -870,17 +868,17 @@ def test_write_project_config(runner: TestRunner):
         commit_plan = project_config.get('requirements', {}).get('commit_plan', {})
         runner.test("Requirement scope updated", commit_plan.get('scope') == 'branch')
         runner.test("Requirement message added", commit_plan.get('message') == 'Custom message')
-        runner.test("Requirement enabled preserved", commit_plan.get('enabled') == True)
+        runner.test("Requirement enabled preserved", commit_plan.get('enabled'))
 
         # Test 6: Verify project override affects config loading
         config_reloaded = RequirementsConfig(tmpdir)
         runner.test(
             "Project override affects is_enabled()",
-            config_reloaded.is_enabled() == False  # Still False from test 2
+            not config_reloaded.is_enabled()  # Still False from test 2
         )
         runner.test(
             "Requirement override affects is_requirement_enabled()",
-            config_reloaded.is_requirement_enabled('commit_plan') == True
+            config_reloaded.is_requirement_enabled('commit_plan')
         )
 
         # Test 7: Preserve existing hooks section
@@ -896,14 +894,14 @@ def test_write_project_config(runner: TestRunner):
             with open(project_file, 'w') as f:
                 json.dump(existing, f)
 
-        file_path = config.write_project_override(
+        config.write_project_override(
             requirement_overrides={'github_ticket': {'enabled': True}}
         )
 
         project_config = load_yaml_or_json(project_file)
         runner.test("Hooks section preserved", 'hooks' in project_config)
         runner.test("Hook config preserved",
-                   project_config.get('hooks', {}).get('stop', {}).get('verify_requirements') == True)
+                   project_config.get('hooks', {}).get('stop', {}).get('verify_requirements'))
 
         # Test 8: Test with fresh config (no existing file)
         new_tmpdir = tempfile.mkdtemp()
@@ -912,7 +910,7 @@ def test_write_project_config(runner: TestRunner):
             new_claude_dir.mkdir()
 
             new_config = RequirementsConfig(new_tmpdir)
-            file_path = new_config.write_project_override(
+            new_config.write_project_override(
                 requirement_overrides={'test_req': {'enabled': True}}
             )
 
@@ -920,7 +918,7 @@ def test_write_project_config(runner: TestRunner):
             runner.test("Creates new project config", new_project_file.exists())
 
             new_project_config = load_yaml_or_json(new_project_file)
-            runner.test("New config has inherit: true", new_project_config.get('inherit') == True)
+            runner.test("New config has inherit: true", new_project_config.get('inherit'))
             runner.test("New config has version", new_project_config.get('version') == '1.0')
             runner.test("New config has requirement", 'test_req' in new_project_config.get('requirements', {}))
         finally:
@@ -1054,7 +1052,7 @@ requirements:
         runner.test("Project config updated",
                    project_config.get('requirements', {}).get('adr_reviewed', {}).get('adr_path') == '/docs/adr')
         runner.test("Inherit flag preserved",
-                   project_config.get('inherit') == True)
+                   project_config.get('inherit'))
         runner.test("Existing requirement preserved",
                    'commit_plan' in project_config.get('requirements', {}))
 
@@ -1351,7 +1349,7 @@ def test_cli_sessions_command(runner: TestRunner):
             json.dump(config, f)
 
         # Mock registry with active session
-        from session import get_registry_path, update_registry
+        from session import update_registry
         import session as session_module
         original_get_registry_path = session_module.get_registry_path
         test_registry = Path(tmpdir) / "test-sessions.json"
@@ -1786,7 +1784,7 @@ def test_enhanced_doctor_json_output(runner: TestRunner):
     print("\n📦 Testing enhanced doctor --json...")
 
     cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
+    Path(__file__).parent.parent
 
     with tempfile.TemporaryDirectory() as tmpdir:
         home_dir = Path(tmpdir)
@@ -1843,7 +1841,6 @@ def test_enhanced_doctor_check_functions(runner: TestRunner):
 
     # Import requirements-cli.py using importlib
     import importlib.util
-    import sys
     spec = importlib.util.spec_from_file_location("requirements_cli", Path(__file__).parent / "requirements-cli.py")
     requirements_cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(requirements_cli)
@@ -3527,7 +3524,6 @@ def test_colors_module(runner: TestRunner):
 
     from colors import (
         Colors,
-        colors_enabled,
         success, error, warning, info, header, hint, dim, bold,
         _supports_color,
     )
@@ -4178,7 +4174,7 @@ def test_generate_config_validation(runner: TestRunner):
 
     # Test valid preset and context work
     try:
-        config = generate_config('advanced', context='global')
+        generate_config('advanced', context='global')
         runner.test("valid preset and context work", True)
     except Exception as e:
         runner.test("valid preset and context work", False, str(e))
@@ -4551,9 +4547,8 @@ def test_registry_client(runner: TestRunner):
         runner.test("update() preserves existing", "abc123" in result["sessions"])
 
         # Test 5: update() with None return (no write)
-        write_count_before = 0
         if registry_path.exists():
-            write_count_before = os.stat(registry_path).st_mtime
+            os.stat(registry_path).st_mtime
 
         def no_change(registry):
             return None  # Signal no write needed
@@ -4870,7 +4865,7 @@ def test_edge_cases(runner: TestRunner):
         # Verify file is valid JSON (not corrupted)
         try:
             with open(registry_path) as f:
-                data = json.load(f)
+                json.load(f)
             runner.test("Concurrent updates don't corrupt JSON", True)
         except json.JSONDecodeError:
             runner.test("Concurrent updates don't corrupt JSON", False, "Registry corrupted")
@@ -5231,6 +5226,144 @@ def test_permission_errors_fail_open(runner: TestRunner):
             cache.cache_file = original_cache_file
 
 
+def test_early_hook_setup(runner):
+    """Test hook_utils.early_hook_setup() function."""
+    import tempfile
+    import subprocess
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from hook_utils import early_hook_setup
+
+    # Test 1: Config with debug logging level
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Setup: Create project with debug logging config
+        os.makedirs(f"{tmpdir}/.claude")
+        config_file = Path(f"{tmpdir}/.claude/requirements.yaml")
+
+        config_content = """version: "1.0"
+enabled: true
+logging:
+  level: debug
+  destinations: [file]
+  file: ~/.claude/requirements.log
+requirements: {}
+"""
+        with open(config_file, 'w') as f:
+            f.write(config_content)
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Test: Setup hook with config
+        project_dir, branch, config, logger = early_hook_setup(
+            session_id="test123",
+            hook_name="TestHook",
+            cwd=tmpdir
+        )
+
+        # Verify: Logger has debug level from config
+        runner.test("early_hook_setup loads config", config is not None)
+        runner.test("early_hook_setup creates logger with debug level", logger.level_name == "debug")
+        runner.test("early_hook_setup returns project dir", project_dir == tmpdir)
+        runner.test("early_hook_setup returns branch", branch == "test-branch")
+        runner.test("early_hook_setup sets correct hook context", logger.context.get("hook") == "TestHook")
+        runner.test("early_hook_setup sets session context", logger.context.get("session") == "test123")
+
+    # Test 2: No config case (invalid path that's not a git repo)
+    project_dir2, branch2, config2, logger2 = early_hook_setup(
+        session_id="test456",
+        hook_name="TestHook2",
+        cwd="/nonexistent"
+    )
+
+    runner.test("early_hook_setup returns path for project_dir even if invalid", project_dir2 == "/nonexistent")
+    runner.test("early_hook_setup returns None for branch when not git repo", branch2 is None)
+    runner.test("early_hook_setup returns None for config when no config file", config2 is None)
+    runner.test("early_hook_setup still creates logger when no config", logger2 is not None)
+    runner.test("early_hook_setup logger defaults to error when no config", logger2.level_name == "error")
+
+    # Test 3: Config loading with YAML parse error - falls back to global config
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config_file = Path(f"{tmpdir}/.claude/requirements.yaml")
+
+        # Write invalid YAML that will cause parse error
+        with open(config_file, 'w') as f:
+            f.write("invalid: yaml: syntax:")
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Test: YAML parse errors are handled gracefully by RequirementsConfig
+        # It logs a warning but still returns a valid config object (using global defaults)
+        project_dir3, branch3, config3, logger3 = early_hook_setup(
+            session_id="test789",
+            hook_name="TestHook3",
+            cwd=tmpdir
+        )
+
+        runner.test("early_hook_setup returns project_dir with YAML parse error", project_dir3 == tmpdir)
+        runner.test("early_hook_setup returns branch with YAML parse error", branch3 == "test-branch")
+        # RequirementsConfig handles YAML parse errors internally and falls back to global config
+        runner.test("early_hook_setup returns config object even with YAML parse error", config3 is not None)
+        # Logger uses global config defaults (which may be debug from ~/.claude/requirements.yaml)
+        runner.test("early_hook_setup logger uses config level even with YAML parse error", logger3.level_name in ["debug", "error", "info"])
+
+    # Test 4: Info logging level
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config_file = Path(f"{tmpdir}/.claude/requirements.yaml")
+
+        config_content = """version: "1.0"
+enabled: true
+logging:
+  level: info
+requirements: {}
+"""
+        with open(config_file, 'w') as f:
+            f.write(config_content)
+
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=tmpdir, capture_output=True)
+
+        project_dir4, branch4, config4, logger4 = early_hook_setup(
+            session_id="test999",
+            hook_name="TestHook4",
+            cwd=tmpdir
+        )
+
+        runner.test("early_hook_setup creates logger with info level when configured", logger4.level_name == "info")
+
+    # Test 5: skip_config parameter
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config_file = Path(f"{tmpdir}/.claude/requirements.yaml")
+
+        config_content = """version: "1.0"
+enabled: true
+logging:
+  level: debug
+requirements: {}
+"""
+        with open(config_file, 'w') as f:
+            f.write(config_content)
+
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=tmpdir, capture_output=True)
+
+        project_dir5, branch5, config5, logger5 = early_hook_setup(
+            session_id="test000",
+            hook_name="TestHook5",
+            cwd=tmpdir,
+            skip_config=True
+        )
+
+        runner.test("early_hook_setup skips config when skip_config=True", config5 is None)
+        runner.test("early_hook_setup uses default level when skip_config=True", logger5.level_name == "error")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -5333,6 +5466,9 @@ def main():
 
     # Satisfied by skill field tests
     test_satisfied_by_skill_field(runner)
+
+    # Hook utils module tests
+    test_early_hook_setup(runner)
 
     return runner.summary()
 

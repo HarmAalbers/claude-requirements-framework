@@ -12,7 +12,7 @@ Config files can be YAML (if PyYAML available) or JSON (fallback).
 import re
 import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 # Import utilities from config_utils (the canonical location)
 from config_utils import (
@@ -312,7 +312,7 @@ class RequirementsConfig:
         # Validate calculator module exists (try import)
         calculator = req_config['calculator']
         try:
-            __import__(f'lib.{calculator}')
+            __import__(calculator)
         except ImportError:
             raise ValueError(
                 f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
@@ -757,7 +757,7 @@ class RequirementsConfig:
         # Validate calculator module exists (try import)
         calculator = req['calculator']
         try:
-            __import__(f'lib.{calculator}')
+            __import__(calculator)
         except ImportError:
             raise ValueError(
                 f"Dynamic requirement '{req_name}' calculator module '{calculator}' not found. "
@@ -766,6 +766,7 @@ class RequirementsConfig:
 
 
 if __name__ == "__main__":
+    import json
     import tempfile
     import os
 

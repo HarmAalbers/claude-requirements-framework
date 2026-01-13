@@ -28,11 +28,10 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
-from config import RequirementsConfig
-from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from requirements import BranchRequirements
-from session import get_session_id, remove_session_from_registry, normalize_session_id
+from session import remove_session_from_registry, normalize_session_id
 from logger import get_logger
+from hook_utils import early_hook_setup
 
 
 def main() -> int:
@@ -58,44 +57,20 @@ def main() -> int:
     session_id = normalize_session_id(raw_session)
     reason = input_data.get('reason', 'unknown')
 
-    # Initialize logger (basic until we have config)
-    logger = get_logger(base_context={"session": session_id, "hook": "SessionEnd"})
+    # Early hook setup: loads config, creates logger with correct level
+    project_dir, branch, config, logger = early_hook_setup(
+        session_id, "SessionEnd", cwd=input_data.get('cwd')
+    )
 
     try:
         # Skip if requirements explicitly disabled
         if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
             return 0
 
-        # Resolve project directory
-        project_dir = input_data.get('cwd') or resolve_project_root(verbose=False)
+        # Still try to remove from registry even without project context
         if not project_dir:
-            # Still try to remove from registry even without project context
             remove_session_from_registry(session_id)
             return 0
-
-        # Get branch (may not exist if not in git repo)
-        branch = None
-        if is_git_repo(project_dir):
-            branch = get_current_branch(project_dir)
-
-        # Load config (if available)
-        config = None
-        try:
-            config = RequirementsConfig(project_dir)
-        except Exception:
-            pass
-
-        # Update logger with config if available
-        if config:
-            logger = get_logger(
-                config.get_logging_config(),
-                base_context={
-                    "session": session_id,
-                    "branch": branch or "unknown",
-                    "project_dir": project_dir,
-                    "hook": "SessionEnd"
-                }
-            )
 
         logger.info("Session ending", reason=reason)
 

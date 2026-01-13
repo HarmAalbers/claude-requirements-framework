@@ -43,11 +43,11 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from config import RequirementsConfig, matches_trigger
-from git_utils import get_current_branch, is_git_repo, resolve_project_root
-from session import get_session_id, update_registry, get_active_sessions, normalize_session_id
+from config import matches_trigger
+from session import update_registry, get_active_sessions, normalize_session_id
 from strategy_registry import STRATEGIES
 from logger import get_logger
+from hook_utils import early_hook_setup
 
 
 def should_skip_plan_file(file_path: str) -> bool:
@@ -215,7 +215,11 @@ def main() -> int:
         return 0  # Fail open - don't block work
 
     session_id = normalize_session_id(raw_session)
-    logger = get_logger(base_context={"session": session_id})
+
+    # Early hook setup: loads config, creates logger with correct level
+    project_dir, branch, config, logger = early_hook_setup(
+        session_id, "PreToolUse", cwd=input_data.get('cwd')
+    )
 
     try:
         # Check skip flag
@@ -240,30 +244,10 @@ def main() -> int:
             logger.info("Skipping plan file", file_path=file_path)
             return 0
 
-        # Get project directory (resolves to git root from subdirectories)
-        project_dir = resolve_project_root(verbose=False)
-        logger = logger.bind(project_dir=project_dir)
-
-        # Check if project has requirements config
-        config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-        config_file_json = Path(project_dir) / '.claude' / 'requirements.json'
-
-        if not config_file.exists() and not config_file_json.exists():
-            # No config = no requirements for this project
-            logger.info("Skipping requirements (no config)", project_dir=project_dir)
+        # Skip if no project context or config
+        if not project_dir or not branch or not config:
+            logger.info("Skipping requirements (no project context)")
             return 0
-
-        # Skip if not git repo
-        if not is_git_repo(project_dir):
-            logger.info("Skipping requirements (not a git repo)", project_dir=project_dir)
-            return 0
-
-        # Get current branch
-        branch = get_current_branch(project_dir)
-        logger = logger.bind(branch=branch)
-        if not branch:
-            logger.info("Skipping requirements (detached HEAD)")
-            return 0  # Detached HEAD
 
         # Update session registry early (before other checks)
         # This allows CLI to discover sessions on any branch
@@ -272,19 +256,6 @@ def main() -> int:
         except Exception as e:
             logger.error("Registry update failed (early)", error=str(e))
 
-        # Load configuration
-        config = RequirementsConfig(project_dir)
-
-        # Reconfigure logger with project settings
-        logger = get_logger(
-            config.get_logging_config(),
-            base_context={
-                "session": session_id,
-                "tool": tool_name,
-                "branch": branch,
-                "project_dir": project_dir,
-            },
-        )
         logger.info("Loaded requirements configuration")
 
         # Check if enabled for this project
