@@ -15,7 +15,11 @@ Features:
 - Calculation caching for performance
 """
 
+import importlib
 from typing import Optional
+
+DEFAULT_CACHE_TTL_SECONDS = 60
+DEDUP_MESSAGE_TTL_SECONDS = 5
 
 # Import from sibling modules
 try:
@@ -56,6 +60,62 @@ class DynamicRequirementStrategy(RequirementStrategy):
         super().__init__()  # Initialize dedup cache from base class
         self.calculators = {}  # Cache loaded calculator instances
         self.cache = CalculationCache()  # Calculation result cache
+
+    def _get_context_value(self, context: dict, key: str, req_name: str) -> Optional[str]:
+        """
+        Get a required context value with fail-open behavior.
+
+        Args:
+            context: Context dict
+            key: Required key to read
+            req_name: Requirement name for logging
+
+        Returns:
+            Context value or None if missing
+        """
+        value = context.get(key)
+        if not value:
+            log_error(f"Missing required context '{key}' for dynamic requirement '{req_name}'")
+            return None
+        return value
+
+    def _build_dedup_cache_key(self, context: dict, req_name: str, session_id: str) -> str:
+        """
+        Build a dedup cache key using available context values.
+
+        Args:
+            context: Context dict
+            req_name: Requirement name
+            session_id: Session identifier
+
+        Returns:
+            Cache key string
+        """
+        project_dir = context.get('project_dir', '')
+        branch = context.get('branch', '')
+        return f"{project_dir}:{branch}:{session_id}:{req_name}"
+
+    def _create_block_response(self, req_name: str, message: str, context: dict) -> dict:
+        """
+        Create a deduplicated denial response for block conditions.
+
+        Args:
+            req_name: Requirement name
+            message: Full denial message
+            context: Context dict
+
+        Returns:
+            Hook response dict
+        """
+        if self.dedup_cache:
+            session_id = context.get('session_id', 'unknown')
+            cache_key = self._build_dedup_cache_key(context, req_name, session_id)
+
+            if not self.dedup_cache.should_show_message(cache_key, message, ttl=DEDUP_MESSAGE_TTL_SECONDS):
+                minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
+                return create_denial_response(minimal_message)
+
+        return create_denial_response(message)
 
     def check(self, req_name: str, config: RequirementsConfig,
               reqs: BranchRequirements, context: dict) -> Optional[dict]:
@@ -132,15 +192,17 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Returns:
             Calculator result dict or None
         """
-        project_dir = context['project_dir']
-        branch = context['branch']
+        project_dir = self._get_context_value(context, 'project_dir', req_name)
+        branch = self._get_context_value(context, 'branch', req_name)
+        if not project_dir or not branch:
+            return None
 
         # Check cache (60s TTL, separate from state)
         cache_key = f"{project_dir}:{branch}:{req_name}"
-        cache_ttl = config.get_attribute(req_name, 'cache_ttl', 60)
+        cache_ttl = config.get_attribute(req_name, 'cache_ttl', DEFAULT_CACHE_TTL_SECONDS)
 
         cached = self.cache.get(cache_key, cache_ttl)
-        if cached:
+        if cached is not None:
             return cached
 
         # Load and run calculator
@@ -150,7 +212,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
 
         try:
             result = calculator.calculate(project_dir, branch)
-            if result:
+            if result is not None:
                 self.cache.set(cache_key, result)
             return result
 
@@ -181,15 +243,16 @@ class DynamicRequirementStrategy(RequirementStrategy):
 
         try:
             # Import calculator module
-            module = __import__(f'lib.{module_name}', fromlist=[module_name])
+            module = importlib.import_module(f'lib.{module_name}')
 
             # Get Calculator class
-            if not hasattr(module, 'Calculator'):
+            calculator_class = getattr(module, 'Calculator', None)
+            if not calculator_class:
                 log_error(f"Calculator '{module_name}' missing Calculator class")
                 return None
 
             # Instantiate calculator
-            calculator = module.Calculator()
+            calculator = calculator_class()
 
             # Validate implements interface
             if not isinstance(calculator, RequirementCalculator):
@@ -229,29 +292,20 @@ class DynamicRequirementStrategy(RequirementStrategy):
         thresholds = req_config['thresholds']
 
         value = result.get('value', 0)
+        block_threshold = thresholds.get('block', float('inf'))
+        warn_threshold = thresholds.get('warn', float('inf'))
 
         # Check block threshold first (most severe)
-        if value >= thresholds.get('block', float('inf')):
+        if value >= block_threshold:
             # BLOCK - require manual approval via CLI
             # Note: We use "deny" not "ask" because "ask" gets overridden by
             # permissions.allow entries in settings.local.json
             message = self._format_block_message(req_name, config, thresholds, result, context)
 
-            # Deduplication check to prevent spam from parallel tool calls
-            if self.dedup_cache:
-                session_id = context['session_id']
-                cache_key = f"{context['project_dir']}:{context['branch']}:{session_id}:{req_name}"
-
-                if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                    # Suppress verbose message - show minimal indicator instead
-                    minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
-                    return create_denial_response(minimal_message)
-
-            # Show full message (first time or after TTL expiration)
-            return create_denial_response(message)
+            return self._create_block_response(req_name, message, context)
 
         # Check warn threshold
-        elif value >= thresholds.get('warn', float('inf')):
+        elif value >= warn_threshold:
             # WARN - log but allow operation
             log_warning(f"{req_name}: {result.get('summary', value)}")
             return None
@@ -300,7 +354,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
             message = template
 
         # Add CLI approval instructions
-        session_id = context['session_id']
+        session_id = context.get('session_id', 'unknown')
         message += f"\n\n💡 **To approve and continue**:"
         message += f"\n```bash"
         message += f"\nreq satisfy {req_name} --session {session_id}"
