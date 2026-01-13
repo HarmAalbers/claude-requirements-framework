@@ -194,6 +194,54 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 
 **For persistent installation**, see `docs/PLUGIN-INSTALLATION.md` for marketplace-based setup.
 
+## Serena MCP Configuration
+
+The project uses Serena MCP for semantic code analysis. For optimal performance with Claude Code:
+
+### Configuration Location
+`~/.claude/plugins/cache/claude-plugins-official/serena/[version]/.mcp.json`
+
+### Optimal Settings
+```json
+{
+  "serena": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/oraios/serena",
+      "serena",
+      "start-mcp-server",
+      "--context",
+      "claude-code",
+      "--project",
+      "/Users/harm/Tools/claude-requirements-framework"
+    ]
+  }
+}
+```
+
+### Key Configuration Flags
+
+- `--context claude-code` - Disables tools that duplicate Claude Code's built-in capabilities (prevents conflicts)
+- `--project <path>` - Explicitly specifies project directory for focused codebase analysis
+
+### Token Efficiency
+
+Enable on-demand tool loading (requires Claude Code v2.0.74+) by adding to `~/.zshrc`:
+
+```bash
+# Enable on-demand tool loading for Claude Code (reduces token usage)
+export ENABLE_TOOL_SEARCH=true
+```
+
+Then reload shell: `source ~/.zshrc`
+
+This prevents sending complete tool descriptions at startup, reducing token consumption while allowing dynamic tool discovery.
+
+### Verification
+
+After configuration changes, restart Claude Code to apply settings. Verify Serena is active with the correct project context by checking available MCP tools.
+
 ## Requirement Scopes
 | Scope | Behavior |
 |-------|----------|
