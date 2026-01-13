@@ -101,10 +101,10 @@ class RequirementsConfig:
 
     def _local_override_paths(self) -> list[Path]:
         """Return candidate local override file paths."""
-        project_dir = self._project_config_dir()
+        claude_dir = self._project_config_dir()
         return [
-            project_dir / 'requirements.local.yaml',
-            project_dir / 'requirements.local.json',
+            claude_dir / 'requirements.local.yaml',
+            claude_dir / 'requirements.local.json',
         ]
 
     def _load_config_if_exists(self, path: Path) -> dict:
@@ -117,12 +117,26 @@ class RequirementsConfig:
         """Load the first existing config file from a list of paths."""
         for path in paths:
             if path.exists():
-                return load_yaml_or_json(path) or {}
+                return self._load_config_if_exists(path)
         return {}
 
     def _default_trigger_tools(self) -> list[str]:
         """Return a new list of default trigger tools."""
         return list(self.DEFAULT_TRIGGER_TOOLS)
+
+    def _get_trigger_config(self, name: str) -> list:
+        """Return trigger config for a requirement with defaults."""
+        return self.get_attribute(name, 'trigger_tools', self._default_trigger_tools())
+
+    def _extract_trigger_tool_names(self, triggers: list) -> list[str]:
+        """Extract tool names from trigger definitions for legacy callers."""
+        tool_names = []
+        for trigger in triggers:
+            if isinstance(trigger, str):
+                tool_names.append(trigger)
+            elif isinstance(trigger, dict):
+                tool_names.append(trigger.get('tool', ''))
+        return tool_names
 
     def _ensure_version(self, config: dict) -> None:
         """Ensure the config has a version field."""
@@ -366,18 +380,18 @@ class RequirementsConfig:
         # Validate satisfied_by_skill if present (applies to all types)
         self._validate_satisfied_by_skill(req_name, req_config)
 
-        if req_type == 'dynamic':
-            # Validate dynamic requirement fields
-            self._validate_dynamic_fields(req_name, req_config)
-        elif req_type == 'blocking':
-            self._validate_blocking_fields(req_name, req_config)
-        elif req_type == 'guard':
-            self._validate_guard_fields(req_name, req_config)
-        else:
+        validators = {
+            'dynamic': self._validate_dynamic_fields,
+            'blocking': self._validate_blocking_fields,
+            'guard': self._validate_guard_fields,
+        }
+        validator = validators.get(req_type)
+        if not validator:
             raise ValueError(
                 f"Requirement '{req_name}' has unknown type '{req_type}'. "
                 f"Valid types: 'blocking', 'dynamic', 'guard'"
             )
+        validator(req_name, req_config)
 
     def _validate_dynamic_fields(self, req_name: str, req_config: dict) -> None:
         """
@@ -572,8 +586,7 @@ class RequirementsConfig:
         Returns:
             Scope string: "session", "branch", or "permanent"
         """
-        req = self.get_requirement(name)
-        return req.get('scope', 'session') if req else 'session'
+        return self.get_attribute(name, 'scope', 'session')
 
     def get_trigger_tools(self, name: str) -> list[str]:
         """
@@ -587,18 +600,8 @@ class RequirementsConfig:
         Returns:
             List of tool names (default: Edit, Write, MultiEdit)
         """
-        req = self.get_requirement(name)
-        if req:
-            triggers = req.get('trigger_tools', self._default_trigger_tools())
-            # For backwards compatibility, extract tool names from complex triggers
-            result = []
-            for t in triggers:
-                if isinstance(t, str):
-                    result.append(t)
-                elif isinstance(t, dict):
-                    result.append(t.get('tool', ''))
-            return result
-        return self._default_trigger_tools()
+        triggers = self._get_trigger_config(name)
+        return self._extract_trigger_tool_names(triggers)
 
     def get_triggers(self, name: str) -> list:
         """
@@ -619,10 +622,7 @@ class RequirementsConfig:
         Returns:
             List of triggers (strings or dicts). Default: ['Edit', 'Write', 'MultiEdit']
         """
-        req = self.get_requirement(name)
-        if req:
-            return req.get('trigger_tools', self._default_trigger_tools())
-        return self._default_trigger_tools()
+        return self._get_trigger_config(name)
 
     def get_message(self, name: str) -> str:
         """
@@ -634,10 +634,8 @@ class RequirementsConfig:
         Returns:
             Message string
         """
-        req = self.get_requirement(name)
-        if req:
-            return req.get('message', f'Requirement "{name}" not satisfied.')
-        return f'Requirement "{name}" not satisfied.'
+        default_message = f'Requirement "{name}" not satisfied.'
+        return self.get_attribute(name, 'message', default_message)
 
     def get_checklist(self, name: str) -> list[str]:
         """
@@ -649,10 +647,7 @@ class RequirementsConfig:
         Returns:
             List of checklist items (empty list if none configured)
         """
-        req = self.get_requirement(name)
-        if req:
-            return req.get('checklist', [])
-        return []
+        return self.get_attribute(name, 'checklist', [])
 
     def get_raw_config(self) -> dict:
         """
