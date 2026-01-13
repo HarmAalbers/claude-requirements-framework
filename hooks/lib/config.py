@@ -21,6 +21,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Protocol,
     TypedDict,
     Union,
     cast,
@@ -38,6 +39,10 @@ from config_utils import (
 # Re-export for backwards compatibility - external code can still import from config
 __all__ = [
     "RequirementsConfig",
+    "RequirementConfigAccess",
+    "HookConfigAccess",
+    "ConfigStateAccess",
+    "ConfigOverridesWriter",
     "matches_trigger",
     "load_yaml",
     "deep_merge",
@@ -157,6 +162,185 @@ RequirementOverrides = Mapping[str, RequirementOverrideValue]
 ConfigWriter = Callable[[str, RequirementsConfigData], str]
 RequirementFieldValidator = Callable[[str, Any], None]
 RequirementTypeValidator = Callable[[str, Mapping[str, Any]], None]
+
+
+class RequirementConfigAccess(Protocol):
+    def get_requirement(self, name: str) -> Optional[RequirementConfigDict]:
+        ...
+
+    def get_all_requirements(self) -> list[str]:
+        ...
+
+    def is_requirement_enabled(self, name: str) -> bool:
+        ...
+
+    def get_scope(self, name: str) -> RequirementScope:
+        ...
+
+    def get_trigger_tools(self, name: str) -> list[str]:
+        ...
+
+    def get_triggers(self, name: str) -> list[TriggerSpec]:
+        ...
+
+    def get_message(self, name: str) -> str:
+        ...
+
+    def get_checklist(self, name: str) -> list[str]:
+        ...
+
+    def get_attribute(self, req_name: str, attr: str, default: Any = None) -> Any:
+        ...
+
+    def get_blocking_config(self, req_name: str) -> Optional[BlockingRequirementConfig]:
+        ...
+
+    def get_dynamic_config(self, req_name: str) -> Optional[DynamicRequirementConfig]:
+        ...
+
+    def get_guard_config(self, req_name: str) -> Optional[GuardRequirementConfig]:
+        ...
+
+    def get_requirement_type(self, req_name: str) -> RequirementType:
+        ...
+
+    def validate_dynamic_requirement(self, req_name: str) -> None:
+        ...
+
+
+class HookConfigAccess(Protocol):
+    def get_hook_config(self, hook_name: str, key: str, default: Any = None) -> Any:
+        ...
+
+
+class ConfigStateAccess(Protocol):
+    def is_enabled(self) -> bool:
+        ...
+
+    def get_validation_errors(self) -> list[str]:
+        ...
+
+    def get_raw_config(self) -> RequirementsConfigData:
+        ...
+
+    def get_logging_config(self) -> LoggingConfigDict:
+        ...
+
+
+class ConfigOverridesWriter(Protocol):
+    def write_local_override(
+        self,
+        enabled: Optional[bool] = None,
+        requirement_overrides: Optional[RequirementOverrides] = None,
+    ) -> str:
+        ...
+
+    def write_project_override(
+        self,
+        enabled: Optional[bool] = None,
+        requirement_overrides: Optional[RequirementOverrides] = None,
+        preserve_inherit: bool = True,
+    ) -> str:
+        ...
+
+
+@dataclass(frozen=True)
+class RequirementConfigView(RequirementConfigAccess):
+    _config: "RequirementsConfig"
+
+    def get_requirement(self, name: str) -> Optional[RequirementConfigDict]:
+        return self._config.get_requirement(name)
+
+    def get_all_requirements(self) -> list[str]:
+        return self._config.get_all_requirements()
+
+    def is_requirement_enabled(self, name: str) -> bool:
+        return self._config.is_requirement_enabled(name)
+
+    def get_scope(self, name: str) -> RequirementScope:
+        return self._config.get_scope(name)
+
+    def get_trigger_tools(self, name: str) -> list[str]:
+        return self._config.get_trigger_tools(name)
+
+    def get_triggers(self, name: str) -> list[TriggerSpec]:
+        return self._config.get_triggers(name)
+
+    def get_message(self, name: str) -> str:
+        return self._config.get_message(name)
+
+    def get_checklist(self, name: str) -> list[str]:
+        return self._config.get_checklist(name)
+
+    def get_attribute(self, req_name: str, attr: str, default: Any = None) -> Any:
+        return self._config.get_attribute(req_name, attr, default)
+
+    def get_blocking_config(self, req_name: str) -> Optional[BlockingRequirementConfig]:
+        return self._config.get_blocking_config(req_name)
+
+    def get_dynamic_config(self, req_name: str) -> Optional[DynamicRequirementConfig]:
+        return self._config.get_dynamic_config(req_name)
+
+    def get_guard_config(self, req_name: str) -> Optional[GuardRequirementConfig]:
+        return self._config.get_guard_config(req_name)
+
+    def get_requirement_type(self, req_name: str) -> RequirementType:
+        return self._config.get_requirement_type(req_name)
+
+    def validate_dynamic_requirement(self, req_name: str) -> None:
+        self._config.validate_dynamic_requirement(req_name)
+
+
+@dataclass(frozen=True)
+class HookConfigView(HookConfigAccess):
+    _config: "RequirementsConfig"
+
+    def get_hook_config(self, hook_name: str, key: str, default: Any = None) -> Any:
+        return self._config.get_hook_config(hook_name, key, default)
+
+
+@dataclass(frozen=True)
+class ConfigStateView(ConfigStateAccess):
+    _config: "RequirementsConfig"
+
+    def is_enabled(self) -> bool:
+        return self._config.is_enabled()
+
+    def get_validation_errors(self) -> list[str]:
+        return self._config.get_validation_errors()
+
+    def get_raw_config(self) -> RequirementsConfigData:
+        return self._config.get_raw_config()
+
+    def get_logging_config(self) -> LoggingConfigDict:
+        return self._config.get_logging_config()
+
+
+@dataclass(frozen=True)
+class ConfigOverridesView(ConfigOverridesWriter):
+    _config: "RequirementsConfig"
+
+    def write_local_override(
+        self,
+        enabled: Optional[bool] = None,
+        requirement_overrides: Optional[RequirementOverrides] = None,
+    ) -> str:
+        return self._config.write_local_override(
+            enabled=enabled,
+            requirement_overrides=requirement_overrides,
+        )
+
+    def write_project_override(
+        self,
+        enabled: Optional[bool] = None,
+        requirement_overrides: Optional[RequirementOverrides] = None,
+        preserve_inherit: bool = True,
+    ) -> str:
+        return self._config.write_project_override(
+            enabled=enabled,
+            requirement_overrides=requirement_overrides,
+            preserve_inherit=preserve_inherit,
+        )
 
 
 @dataclass(frozen=True)
@@ -447,6 +631,8 @@ class RequirementsConfig:
     Configuration manager for requirements framework.
 
     Loads and merges configuration from global, project, and local sources.
+    Use segregated views (requirements, hooks, state, overrides) when you only
+    need a narrow slice of behavior.
     """
 
     REQUIREMENT_SCHEMA: dict[str, RequirementFieldRule] = {
@@ -509,6 +695,26 @@ class RequirementsConfig:
         )
         self.validation_errors: list[str] = []
         self._config: RequirementsConfigData = self._load_cascade()
+        self._requirements_view = RequirementConfigView(self)
+        self._hooks_view = HookConfigView(self)
+        self._state_view = ConfigStateView(self)
+        self._overrides_view = ConfigOverridesView(self)
+
+    @property
+    def requirements(self) -> RequirementConfigAccess:
+        return self._requirements_view
+
+    @property
+    def hooks(self) -> HookConfigAccess:
+        return self._hooks_view
+
+    @property
+    def state(self) -> ConfigStateAccess:
+        return self._state_view
+
+    @property
+    def overrides(self) -> ConfigOverridesWriter:
+        return self._overrides_view
 
     def _base_config(self) -> RequirementsConfigData:
         """Return a fresh default config skeleton."""
