@@ -65,9 +65,10 @@ class DynamicRequirementStrategy(RequirementStrategy):
         Flow:
         1. Check if satisfied at branch level (via --branch flag) → allow
         2. Check if approved (TTL-based) → allow
-        3. Get cached or calculate fresh result
-        4. Evaluate thresholds (warn vs block)
-        5. Return appropriate response
+        3. Load dynamic requirement config (fail open on invalid)
+        4. Get cached or calculate fresh result
+        5. Evaluate thresholds (warn vs block)
+        6. Return appropriate response
 
         Returns:
             None if passes or approved
@@ -82,22 +83,50 @@ class DynamicRequirementStrategy(RequirementStrategy):
         if reqs.is_approved(req_name):
             return None  # Approved, allow
 
-        # 3. Get or calculate result
-        result = self._get_result(req_name, config, context)
+        # 3. Load dynamic requirement config once
+        req_config = self._get_dynamic_config(req_name, config)
+        if not req_config:
+            return None  # Fail open on missing/invalid config
+
+        # 4. Get or calculate result
+        result = self._get_result(req_name, config, req_config, context)
         if result is None:
             return None  # Skip check (e.g., main branch, error)
 
-        # 3. Evaluate thresholds
-        return self._evaluate_thresholds(req_name, config, reqs, result, context)
+        # 5. Evaluate thresholds
+        return self._evaluate_thresholds(req_name, config, req_config, reqs, result, context)
+
+    def _get_dynamic_config(self, req_name: str,
+                            config: RequirementsConfig) -> Optional[dict]:
+        """
+        Load and validate dynamic requirement config once.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+
+        Returns:
+            Dynamic requirement config dict or None on error
+        """
+        try:
+            req_config = config.get_dynamic_config(req_name)
+            if not req_config:
+                log_error(f"Dynamic requirement '{req_name}' not found")
+                return None
+            return req_config
+        except ValueError as e:
+            log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
+            return None
 
     def _get_result(self, req_name: str, config: RequirementsConfig,
-                   context: dict) -> Optional[dict]:
+                   req_config: dict, context: dict) -> Optional[dict]:
         """
         Get cached or fresh calculation result.
 
         Args:
             req_name: Requirement name
             config: Configuration
+            req_config: Dynamic requirement config
             context: Context dict
 
         Returns:
@@ -115,7 +144,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return cached
 
         # Load and run calculator
-        calculator = self._load_calculator(req_name, config)
+        calculator = self._load_calculator(req_name, req_config)
         if not calculator:
             return None  # Fail open
 
@@ -130,7 +159,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return None  # Fail open
 
     def _load_calculator(self, req_name: str,
-                        config: RequirementsConfig) -> Optional[RequirementCalculator]:
+                        req_config: dict) -> Optional[RequirementCalculator]:
         """
         Load and validate calculator instance.
 
@@ -138,7 +167,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
 
         Args:
             req_name: Requirement name
-            config: Configuration
+            req_config: Dynamic requirement config
 
         Returns:
             Calculator instance or None on error
@@ -147,17 +176,8 @@ class DynamicRequirementStrategy(RequirementStrategy):
         if req_name in self.calculators:
             return self.calculators[req_name]
 
-        # Get calculator module name from config using type-safe accessor
-        try:
-            req_config = config.get_dynamic_config(req_name)
-            if not req_config:
-                log_error(f"Dynamic requirement '{req_name}' not found")
-                return None
-            # Type system now guarantees 'calculator' field exists
-            module_name = req_config['calculator']
-        except ValueError as e:
-            log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
-            return None
+        # Type system now guarantees 'calculator' field exists
+        module_name = req_config['calculator']
 
         try:
             # Import calculator module
@@ -188,14 +208,15 @@ class DynamicRequirementStrategy(RequirementStrategy):
             return None
 
     def _evaluate_thresholds(self, req_name: str, config: RequirementsConfig,
-                            reqs: BranchRequirements, result: dict,
-                            context: dict) -> Optional[dict]:
+                            req_config: dict, reqs: BranchRequirements,
+                            result: dict, context: dict) -> Optional[dict]:
         """
         Evaluate calculation result against thresholds.
 
         Args:
             req_name: Requirement name
             config: Configuration
+            req_config: Dynamic requirement config
             reqs: Requirements state
             result: Calculator result
             context: Context dict
@@ -204,17 +225,8 @@ class DynamicRequirementStrategy(RequirementStrategy):
             None if passes
             Dict with denial response if blocked
         """
-        # Get thresholds using type-safe accessor
-        try:
-            req_config = config.get_dynamic_config(req_name)
-            if not req_config:
-                log_error(f"Dynamic requirement '{req_name}' not found")
-                return None
-            # Type system now guarantees 'thresholds' field exists
-            thresholds = req_config['thresholds']
-        except ValueError as e:
-            log_error(f"Invalid dynamic requirement config for '{req_name}': {e}")
-            return None
+        # Type system now guarantees 'thresholds' field exists
+        thresholds = req_config['thresholds']
 
         value = result.get('value', 0)
 
@@ -223,7 +235,7 @@ class DynamicRequirementStrategy(RequirementStrategy):
             # BLOCK - require manual approval via CLI
             # Note: We use "deny" not "ask" because "ask" gets overridden by
             # permissions.allow entries in settings.local.json
-            message = self._format_block_message(req_name, config, result, context)
+            message = self._format_block_message(req_name, config, thresholds, result, context)
 
             # Deduplication check to prevent spam from parallel tool calls
             if self.dedup_cache:
@@ -248,13 +260,14 @@ class DynamicRequirementStrategy(RequirementStrategy):
         return None
 
     def _format_block_message(self, req_name: str, config: RequirementsConfig,
-                              result: dict, context: dict) -> str:
+                              thresholds: dict, result: dict, context: dict) -> str:
         """
         Format blocking message with template variable substitution.
 
         Args:
             req_name: Requirement name
             config: Configuration
+            thresholds: Thresholds for the requirement
             result: Calculator result
             context: Context dict
 
@@ -265,7 +278,6 @@ class DynamicRequirementStrategy(RequirementStrategy):
                                        'Requirement {req_name} not satisfied')
 
         # Prepare template variables
-        thresholds = config.get_attribute(req_name, 'thresholds', {})
         template_vars = {
             'req_name': req_name,
             'total': result.get('value', 0),
