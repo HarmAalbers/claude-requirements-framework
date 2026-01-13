@@ -533,39 +533,44 @@ class RequirementValidator:
             ValueError: If any trigger is invalid
         """
         for i, trigger in enumerate(triggers):
-            if isinstance(trigger, str):
-                # Simple tool name - valid
-                continue
-            elif isinstance(trigger, dict):
-                # Complex trigger - validate structure
-                if "tool" not in trigger:
-                    raise ValueError(
-                        f"Requirement '{req_name}' trigger_tools[{i}]: "
-                        f"dict trigger must have 'tool' field"
-                    )
-                if not isinstance(trigger["tool"], str):
-                    raise ValueError(
-                        f"Requirement '{req_name}' trigger_tools[{i}]: 'tool' must be a string"
-                    )
-                # Validate command_pattern is valid regex if present
-                if "command_pattern" in trigger:
-                    pattern = trigger["command_pattern"]
-                    if not isinstance(pattern, str):
-                        raise ValueError(
-                            f"Requirement '{req_name}' trigger_tools[{i}]: "
-                            f"'command_pattern' must be a string"
-                        )
-                    try:
-                        re.compile(pattern)
-                    except re.error as e:
-                        raise ValueError(
-                            f"Requirement '{req_name}' trigger_tools[{i}]: "
-                            f"invalid regex pattern '{pattern}': {e}"
-                        )
-            else:
+            self._validate_trigger_tool(req_name, i, trigger)
+
+    def _validate_trigger_tool(
+        self, req_name: str, index: int, trigger: TriggerSpec
+    ) -> None:
+        if isinstance(trigger, str):
+            # Simple tool name - valid
+            return
+        if not isinstance(trigger, dict):
+            raise ValueError(
+                f"Requirement '{req_name}' trigger_tools[{index}]: "
+                f"must be string or dict, got {type(trigger).__name__}"
+            )
+
+        # Complex trigger - validate structure
+        if "tool" not in trigger:
+            raise ValueError(
+                f"Requirement '{req_name}' trigger_tools[{index}]: "
+                f"dict trigger must have 'tool' field"
+            )
+        if not isinstance(trigger["tool"], str):
+            raise ValueError(
+                f"Requirement '{req_name}' trigger_tools[{index}]: 'tool' must be a string"
+            )
+        # Validate command_pattern is valid regex if present
+        if "command_pattern" in trigger:
+            pattern = trigger["command_pattern"]
+            if not isinstance(pattern, str):
                 raise ValueError(
-                    f"Requirement '{req_name}' trigger_tools[{i}]: "
-                    f"must be string or dict, got {type(trigger).__name__}"
+                    f"Requirement '{req_name}' trigger_tools[{index}]: "
+                    f"'command_pattern' must be a string"
+                )
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                raise ValueError(
+                    f"Requirement '{req_name}' trigger_tools[{index}]: "
+                    f"invalid regex pattern '{pattern}': {e}"
                 )
 
     def _validate_satisfied_by_skill(
@@ -1022,6 +1027,35 @@ class RequirementsConfig:
             self._io.write_project_config,
         )
 
+    def _requirements_map(self) -> dict[str, RequirementConfigDict]:
+        return cast(
+            dict[str, RequirementConfigDict], self._config.get("requirements", {})
+        )
+
+    def _get_typed_requirement(
+        self, req_name: str, expected_type: RequirementType
+    ) -> Optional[RequirementConfigDict]:
+        req = self.get_requirement(req_name)
+        if req is None:
+            return None
+
+        req_type = req.get("type", "blocking")
+        if req_type != expected_type:
+            raise ValueError(
+                f"Requirement '{req_name}' is type '{req_type}', expected '{expected_type}'"
+            )
+        return req
+
+    def _require_field(
+        self, req_name: str, req_config: Mapping[str, Any], field: str, label: str
+    ) -> Any:
+        value = req_config.get(field)
+        if not value:
+            raise ValueError(
+                f"{label} requirement '{req_name}' missing required field '{field}'"
+            )
+        return value
+
     def get_requirement(self, name: str) -> Optional[RequirementConfigDict]:
         """
         Get configuration for a specific requirement.
@@ -1032,10 +1066,7 @@ class RequirementsConfig:
         Returns:
             Requirement config dict or None if not found
         """
-        requirements = cast(
-            dict[str, RequirementConfigDict], self._config.get("requirements", {})
-        )
-        return requirements.get(name)
+        return self._requirements_map().get(name)
 
     def get_all_requirements(self) -> list[str]:
         """
@@ -1044,10 +1075,7 @@ class RequirementsConfig:
         Returns:
             List of requirement names
         """
-        requirements = cast(
-            dict[str, RequirementConfigDict], self._config.get("requirements", {})
-        )
-        return list(requirements.keys())
+        return list(self._requirements_map().keys())
 
     def is_requirement_enabled(self, name: str) -> bool:
         """
@@ -1240,15 +1268,9 @@ class RequirementsConfig:
         Raises:
             ValueError: If requirement exists but is not blocking type
         """
-        req = self.get_requirement(req_name)
+        req = self._get_typed_requirement(req_name, "blocking")
         if req is None:
             return None
-
-        req_type = req.get("type", "blocking")
-        if req_type != "blocking":
-            raise ValueError(
-                f"Requirement '{req_name}' is type '{req_type}', expected 'blocking'"
-            )
 
         # Blocking requirements don't have required type-specific fields
         return cast(BlockingRequirementConfig, req)
@@ -1268,28 +1290,13 @@ class RequirementsConfig:
         Raises:
             ValueError: If requirement exists but is not dynamic type or missing required fields
         """
-        req = self.get_requirement(req_name)
+        req = self._get_typed_requirement(req_name, "dynamic")
         if req is None:
             return None
 
-        req_type = req.get("type", "blocking")
-        if req_type != "dynamic":
-            raise ValueError(
-                f"Requirement '{req_name}' is type '{req_type}', expected 'dynamic'"
-            )
-
         # Validate required fields for dynamic requirements
-        calculator = req.get("calculator")
-        if not calculator:
-            raise ValueError(
-                f"Dynamic requirement '{req_name}' missing required field 'calculator'"
-            )
-
-        thresholds = req.get("thresholds")
-        if not thresholds:
-            raise ValueError(
-                f"Dynamic requirement '{req_name}' missing required field 'thresholds'"
-            )
+        self._require_field(req_name, req, "calculator", "Dynamic")
+        self._require_field(req_name, req, "thresholds", "Dynamic")
 
         # Type checker now knows these fields exist
         return cast(DynamicRequirementConfig, req)
@@ -1309,22 +1316,12 @@ class RequirementsConfig:
         Raises:
             ValueError: If requirement exists but is not guard type or missing required field
         """
-        req = self.get_requirement(req_name)
+        req = self._get_typed_requirement(req_name, "guard")
         if req is None:
             return None
 
-        req_type = req.get("type", "blocking")
-        if req_type != "guard":
-            raise ValueError(
-                f"Requirement '{req_name}' is type '{req_type}', expected 'guard'"
-            )
-
         # Validate required field for guard requirements
-        guard_type = req.get("guard_type")
-        if not guard_type:
-            raise ValueError(
-                f"Guard requirement '{req_name}' missing required field 'guard_type'"
-            )
+        self._require_field(req_name, req, "guard_type", "Guard")
 
         # Type checker now knows this field exists
         return cast(GuardRequirementConfig, req)
