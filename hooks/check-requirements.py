@@ -33,7 +33,6 @@ Design:
     - Skip if no project config exists
     - Register session in registry on every invocation (for CLI discovery)
 """
-import json
 import os
 import sys
 from pathlib import Path
@@ -47,7 +46,7 @@ from config import matches_trigger
 from session import update_registry, get_active_sessions, normalize_session_id
 from strategy_registry import STRATEGIES
 from logger import get_logger
-from hook_utils import early_hook_setup
+from hook_utils import early_hook_setup, parse_hook_input
 from console import emit_json
 
 
@@ -181,31 +180,40 @@ def main() -> int:
     Returns:
         Exit code (always 0 - fail open)
     """
-    # Read hook input from stdin
-    input_data = {}
-    try:
-        stdin_content = sys.stdin.read()
-        if stdin_content:
-            input_data = json.loads(stdin_content)
-    except json.JSONDecodeError as e:
-        logger = get_logger(base_context={"hook": "PreToolUse"})
-        logger.error(
-            "Hook input JSON parse error",
-            error=str(e),
-            stdin_preview=stdin_content[:500] if stdin_content else "empty",
-        )
+    # Read and parse hook input from stdin (centralized parsing)
+    stdin_content = sys.stdin.read()
+    input_data, parse_error = parse_hook_input(stdin_content)
+
+    # Log any parsing or validation issues (consolidated logger)
+    if parse_error or '_tool_name_type_error' in input_data or '_tool_input_type_error' in input_data:
+        early_logger = get_logger(base_context={"hook": "PreToolUse"})
+        if parse_error:
+            early_logger.error(
+                "Hook input parse error",
+                error=parse_error,
+                stdin_preview=stdin_content[:500] if stdin_content else "empty",
+            )
+        if '_tool_name_type_error' in input_data:
+            early_logger.warning(
+                "Invalid tool_name type in hook input",
+                type_error=input_data['_tool_name_type_error'],
+            )
+        if '_tool_input_type_error' in input_data:
+            early_logger.warning(
+                "Invalid tool_input type in hook input",
+                type_error=input_data['_tool_input_type_error'],
+            )
 
     # Get session_id from stdin (Claude Code always provides this)
     raw_session = input_data.get('session_id')
     if not raw_session:
         # This should NEVER happen - Claude Code always provides session_id
         # If it does, fail open with visible warning
-        logger = get_logger()
-        logger.error("CRITICAL: No session_id in hook input!", input_keys=list(input_data.keys()))
-        logger = get_logger(base_context={"hook": "PreToolUse"})
-        logger.error(
-            "Missing session ID from hook input; requirements checking disabled",
+        early_logger = get_logger(base_context={"hook": "PreToolUse"})
+        early_logger.error(
+            "CRITICAL: No session_id in hook input - requirements checking disabled",
             input_keys=list(input_data.keys()),
+            stdin_was_empty=input_data.get('_empty_stdin', False),
         )
         return 0  # Fail open - don't block work
 
@@ -222,7 +230,9 @@ def main() -> int:
             logger.info("Skipping requirements (env override)", reason='CLAUDE_SKIP_REQUIREMENTS')
             return 0
 
-        tool_name = input_data.get('tool_name', '')
+        # tool_name is validated as str or None by parse_hook_input()
+        # tool_input is validated as dict by parse_hook_input()
+        tool_name = input_data.get('tool_name') or ''
         tool_input = input_data.get('tool_input', {})
 
         logger = logger.bind(tool=tool_name)
@@ -353,7 +363,6 @@ def main() -> int:
 
     except Exception as e:
         # FAIL OPEN with visible warning
-        error_msg = f"Requirements check error: {e}"
         logger.error("Unhandled requirements error", error=str(e))
         return 0
 

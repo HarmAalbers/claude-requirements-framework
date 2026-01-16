@@ -5628,6 +5628,66 @@ requirements: {}
         runner.test("early_hook_setup uses default level when skip_config=True", logger5.level_name == "error")
 
 
+def test_parse_hook_input(runner):
+    """Test hook_utils.parse_hook_input() function."""
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from hook_utils import parse_hook_input
+
+    print("\n🎯 Testing parse_hook_input()...")
+
+    # Test 1: Empty input returns empty dict with marker
+    result, error = parse_hook_input("")
+    runner.test("parse_hook_input returns _empty_stdin marker for empty input", result.get('_empty_stdin') is True)
+    runner.test("parse_hook_input returns no error for empty input", error is None)
+
+    # Test 2: Valid JSON with all fields
+    result, error = parse_hook_input('{"tool_name": "Edit", "tool_input": {"file": "x.py"}, "session_id": "abc123"}')
+    runner.test("parse_hook_input parses valid JSON", result.get("tool_name") == "Edit")
+    runner.test("parse_hook_input preserves tool_input dict", result.get("tool_input") == {"file": "x.py"})
+    runner.test("parse_hook_input preserves other fields", result.get("session_id") == "abc123")
+    runner.test("parse_hook_input returns no error for valid JSON", error is None)
+
+    # Test 3: Invalid JSON returns error
+    result, error = parse_hook_input("not valid json")
+    runner.test("parse_hook_input returns empty dict on invalid JSON", result == {})
+    runner.test("parse_hook_input returns error on invalid JSON", error is not None)
+    runner.test("parse_hook_input error mentions JSON", "JSON" in error)
+
+    # Test 4: Non-dict JSON returns error
+    result, error = parse_hook_input('["an", "array"]')
+    runner.test("parse_hook_input returns empty dict for non-dict JSON", result == {})
+    runner.test("parse_hook_input returns error for non-dict JSON", "Expected dict" in str(error))
+
+    # Test 5: Invalid tool_name type (Issue #01 fix)
+    result, error = parse_hook_input('{"tool_name": 123, "tool_input": {}}')
+    runner.test("parse_hook_input normalizes non-string tool_name to None", result.get("tool_name") is None)
+    runner.test("parse_hook_input adds _tool_name_type_error marker", "_tool_name_type_error" in result)
+    runner.test("parse_hook_input type error mentions expected type", "Expected str" in result.get("_tool_name_type_error", ""))
+    runner.test("parse_hook_input returns no error for type coercion", error is None)
+
+    # Test 6: Invalid tool_input type
+    result, error = parse_hook_input('{"tool_name": "Edit", "tool_input": "not a dict"}')
+    runner.test("parse_hook_input normalizes non-dict tool_input to {}", result.get("tool_input") == {})
+    runner.test("parse_hook_input adds _tool_input_type_error marker", "_tool_input_type_error" in result)
+    runner.test("parse_hook_input tool_input type error mentions expected type", "Expected dict" in result.get("_tool_input_type_error", ""))
+
+    # Test 7: Missing tool_input defaults to empty dict (no error marker)
+    result, error = parse_hook_input('{"tool_name": "Read"}')
+    runner.test("parse_hook_input defaults missing tool_input to {}", result.get("tool_input") == {})
+    runner.test("parse_hook_input no error marker for missing tool_input", "_tool_input_type_error" not in result)
+
+    # Test 8: tool_input as array (wrong type)
+    result, error = parse_hook_input('{"tool_name": "Edit", "tool_input": ["file.py"]}')
+    runner.test("parse_hook_input handles array tool_input", result.get("tool_input") == {})
+    runner.test("parse_hook_input marks array tool_input as type error", "_tool_input_type_error" in result)
+
+    # Test 9: Null tool_name is valid (passes through as None)
+    result, error = parse_hook_input('{"tool_name": null, "tool_input": {}}')
+    runner.test("parse_hook_input allows null tool_name", result.get("tool_name") is None)
+    runner.test("parse_hook_input no type error for null tool_name", "_tool_name_type_error" not in result)
+
+
 def test_plan_mode_triggers(runner):
     """Test that EnterPlanMode and ExitPlanMode are recognized as triggering tools."""
     import tempfile
@@ -5853,6 +5913,7 @@ def main():
 
     # Hook utils module tests
     test_early_hook_setup(runner)
+    test_parse_hook_input(runner)
 
     # Plan mode trigger tests
     test_plan_mode_triggers(runner)
