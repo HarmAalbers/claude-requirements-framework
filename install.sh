@@ -358,16 +358,11 @@ display_marketplace_instructions() {
 # Show marketplace instructions
 display_marketplace_instructions
 
-# Configure hooks in settings.json (fixes empty hooks override issue)
+# Configure hooks in settings.json (primary hook registration location)
 configure_settings_json_hooks() {
     local settings_file="$HOME/.claude/settings.json"
 
-    if [[ ! -f "$settings_file" ]]; then
-        echo "   ⚠️  settings.json not found, skipping"
-        return 0
-    fi
-
-    # Use Python to safely merge hooks into settings.json
+    # Use Python to safely create/merge hooks into settings.json
     python3 << 'PYTHON_SCRIPT'
 import json
 import os
@@ -416,8 +411,14 @@ REQUIRED_HOOKS = {
 }
 
 try:
-    with open(settings_file, 'r') as f:
-        settings = json.load(f)
+    # Load existing settings or create new
+    if os.path.exists(settings_file):
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+        print("   Updating existing settings.json...")
+    else:
+        settings = {}
+        print("   Creating new settings.json...")
 
     # Get existing hooks or empty dict
     existing_hooks = settings.get("hooks", {})
@@ -440,131 +441,92 @@ try:
 
     print("   ✅ Hooks configured in settings.json")
 
+except (IOError, OSError, json.JSONDecodeError) as e:
+    print(f"   ❌ Could not configure settings.json: {e}", file=sys.stderr)
+    sys.exit(1)
 except Exception as e:
-    print(f"   ⚠️  Could not update settings.json: {e}", file=sys.stderr)
-    # Non-fatal - settings.local.json is also configured
+    print(f"   ❌ Unexpected error configuring settings.json: {e}", file=sys.stderr)
+    sys.exit(1)
+PYTHON_SCRIPT
+
+    if [ $? -ne 0 ]; then
+        echo "   ❌ Hook configuration failed"
+        return 1
+    fi
+}
+
+# Migrate old settings.local.json hooks if present
+migrate_settings_local_json() {
+    local local_settings="$HOME/.claude/settings.local.json"
+
+    if [[ ! -f "$local_settings" ]]; then
+        return 0
+    fi
+
+    # Check if it has our hooks and clean them up
+    python3 << 'PYTHON_SCRIPT'
+import json
+import os
+import sys
+
+local_settings = os.path.expanduser("~/.claude/settings.local.json")
+
+try:
+    with open(local_settings, 'r') as f:
+        settings = json.load(f)
+
+    hooks = settings.get("hooks", {})
+    if not hooks:
+        sys.exit(0)  # No hooks to migrate
+
+    # Check if these are our hooks (contain our hook paths)
+    our_hooks = [
+        "check-requirements.py", "handle-session-start.py", "handle-stop.py",
+        "handle-session-end.py", "auto-satisfy-skills.py", "clear-single-use.py",
+        "handle-plan-exit.py"
+    ]
+    has_our_hooks = False
+
+    for hook_config in hooks.values():
+        if isinstance(hook_config, list):
+            for matcher in hook_config:
+                if isinstance(matcher, dict):
+                    for h in matcher.get("hooks", []):
+                        cmd = h.get("command", "")
+                        if any(our_hook in cmd for our_hook in our_hooks):
+                            has_our_hooks = True
+                            break
+
+    if has_our_hooks:
+        # Remove hooks section (our hooks are now in settings.json)
+        del settings["hooks"]
+
+        if settings:
+            # Other settings exist, keep the file
+            with open(local_settings, 'w') as f:
+                json.dump(settings, f, indent=2)
+            print("   📦 Migrated hooks from settings.local.json (file kept with other settings)")
+        else:
+            # File only had our hooks, remove it
+            os.remove(local_settings)
+            print("   📦 Removed settings.local.json (hooks migrated to settings.json)")
+
+except Exception as e:
+    # Non-fatal - just skip migration
+    print(f"   ⚠️  Could not migrate settings.local.json: {e}")
 PYTHON_SCRIPT
 }
 
-# Register hooks in Claude Code settings
-SETTINGS_FILE="$HOME/.claude/settings.local.json"
-
-echo "📝 Registering hooks (PreToolUse, SessionStart, Stop, SessionEnd)..."
-
-if [ -f "$SETTINGS_FILE" ]; then
-    # Settings file exists - update hooks
-    echo "   Updating existing settings file..."
-    python3 << EOF
-import json
-
-settings_file = "$SETTINGS_FILE"
-
-with open(settings_file, 'r') as f:
-    settings = json.load(f)
-
-if 'hooks' not in settings:
-    settings['hooks'] = {}
-
-# Register all four hooks using new array-of-matchers format
-# This format is required by Claude Code's current API
-settings['hooks']['PreToolUse'] = [{
-    "matcher": "*",
-    "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/check-requirements.py"
-    }]
-}]
-
-settings['hooks']['SessionStart'] = [{
-    "matcher": "*",
-    "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-session-start.py"
-    }]
-}]
-
-settings['hooks']['Stop'] = [{
-    "matcher": "*",
-    "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-stop.py"
-    }]
-}]
-
-settings['hooks']['SessionEnd'] = [{
-    "matcher": "*",
-    "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-session-end.py"
-    }]
-}]
-
-settings['hooks']['PostToolUse'] = [{
-    "matcher": "*",
-    "hooks": [
-        {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
-        {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
-        {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
-    ]
-}]
-
-with open(settings_file, 'w') as f:
-    json.dump(settings, f, indent=2)
-
-print("   ✅ Registered all hooks in", settings_file)
-EOF
-else
-    # Create new settings file with proper format
-    echo "   Creating new settings file..."
-    cat > "$SETTINGS_FILE" << 'EOF'
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/check-requirements.py"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "*",
-      "hooks": [
-        {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
-        {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
-        {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
-      ]
-    }],
-    "SessionStart": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-session-start.py"
-      }]
-    }],
-    "Stop": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-stop.py"
-      }]
-    }],
-    "SessionEnd": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/handle-session-end.py"
-      }]
-    }]
-  }
-}
-EOF
-    echo "   ✅ Created $SETTINGS_FILE"
+# Register hooks in Claude Code settings.json (single source of truth)
+echo "📝 Registering hooks in settings.json..."
+if ! configure_settings_json_hooks; then
+    echo ""
+    echo "❌ Critical: Hook configuration failed. Installation cannot continue."
+    exit 1
 fi
 
-# Also configure settings.json to prevent empty hooks override issue
-echo ""
-echo "📝 Configuring hooks in settings.json..."
-configure_settings_json_hooks
+# Migrate any old settings.local.json hooks
+migrate_settings_local_json
 
 echo ""
 echo "🧪 Verifying installation..."
@@ -587,51 +549,9 @@ if [ "$HOOK_OK" = true ]; then
     echo "   ✅ All hooks are executable"
 fi
 
-# Test 2: Check if hooks are registered in settings
+# Test 2: Check if hooks are registered in settings.json
 echo ""
-echo "2️⃣  Checking hook registration..."
-if [ -f "$SETTINGS_FILE" ]; then
-    python3 - "$SETTINGS_FILE" << 'EOF'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], 'r') as f:
-        settings = json.load(f)
-
-    required_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']
-    missing = []
-
-    if 'hooks' not in settings:
-        print("   ❌ No hooks section found")
-        sys.exit(1)
-
-    for hook in required_hooks:
-        if hook not in settings['hooks']:
-            missing.append(hook)
-
-    if missing:
-        print(f"   ❌ Missing hooks: {', '.join(missing)}")
-        sys.exit(1)
-
-    print("   ✅ All hooks registered in settings.local.json")
-    sys.exit(0)
-except Exception as e:
-    print(f"   ❌ Hook registration issue: {e}")
-    sys.exit(1)
-EOF
-
-    if [ $? -ne 0 ]; then
-        VERIFICATION_PASSED=false
-    fi
-else
-    echo "   ❌ settings.local.json not found"
-    VERIFICATION_PASSED=false
-fi
-
-# Test 2b: Check if hooks are registered in settings.json
-echo ""
-echo "2️⃣b Checking settings.json hook configuration..."
+echo "2️⃣  Checking hook registration in settings.json..."
 if [ -f "$HOME/.claude/settings.json" ]; then
     python3 - "$HOME/.claude/settings.json" << 'EOF'
 import json
@@ -647,7 +567,7 @@ try:
 
     hooks = settings.get('hooks', {})
 
-    # Check for empty hooks object (the bug we're fixing)
+    # Check for empty hooks object
     if hooks == {}:
         print("   ❌ hooks object is empty in settings.json")
         sys.exit(1)
@@ -659,23 +579,26 @@ try:
             empty.append(hook)
 
     if missing:
-        print(f"   ⚠️  Missing hooks in settings.json: {', '.join(missing)}")
-        # Not fatal - settings.local.json may have them
+        print(f"   ❌ Missing hooks: {', '.join(missing)}")
+        sys.exit(1)
 
     if empty:
-        print(f"   ⚠️  Empty hooks in settings.json: {', '.join(empty)}")
+        print(f"   ❌ Empty hooks: {', '.join(empty)}")
+        sys.exit(1)
 
-    if not missing and not empty:
-        print("   ✅ All hooks configured in settings.json")
-
+    print("   ✅ All hooks registered in settings.json")
     sys.exit(0)
 except Exception as e:
-    print(f"   ⚠️  Could not verify settings.json: {e}")
-    # Not fatal - settings.local.json is primary
-    sys.exit(0)
+    print(f"   ❌ Hook registration issue: {e}")
+    sys.exit(1)
 EOF
+
+    if [ $? -ne 0 ]; then
+        VERIFICATION_PASSED=false
+    fi
 else
-    echo "   ⚠️  settings.json not found (Claude Code may create it later)"
+    echo "   ❌ settings.json not found"
+    VERIFICATION_PASSED=false
 fi
 
 # Test 3: Check if req command works
@@ -768,7 +691,7 @@ else
     echo "Troubleshooting steps:"
     echo "  1. Check ~/.claude/hooks/ directory permissions"
     echo "  2. Verify Python 3 is installed and accessible"
-    echo "  3. Review ~/.claude/settings.local.json for hook configuration"
+    echo "  3. Review ~/.claude/settings.json for hook configuration"
     echo "  4. Run: python3 ~/.claude/hooks/test_requirements.py"
     echo ""
 fi
