@@ -134,3 +134,115 @@ def early_hook_setup(
     logger = configure_logger(logging_config, base_context=base_context)
 
     return project_dir, branch, config, logger
+
+
+# =============================================================================
+# Tool Input Field Extractors (Issue #05)
+# =============================================================================
+# These functions safely extract specific fields from tool_input with type
+# validation. They follow fail-open semantics: return safe defaults on errors.
+
+
+def extract_file_path(
+    tool_input: Dict[str, Any],
+    logger: Optional[JsonLogger] = None
+) -> str:
+    """
+    Safely extract file_path from tool_input.
+
+    Validates that file_path is a string and doesn't contain null bytes
+    (which could be used for path injection attacks).
+
+    Args:
+        tool_input: The tool_input dict from hook input
+        logger: Optional logger for warning on invalid types
+
+    Returns:
+        file_path as string, or empty string if missing/invalid
+    """
+    value = tool_input.get('file_path')
+
+    if value is None:
+        return ''
+
+    if not isinstance(value, str):
+        if logger:
+            logger.warning(
+                "Invalid file_path type in tool_input",
+                expected="str",
+                got=type(value).__name__
+            )
+        return ''
+
+    # Reject null bytes (security: prevents path injection)
+    if '\x00' in value:
+        if logger:
+            logger.warning(
+                "file_path contains null bytes",
+                file_path_repr=repr(value)
+            )
+        return ''
+
+    return value
+
+
+def extract_command(
+    tool_input: Dict[str, Any],
+    logger: Optional[JsonLogger] = None
+) -> str:
+    """
+    Safely extract command from Bash tool_input.
+
+    Args:
+        tool_input: The tool_input dict from hook input
+        logger: Optional logger for warning on invalid types
+
+    Returns:
+        command as string, or empty string if missing/invalid
+    """
+    value = tool_input.get('command')
+
+    if value is None:
+        return ''
+
+    if not isinstance(value, str):
+        if logger:
+            logger.warning(
+                "Invalid command type in tool_input",
+                expected="str",
+                got=type(value).__name__
+            )
+        return ''
+
+    return value
+
+
+def extract_skill_name(
+    tool_input: Dict[str, Any],
+    logger: Optional[JsonLogger] = None
+) -> str:
+    """
+    Safely extract skill name from Skill tool_input.
+
+    Args:
+        tool_input: The tool_input dict from hook input
+        logger: Optional logger for warning on invalid types
+
+    Returns:
+        skill name as string, or empty string if missing/invalid
+    """
+    value = tool_input.get('skill')
+
+    if value is None:
+        return ''
+
+    if not isinstance(value, str):
+        if logger:
+            logger.warning(
+                "Invalid skill type in tool_input",
+                expected="str",
+                got=type(value).__name__
+            )
+        return ''
+
+    return value

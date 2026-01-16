@@ -46,7 +46,7 @@ from config import matches_trigger
 from session import update_registry, get_active_sessions, normalize_session_id
 from strategy_registry import STRATEGIES
 from logger import get_logger
-from hook_utils import early_hook_setup, parse_hook_input
+from hook_utils import early_hook_setup, parse_hook_input, extract_file_path
 from console import emit_json
 
 
@@ -247,7 +247,7 @@ def main() -> int:
             return 0
 
         # Skip plan files - plan mode needs to write plans before requirements can be satisfied
-        file_path = tool_input.get('file_path', '')
+        file_path = extract_file_path(tool_input, logger)
         if file_path and should_skip_plan_file(file_path):
             logger.info("Skipping plan file", file_path=file_path)
             return 0

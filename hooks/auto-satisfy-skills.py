@@ -34,6 +34,7 @@ from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import normalize_session_id
 from logger import get_logger
+from hook_utils import extract_skill_name
 
 # Default skill to requirement mapping (for backwards compatibility)
 # Maps skill names to the requirement they satisfy
@@ -98,7 +99,7 @@ def main() -> int:
             return 0
 
         tool_input = input_data.get('tool_input', {})
-        skill_name = tool_input.get('skill', '')
+        skill_name = extract_skill_name(tool_input, logger)
 
         if not skill_name:
             return 0
