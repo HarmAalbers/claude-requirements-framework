@@ -38,10 +38,11 @@ SessionStart (handle-session-start.py)
     → Update registry with current session
     → Inject full status into context
 
-PreToolUse (check-requirements.py) - triggered on Edit/Write
+PreToolUse (check-requirements.py) - triggered on Edit/Write/Bash/EnterPlanMode/ExitPlanMode
     → Load config (global → project → local cascade)
     → Check requirements against session/branch state
     → Allow or block with message
+    → Plan mode triggers enable ADR validation at planning time
 
 PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Auto-satisfy requirements when review skills complete
@@ -247,12 +248,36 @@ This prevents sending complete tool descriptions at startup, reducing token cons
 
 After configuration changes, restart Claude Code to apply settings. Verify Serena is active with the correct project context by checking available MCP tools.
 
+## Plan Mode Triggers
+Requirements can now trigger on plan mode transitions:
+- `EnterPlanMode` - Triggers when Claude enters planning mode
+- `ExitPlanMode` - Triggers when Claude exits planning mode
+
+This enables multi-phase ADR workflows:
+```yaml
+adr_plan_validation:
+  enabled: true
+  type: blocking
+  scope: single_use
+  trigger_tools:
+    - ExitPlanMode  # Validates plan after planning
+  satisfied_by_skill: 'adr-guardian'
+```
+
+Use cases:
+- Pre-planning ADR review (EnterPlanMode)
+- Plan validation against ADRs (ExitPlanMode)
+- Architectural compliance at planning stage
+
+See `examples/global-requirements.yaml` for full example configuration.
+
 ## Requirement Scopes
 | Scope | Behavior |
 |-------|----------|
 | `session` | Cleared when Claude Code session ends |
 | `branch` | Persists across sessions on same branch |
 | `permanent` | Never auto-cleared |
+| `single_use` | Cleared after trigger command completes |
 
 ## Additional Documentation
 - `DEVELOPMENT.md` - Comprehensive development guide with detailed implementation notes

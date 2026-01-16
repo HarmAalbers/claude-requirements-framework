@@ -229,7 +229,10 @@ def main() -> int:
 
         # Quick skip for tools that never trigger requirements
         # (Read, Glob, Grep, etc. - read-only tools)
-        POTENTIALLY_TRIGGERING_TOOLS = {'Edit', 'Write', 'MultiEdit', 'Bash'}
+        POTENTIALLY_TRIGGERING_TOOLS = {
+            'Edit', 'Write', 'MultiEdit', 'Bash',
+            'EnterPlanMode', 'ExitPlanMode'  # Plan mode transitions
+        }
         if tool_name not in POTENTIALLY_TRIGGERING_TOOLS:
             return 0
 

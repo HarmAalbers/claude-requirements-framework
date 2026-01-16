@@ -252,6 +252,61 @@ requirements:
       - "Critical findings addressed"
 
 # ============================================================================
+# PLAN MODE TRIGGER EXAMPLES
+# ============================================================================
+# Requirements can trigger on plan mode transitions (EnterPlanMode, ExitPlanMode)
+# This enables multi-phase workflows like ADR checking at planning time.
+#
+# Example: Multi-phase ADR compliance workflow
+#
+#   # Phase 1: Plan validation (after planning)
+#   adr_plan_validation:
+#     enabled: false  # Disabled by default - enable per project
+#     type: blocking
+#     scope: single_use  # Must re-satisfy for each plan
+#     trigger_tools:
+#       - ExitPlanMode  # ← Triggers when exiting plan mode
+#     satisfied_by_skill: 'adr-guardian'  # Auto-satisfied by adr-guardian agent
+#     message: |
+#       🔍 **Plan Validation Required**
+#
+#       Your plan must be validated against ADRs before implementation.
+#
+#       **To proceed**: Run adr-guardian agent to validate plan
+#     checklist:
+#       - "Plan reviewed against relevant ADRs"
+#       - "No architectural conflicts identified"
+#       - "Approach aligns with established decisions"
+#
+#   # Phase 2: Pre-commit code validation
+#   adr_code_validation:
+#     enabled: false  # Disabled by default - enable per project
+#     type: blocking
+#     scope: single_use  # Must re-satisfy before each commit
+#     trigger_tools:
+#       - tool: Bash
+#         command_pattern: 'git\s+(commit|cherry-pick)'
+#     satisfied_by_skill: 'adr-guardian'
+#     message: |
+#       ✅ **Code Review Against ADRs Required**
+#
+#       Before committing, validate code changes against ADRs.
+#
+#       **To proceed**: Run adr-guardian agent for code review
+#
+# This multi-phase approach ensures ADR compliance at every critical checkpoint:
+# 1. Planning phase - validate approach against ADRs
+# 2. Implementation phase - standard adr_reviewed (session scope)
+# 3. Commit phase - validate code against ADRs
+# 4. PR phase - comprehensive ADR review
+#
+# Benefits:
+# - Catches architectural issues early (at planning time)
+# - Enforces compliance at decision points
+# - Uses single_use scope for commit/PR checkpoints (re-validated each time)
+# - Seamless auto-satisfaction via adr-guardian agent
+
+# ============================================================================
 # PROJECT-SPECIFIC SKILL REQUIREMENTS
 # ============================================================================
 # Projects can configure their own skills to auto-satisfy requirements using

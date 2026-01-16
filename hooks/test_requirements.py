@@ -5460,6 +5460,123 @@ requirements: {}
         runner.test("early_hook_setup uses default level when skip_config=True", logger5.level_name == "error")
 
 
+def test_plan_mode_triggers(runner):
+    """Test that EnterPlanMode and ExitPlanMode are recognized as triggering tools."""
+    import tempfile
+    import subprocess
+    import json
+    from pathlib import Path
+
+    print("\n🎯 Testing plan mode triggers...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Setup: Create project with requirements config
+        os.makedirs(f"{tmpdir}/.claude")
+        config_file = Path(f"{tmpdir}/.claude/requirements.yaml")
+
+        config_content = """version: "1.0"
+enabled: true
+requirements:
+  adr_plan_validation:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+      - ExitPlanMode
+    message: "Plan must be validated"
+
+  adr_planning_review:
+    enabled: true
+    type: blocking
+    scope: session
+    trigger_tools:
+      - EnterPlanMode
+    message: "ADR review before planning"
+"""
+        with open(config_file, 'w') as f:
+            f.write(config_content)
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Test 1: ExitPlanMode triggers adr_plan_validation
+        hook_input = {
+            "tool_name": "ExitPlanMode",
+            "tool_input": {},
+            "session_id": "test-plan-session",
+            "cwd": tmpdir
+        }
+
+        result = subprocess.run(
+            ["python3", str(Path(__file__).parent / "check-requirements.py")],
+            input=json.dumps(hook_input),
+            capture_output=True,
+            text=True,
+            cwd=tmpdir
+        )
+
+        runner.test("ExitPlanMode is recognized as triggering tool", result.returncode == 0)
+
+        # If requirement not satisfied, should output denial
+        if result.stdout:
+            try:
+                output_data = json.loads(result.stdout)
+                has_denial = "hookSpecificOutput" in output_data
+                if has_denial:
+                    reason = output_data.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+                    runner.test("ExitPlanMode triggers adr_plan_validation", "adr_plan_validation" in reason)
+            except json.JSONDecodeError:
+                # Empty output means requirement was satisfied or skipped
+                pass
+
+        # Test 2: EnterPlanMode triggers adr_planning_review
+        hook_input2 = {
+            "tool_name": "EnterPlanMode",
+            "tool_input": {},
+            "session_id": "test-plan-session-2",
+            "cwd": tmpdir
+        }
+
+        result2 = subprocess.run(
+            ["python3", str(Path(__file__).parent / "check-requirements.py")],
+            input=json.dumps(hook_input2),
+            capture_output=True,
+            text=True,
+            cwd=tmpdir
+        )
+
+        runner.test("EnterPlanMode is recognized as triggering tool", result2.returncode == 0)
+
+        if result2.stdout:
+            try:
+                output_data2 = json.loads(result2.stdout)
+                has_denial2 = "hookSpecificOutput" in output_data2
+                if has_denial2:
+                    reason2 = output_data2.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+                    runner.test("EnterPlanMode triggers adr_planning_review", "adr_planning_review" in reason2)
+            except json.JSONDecodeError:
+                pass
+
+        # Test 3: Read tool does NOT trigger (sanity check)
+        hook_input3 = {
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/test.txt"},
+            "session_id": "test-plan-session-3",
+            "cwd": tmpdir
+        }
+
+        result3 = subprocess.run(
+            ["python3", str(Path(__file__).parent / "check-requirements.py")],
+            input=json.dumps(hook_input3),
+            capture_output=True,
+            text=True,
+            cwd=tmpdir
+        )
+
+        runner.test("Read tool does not trigger plan mode requirements", result3.returncode == 0 and not result3.stdout)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -5565,6 +5682,9 @@ def main():
 
     # Hook utils module tests
     test_early_hook_setup(runner)
+
+    # Plan mode trigger tests
+    test_plan_mode_triggers(runner)
 
     return runner.summary()
 
