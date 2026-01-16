@@ -51,7 +51,16 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
     Returns:
         Formatted status string for context injection
     """
-    lines = ["📋 **Requirements Framework Status**", ""]
+    lines = []
+
+    # Add custom header if configured (project-specific context)
+    custom_header = config.get_hook_config('session_start', 'custom_header')
+    if custom_header:
+        lines.append(custom_header.strip())
+        lines.append("")
+
+    lines.append("📋 **Requirements Framework Status**")
+    lines.append("")
 
     # List all enabled requirements with status
     has_requirements = False

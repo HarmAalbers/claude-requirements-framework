@@ -78,6 +78,7 @@ class RequirementConfigBase(TypedDict, total=False):
     trigger_tools: list[TriggerSpec]
     checklist: list[str]
     message: str
+    short_message: str  # Brief message for deduplication scenarios
     satisfied_by_skill: str
 
 
@@ -128,6 +129,7 @@ class RequirementConfigDict(TypedDict, total=False):
     trigger_tools: list[TriggerSpec]
     checklist: list[str]
     message: str
+    short_message: str  # Brief message for deduplication scenarios
     type: RequirementType
     satisfied_by_skill: str
     calculator: str
@@ -153,6 +155,7 @@ class HookConfigDict(TypedDict, total=False):
     verify_requirements: bool
     verify_scopes: list[RequirementScope]
     clear_session_state: bool
+    custom_header: str  # Custom header text for session start
 
 
 HooksConfigDict = dict[str, HookConfigDict]

@@ -2250,6 +2250,35 @@ def test_hook_config(runner: TestRunner):
             cfg.get_hook_config('stop', 'verify_requirements') is True
         )
 
+    # Test custom_header field
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "hooks": {
+                "session_start": {
+                    "inject_context": True,
+                    "custom_header": "**Project Context**\n\nCustom header text here."
+                }
+            },
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        cfg = RequirementsConfig(tmpdir)
+
+        runner.test(
+            "Custom header config",
+            cfg.get_hook_config('session_start', 'custom_header') == "**Project Context**\n\nCustom header text here.",
+            f"Got: {cfg.get_hook_config('session_start', 'custom_header')}"
+        )
+        runner.test(
+            "Custom header default None",
+            cfg.get_hook_config('session_start', 'nonexistent_key') is None
+        )
+
 
 def test_session_start_hook(runner: TestRunner):
     """Test SessionStart hook behavior."""
@@ -2324,6 +2353,39 @@ def test_session_start_hook(runner: TestRunner):
         )
         runner.test("SessionStart silent when disabled", result.stdout.strip() == "",
                    f"Got: {result.stdout}")
+
+    # Test custom_header display
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "session_start": {
+                    "inject_context": True,
+                    "custom_header": "**SolarMonkey Context**\n\nCritical ADRs here."
+                }
+            },
+            "requirements": {
+                "test_req": {"enabled": True, "scope": "session", "message": "Test!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"headertest"}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Custom header displayed", "SolarMonkey Context" in result.stdout,
+                   f"Got: {result.stdout[:300]}")
+        runner.test("Custom header before status", result.stdout.find("SolarMonkey") < result.stdout.find("Requirements"),
+                   "Custom header should appear before Requirements status")
 
     # Test non-git directory (should pass silently)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -4796,6 +4858,112 @@ def test_codex_reviewer_requirement(runner: TestRunner):
         runner.test("Allows Edit tool when satisfied", result is None)
 
 
+def test_short_message_field(runner: TestRunner):
+    """Test short_message configuration field for deduplication scenarios."""
+    print("\n📦 Testing short_message field...")
+
+    from blocking_strategy import BlockingRequirementStrategy
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Config with short_message
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'test_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                    'trigger_tools': ['Edit'],
+                    'message': 'Full verbose message with lots of details.',
+                    'short_message': 'Custom short message'
+                }
+            }
+        }
+
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+
+        # Test 1: short_message field is accessible
+        runner.test("short_message field accessible",
+                   config.get_attribute('test_req', 'short_message') == 'Custom short message')
+
+        # Test 2: Verify short_message is used during deduplication
+        # Strategy creates its own dedup_cache internally
+        strategy = BlockingRequirementStrategy()
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        context = {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': 'test.py'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test'
+        }
+
+        # First call should show full message
+        result1 = strategy.check('test_req', config, reqs, context)
+        runner.test("First call returns denial", result1 is not None)
+        msg1 = result1['hookSpecificOutput']['permissionDecisionReason']
+        runner.test("First call shows full message", "Full verbose message" in msg1,
+                   f"Got: {msg1[:100]}")
+
+        # Second call (within TTL) should show short_message
+        result2 = strategy.check('test_req', config, reqs, context)
+        runner.test("Second call returns denial", result2 is not None)
+        msg2 = result2['hookSpecificOutput']['permissionDecisionReason']
+        runner.test("Second call shows custom short_message", "Custom short message" in msg2,
+                   f"Got: {msg2}")
+
+    # Test 3: Default short message when short_message not configured
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'test_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                    'message': 'Full message without short_message field.'
+                }
+            }
+        }
+
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        # Strategy creates its own dedup_cache internally
+        strategy = BlockingRequirementStrategy()
+        reqs = BranchRequirements("feature/test", "session-2", tmpdir)
+        context = {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': 'test.py'},
+            'session_id': 'session-2',
+            'project_dir': tmpdir,
+            'branch': 'feature/test'
+        }
+
+        # First call
+        strategy.check('test_req', config, reqs, context)
+
+        # Second call should use default short message
+        result = strategy.check('test_req', config, reqs, context)
+        msg = result['hookSpecificOutput']['permissionDecisionReason']
+        runner.test("Default short message used", "test_req" in msg and "waiting" in msg,
+                   f"Got: {msg}")
+
+
 def test_satisfied_by_skill_field(runner: TestRunner):
     """Test satisfied_by_skill configuration field."""
     print("\n🎯 Testing satisfied_by_skill field...")
@@ -5676,6 +5844,9 @@ def main():
 
     # Codex reviewer requirement tests
     test_codex_reviewer_requirement(runner)
+
+    # Short message field tests
+    test_short_message_field(runner)
 
     # Satisfied by skill field tests
     test_satisfied_by_skill_field(runner)

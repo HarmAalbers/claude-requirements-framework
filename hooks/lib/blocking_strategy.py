@@ -99,9 +99,10 @@ class BlockingRequirementStrategy(RequirementStrategy):
             cache_key = f"{context['project_dir']}:{context['branch']}:{session_id}:{req_name}"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                # Suppress verbose message - show minimal indicator instead
-                minimal_message = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
-                return create_denial_response(minimal_message)
+                # Suppress verbose message - show configurable short message instead
+                default_short = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
+                short_msg = req_config.get('short_message', default_short)
+                return create_denial_response(short_msg)
 
         # Show full message (first time or after TTL expiration)
         return create_denial_response(message)
