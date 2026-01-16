@@ -14,6 +14,12 @@ python3 hooks/test_requirements.py
 
 # Installation
 ./install.sh
+
+# Configure logging (debug, info, warning, error)
+req logging                         # Show current config
+req logging --level debug --local   # Enable debug logging
+req logging --destinations file stdout --local  # Log to file and stdout
+tail -f ~/.claude/requirements.log  # View logs in real-time
 ```
 
 ## Architecture

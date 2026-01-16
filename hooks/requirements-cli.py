@@ -101,7 +101,7 @@ def cmd_status(args) -> int:
     else:
         try:
             session_id = get_session_id()
-        except SessionNotFoundError as e:
+        except SessionNotFoundError:
             # Status is informational - show warning but allow to continue
             out(warning("⚠️  No Claude Code session detected"), file=sys.stderr)
             out(dim("    Showing requirements state without session context"), file=sys.stderr)
@@ -519,7 +519,7 @@ def cmd_satisfy(args) -> int:
                 out(dim("  • Project: .claude/requirements.yaml"), file=sys.stderr)
                 out(dim("  • Local:   .claude/requirements.local.yaml"), file=sys.stderr)
                 out("", file=sys.stderr)
-                out(hint(f"💡 Run 'req init' to set up project requirements"), file=sys.stderr)
+                out(hint("💡 Run 'req init' to set up project requirements"), file=sys.stderr)
             # Still allow satisfying (manual override)
 
         # Handle based on requirement type
@@ -531,7 +531,7 @@ def cmd_satisfy(args) -> int:
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
-                    out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+                    out(info("   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Dynamic requirement - use approval workflow with TTL
                 ttl = config.get_attribute(req_name, 'approval_ttl', 300)
@@ -555,7 +555,7 @@ def cmd_satisfy(args) -> int:
                 reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
-                    out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+                    out(info("   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Use config's scope (existing behavior)
                 scope = config.get_scope(req_name)
@@ -570,7 +570,7 @@ def cmd_satisfy(args) -> int:
         if branch_level_mode:
             out(success(f"✅ Satisfied {satisfied_count} requirement(s) at branch level"))
             out(dim(f"   Branch: {branch}"))
-            out(info(f"   ℹ️  All current and future sessions on this branch are now satisfied"))
+            out(info("   ℹ️  All current and future sessions on this branch are now satisfied"))
         else:
             out(success(f"✅ Satisfied {satisfied_count} requirement(s) for {branch}"))
         for req_name in requirements:
@@ -826,7 +826,7 @@ def _check_hook_registration(claude_dir: Path) -> tuple[bool, str]:
     diagnostic_msg = f"PreToolUse hook does not reference {expected_script}"
     if malformed_matchers > 0 or malformed_hooks > 0:
         diagnostic_msg += f"\nWarning: Found {malformed_matchers} malformed matcher(s) and {malformed_hooks} malformed hook(s) in {settings_path}"
-        diagnostic_msg += f"\nExpected format: [{{'matcher': '...', 'hooks': [{{'type': 'command', 'command': '...'}}]}}]"
+        diagnostic_msg += "\nExpected format: [{'matcher': '...', 'hooks': [{'type': 'command', 'command': '...'}]}]"
 
     return False, diagnostic_msg
 
@@ -1691,6 +1691,160 @@ def cmd_disable(args) -> int:
         return 1
 
 
+def cmd_logging(args) -> int:
+    """
+    View or modify logging configuration.
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    project_dir = get_project_dir()
+
+    # Check if git repo
+    if not is_git_repo(project_dir):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+
+    # Load config
+    config = RequirementsConfig(project_dir)
+
+    # Check if any write flags present
+    has_write_flags = (
+        args.level is not None or
+        args.destinations is not None or
+        args.file is not None
+    )
+
+    # Read-only mode: show current logging config
+    if not has_write_flags:
+        out(header("🪵 Logging Configuration"))
+        out(dim("─" * 50))
+        out()
+
+        logging_config = config.get_logging_config()
+
+        # Show current settings
+        level = logging_config.get('level', 'error')
+        destinations = logging_config.get('destinations', ['file'])
+        log_file = logging_config.get('file', str(Path.home() / '.claude' / 'requirements.log'))
+
+        if not isinstance(destinations, list):
+            destinations = [destinations]
+
+        out(f"{bold('Level')}: {level}")
+        out(f"{bold('Destinations')}: {', '.join(destinations)}")
+        out(f"{bold('File')}: {log_file}")
+        out()
+
+        # Show available levels
+        out(dim("Available levels: debug, info, warning, error"))
+        out(dim("Available destinations: file, stdout"))
+        out()
+
+        # Usage hint
+        out(hint("💡 To change settings:"))
+        out(dim("   req logging --level debug --local"))
+        out(dim("   req logging --destinations file stdout --local"))
+        out(dim("   req logging --file /custom/path/app.log --local"))
+
+        return 0
+
+    # Write mode: modify logging configuration
+    from interactive import select, confirm
+
+    # Ask which config to modify (unless explicitly specified)
+    if not args.project and not args.local and not args.yes:
+        choice = select(
+            "Which configuration file to modify?",
+            [
+                "Local (.claude/requirements.local.yaml) - personal, gitignored",
+                "Project (.claude/requirements.yaml) - team-shared, versioned",
+            ],
+        )
+        modify_local = choice == 0
+    else:
+        modify_local = not args.project
+
+    # Build logging config dict
+    logging_config_update = {}
+
+    if args.level:
+        # Validate level
+        valid_levels = ['debug', 'info', 'warning', 'error']
+        if args.level.lower() not in valid_levels:
+            out(error(f"❌ Invalid log level: {args.level}"), file=sys.stderr)
+            out(dim(f"   Valid levels: {', '.join(valid_levels)}"), file=sys.stderr)
+            return 1
+        logging_config_update['level'] = args.level.lower()
+
+    if args.destinations:
+        # Validate destinations
+        valid_destinations = ['file', 'stdout']
+        destinations = [d.lower() for d in args.destinations]
+        for dest in destinations:
+            if dest not in valid_destinations:
+                out(error(f"❌ Invalid destination: {dest}"), file=sys.stderr)
+                out(dim(f"   Valid destinations: {', '.join(valid_destinations)}"), file=sys.stderr)
+                return 1
+        logging_config_update['destinations'] = destinations
+
+    if args.file:
+        logging_config_update['file'] = args.file
+
+    # Show preview
+    out()
+    out(header("📝 Preview"))
+    out(dim("─" * 50))
+    for key, value in logging_config_update.items():
+        if isinstance(value, list):
+            out(f"{bold(key)}: {', '.join(value)}")
+        else:
+            out(f"{bold(key)}: {value}")
+    out()
+
+    # Confirm unless --yes
+    if not args.yes:
+        target = "local config (.gitignored)" if modify_local else "project config (version-controlled)"
+        if not confirm(f"Update {target}?"):
+            out(warning("⚠️  Aborted"))
+            return 1
+
+    # Write config
+    try:
+        if modify_local:
+            file_path = config.write_local_override(logging_config=logging_config_update)
+        else:
+            file_path = config.write_project_override(logging_config=logging_config_update)
+
+        out(success("✅ Logging configuration updated"))
+        out(dim(f"   Modified: {file_path}"))
+        out()
+
+        # Show what changed
+        for key, value in logging_config_update.items():
+            if isinstance(value, list):
+                out(f"   {bold(key)}: {', '.join(value)}")
+            else:
+                out(f"   {bold(key)}: {value}")
+
+        out()
+        out(hint("💡 Logging changes take effect on next hook execution"))
+
+        if 'level' in logging_config_update and logging_config_update['level'] == 'debug':
+            out(hint("💡 View debug logs: tail -f ~/.claude/requirements.log"))
+
+        return 0
+
+    except Exception as e:
+        import traceback
+        out(error(f"❌ Failed to update config: {e}"), file=sys.stderr)
+        traceback.print_exc()
+        return 1
+
+
 def cmd_config(args) -> int:
     """
     Manage requirement configuration.
@@ -1770,9 +1924,9 @@ def cmd_config(args) -> int:
         out()
         is_enabled = config.is_requirement_enabled(requirement_name)
         if is_enabled:
-            out(success(f"✅ Currently enabled"))
+            out(success("✅ Currently enabled"))
         else:
-            out(dim(f"⚠️  Currently disabled"))
+            out(dim("⚠️  Currently disabled"))
 
         return 0
 
@@ -2023,7 +2177,7 @@ def _detect_init_context(args, project_dir: str) -> str:
             return 'global'
     except (OSError, RuntimeError) as e:
         # Path resolution failed - log warning and default to project
-        out(warning(f"⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
+        out(warning("⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
         out(dim(f"   Error: {e}"), file=sys.stderr)
 
     # Default: project
@@ -2114,13 +2268,10 @@ def cmd_init(args) -> int:
     # Determine target file based on context
     if context == 'global':
         target_file = global_config
-        create_local = False
     elif context == 'local':
         target_file = local_config
-        create_local = True
     else:  # project
         target_file = project_config
-        create_local = False
 
     # Interactive mode (default) vs non-interactive (--yes)
     if not args.yes and not args.preview:
@@ -2146,7 +2297,7 @@ def cmd_init(args) -> int:
 
         if context == 'global':
             if global_config.exists():
-                out(warning(f"  ⚠ Global config exists"))
+                out(warning("  ⚠ Global config exists"))
         else:
             if claude_dir.exists():
                 out(success("  ✓ .claude/ directory exists"))
@@ -2154,13 +2305,13 @@ def cmd_init(args) -> int:
                 out(dim("  ○ .claude/ directory will be created"))
 
             if context == 'project' and global_config.exists():
-                out(success(f"  ✓ Global config found"))
+                out(success("  ✓ Global config found"))
                 out(dim("     Project will inherit from global defaults"))
 
             if project_config.exists():
-                out(warning(f"  ⚠ Project config exists"))
+                out(warning("  ⚠ Project config exists"))
             if local_config.exists() and context == 'local':
-                out(warning(f"  ⚠ Local config exists"))
+                out(warning("  ⚠ Local config exists"))
 
         if context == 'project' and not global_config.exists():
             out(warning("  ⚠ No global config found"))
@@ -2307,6 +2458,9 @@ Examples:
     req sessions                        # List active Claude Code sessions
     req enable                          # Enable framework for this project
     req disable                         # Disable framework for this project
+    req logging                         # Show current logging configuration
+    req logging --level debug --local   # Set debug logging (local only)
+    req logging --destinations file stdout --local  # Log to file and stdout
 
 Environment Variables:
     CLAUDE_SKIP_REQUIREMENTS=1          # Globally disable all requirements checks
@@ -2353,6 +2507,18 @@ Environment Variables:
     # disable
     disable_parser = subparsers.add_parser('disable', help='Disable requirements framework')
     disable_parser.add_argument('requirement', nargs='?', help='Requirement name (optional, for future use)')
+
+    # logging
+    logging_parser = subparsers.add_parser('logging', help='View or modify logging configuration')
+    logging_parser.add_argument('--level', '-l', choices=['debug', 'info', 'warning', 'error'],
+                               help='Set log level')
+    logging_parser.add_argument('--destinations', '-d', nargs='+', metavar='DEST',
+                               help='Set log destinations (file, stdout)')
+    logging_parser.add_argument('--file', '-f', metavar='PATH',
+                               help='Set custom log file path')
+    logging_parser.add_argument('--project', action='store_true', help='Modify project config')
+    logging_parser.add_argument('--local', action='store_true', help='Modify local config (default)')
+    logging_parser.add_argument('--yes', '-y', action='store_true', help='Skip confirmation')
 
     # init
     init_parser = subparsers.add_parser('init', help='Initialize requirements framework for project')
@@ -2407,6 +2573,7 @@ Environment Variables:
         'sessions': cmd_sessions,
         'enable': cmd_enable,
         'disable': cmd_disable,
+        'logging': cmd_logging,
         'init': cmd_init,
         'config': cmd_config,
         'verify': cmd_verify,

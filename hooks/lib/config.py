@@ -246,6 +246,7 @@ class ConfigOverridesWriter(Protocol):
         self,
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         ...
 
@@ -254,6 +255,7 @@ class ConfigOverridesWriter(Protocol):
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
         preserve_inherit: bool = True,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         ...
 
@@ -360,10 +362,12 @@ class ConfigOverridesView(ConfigOverridesWriter):
         self,
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         return self._config.write_local_override(
             enabled=enabled,
             requirement_overrides=requirement_overrides,
+            logging_config=logging_config,
         )
 
     def write_project_override(
@@ -371,11 +375,13 @@ class ConfigOverridesView(ConfigOverridesWriter):
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
         preserve_inherit: bool = True,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         return self._config.write_project_override(
             enabled=enabled,
             requirement_overrides=requirement_overrides,
             preserve_inherit=preserve_inherit,
+            logging_config=logging_config,
         )
 
 
@@ -850,12 +856,23 @@ class RequirementsConfig:
         config: MutableMapping[str, Any],
         enabled: Optional[bool],
         requirement_overrides: Optional[RequirementOverrides],
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> None:
-        """Apply common override updates for enabled and requirements."""
+        """Apply common override updates for enabled, requirements, and logging."""
         if enabled is not None:
             config["enabled"] = enabled
 
         self._apply_requirement_overrides(config, requirement_overrides)
+
+        if logging_config is not None:
+            # Merge with existing logging config (if any)
+            existing_logging = config.get("logging", {})
+            if isinstance(existing_logging, dict):
+                existing_logging.update(logging_config)
+                config["logging"] = existing_logging
+            else:
+                config["logging"] = logging_config
+
         self._ensure_version(config)
 
     def _write_override_config(
@@ -864,9 +881,10 @@ class RequirementsConfig:
         enabled: Optional[bool],
         requirement_overrides: Optional[RequirementOverrides],
         writer: ConfigWriter,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         """Apply overrides and persist config with the provided writer."""
-        self._apply_override_updates(config, enabled, requirement_overrides)
+        self._apply_override_updates(config, enabled, requirement_overrides, logging_config)
         return writer(self.project_dir, config)
 
     def _record_validation_error(self, error: ValueError) -> None:
@@ -950,6 +968,7 @@ class RequirementsConfig:
         self,
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         """
         Write local configuration override to .claude/requirements.local.yaml.
@@ -962,6 +981,8 @@ class RequirementsConfig:
             enabled: Framework enabled state (None = don't change)
             requirement_overrides: Dict of requirement names to their enabled state
                                   e.g., {'commit_plan': False, 'github_ticket': True}
+            logging_config: Logging configuration dict with optional keys: level, destinations, file
+                           e.g., {'level': 'debug', 'destinations': ['file', 'stdout']}
 
         Returns:
             Path to file that was written (relative to cwd if possible)
@@ -983,6 +1004,11 @@ class RequirementsConfig:
                 enabled=True,
                 requirement_overrides={'commit_plan': False}
             )
+
+            # Set debug logging
+            config.write_local_override(
+                logging_config={'level': 'debug', 'destinations': ['file']}
+            )
         """
         # Load existing local config if it exists
         existing_config = self._load_first_existing_config(self._paths.local_override_paths())
@@ -992,6 +1018,7 @@ class RequirementsConfig:
             enabled,
             requirement_overrides,
             self._io.write_local_config,
+            logging_config,
         )
 
     def write_project_override(
@@ -999,6 +1026,7 @@ class RequirementsConfig:
         enabled: Optional[bool] = None,
         requirement_overrides: Optional[RequirementOverrides] = None,
         preserve_inherit: bool = True,
+        logging_config: Optional[LoggingConfigDict] = None,
     ) -> str:
         """
         Write project configuration to .claude/requirements.yaml.
@@ -1012,6 +1040,8 @@ class RequirementsConfig:
                                   e.g., {'commit_plan': {'enabled': False}}
                                   or {'adr_reviewed': {'adr_path': '/docs/adr'}}
             preserve_inherit: Keep existing 'inherit' flag (default: True)
+            logging_config: Logging configuration dict with optional keys: level, destinations, file
+                           e.g., {'level': 'info', 'destinations': ['file']}
 
         Returns:
             Path to file that was written (relative to cwd if possible)
@@ -1027,6 +1057,11 @@ class RequirementsConfig:
             # Add requirement field to project config
             config.write_project_override(
                 requirement_overrides={'adr_reviewed': {'adr_path': '/docs/adr'}}
+            )
+
+            # Set info logging for project
+            config.write_project_override(
+                logging_config={'level': 'info', 'destinations': ['file']}
             )
         """
         project_file = self._paths.project_config_path()
@@ -1046,6 +1081,7 @@ class RequirementsConfig:
             enabled,
             requirement_overrides,
             self._io.write_project_config,
+            logging_config,
         )
 
     def _requirements_map(self) -> dict[str, RequirementConfigDict]:
