@@ -5688,6 +5688,107 @@ def test_parse_hook_input(runner):
     runner.test("parse_hook_input no type error for null tool_name", "_tool_name_type_error" not in result)
 
 
+def test_field_extractors(runner):
+    """Test hook_utils field extractor functions (Issue #05)."""
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from hook_utils import extract_file_path, extract_command, extract_skill_name
+
+    print("\n🎯 Testing field extractors (Issue #05)...")
+
+    # =========================================================================
+    # extract_file_path tests
+    # =========================================================================
+
+    # Test 1: Valid file_path
+    result = extract_file_path({'file_path': '/tmp/test.py'})
+    runner.test("extract_file_path returns valid path", result == '/tmp/test.py')
+
+    # Test 2: Missing file_path
+    result = extract_file_path({})
+    runner.test("extract_file_path returns empty string for missing key", result == '')
+
+    # Test 3: None file_path
+    result = extract_file_path({'file_path': None})
+    runner.test("extract_file_path returns empty string for None value", result == '')
+
+    # Test 4: Wrong type (int)
+    result = extract_file_path({'file_path': 123})
+    runner.test("extract_file_path returns empty string for int type", result == '')
+
+    # Test 5: Wrong type (list)
+    result = extract_file_path({'file_path': ['/tmp/test.py']})
+    runner.test("extract_file_path returns empty string for list type", result == '')
+
+    # Test 6: Wrong type (dict)
+    result = extract_file_path({'file_path': {'path': '/tmp/test.py'}})
+    runner.test("extract_file_path returns empty string for dict type", result == '')
+
+    # Test 7: Null bytes in path (security)
+    result = extract_file_path({'file_path': '/tmp/test\x00.py'})
+    runner.test("extract_file_path rejects null bytes", result == '')
+
+    # Test 8: Empty string is valid
+    result = extract_file_path({'file_path': ''})
+    runner.test("extract_file_path allows empty string", result == '')
+
+    # Test 9: Path with spaces (valid)
+    result = extract_file_path({'file_path': '/tmp/my file.py'})
+    runner.test("extract_file_path allows paths with spaces", result == '/tmp/my file.py')
+
+    # =========================================================================
+    # extract_command tests
+    # =========================================================================
+
+    # Test 10: Valid command
+    result = extract_command({'command': 'git status'})
+    runner.test("extract_command returns valid command", result == 'git status')
+
+    # Test 11: Missing command
+    result = extract_command({})
+    runner.test("extract_command returns empty string for missing key", result == '')
+
+    # Test 12: None command
+    result = extract_command({'command': None})
+    runner.test("extract_command returns empty string for None value", result == '')
+
+    # Test 13: Wrong type (int)
+    result = extract_command({'command': 123})
+    runner.test("extract_command returns empty string for int type", result == '')
+
+    # Test 14: Wrong type (list) - common mistake
+    result = extract_command({'command': ['git', 'status']})
+    runner.test("extract_command returns empty string for list type", result == '')
+
+    # Test 15: Empty string is valid
+    result = extract_command({'command': ''})
+    runner.test("extract_command allows empty string", result == '')
+
+    # =========================================================================
+    # extract_skill_name tests
+    # =========================================================================
+
+    # Test 16: Valid skill
+    result = extract_skill_name({'skill': 'requirements-framework:pre-commit'})
+    runner.test("extract_skill_name returns valid skill", result == 'requirements-framework:pre-commit')
+
+    # Test 17: Missing skill
+    result = extract_skill_name({})
+    runner.test("extract_skill_name returns empty string for missing key", result == '')
+
+    # Test 18: None skill
+    result = extract_skill_name({'skill': None})
+    runner.test("extract_skill_name returns empty string for None value", result == '')
+
+    # Test 19: Wrong type (int)
+    result = extract_skill_name({'skill': 123})
+    runner.test("extract_skill_name returns empty string for int type", result == '')
+
+    # Test 20: Empty string is valid
+    result = extract_skill_name({'skill': ''})
+    runner.test("extract_skill_name allows empty string", result == '')
+
+
 def test_plan_mode_triggers(runner):
     """Test that EnterPlanMode and ExitPlanMode are recognized as triggering tools."""
     import tempfile
@@ -5914,6 +6015,7 @@ def main():
     # Hook utils module tests
     test_early_hook_setup(runner)
     test_parse_hook_input(runner)
+    test_field_extractors(runner)
 
     # Plan mode trigger tests
     test_plan_mode_triggers(runner)

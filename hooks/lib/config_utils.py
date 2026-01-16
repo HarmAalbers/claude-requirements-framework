@@ -54,6 +54,14 @@ def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
             # Check command pattern for Bash tool
             if 'command_pattern' in trigger and tool_name == 'Bash':
                 command = tool_input.get('command', '')
+                # Type safety: ensure command is a string (fail-open)
+                if not isinstance(command, str):
+                    get_logger().warning(
+                        "Invalid command type in tool_input",
+                        expected="str",
+                        got=type(command).__name__
+                    )
+                    continue
                 pattern = trigger['command_pattern']
                 try:
                     if re.search(pattern, command, re.IGNORECASE):
