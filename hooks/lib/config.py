@@ -865,12 +865,22 @@ class RequirementsConfig:
         self._apply_requirement_overrides(config, requirement_overrides)
 
         if logging_config is not None:
+            # Validate logging_config structure before merging
+            if not isinstance(logging_config, dict):
+                raise ValueError(f"logging_config must be a dict, got {type(logging_config).__name__}")
+
             # Merge with existing logging config (if any)
             existing_logging = config.get("logging", {})
             if isinstance(existing_logging, dict):
                 existing_logging.update(logging_config)
                 config["logging"] = existing_logging
             else:
+                # Log replacement of malformed config
+                get_logger().warning(
+                    "Replacing malformed logging config",
+                    was_type=type(existing_logging).__name__,
+                    expected_type="dict",
+                )
                 config["logging"] = logging_config
 
         self._ensure_version(config)

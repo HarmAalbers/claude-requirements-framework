@@ -30,9 +30,16 @@ class StdoutHandler(Handler):
         try:
             self.stream.write(json.dumps(record) + "\n")
             self.stream.flush()
-        except Exception:
+        except Exception as e:
             # Fail-open: never let logging break the hook
-            pass
+            # But try to notify user that logging is failing
+            try:
+                import sys
+                sys.stderr.write(f"[LOGGING ERROR] Failed to write log: {e}\n")
+                sys.stderr.flush()
+            except Exception:
+                # Truly fail-open as last resort
+                pass
 
 
 class FileHandler(Handler):
@@ -49,9 +56,16 @@ class FileHandler(Handler):
         try:
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
-        except Exception:
+        except Exception as e:
             # Fail-open: never let logging break the hook
-            pass
+            # But try to notify user that logging is failing
+            try:
+                import sys
+                sys.stderr.write(f"[LOGGING ERROR] Failed to write log to {self.path}: {e}\n")
+                sys.stderr.flush()
+            except Exception:
+                # Truly fail-open as last resort
+                pass
 
 
 class JsonLogger:

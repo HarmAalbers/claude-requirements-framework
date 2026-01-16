@@ -1073,7 +1073,7 @@ def _check_python_version() -> dict:
 def _check_pyyaml_available() -> dict:
     """Check if PyYAML is installed."""
     try:
-        import yaml
+        import yaml  # noqa: F401 - imported only to check availability
         return {
             'id': 'pyyaml',
             'category': 'environment',
@@ -1753,18 +1753,32 @@ def cmd_logging(args) -> int:
         return 0
 
     # Write mode: modify logging configuration
-    from interactive import select, confirm
+    try:
+        from interactive import select, confirm
+    except ImportError:
+        # Fallback if interactive module missing
+        out(error("❌ Interactive prompts not available"), file=sys.stderr)
+        out(dim("   Use --local or --project flag to specify target"), file=sys.stderr)
+        return 1
 
     # Ask which config to modify (unless explicitly specified)
     if not args.project and not args.local and not args.yes:
-        choice = select(
-            "Which configuration file to modify?",
-            [
-                "Local (.claude/requirements.local.yaml) - personal, gitignored",
-                "Project (.claude/requirements.yaml) - team-shared, versioned",
-            ],
-        )
-        modify_local = choice == 0
+        try:
+            choice = select(
+                "Which configuration file to modify?",
+                [
+                    "Local (.claude/requirements.local.yaml) - personal, gitignored",
+                    "Project (.claude/requirements.yaml) - team-shared, versioned",
+                ],
+            )
+            modify_local = choice == 0
+        except (EOFError, KeyboardInterrupt):
+            out(warning("\n⚠️  Cancelled"), file=sys.stderr)
+            return 1
+        except Exception as e:
+            out(error(f"❌ Interactive prompt failed: {e}"), file=sys.stderr)
+            out(dim("   Use --local or --project flag to specify target"), file=sys.stderr)
+            return 1
     else:
         modify_local = not args.project
 
@@ -1783,16 +1797,61 @@ def cmd_logging(args) -> int:
     if args.destinations:
         # Validate destinations
         valid_destinations = ['file', 'stdout']
-        destinations = [d.lower() for d in args.destinations]
+        destinations = [d.lower().strip() for d in args.destinations]
+
+        # Check for empty
+        if not destinations or all(d == '' for d in destinations):
+            out(error("❌ No destinations specified"), file=sys.stderr)
+            out(dim(f"   Valid destinations: {', '.join(valid_destinations)}"), file=sys.stderr)
+            return 1
+
+        # Remove duplicates (preserve order)
+        seen = set()
+        unique_destinations = []
         for dest in destinations:
+            if dest not in seen:
+                seen.add(dest)
+                unique_destinations.append(dest)
+
+        # Warn if duplicates were removed
+        if len(unique_destinations) < len(destinations):
+            out(warning("⚠️  Removed duplicate destinations"), file=sys.stderr)
+
+        # Validate each destination
+        for dest in unique_destinations:
             if dest not in valid_destinations:
                 out(error(f"❌ Invalid destination: {dest}"), file=sys.stderr)
                 out(dim(f"   Valid destinations: {', '.join(valid_destinations)}"), file=sys.stderr)
                 return 1
-        logging_config_update['destinations'] = destinations
+
+        logging_config_update['destinations'] = unique_destinations
 
     if args.file:
-        logging_config_update['file'] = args.file
+        # Validate the file path is writable
+        log_path = Path(args.file)
+
+        # Expand user home directory
+        if str(log_path).startswith('~'):
+            log_path = log_path.expanduser()
+
+        # Check parent directory exists or can be created
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            out(error(f"❌ Cannot create log directory: {log_path.parent}"), file=sys.stderr)
+            out(dim(f"   {e}"), file=sys.stderr)
+            return 1
+
+        # Test write permission by attempting to touch the file
+        try:
+            log_path.touch(exist_ok=True)
+        except (PermissionError, OSError) as e:
+            out(error(f"❌ Cannot write to log file: {log_path}"), file=sys.stderr)
+            out(dim(f"   {e}"), file=sys.stderr)
+            return 1
+
+        logging_config_update['file'] = str(log_path.absolute())
+        out(dim(f"   Log file will be: {log_path.absolute()}"))
 
     # Show preview
     out()
@@ -1808,8 +1867,12 @@ def cmd_logging(args) -> int:
     # Confirm unless --yes
     if not args.yes:
         target = "local config (.gitignored)" if modify_local else "project config (version-controlled)"
-        if not confirm(f"Update {target}?"):
-            out(warning("⚠️  Aborted"))
+        try:
+            if not confirm(f"Update {target}?"):
+                out(warning("⚠️  Aborted"))
+                return 1
+        except (EOFError, KeyboardInterrupt):
+            out(warning("\n⚠️  Cancelled"), file=sys.stderr)
             return 1
 
     # Write config
@@ -1838,9 +1901,48 @@ def cmd_logging(args) -> int:
 
         return 0
 
+    except ImportError:
+        out(error("❌ PyYAML is required to write config files"), file=sys.stderr)
+        out(dim("   Install with: pip install pyyaml"), file=sys.stderr)
+        from logger import get_logger
+        get_logger().error("PyYAML import failed", exc_info=True)
+        return 1
+
+    except PermissionError as e:
+        out(error("❌ Permission denied writing config file"), file=sys.stderr)
+        out(dim(f"   Check file permissions: {e.filename}"), file=sys.stderr)
+        from logger import get_logger
+        get_logger().error("Config write permission denied", path=e.filename, exc_info=True)
+        return 1
+
+    except OSError as e:
+        # Disk full, read-only filesystem, etc.
+        out(error(f"❌ Failed to write config file: {e.strerror}"), file=sys.stderr)
+        if e.filename:
+            out(dim(f"   File: {e.filename}"), file=sys.stderr)
+        from logger import get_logger
+        get_logger().error("Config write I/O error", path=e.filename, error=e.strerror, exc_info=True)
+        return 1
+
+    except ValueError as e:
+        # Validation errors from config
+        out(error(f"❌ Invalid configuration: {e}"), file=sys.stderr)
+        from logger import get_logger
+        get_logger().error("Config validation failed", exc_info=True)
+        return 1
+
     except Exception as e:
+        # Truly unexpected errors - log with full context
+        out(error(f"❌ Unexpected error updating config: {e}"), file=sys.stderr)
+        out(dim("   This may be a bug. Please report with logs."), file=sys.stderr)
+        from logger import get_logger
+        get_logger().error(
+            "Unexpected error in cmd_logging",
+            logging_config=str(logging_config_update),
+            modify_local=modify_local,
+            exc_info=True,
+        )
         import traceback
-        out(error(f"❌ Failed to update config: {e}"), file=sys.stderr)
         traceback.print_exc()
         return 1
 

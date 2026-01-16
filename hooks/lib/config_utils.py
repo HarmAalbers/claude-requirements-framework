@@ -93,13 +93,34 @@ def load_yaml(path: Path) -> dict:
     try:
         content = path.read_text()
     except Exception as e:
-        get_logger().warning(f"⚠️ Could not read {path}: {e}")
+        get_logger().warning(
+            "Could not read config file",
+            path=str(path),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return {}
 
     try:
         return yaml.safe_load(content) or {}
+    except yaml.YAMLError as e:
+        # YAML-specific errors have line/column info
+        problem_mark = getattr(e, 'problem_mark', None)
+        get_logger().warning(
+            "YAML parse error in config file",
+            path=str(path),
+            error=str(e),
+            line=problem_mark.line if problem_mark else None,
+            column=problem_mark.column if problem_mark else None,
+        )
+        return {}
     except Exception as e:
-        get_logger().warning(f"⚠️ YAML parse error in {path}: {e}")
+        get_logger().warning(
+            "Unexpected error parsing config file",
+            path=str(path),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return {}
 
 
@@ -156,14 +177,32 @@ def write_local_config(project_dir: str, config_data: dict) -> str:
             "Install with: pip install pyyaml"
         )
 
-    with open(local_file, 'w') as f:
-        yaml.safe_dump(
-            config_data,
-            f,
-            default_flow_style=False,
-            sort_keys=False,
-            allow_unicode=True
+    try:
+        with open(local_file, 'w') as f:
+            yaml.safe_dump(
+                config_data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True
+            )
+    except OSError as e:
+        from logger import get_logger
+        get_logger().error(
+            "Failed to write local config",
+            path=str(local_file),
+            error=e.strerror,
+            errno=e.errno,
         )
+        raise
+    except Exception:
+        from logger import get_logger
+        get_logger().error(
+            "Unexpected error writing local config",
+            path=str(local_file),
+            exc_info=True,
+        )
+        raise
 
     # Return relative path if possible
     try:
@@ -223,10 +262,30 @@ def write_project_config(project_dir: str, config_data: dict) -> str:
             )
         # Atomic rename (POSIX compliant)
         os.replace(temp_path, project_file)
+    except OSError as e:
+        # Cleanup temp file on error
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        from logger import get_logger
+        get_logger().error(
+            "Failed to write project config",
+            path=str(project_file),
+            temp_path=temp_path,
+            error=e.strerror if hasattr(e, 'strerror') else str(e),
+            errno=e.errno if hasattr(e, 'errno') else None,
+        )
+        raise
     except Exception:
         # Cleanup temp file on error
         if os.path.exists(temp_path):
             os.unlink(temp_path)
+        from logger import get_logger
+        get_logger().error(
+            "Unexpected error writing project config",
+            path=str(project_file),
+            temp_path=temp_path,
+            exc_info=True,
+        )
         raise
 
     # Return relative path if possible
