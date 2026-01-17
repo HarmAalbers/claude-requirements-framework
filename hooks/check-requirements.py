@@ -48,6 +48,7 @@ from strategy_registry import STRATEGIES
 from logger import get_logger
 from hook_utils import early_hook_setup, parse_hook_input, extract_file_path
 from console import emit_json
+from progress import show_progress, clear_progress
 
 
 def should_skip_plan_file(file_path: str) -> bool:
@@ -319,6 +320,10 @@ def main() -> int:
                 req_type=req_type,
             )
 
+            # Show progress for dynamic requirements (can involve slow calculations)
+            if req_type == 'dynamic':
+                show_progress("Checking requirements", req_name)
+
             try:
                 response = strategy.check(req_name, config, reqs, context)
                 if response:
@@ -346,6 +351,9 @@ def main() -> int:
                     error=str(e),
                 )
                 continue  # Try next requirement
+
+        # Clear any progress indicator
+        clear_progress()
 
         # If any requirements unsatisfied, create batched denial
         if unsatisfied:

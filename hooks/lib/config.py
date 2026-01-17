@@ -36,6 +36,7 @@ from config_utils import (
 )
 from console import configure_console
 from logger import configure_logger, get_logger
+from progress import configure_progress
 
 # Re-export for backwards compatibility - external code can still import from config
 __all__ = [
@@ -150,6 +151,20 @@ class ConsoleConfigDict(TypedDict, total=False):
     file: str
 
 
+class DebugConfigDict(TypedDict, total=False):
+    """Debug configuration for progress and timing.
+
+    These settings can also be controlled via environment variables:
+    - SHOW_PROGRESS=1/0: Enable/disable progress indicators
+    - NO_COLOR=1: Disable all progress (respects https://no-color.org/)
+    - FORCE_COLOR=1: Force progress even in non-TTY
+
+    Config settings take precedence over environment variables.
+    """
+    show_progress: bool  # Show progress indicators (default: auto-detect TTY)
+    timing_threshold: float  # Min duration (seconds) before showing progress (default: 0.3)
+
+
 class HookConfigDict(TypedDict, total=False):
     inject_context: bool
     verify_requirements: bool
@@ -169,6 +184,7 @@ class RequirementsConfigData(TypedDict, total=False):
     logging: LoggingConfigDict
     console: ConsoleConfigDict
     hooks: HooksConfigDict
+    debug: DebugConfigDict
 
 
 RequirementOverrideValue = Union[bool, RequirementConfigDict, Mapping[str, Any]]
@@ -751,10 +767,20 @@ class RequirementsConfig:
         self._config: RequirementsConfigData = self._load_cascade()
         configure_console(self._config.get("console"))
         configure_logger(self._config.get("logging"))
+        self._configure_progress()
         self._requirements_view = RequirementConfigView(self)
         self._hooks_view = HookConfigView(self)
         self._state_view = ConfigStateView(self)
         self._overrides_view = ConfigOverridesView(self)
+
+    def _configure_progress(self) -> None:
+        """Configure progress module from debug config."""
+        debug_config = self._config.get("debug", {})
+        if debug_config:
+            configure_progress(
+                show_progress=debug_config.get("show_progress"),
+                timing_threshold=debug_config.get("timing_threshold"),
+            )
 
     @property
     def requirements(self) -> RequirementConfigAccess:
@@ -1259,6 +1285,22 @@ class RequirementsConfig:
             Console config dictionary
         """
         return cast(ConsoleConfigDict, self._config.get("console", {}))
+
+    def get_debug_config(self) -> DebugConfigDict:
+        """
+        Get debug/progress configuration.
+
+        Returns:
+            Debug config dictionary with optional keys:
+            - show_progress: bool (default: auto-detect TTY)
+            - timing_threshold: float (default: 0.3)
+
+        Example config:
+            debug:
+              show_progress: true
+              timing_threshold: 0.5
+        """
+        return cast(DebugConfigDict, self._config.get("debug", {}))
 
     def get_hook_config(self, hook_name: str, key: str, default: Any = None) -> Any:
         """

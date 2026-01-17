@@ -32,6 +32,7 @@ from session import get_session_id, get_active_sessions, cleanup_stale_sessions,
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
 from console import emit_text
+from progress import ProgressReporter, show_progress, clear_progress
 import time
 
 
@@ -281,6 +282,14 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
 
 def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) -> int:
     """Verbose view - show all details (original behavior)."""
+    # Check if timing mode is enabled
+    timing_mode = hasattr(args, 'timing') and args.timing
+
+    # Start timing if requested
+    timing_reporter = ProgressReporter("Status check", debug=True) if timing_mode else None
+    if timing_reporter:
+        timing_reporter.status("loading config")
+
     # Header
     out(header("📋 Requirements Status"))
     out(dim(f"{'─' * 40}"))
@@ -328,6 +337,8 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
         return 0
 
     # Initialize requirements manager
+    if timing_reporter:
+        timing_reporter.status("initializing requirements manager")
     reqs = BranchRequirements(branch, session_id, project_dir)
 
     # Separate requirements by type
@@ -345,6 +356,8 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     # Show blocking requirements
     if blocking_reqs:
+        if timing_reporter:
+            timing_reporter.status("checking blocking requirements")
         out(header("📌 Blocking Requirements:"))
         for req_name in blocking_reqs:
             scope = config.get_scope(req_name)
@@ -368,12 +381,20 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     # Show dynamic requirements
     if dynamic_reqs:
+        if timing_reporter:
+            timing_reporter.status("calculating dynamic requirements")
         out(header("\n📊 Dynamic Requirements:"))
         for req_name in dynamic_reqs:
             try:
+                # Show progress for slow dynamic calculations
+                if timing_reporter:
+                    timing_reporter.status(f"calculating {req_name}")
+                show_progress("Calculating", req_name)
+
                 # Get dynamic config using type-safe accessor
                 req_config = config.get_dynamic_config(req_name)
                 if not req_config:
+                    clear_progress()
                     out(warning(f"  ⚠️  {req_name}: Dynamic requirement not found"))
                     continue
 
@@ -386,6 +407,7 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
                 # Calculate current value
                 result = calculator.calculate(project_dir, branch)
+                clear_progress()
 
                 if result:
                     value = result.get('value', 0)
@@ -418,6 +440,13 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     if not blocking_reqs and not dynamic_reqs:
         out(info("ℹ️  No requirements configured."))
+
+    # Output timing report if requested
+    if timing_reporter:
+        timing_reporter.status("complete")
+        out()
+        out(header("⏱️  Timing Breakdown:"))
+        out(dim(timing_reporter.get_timing_report()))
 
     return 0
 
@@ -2577,6 +2606,7 @@ Environment Variables:
     status_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
     status_parser.add_argument('--verbose', '-v', action='store_true', help='Show all details (sessions, all requirements)')
     status_parser.add_argument('--summary', action='store_true', help='One-line summary only')
+    status_parser.add_argument('--timing', '-t', action='store_true', help='Show detailed timing breakdown')
 
     # satisfy
     satisfy_parser = subparsers.add_parser('satisfy', help='Satisfy one or more requirements')

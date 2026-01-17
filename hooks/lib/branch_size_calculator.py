@@ -6,12 +6,14 @@ Calculates the total number of line changes (insertions + deletions) on a
 branch compared to its base branch. Supports stacked PRs.
 
 Security: Uses subprocess with list arguments to prevent command injection.
+Progress: Shows streaming progress indicators for slow operations.
 """
 
 import subprocess
 import re
 from typing import Optional
 from calculator_interface import RequirementCalculator
+from progress import ProgressReporter, progress_context
 
 
 class BranchSizeCalculator(RequirementCalculator):
@@ -53,15 +55,24 @@ class BranchSizeCalculator(RequirementCalculator):
             if len(branch) == 40 and all(c in '0123456789abcdef' for c in branch):
                 return None
 
-            # Find base branch (with stacked PR support)
-            base_branch = self._find_base_branch(branch, project_dir)
-            if not base_branch:
-                return None  # No base found, skip check
+            # Use progress context for the overall calculation
+            # Only shows if operation takes > 0.3s
+            with progress_context("Branch analysis", min_duration=0.3) as progress:
+                # Find base branch (with stacked PR support)
+                progress.status("finding base branch")
+                base_branch = self._find_base_branch(branch, project_dir)
+                if not base_branch:
+                    return None  # No base found, skip check
 
-            # Calculate changes (committed + staged + unstaged)
-            committed = self._diff_shortstat(project_dir, f'{base_branch}...HEAD')
-            staged = self._diff_shortstat(project_dir, '--cached')
-            unstaged = self._diff_shortstat(project_dir, None)
+                # Calculate changes (committed + staged + unstaged)
+                progress.status("calculating committed changes")
+                committed = self._diff_shortstat(project_dir, f'{base_branch}...HEAD')
+
+                progress.status("calculating staged changes")
+                staged = self._diff_shortstat(project_dir, '--cached')
+
+                progress.status("calculating unstaged changes")
+                unstaged = self._diff_shortstat(project_dir, None)
 
             total = (committed['ins'] + committed['del'] +
                     staged['ins'] + staged['del'] +
@@ -157,7 +168,14 @@ class BranchSizeCalculator(RequirementCalculator):
             best_parent = None
             best_commit_count = float('inf')
 
-            for candidate in candidate_branches:
+            # Show progress for stacked PR detection if many branches
+            num_candidates = len(candidate_branches)
+            progress = ProgressReporter("Stacked PR detection") if num_candidates > 3 else None
+
+            for i, candidate in enumerate(candidate_branches):
+                if progress:
+                    progress.status(f"{candidate} ({i+1}/{num_candidates})")
+
                 # Get merge-base
                 result = self._run_git(['merge-base', branch, candidate], project_dir)
                 if result[0] != 0:
@@ -177,6 +195,9 @@ class BranchSizeCalculator(RequirementCalculator):
                 if commit_count < best_commit_count:
                     best_commit_count = commit_count
                     best_parent = candidate
+
+            if progress:
+                progress.clear()
 
             return best_parent
 
@@ -238,14 +259,25 @@ class BranchSizeCalculator(RequirementCalculator):
 
             untracked_files = [f.strip() for f in result[1].split('\n') if f.strip()]
 
+            # Show progress for large numbers of untracked files
+            num_files = len(untracked_files)
+            progress = ProgressReporter("Counting untracked files") if num_files > 100 else None
+
             total_lines = 0
-            for file_path in untracked_files:
+            for i, file_path in enumerate(untracked_files):
+                # Update progress every 100 files
+                if progress and i % 100 == 0:
+                    progress.status(f"{i}/{num_files}")
+
                 full_path = f"{project_dir}/{file_path}"
                 try:
                     with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                         total_lines += sum(1 for _ in f)
                 except Exception:
                     pass  # Skip files that can't be read
+
+            if progress:
+                progress.clear()
 
             return total_lines
 

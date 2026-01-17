@@ -3789,6 +3789,164 @@ def test_colors_module(runner: TestRunner):
         colors_module._color_enabled = original_cache
 
 
+def test_progress_module(runner: TestRunner):
+    """Test progress reporting module."""
+    print("\n📦 Testing progress module...")
+
+    from progress import (
+        ProgressReporter,
+        progress_context,
+        progress_enabled,
+        reset_progress_cache,
+        show_progress,
+        clear_progress,
+        _progress_enabled,
+    )
+    import progress as progress_module
+
+    # Save original env and cache
+    original_show = os.environ.get('SHOW_PROGRESS')
+    original_no_color = os.environ.get('NO_COLOR')
+    original_force_color = os.environ.get('FORCE_COLOR')
+    original_cache = progress_module._cached_progress_enabled
+
+    try:
+        # Clean environment for testing
+        os.environ.pop('SHOW_PROGRESS', None)
+        os.environ.pop('NO_COLOR', None)
+        os.environ.pop('FORCE_COLOR', None)
+        reset_progress_cache()
+
+        # Test 1: SHOW_PROGRESS=0 disables progress
+        os.environ['SHOW_PROGRESS'] = '0'
+        reset_progress_cache()
+        runner.test("SHOW_PROGRESS=0 disables progress", not _progress_enabled())
+        os.environ.pop('SHOW_PROGRESS', None)
+
+        # Test 2: SHOW_PROGRESS=1 enables progress (even without TTY)
+        os.environ['SHOW_PROGRESS'] = '1'
+        reset_progress_cache()
+        runner.test("SHOW_PROGRESS=1 enables progress", _progress_enabled())
+        os.environ.pop('SHOW_PROGRESS', None)
+
+        # Test 3: NO_COLOR disables progress
+        os.environ['NO_COLOR'] = '1'
+        reset_progress_cache()
+        runner.test("NO_COLOR disables progress", not _progress_enabled())
+        os.environ.pop('NO_COLOR', None)
+
+        # Test 4: FORCE_COLOR enables progress
+        os.environ['FORCE_COLOR'] = '1'
+        reset_progress_cache()
+        runner.test("FORCE_COLOR enables progress", _progress_enabled())
+        os.environ.pop('FORCE_COLOR', None)
+
+        # Test 5: Caching works
+        reset_progress_cache()
+        os.environ['SHOW_PROGRESS'] = '1'
+        first_result = progress_enabled()
+        os.environ['SHOW_PROGRESS'] = '0'  # Change env
+        second_result = progress_enabled()  # Should use cached value
+        runner.test("progress_enabled caches result", first_result == second_result == True)
+        os.environ.pop('SHOW_PROGRESS', None)
+
+        # Test 6: reset_progress_cache clears cache
+        reset_progress_cache()
+        os.environ['SHOW_PROGRESS'] = '0'
+        after_reset = progress_enabled()
+        runner.test("reset_progress_cache clears cache", not after_reset)
+        os.environ.pop('SHOW_PROGRESS', None)
+
+    finally:
+        # Restore original environment
+        if original_show is not None:
+            os.environ['SHOW_PROGRESS'] = original_show
+        else:
+            os.environ.pop('SHOW_PROGRESS', None)
+        if original_no_color is not None:
+            os.environ['NO_COLOR'] = original_no_color
+        else:
+            os.environ.pop('NO_COLOR', None)
+        if original_force_color is not None:
+            os.environ['FORCE_COLOR'] = original_force_color
+        else:
+            os.environ.pop('FORCE_COLOR', None)
+        progress_module._cached_progress_enabled = original_cache
+
+    # Test ProgressReporter class (force enabled for testing)
+    os.environ['SHOW_PROGRESS'] = '1'
+    reset_progress_cache()
+
+    try:
+        # Test 7: ProgressReporter initialization
+        reporter = ProgressReporter("Test operation", debug=True)
+        runner.test("ProgressReporter initializes", reporter.description == "Test operation")
+        runner.test("ProgressReporter debug mode", reporter.debug is True)
+
+        # Test 8: ProgressReporter timing
+        time.sleep(0.1)
+        elapsed = reporter.get_elapsed()
+        runner.test("ProgressReporter tracks elapsed time", elapsed >= 0.1, f"Got: {elapsed}")
+
+        # Test 9: ProgressReporter status recording (debug mode)
+        reporter.status("step 1")
+        reporter.status("step 2")
+        runner.test("ProgressReporter records steps", len(reporter._steps) == 2)
+
+        # Test 10: ProgressReporter timing report
+        timing_report = reporter.get_timing_report()
+        runner.test("ProgressReporter generates timing report", "step 1" in timing_report and "step 2" in timing_report)
+
+        # Test 11: ProgressReporter without debug mode doesn't record
+        reporter_no_debug = ProgressReporter("No debug")
+        reporter_no_debug.status("ignored")
+        runner.test("ProgressReporter no-debug skips recording", len(reporter_no_debug._steps) == 0)
+
+        # Test 12: Empty timing report when no steps
+        empty_reporter = ProgressReporter("Empty")
+        runner.test("Empty reporter has no timing report", empty_reporter.get_timing_report() == "")
+
+    finally:
+        os.environ.pop('SHOW_PROGRESS', None)
+        reset_progress_cache()
+        if original_cache is not None:
+            progress_module._cached_progress_enabled = original_cache
+
+    # Test progress_context
+    os.environ['SHOW_PROGRESS'] = '0'  # Disable for context tests (avoid TTY issues)
+    reset_progress_cache()
+
+    try:
+        # Test 13: progress_context yields ProgressReporter
+        with progress_context("Context test") as p:
+            runner.test("progress_context yields ProgressReporter", isinstance(p, ProgressReporter))
+
+        # Test 14: progress_context with debug collects timing
+        with progress_context("Debug context", debug=True) as p:
+            p.status("step A")
+            time.sleep(0.05)
+            p.status("step B")
+
+        runner.test("progress_context debug collects steps", len(p._steps) == 2)
+
+        # Test 15: progress_context min_duration logic (fast operation)
+        start = time.time()
+        with progress_context("Fast", min_duration=1.0) as p:
+            pass  # Instant
+        # Should have cleared without finishing (no visible output)
+        runner.test("progress_context fast operation clears", p._line_shown is False)
+
+    finally:
+        os.environ.pop('SHOW_PROGRESS', None)
+        reset_progress_cache()
+        if original_cache is not None:
+            progress_module._cached_progress_enabled = original_cache
+
+    # Test convenience functions exist and are callable
+    runner.test("show_progress is callable", callable(show_progress))
+    runner.test("clear_progress is callable", callable(clear_progress))
+
+
 def test_interactive_module(runner: TestRunner):
     """Test interactive prompt module."""
     print("\n📦 Testing interactive module...")
@@ -5972,6 +6130,9 @@ def main():
 
     # Colors module tests
     test_colors_module(runner)
+
+    # Progress module tests
+    test_progress_module(runner)
 
     # Interactive prompts module tests
     test_interactive_module(runner)
