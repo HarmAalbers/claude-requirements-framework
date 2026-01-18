@@ -55,6 +55,29 @@ protected_branch:
     - main
 ```
 
+**`single_session`**: Block edits when another session is active on the same project
+- Config: None required (uses session registry)
+- Prevents concurrent editing conflicts between multiple Claude Code sessions
+
+```yaml
+single_session_per_project:
+  enabled: true
+  type: guard
+  guard_type: single_session
+  scope: session
+  trigger_tools:
+    - Edit
+    - Write
+    - MultiEdit
+```
+
+Key behaviors:
+- Checks session registry for other active sessions on the same project
+- Automatically filters stale sessions (dead processes) via `is_process_alive()`
+- Current session is excluded from the check
+- Sessions on different projects don't trigger the guard
+- SessionStart hook shows early warning when other sessions detected
+
 ### Emergency Override Pattern
 
 ```bash
@@ -167,6 +190,8 @@ class GuardRequirementStrategy(RequirementStrategy):
         guard_type = config.get_attribute(req_name, 'guard_type', None)
         if guard_type == 'protected_branch':
             return self._check_protected_branch(...)
+        elif guard_type == 'single_session':
+            return self._check_single_session(...)
 
         return None  # Unknown guard type - fail open
 ```
@@ -187,6 +212,7 @@ class GuardRequirementStrategy(RequirementStrategy):
 
 ### Neutral
 - Test count increased from 161 to 172 tests (170 for status + 2 for Stop hook)
+- Added 5 more tests for `single_session` guard type (total: 655 tests)
 
 ## Lessons Learned
 
@@ -249,6 +275,30 @@ To add a new guard type (e.g., `readonly_files`):
 4. Add tests covering the new guard type
 
 5. Update this ADR with the new guard type
+
+### Example: Adding `single_session` Guard (2026-01-18)
+
+The `single_session` guard was added following this pattern:
+
+1. **Handler method** (`guard_strategy.py`):
+   - `_check_single_session()` - checks session registry for other active sessions
+   - `_create_single_session_denial()` - formats denial message with session details
+
+2. **Dispatch** in `check()`:
+   ```python
+   elif guard_type == 'single_session':
+       return self._check_single_session(req_name, config, context)
+   ```
+
+3. **Tests** (`test_requirements.py`):
+   - `test_single_session_guard_allows_when_alone`
+   - `test_single_session_guard_blocks_with_other_session`
+   - `test_single_session_guard_approval_bypasses`
+   - `test_single_session_guard_excludes_current_session`
+   - `test_single_session_guard_filters_by_project`
+
+4. **SessionStart enhancement** (`handle-session-start.py`):
+   - Added `check_other_sessions_warning()` for early warning display
 
 ## Related
 
