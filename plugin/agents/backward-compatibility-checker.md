@@ -3,7 +3,7 @@ name: backward-compatibility-checker
 description: Detect breaking changes in schemas, APIs, and contracts that break existing tests
 model: inherit
 color: blue
-git_hash: 88b2d4b
+git_hash: 792f742
 ---
 
 # Backward Compatibility Checker Agent

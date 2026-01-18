@@ -1,8 +1,9 @@
 ---
+name: pre-commit
 description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 88b2d4b
+git_hash: 792f742
 ---
 
 # Pre-Commit Review
