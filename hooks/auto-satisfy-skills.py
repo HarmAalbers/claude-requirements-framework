@@ -48,16 +48,17 @@ DEFAULT_SKILL_MAPPINGS = {
 
 def get_skill_requirement_mappings(config: RequirementsConfig) -> dict:
     """
-    Build skill → requirement mapping from configuration.
+    Build skill → requirements mapping from configuration.
 
     Scans all enabled requirements for 'satisfied_by_skill' field and builds
-    a reverse mapping from skill name to requirement name.
+    a reverse mapping from skill name to requirement names. Multiple requirements
+    can map to the same skill (they will all be satisfied when the skill completes).
 
     Args:
         config: Loaded RequirementsConfig instance
 
     Returns:
-        Dict mapping skill names to requirement names
+        Dict mapping skill names to lists of requirement names
     """
     mappings = {}
 
@@ -67,7 +68,9 @@ def get_skill_requirement_mappings(config: RequirementsConfig) -> dict:
 
         skill_name = config.get_attribute(req_name, 'satisfied_by_skill')
         if skill_name and isinstance(skill_name, str):
-            mappings[skill_name] = req_name
+            if skill_name not in mappings:
+                mappings[skill_name] = []
+            mappings[skill_name].append(req_name)
 
     return mappings
 
@@ -134,32 +137,45 @@ def main() -> int:
         # Load config
         config = RequirementsConfig(project_dir)
 
-        # Build skill → requirement mappings from config + defaults
+        # Build skill → requirements mappings from config + defaults
         # Config mappings take precedence over defaults
-        skill_mappings = DEFAULT_SKILL_MAPPINGS.copy()
-        skill_mappings.update(get_skill_requirement_mappings(config))
+        # Convert defaults to list format for consistency
+        skill_mappings = {k: [v] for k, v in DEFAULT_SKILL_MAPPINGS.items()}
 
-        # Check if this skill maps to a requirement
+        # Merge config mappings (extend lists, don't replace)
+        for skill, req_list in get_skill_requirement_mappings(config).items():
+            if skill in skill_mappings:
+                # Add new requirements, avoiding duplicates
+                for req in req_list:
+                    if req not in skill_mappings[skill]:
+                        skill_mappings[skill].append(req)
+            else:
+                skill_mappings[skill] = req_list
+
+        # Check if this skill maps to any requirements
         if skill_name not in skill_mappings:
             return 0
 
-        req_name = skill_mappings[skill_name]
-
-        if not config.is_requirement_enabled(req_name):
-            return 0  # Requirement not enabled
-
-        scope = config.get_scope(req_name)
-
-        # Satisfy the requirement
+        req_names = skill_mappings[skill_name]
         reqs = BranchRequirements(branch, session_id, project_dir)
-        reqs.satisfy(req_name, scope, method='skill', metadata={'skill': skill_name})
+        satisfied_reqs = []
+
+        # Satisfy all mapped requirements
+        for req_name in req_names:
+            if not config.is_requirement_enabled(req_name):
+                continue  # Skip disabled requirements
+
+            scope = config.get_scope(req_name)
+            reqs.satisfy(req_name, scope, method='skill', metadata={'skill': skill_name})
+            satisfied_reqs.append(req_name)
 
         # Output success message (visible to user)
-        logger.info(
-            "Auto-satisfied requirement from skill",
-            requirement=req_name,
-            skill=skill_name,
-        )
+        if satisfied_reqs:
+            logger.info(
+                "Auto-satisfied requirements from skill",
+                requirements=satisfied_reqs,
+                skill=skill_name,
+            )
 
     except Exception as e:
         # Fail silently - don't block on auto-satisfy errors

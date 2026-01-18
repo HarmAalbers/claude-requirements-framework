@@ -34,11 +34,17 @@ You are the Commit Planner, an expert at analyzing implementation plans and crea
 
 ### 1. Locate the Plan File
 
-Plan files are stored in `~/.claude/plans/`. Find the most recent plan file:
+Plan files are stored in either `.claude/plans/` (project-local) or `~/.claude/plans/` (global).
 
-1. Use Glob to find `~/.claude/plans/*.md`
-2. Read the most recently modified plan file
-3. If no plan file found, report error and stop
+**When called by plan-review command**: The plan file path will be provided in the prompt. Use that path directly.
+
+**When called standalone**: Find the most recent plan file:
+1. Check project-local first: `.claude/plans/*.md`
+2. Fall back to global: Use the expanded home directory path (e.g., `/Users/username/.claude/plans/*.md`)
+3. Read the most recently modified plan file
+4. If no plan file found, report error and stop
+
+**Note**: The Glob tool does not expand `~`, so use absolute paths when searching the global plans directory.
 
 ### 2. Analyze Plan Structure
 

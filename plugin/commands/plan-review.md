@@ -19,14 +19,19 @@ You MUST follow these steps in exact order. This is a blocking workflow - each s
 
 ### Step 1: Locate the Plan File
 
-Find the most recent plan file in `~/.claude/plans/`:
+Find the most recent plan file, checking project-local first, then global:
 
 ```bash
-ls -t ~/.claude/plans/*.md 2>/dev/null | head -1
+# Check project-local plans first, then fall back to global
+PLAN_FILE=$(ls -t .claude/plans/*.md 2>/dev/null | head -1)
+if [ -z "$PLAN_FILE" ]; then
+  PLAN_FILE=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
+fi
+echo "$PLAN_FILE"
 ```
 
-If no plan file found:
-- Output: "No plan file found in ~/.claude/plans/"
+If no plan file found (PLAN_FILE is empty):
+- Output: "No plan file found in .claude/plans/ or ~/.claude/plans/"
 - Output: "Create a plan in plan mode first, then run this command."
 - **STOP** - do not proceed to other steps
 
