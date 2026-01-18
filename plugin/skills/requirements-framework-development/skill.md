@@ -6,324 +6,151 @@ git_hash: 792f742
 
 # Requirements Framework Development
 
-Guide for developing, fixing, and maintaining the **Claude Code Requirements Framework** with proper sync workflow between repository and deployed installation.
+Guide for developing, fixing, and maintaining the **Claude Code Requirements Framework** with proper sync workflow.
 
-**Repository**: `~/tools/claude-requirements-framework` (git-controlled source of truth)
-**Deployed**: `~/.claude/hooks/` (active runtime environment)
+**Repository**: `~/Tools/claude-requirements-framework` (git-controlled source of truth)
+**Deployed**: `~/.claude/hooks/` (active runtime)
 **Remote**: https://github.com/HarmAalbers/claude-requirements-framework.git
 
 ## Core Concept: Two-Location Architecture
 
 The framework lives in TWO places that must stay synchronized:
 
-1. **Repository** (`~/tools/claude-requirements-framework/`)
-   - Git version control
-   - Source of truth
-   - Where you make planned changes
+| Location | Purpose | When Changes Take Effect |
+|----------|---------|--------------------------|
+| **Repository** | Git source of truth | After `./sync.sh deploy` |
+| **Deployed** | Active runtime | Immediately |
 
-2. **Deployed** (`~/.claude/hooks/`)
-   - Active runtime (where Claude Code loads hooks)
-   - Where framework actually executes
-   - Where you can make emergency fixes
+**→ Full sync details**: See `references/sync-workflow-details.md`
 
 ## sync.sh - The Essential Tool
 
-**Location**: `~/tools/claude-requirements-framework/sync.sh`
-
-### Commands
-
 ```bash
-cd ~/tools/claude-requirements-framework
+cd ~/Tools/claude-requirements-framework
 
-# Check sync status (ALWAYS run this first)
-./sync.sh status
-
-# Deploy: Repository → ~/.claude/hooks
-./sync.sh deploy
-
-# Show differences
-./sync.sh diff
+./sync.sh status  # Check sync (ALWAYS run first)
+./sync.sh deploy  # Repository → ~/.claude/hooks
+./sync.sh diff    # Show differences
 ```
 
-### sync.sh status Output
+### Status Symbols
 
-```
-📊 Sync Status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Repository:  ~/tools/claude-requirements-framework
-Deployed:    ~/.claude/hooks
-
-File Status:
-  ✓ check-requirements.py - In sync
-  ↑ requirements-cli.py - Out of sync (run './sync.sh deploy' to update deployed)
-  ⚠ lib/config.py - Not deployed
-  ✗ lib/old_module.py - Missing in repository (exists in deployed)
-```
-
-**Symbols**:
-- `✓` = In sync (no action needed)
-- `↑` = Out of sync (run `./sync.sh deploy`)
-- `⚠` = Not deployed (exists in repository only)
-- `✗` = Missing in repository (exists in deployed only)
+| Symbol | Meaning | Action |
+|--------|---------|--------|
+| `✓` | In sync | None needed |
+| `↑` | Out of sync | Run `./sync.sh deploy` |
+| `⚠` | Not deployed | Run `./sync.sh deploy` |
+| `✗` | Missing in repo | Copy or delete |
 
 ## Development Workflows
 
-### Workflow A: Standard Development (Planned Changes)
+### Workflow A: Standard Development
 
-**Pattern**: Edit in repository → Deploy → Test → Commit → Push
+**Pattern**: Edit in repo → Deploy → Test → Commit
 
 ```bash
-# 1. Start in repository
-cd ~/tools/claude-requirements-framework
+cd ~/Tools/claude-requirements-framework
 
-# 2. Make changes to code
-vim hooks/lib/requirement_strategies.py
+# 1. Edit in repository
+vim hooks/lib/requirements.py
 
-# 3. Deploy to active installation
+# 2. Deploy
 ./sync.sh deploy
 
-# 4. Run tests
+# 3. Test
 python3 ~/.claude/hooks/test_requirements.py
 
-# 5. Test in real Claude session (optional)
-# - Try triggering the hook by editing a file
-# - Verify behavior matches expectations
-
-# 6. Commit changes
-git add .
-git commit -m "feat: Add new feature"
-git push origin master
+# 4. Commit
+git add . && git commit -m "feat: Add feature" && git push
 ```
 
-**When to use**: Feature development, refactoring, planned improvements
+### Workflow B: Emergency Fix
 
----
-
-### Workflow B: Quick Fix in Production (Emergency)
-
-**Pattern**: Edit in ~/.claude/hooks → Test → Copy back → Deploy → Commit → Push
+**Pattern**: Fix in deployed → Test → Copy back → Commit
 
 ```bash
-# 1. Fix directly in deployed location
+# 1. Fix directly (immediate effect)
 vim ~/.claude/hooks/check-requirements.py
 
-# 2. Test immediately (no deploy needed - already active!)
+# 2. Test immediately
 python3 ~/.claude/hooks/test_requirements.py
 
-# 3. Verify fix works in Claude session
+# 3. Copy to repo
+cd ~/Tools/claude-requirements-framework
+cp ~/.claude/hooks/check-requirements.py hooks/
 
-# 4. Copy changes back to repository (manual)
-cd ~/tools/claude-requirements-framework
-cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
-
-# 5. Deploy from repo to keep source of truth
+# 4. Deploy and commit
 ./sync.sh deploy
-
-# 6. Commit and push
-git add .
-git commit -m "fix: Emergency bug fix"
-git push origin master
+git add . && git commit -m "fix: Bug description" && git push
 ```
-
-**When to use**: Critical bugs blocking work, quick patches, user is actively blocked
-
----
 
 ### Workflow C: Claude-Driven Development
 
-**Pattern**: Claude edits in ~/.claude/hooks → Copy back → Deploy → Commit → Push
-
-**This is the workflow we just used!**
+**Pattern**: Claude edits deployed → Copy back → Commit
 
 ```bash
-# 1. Claude makes changes to deployed files
-# (Claude edited ~/.claude/hooks/lib/message_dedup_cache.py)
+# 1. Claude edited ~/.claude/hooks/lib/some_module.py
 
-# 2. Copy changes back to repository (manual)
-cd ~/tools/claude-requirements-framework
-cp ~/.claude/hooks/lib/message_dedup_cache.py hooks/lib/message_dedup_cache.py
+# 2. Copy to repo
+cd ~/Tools/claude-requirements-framework
+cp ~/.claude/hooks/lib/some_module.py hooks/lib/
 
-# 3. Deploy from repo to keep source of truth
+# 3. Deploy and commit
 ./sync.sh deploy
-
-# 4. Commit
-git add .
-git commit -m "feat: Your commit message"
-
-# 5. Push
-git push origin master
+git add . && git commit -m "feat: Description" && git push
 ```
 
-**When to use**: When Claude is developing features, fixing bugs found in analysis, implementing improvements
-
----
+**→ Example script**: See `examples/claude-driven-workflow.sh`
 
 ### Workflow D: Test-Driven Development
 
-**Pattern**: Write tests in repo → Deploy → RED → Implement → Deploy → GREEN → Commit
+**Pattern**: Test (RED) → Implement → Test (GREEN) → Commit
 
 ```bash
-# 1. Write failing test in repository
-cd ~/tools/claude-requirements-framework
-vim hooks/test_requirements.py  # Add new test
+# 1. Write failing test in repo
+vim hooks/test_requirements.py
 
-# 2. Deploy tests
+# 2. Deploy and run (RED)
 ./sync.sh deploy
+python3 ~/.claude/hooks/test_requirements.py  # Fails
 
-# 3. Run tests (RED - should fail)
-python3 ~/.claude/hooks/test_requirements.py
-# Expected: New test fails
-
-# 4. Implement feature in repository
+# 3. Implement feature
 vim hooks/lib/requirements.py
 
-# 5. Deploy implementation
+# 4. Deploy and run (GREEN)
 ./sync.sh deploy
+python3 ~/.claude/hooks/test_requirements.py  # Passes
 
-# 6. Run tests (GREEN - should pass)
-python3 ~/.claude/hooks/test_requirements.py
-# Expected: All tests pass
-
-# 7. Refactor if needed (keep tests green)
-
-# 8. Commit when done
-git add .
-git commit -m "feat: Add feature (TDD)"
-git push
+# 5. Commit
+git add . && git commit -m "feat: TDD feature" && git push
 ```
 
-**When to use**: Adding new features, refactoring with safety net
-
----
-
-## File Sync Reference
-
-The sync.sh script automatically syncs these files:
-
-### Hook Files
-- `check-requirements.py` - PreToolUse hook entry point
-- `requirements-cli.py` - CLI tool (req command)
-- `test_requirements.py` - Test suite
-
-### Library Files (hooks/lib/)
-- `__init__.py` - Package marker
-- `branch_size_calculator.py` - Dynamic requirement calculator
-- `calculation_cache.py` - TTL cache for calculations
-- `calculator_interface.py` - Abstract calculator base class
-- `config.py` - Configuration loader (YAML/JSON cascade)
-- `git_utils.py` - Git operations
-- `message_dedup_cache.py` - Message deduplication (new in v2.1)
-- `requirement_strategies.py` - Strategy pattern for requirement types
-- `requirements.py` - Requirement state management
-- `session.py` - Session registry and tracking
-- `state_storage.py` - Persistent state storage
-
-## Common Tasks for Agents
-
-### Task: Fix Bug in Framework
-
-**Steps**:
-1. Identify which file contains the bug
-2. Check sync status: `cd ~/tools/claude-requirements-framework && ./sync.sh status`
-3. If deployed differs, review `./sync.sh diff` and copy changes into the repo
-4. Edit the file in repository
-5. Deploy: `./sync.sh deploy`
-6. Run tests: `python3 ~/.claude/hooks/test_requirements.py`
-7. Test in Claude session to verify fix
-8. Commit: `git add . && git commit -m "fix: Description"`
-9. Push: `git push origin master`
-
-### Task: Add New Feature
-
-**Steps**:
-1. Check sync status (reconcile deployed changes if needed)
-2. Write tests first (TDD): Edit `hooks/test_requirements.py` in repo
-3. Deploy tests: `./sync.sh deploy`
-4. Run tests (should fail - RED)
-5. Implement feature in repository
-6. Deploy implementation: `./sync.sh deploy`
-7. Run tests (should pass - GREEN)
-8. Commit and push
-
-### Task: Update Documentation
-
-**Steps**:
-1. Update relevant doc files in repository:
-   - `README.md` - User-facing documentation
-   - `DEVELOPMENT.md` - Development workflow
-   - `docs/README-REQUIREMENTS-FRAMEWORK.md` - Detailed user guide
-2. Commit docs separately: `git commit -m "docs: Description"`
-3. Push: `git push origin master`
-
-### Task: Sync After Claude Made Changes
-
-**This is what you do after Claude fixes bugs or adds features!**
-
-```bash
-# 1. Claude edited files in ~/.claude/hooks/
-# (This happens when Claude develops in the active location)
-
-# 2. Copy changes to repository (repeat for each file changed)
-cd ~/tools/claude-requirements-framework
-cp ~/.claude/hooks/lib/message_dedup_cache.py hooks/lib/message_dedup_cache.py
-
-# 3. Deploy from repo to keep source of truth
-./sync.sh deploy
-
-# 4. Review what changed
-git diff
-
-# 5. Run tests to verify
-python3 hooks/test_requirements.py
-
-# 6. Commit if tests pass
-git add .
-git commit -m "feat: <description of what Claude built>"
-git push origin master
-```
-
-**Example**: We just did this for message deduplication!
-
----
+**→ Example script**: See `examples/tdd-workflow.sh`
 
 ## Testing
 
-### Unit Tests
+### Run Full Test Suite
 
-**Location**: `hooks/test_requirements.py` (89 tests)
-
-**Run from deployed**:
 ```bash
 python3 ~/.claude/hooks/test_requirements.py
+
+# Expected: 544/544 tests passed ✓
 ```
 
-**Run from repository**:
+### Run Specific Tests
+
 ```bash
-cd ~/tools/claude-requirements-framework
-python3 hooks/test_requirements.py
-```
+# By name pattern
+python3 ~/.claude/hooks/test_requirements.py -k "test_session"
 
-**Expected output**:
-```
-🧪 Requirements Framework Test Suite
-==================================================
-Testing Configuration Loading...
-  ✓ test_load_yaml_config (0.001s)
-  ✓ test_load_json_config (0.001s)
-  ... [87 more tests]
-
-==================================================
-Results: 89/89 tests passed ✓
-Time: 2.5s
+# Verbose output
+python3 ~/.claude/hooks/test_requirements.py -v
 ```
 
 ### Integration Testing
 
-Test in real Claude Code session:
-
 ```bash
-# 1. Enable requirements in a project
+# 1. Enable in a project
 cd ~/some-project
 cat > .claude/requirements.yaml <<EOF
 version: "1.0"
@@ -334,307 +161,151 @@ requirements:
     scope: session
 EOF
 
-# 2. Start Claude Code and try to edit a file
-# Should be blocked with requirement message
-
-# 3. Satisfy requirement
-req satisfy commit_plan
-
-# 4. Try to edit again
-# Should work now
+# 2. Start Claude, try editing → Should block
+# 3. Satisfy: req satisfy commit_plan
+# 4. Try editing → Should work
 ```
 
-## Troubleshooting
+## Common Agent Tasks
 
-### Problem: Changes not taking effect
-
-**Symptoms**: You edited code but behavior didn't change
-
-**Solutions**:
-1. Check which location you edited: `pwd`
-2. If you edited in repo: `./sync.sh deploy`
-3. If you edited in ~/.claude/hooks: File should be active immediately
-4. Check file actually changed: `./sync.sh diff`
-5. Restart Claude Code session if needed
-
-### Problem: Sync status shows differences
-
-**Symptoms**: `sync.sh status` shows out-of-sync or missing files
-
-**Solution**:
-```bash
-# Check what's different
-./sync.sh diff
-
-# Choose direction based on which changes to keep:
-# - Keep repo changes: ./sync.sh deploy
-# - Keep deployed changes: copy them into the repo, then deploy
-# - Manual merge if both have important changes
-```
-
-### Problem: Tests fail after deploy
-
-**Symptoms**: Tests passed in one location, fail in other
-
-**Debugging**:
-```bash
-# 1. Check file permissions
-ls -la ~/.claude/hooks/check-requirements.py
-# Should be: -rwx--x--x (executable)
-
-# 2. Check Python import paths
-python3 -c "import sys; print(sys.path)"
-
-# 3. Run test with verbose output
-python3 ~/.claude/hooks/test_requirements.py -v
-
-# 4. Check for missing files
-./sync.sh status
-```
-
-### Problem: Git merge conflicts after pull
-
-**Symptoms**: Someone else pushed while you were working
-
-**Solution**:
-```bash
-cd ~/tools/claude-requirements-framework
-
-# 1. Stash local changes
-git stash
-
-# 2. Pull remote changes
-git pull origin master
-
-# 3. Reapply your changes
-git stash pop
-
-# 4. Resolve conflicts if any
-
-# 5. Deploy merged version
-./sync.sh deploy
-
-# 6. Test
-python3 ~/.claude/hooks/test_requirements.py
-
-# 7. Commit merge
-git add .
-git commit -m "merge: Resolve conflicts"
-git push
-```
-
-## Quick Reference for Agents
-
-### When Claude needs to fix a bug:
+### Fix a Bug
 
 ```bash
-# Fix in deployed location (immediate effect)
+# 1. Edit in deployed (immediate effect)
 vim ~/.claude/hooks/lib/FILE.py
 
-# Copy to repo (manual)
-cd ~/tools/claude-requirements-framework
-cp ~/.claude/hooks/lib/FILE.py hooks/lib/FILE.py
+# 2. Test
+python3 ~/.claude/hooks/test_requirements.py
 
-# Deploy from repo to keep source of truth
+# 3. Copy to repo
+cd ~/Tools/claude-requirements-framework
+cp ~/.claude/hooks/lib/FILE.py hooks/lib/
+
+# 4. Deploy and commit
 ./sync.sh deploy
-
-# Commit
 git add . && git commit -m "fix: Bug description" && git push
 ```
 
-### When Claude adds a feature:
+### Add a Feature
 
 ```bash
-# Check sync status and reconcile deployed changes if needed
-cd ~/tools/claude-requirements-framework
+# 1. Check sync first
+cd ~/Tools/claude-requirements-framework
 ./sync.sh status
 
-# Edit in repo
+# 2. Edit in repo
 vim hooks/lib/FILE.py
 
-# Deploy and test
+# 3. Deploy and test
 ./sync.sh deploy && python3 ~/.claude/hooks/test_requirements.py
 
-# Commit and push
+# 4. Commit
 git add . && git commit -m "feat: Feature description" && git push
 ```
 
-### After ANY code changes:
+### After ANY Changes
 
 ```bash
-# ALWAYS check sync status
-cd ~/tools/claude-requirements-framework
+# ALWAYS check sync before committing
+cd ~/Tools/claude-requirements-framework
+./sync.sh status
+# If not clean, reconcile before committing
+```
+
+## Troubleshooting Quick Reference
+
+### Changes Not Taking Effect
+
+```bash
+# Check where you edited
+pwd
+
+# If in repo, deploy
+./sync.sh deploy
+
+# Check file exists
+ls -la ~/.claude/hooks/your-file.py
+```
+
+### Tests Fail After Deploy
+
+```bash
+# Check permissions
+chmod +x ~/.claude/hooks/*.py
+
+# Check sync status
 ./sync.sh status
 
-# If status shows missing/out-of-sync files, reconcile in repo first
-
-# Then commit
-git add . && git commit -m "Message" && git push
+# Run with verbose
+python3 ~/.claude/hooks/test_requirements.py -v
 ```
 
-## Best Practices for Agents
-
-1. **Check sync status BEFORE committing** - Always run `./sync.sh status`
-2. **Reconcile deployed changes before editing in repo** - Use `./sync.sh diff` if status isn't clean
-3. **Deploy after editing in repo** - Make changes active: `./sync.sh deploy`
-4. **Test after every change** - Run: `python3 ~/.claude/hooks/test_requirements.py`
-5. **Commit atomically** - One logical change per commit
-6. **Use conventional commits** - `feat:`, `fix:`, `docs:`, `test:`
-
-## Key Files (from latest sync)
-
-Recently synced files include:
-- `hooks/lib/message_dedup_cache.py` (NEW - deduplication cache)
-- `hooks/lib/requirement_strategies.py` (MODIFIED - integrated deduplication)
-- `hooks/check-requirements.py` (hook entry point)
-- `hooks/requirements-cli.py` (CLI tool)
-- `hooks/test_requirements.py` (test suite)
-
-## Debugging sync.sh
-
-If sync.sh itself has issues:
+### Hook Not Triggering
 
 ```bash
-# Check if executable
-ls -la ~/tools/claude-requirements-framework/sync.sh
-# Should be: -rwx--x--x
+# Check registration
+cat ~/.claude/settings.local.json | grep hooks
 
-# Make executable if needed
-chmod +x ~/tools/claude-requirements-framework/sync.sh
-
-# Run with bash explicitly
-bash ~/tools/claude-requirements-framework/sync.sh status
+# Check file exists and is executable
+ls -la ~/.claude/hooks/check-requirements.py
 ```
+
+**→ Full troubleshooting**: See `references/troubleshooting-development.md`
+
+## Best Practices
+
+1. **Check sync BEFORE committing** - `./sync.sh status`
+2. **Test after every change** - `python3 ~/.claude/hooks/test_requirements.py`
+3. **Deploy after editing in repo** - `./sync.sh deploy`
+4. **Commit atomically** - One logical change per commit
+5. **Use conventional commits** - `feat:`, `fix:`, `docs:`, `test:`
+
+## File Sync Reference
+
+### Hook Files Synced
+
+```
+check-requirements.py
+handle-session-start.py
+handle-stop.py
+handle-session-end.py
+handle-plan-exit.py
+auto-satisfy-skills.py
+clear-single-use.py
+requirements-cli.py
+test_requirements.py
+ruff_check.py
+```
+
+### Library Files Synced
+
+All `*.py` files in `hooks/lib/` directory.
+
+### NOT Synced
+
+- `examples/` - Example files
+- `docs/` - Documentation
+- `plugin/` - Plugin (symlinked separately)
+- `.git/` - Git files
 
 ## Golden Rules
 
 1. **Repository is source of truth** - Always commit from here
-2. **Deployed is active** - Changes here take effect immediately
+2. **Deployed is active** - Changes take effect immediately
 3. **sync.sh keeps them aligned** - Use it liberally
-4. **Check sync status before you push** - Reconcile differences first
+4. **Check sync before push** - Reconcile differences first
 5. **Test after every sync** - Run test suite to verify
 
-## Example: Full Development Cycle
+## Resources
 
-```bash
-# Scenario: Add new requirement type
+- **README**: `~/Tools/claude-requirements-framework/README.md`
+- **DEVELOPMENT.md**: Full development guide
+- **Sync Tool**: `./sync.sh status|deploy|diff`
+- **Tests**: `python3 ~/.claude/hooks/test_requirements.py`
 
-# 1. Check sync status
-cd ~/tools/claude-requirements-framework
-./sync.sh status
+## Reference Files
 
-# 2. Write test (TDD)
-vim hooks/test_requirements.py
-# Add test_new_requirement_type()
-
-# 3. Deploy and run test (RED)
-./sync.sh deploy
-python3 ~/.claude/hooks/test_requirements.py
-# Expected: 89/90 tests passed (new test fails)
-
-# 4. Implement feature
-vim hooks/lib/requirement_strategies.py
-
-# 5. Deploy and run test (GREEN)
-./sync.sh deploy
-python3 ~/.claude/hooks/test_requirements.py
-# Expected: 90/90 tests passed
-
-# 6. Integration test in Claude
-# Try using the new requirement type
-
-# 7. Commit
-git add .
-git commit -m "feat(strategies): Add new requirement type"
-
-# 8. Push
-git push origin master
-
-# 9. Verify sync
-./sync.sh status
-# Should show: All files in sync
-```
-
-## Documentation Structure
-
-Update these files when changing the framework:
-
-| File | Purpose | Update When |
-|------|---------|-------------|
-| `README.md` | User guide, quick start | Adding user-facing features |
-| `DEVELOPMENT.md` | Development workflow | Changing dev process or tools |
-| `docs/README-REQUIREMENTS-FRAMEWORK.md` | Detailed user docs | Configuration changes |
-| `docs/implementation-plan.md` | Original build plan | Historical reference only |
-
-## Common Agent Tasks
-
-### When User Says: "Fix the hook spam issue"
-
-1. Edit `~/.claude/hooks/check-requirements.py` or relevant file
-2. Test: `python3 ~/.claude/hooks/test_requirements.py`
-3. Copy to repo: `cd ~/tools/claude-requirements-framework && cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py`
-4. Deploy: `./sync.sh deploy`
-5. Commit: `git add . && git commit -m "fix: Hook spam issue"`
-6. Push: `git push`
-
-### When User Says: "Add debug mode to the framework"
-
-1. Check sync: `cd ~/tools/claude-requirements-framework && ./sync.sh status`
-2. If needed, review `./sync.sh diff` and copy changes into the repo
-3. Edit in repo: `vim hooks/lib/config.py`
-4. Deploy: `./sync.sh deploy`
-5. Test: `python3 ~/.claude/hooks/test_requirements.py`
-6. Commit and push
-
-### When User Says: "The framework broke, help!"
-
-1. Check deployed version: `ls -la ~/.claude/hooks/`
-2. Check sync: `cd ~/tools/claude-requirements-framework && ./sync.sh status`
-3. Check tests: `python3 ~/.claude/hooks/test_requirements.py`
-4. If tests fail, check recent changes: `git log -5 --oneline`
-5. If needed, revert: `git revert HEAD && ./sync.sh deploy`
-
-## Integration with User's CLAUDE.md
-
-The user's global CLAUDE.md has rules:
-- "We always work TDD"
-- "Plan files are never committed"
-- "Always use commit agent with skills when planning code changes"
-
-**Apply these when developing the framework itself**:
-- Write tests first for new features
-- Use EnterPlanMode for non-trivial changes
-- Keep plan files in `~/.claude/plans/` (excluded from commits)
-
-## Advanced: sync.sh Internals
-
-The script syncs these file patterns:
-
-```bash
-# Main hooks
-check-requirements.py
-requirements-cli.py
-test_requirements.py
-
-# Library modules (hooks/lib/)
-*.py files in lib/ directory
-```
-
-**It does NOT sync**:
-- Example files (`examples/`)
-- Documentation (`docs/`, `README.md`)
-- Scripts (`sync.sh`, `install.sh`)
-- Git files (`.git/`, `.gitignore`)
-
-**Why?** These are repo-only files that don't need to be deployed to `~/.claude/hooks/`.
-
-## Workflow Summary
-
-| Scenario | Location to Edit | Sync Step | When to Commit |
-|----------|-----------------|-----------|----------------|
-| Planned feature | Repository | `./sync.sh deploy` | After testing |
-| Emergency fix | `~/.claude/hooks/` | Copy to repo, then `./sync.sh deploy` | After fix verified |
-| Claude developed | `~/.claude/hooks/` | Copy to repo, then `./sync.sh deploy` | Immediately after |
-| TDD development | Repository | `./sync.sh deploy` | After GREEN phase |
-
-**Remember**: `./sync.sh status` is your friend - run it frequently!
+- `references/sync-workflow-details.md` - Detailed sync.sh usage and scenarios
+- `references/troubleshooting-development.md` - Development troubleshooting
+- `examples/tdd-workflow.sh` - TDD workflow example script
+- `examples/claude-driven-workflow.sh` - Claude development workflow script

@@ -4,145 +4,37 @@ description: This skill should be used when the user asks to "check requirements
 git_hash: 792f742
 ---
 
-# Requirements Framework - Production Status
+# Requirements Framework - Extension Guide
 
-**Current Status**: ✅ PRODUCTION READY (v2.0.1)
-**Last Updated**: 2025-12-28
-**Implementation**: Complete - All phases finished
+Guide for extending and customizing the **Claude Code Requirements Framework**. Use this skill when you need to add new requirement types, create custom strategies, or deeply customize the framework.
 
-## Implementation History
+**Current Status**: ✅ PRODUCTION READY (v2.0.4)
+**Repository**: https://github.com/HarmAalbers/claude-requirements-framework
 
-**Phase 1 (MVP)**: ✅ Complete - All 11 steps (100%) - 2025-12-09
-**Phase 2 (Additional Requirements)**: ⏭️ Skipped - Not needed for current use cases
-**Phase 3 (Polish & UX)**: ✅ Complete - All 6 steps (100%) - 2025-12-24
-**Repository**: ✅ https://github.com/HarmAalbers/claude-requirements-framework
+## When to Use This Skill
 
-## Phase 3 Completion (2025-12-24)
+Invoke this skill when you need to:
 
-All 6 steps completed:
+| Task | This Skill? | Alternative |
+|------|-------------|-------------|
+| Add a new requirement type (strategy) | ✅ Yes | - |
+| Create custom calculator for dynamic reqs | ✅ Yes | - |
+| Modify framework architecture | ✅ Yes | - |
+| Understand framework internals | ✅ Yes | - |
+| Configure existing requirements | ❌ No | `requirements-framework-usage` |
+| Check current status | ❌ No | `requirements-framework-status` |
+| Fix bugs / sync changes | ❌ No | `requirements-framework-development` |
 
-1. ✅ **Session Registry & Auto-Detection** (77 tests)
-   - Session registry infrastructure (`~/.claude/sessions.json`)
-   - CLI auto-detection (req satisfy auto-finds correct session)
-   - New `req sessions` command
-   - PID validation and stale cleanup
+## Framework Quick Status
 
-2. ✅ **Enhanced Error Messages** (4 sub-steps)
-   - Session context in error messages
-   - Session bootstrap bug fix
-   - Permission override bypass fix
-   - Plan file whitelisting
-
-3. ✅ **Terminal Colors**
-   - Full color module (`lib/colors.py`)
-   - NO_COLOR and FORCE_COLOR support
-   - TERM=dumb detection
-
-4. ✅ **Per-Project Setup - `req init` Command** (42 tests)
-   - Interactive wizard with InquirerPy fallback
-   - Five preset profiles: advanced, inherit, relaxed, strict, minimal
-   - Non-interactive mode with --yes flag
-   - SessionStart hook auto-detection
-
-5. ✅ **CLI Configuration Management - `req config` Command** (14 tests)
-   - View and modify requirement settings
-   - --enable, --disable, --scope, --message flags
-   - --set KEY=VALUE for arbitrary fields
-   - Interactive prompt for project vs local config
-
-6. ✅ **Documentation Updates**
-   - Updated README.md with Phase 3 features
-   - Created ADR-005 for per-project init design
-   - Comprehensive framework documentation
-
-### Production Features (v2.0)
-
-- ✅ **421 passing tests** (100% pass rate - comprehensive TDD coverage)
-- ✅ **9 active hooks** (SessionStart, PreToolUse, 3x PostToolUse, Stop, SessionEnd, 2 additional)
-- ✅ **17 library modules** (requirements, config, session, state, calculator, etc.)
-- ✅ **11 CLI commands** (status, satisfy, clear, init, config, doctor, verify, sessions, prune, etc.)
-- ✅ **3 requirement strategies** (Blocking, Dynamic, Guard)
-- ✅ **Auto-satisfaction** via PostToolUse hooks (skills, bash integration)
-- ✅ **Single-use requirements** (auto-cleared after completion)
-- ✅ **Message deduplication** (90% reduction in spam, 5-min TTL cache)
-- ✅ **Stop hook verification** (prevents stopping with unsatisfied requirements)
-- ✅ **Protected branch guards** (prevents edits on main/master)
-- ✅ **Branch size calculator** (dynamic requirements with caching)
-- ✅ **Interactive initialization** (5 context-aware presets)
-- ✅ **Configuration management** (req config for all settings)
-- ✅ **Diagnostics** (req doctor verifies installation & sync)
-- ✅ Comprehensive documentation and ADRs
-- ✅ Git repository with sync workflow
-- ✅ Installation script
-
-### New Hooks (v2.0)
-
-| Hook | Type | Purpose |
-|------|------|---------|
-| `auto-satisfy-skills.py` | PostToolUse (Skill) | Auto-satisfy requirements when mapped skills complete |
-| `clear-single-use.py` | PostToolUse (Bash) | Clear `single_use` requirements after action completes |
-
-### New Configuration Options (v2.0)
-
-```yaml
-# Bash command pattern matching
-trigger_tools:
-  - tool: Bash
-    command_pattern: "git\\s+commit"  # Regex pattern
-
-# Single-use scope (clears after each action)
-scope: single_use
-```
-
-**Plan Location**: `~/.claude/plans/unified-requirements-framework-v2.md` (historical reference)
-**Progress File**: `requirements-framework-progress.json` (in repository)
-
-## Current Mode: Maintenance & Extension
-
-The framework is complete and production-ready. This skill now focuses on:
-
-1. **Status Reporting** - Provide current implementation state and metrics
-2. **Extension Guidance** - Help add new requirement types or features
-3. **Customization Support** - Assist with project-specific configurations
-4. **Troubleshooting** - Help diagnose and fix framework issues
-
-## Framework Overview
-
-### Architecture
-
-- **Location**: `~/.claude/hooks/` (user-level deployment)
-- **Repository**: `/Users/harm/Tools/claude-requirements-framework/`
-- **Sync Tool**: `./sync.sh` (keeps deployment in sync with repo)
-
-### Key Components
-
-**Hooks (9 total)**:
-- `check-requirements.py` - PreToolUse (blocks file modifications)
-- `handle-session-start.py` - SessionStart (injects context)
-- `handle-stop.py` - Stop (verifies requirements before stopping)
-- `handle-session-end.py` - SessionEnd (cleanup)
-- `handle-plan-exit.py` - PostToolUse for ExitPlanMode
-- `auto-satisfy-skills.py` - PostToolUse for Skill tool
-- `clear-single-use.py` - PostToolUse for Bash
-- `ruff_check.py` - Linting hook
-- (1 additional hook)
-
-**Libraries (17 modules)** in `lib/`:
-- Core: `requirements.py`, `config.py`, `state_storage.py`
-- Session: `session.py`, `registry_client.py`
-- Strategies: `requirement_strategies.py`
-- Utilities: `git_utils.py`, `colors.py`, `logger.py`
-- Calculators: `branch_size_calculator.py`, `calculation_cache.py`
-- Interactive: `interactive.py`, `init_presets.py`, `feature_selector.py`
-- And more...
-
-**CLI Tool**: `requirements-cli.py` (1,839 lines, 11 commands)
-
-### Requirement Types
-
-1. **Blocking** - Manual satisfy required (commit_plan, github_ticket, adr_reviewed)
-2. **Dynamic** - Auto-check conditions (branch_size_limit with calculations)
-3. **Guard** - Conditions must pass (protected_branch check)
+| Metric | Value |
+|--------|-------|
+| Production Code | ~8,500 lines |
+| Test Suite | 544 tests (100% pass) |
+| Hooks | 9 active |
+| Library Modules | 17 |
+| Requirement Types | 3 strategies |
+| Plugin Agents | 10 |
 
 ## How to Extend the Framework
 
@@ -150,145 +42,340 @@ The framework is complete and production-ready. This skill now focuses on:
 
 To add a custom requirement (e.g., `code_review`, `security_scan`):
 
-1. **Define in configuration** (`.claude/requirements.yaml`):
-   ```yaml
-   requirements:
-     code_review:
-       enabled: true
-       type: blocking  # or dynamic, guard
-       scope: session  # or branch, permanent, single_use
-       trigger_tools: [Edit, Write, MultiEdit]
-       message: |
-         📝 **Code Review Required**
+#### Step 1: Define in Configuration
 
-         Please review your changes before proceeding.
-
-         **To satisfy**: `req satisfy code_review`
-   ```
-
-2. **For dynamic requirements** (auto-calculated conditions):
-   - Implement calculator in `lib/` (e.g., `code_quality_calculator.py`)
-   - Add to `requirement_strategies.py`
-   - Update tests in `test_requirements.py`
-
-3. **For auto-satisfy** (integrate with skills/tools):
-   - Update `auto-satisfy-skills.py` with mapping
-   - Add skill pattern matching
-
-4. **Test the new requirement**:
-   ```bash
-   cd /Users/harm/Tools/claude-requirements-framework
-   python3 hooks/test_requirements.py
-   ```
-
-### Customizing for a Project
-
-Use `req init` for guided setup, or manually create:
-
-**.claude/requirements.yaml**:
 ```yaml
-version: "1.0"
-inherit: true  # Inherit from global config
-enabled: true
-
+# .claude/requirements.yaml
 requirements:
-  commit_plan:
+  code_review:
     enabled: true
-    message: "Custom message for this project"
+    type: blocking      # blocking | dynamic | guard | custom
+    scope: session      # session | branch | permanent | single_use
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      📝 **Code Review Required**
 
-  custom_requirement:
-    enabled: true
-    type: blocking
-    scope: branch
-    message: "Project-specific requirement"
+      Please review your changes before proceeding.
+
+      **To satisfy**: `req satisfy code_review`
+    checklist:
+      - "Self-reviewed changes"
+      - "No console.log statements"
+      - "Error handling present"
 ```
 
-### Troubleshooting
+#### Step 2: For Custom Strategies
 
-Common issues and solutions:
+If built-in strategies (blocking, dynamic, guard) don't fit, create a custom strategy:
 
-1. **Hook not triggering**: Check `req doctor` for hook registration
-2. **Wrong session ID**: Use `req sessions` to see active sessions
-3. **Sync issues**: Run `./sync.sh status` to check repo vs deployed
-4. **Test failures**: Run `python3 hooks/test_requirements.py -v` for details
+```python
+# hooks/lib/my_strategy.py
+from base_strategy import BaseStrategy
+
+class MyCustomStrategy(BaseStrategy):
+    def is_satisfied(self, requirement, state, session_id) -> bool:
+        """Check if requirement is satisfied."""
+        # Custom logic here
+        return custom_condition_check()
+
+    def satisfy(self, requirement, state, session_id, **kwargs):
+        """Mark requirement as satisfied."""
+        # Store satisfaction state
+        pass
+
+    def get_message(self, requirement, context) -> str:
+        """Get user-facing message."""
+        return requirement.get('message', 'Custom requirement')
+
+    def clear(self, requirement, state, session_id):
+        """Clear satisfaction."""
+        pass
+```
+
+#### Step 3: Register the Strategy
+
+```python
+# hooks/lib/strategy_registry.py
+from my_strategy import MyCustomStrategy
+
+STRATEGIES = {
+    'blocking': BlockingStrategy,
+    'dynamic': DynamicStrategy,
+    'guard': GuardStrategy,
+    'my_custom': MyCustomStrategy,  # Add here
+}
+```
+
+#### Step 4: Test
+
+```bash
+cd ~/Tools/claude-requirements-framework
+python3 hooks/test_requirements.py
+./sync.sh deploy
+```
+
+**→ Example**: See `examples/custom-requirement-strategy.py`
+
+### Creating a Dynamic Calculator
+
+For requirements that auto-calculate conditions:
+
+```python
+# hooks/lib/my_calculator.py
+from calculator_interface import CalculatorInterface
+
+class CodeComplexityCalculator(CalculatorInterface):
+    """Calculate code complexity for dynamic requirements."""
+
+    def calculate(self, project_dir: str, branch: str) -> dict:
+        """
+        Calculate complexity metrics.
+
+        Returns:
+            dict with 'value' and 'threshold_exceeded' keys
+        """
+        # Example: Count TODO comments
+        import subprocess
+        result = subprocess.run(
+            ['grep', '-r', 'TODO', project_dir, '-c'],
+            capture_output=True,
+            text=True
+        )
+        todo_count = int(result.stdout.strip() or 0)
+
+        threshold = 10  # Configurable
+        return {
+            'value': todo_count,
+            'threshold_exceeded': todo_count > threshold
+        }
+```
+
+Register in `requirement_strategies.py`:
+
+```python
+CALCULATORS = {
+    'branch_size': BranchSizeCalculator,
+    'code_complexity': CodeComplexityCalculator,  # Add here
+}
+```
+
+Configure:
+
+```yaml
+requirements:
+  code_complexity:
+    enabled: true
+    type: dynamic
+    calculator: code_complexity
+    threshold: 10
+    message: "Too many TODOs ({value} found, max {threshold})"
+```
+
+### Adding Auto-Satisfaction
+
+Link skills to requirements:
+
+```python
+# hooks/auto-satisfy-skills.py
+DEFAULT_SKILL_MAPPINGS = {
+    'requirements-framework:pre-commit': 'pre_commit_review',
+    'requirements-framework:quality-check': 'pre_pr_review',
+    'my-plugin:my-skill': 'my_requirement',  # Add mapping
+}
+```
+
+Or configure per-requirement:
+
+```yaml
+requirements:
+  architecture_review:
+    enabled: true
+    satisfied_by_skill: 'architecture-guardian'
+```
+
+## Existing Requirement Strategies
+
+### Blocking Strategy
+
+Manual satisfaction required. User must run `req satisfy`.
+
+**Use for**: Planning, review checkpoints, approval gates
+
+```yaml
+commit_plan:
+  type: blocking
+  scope: session
+```
+
+### Dynamic Strategy
+
+Auto-calculates conditions at runtime. Uses calculators.
+
+**Use for**: Metrics, size limits, automated checks
+
+```yaml
+branch_size_limit:
+  type: dynamic
+  threshold: 400
+  calculation_cache_ttl: 30
+```
+
+### Guard Strategy
+
+Condition must pass. No manual satisfaction possible.
+
+**Use for**: Branch protection, environment checks
+
+```yaml
+protected_branch:
+  type: guard
+  branches: [main, master]
+```
+
+## Architecture Overview
+
+### Key Components
+
+```
+hooks/
+├── check-requirements.py      # PreToolUse hook entry
+├── lib/
+│   ├── requirements.py        # Core BranchRequirements API
+│   ├── config.py              # Configuration cascade
+│   ├── strategy_registry.py   # Strategy dispatch
+│   ├── blocking_strategy.py   # Blocking implementation
+│   ├── dynamic_strategy.py    # Dynamic implementation
+│   ├── guard_strategy.py      # Guard implementation
+│   ├── state_storage.py       # JSON state persistence
+│   └── session.py             # Session tracking
+```
+
+### Configuration Cascade
+
+```
+Global (~/.claude/requirements.yaml)
+    ↓ merge if inherit=true
+Project (.claude/requirements.yaml)
+    ↓ always merge
+Local (.claude/requirements.local.yaml)
+```
+
+### State Storage
+
+State persists in `.git/requirements/[branch].json`:
+
+```json
+{
+  "version": "1.0",
+  "branch": "feature/auth",
+  "requirements": {
+    "commit_plan": {
+      "scope": "session",
+      "sessions": {
+        "abc12345": {
+          "satisfied": true,
+          "satisfied_at": 1702345678
+        }
+      }
+    }
+  }
+}
+```
 
 ## CLI Commands Reference
 
-All available commands:
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `req status` | Show requirement status | `req status` |
-| `req satisfy` | Mark requirement satisfied | `req satisfy commit_plan` |
-| `req clear` | Clear a requirement | `req clear commit_plan` |
-| `req init` | Interactive project setup | `req init --preset strict` |
-| `req config` | View/modify configuration | `req config commit_plan --enable` |
-| `req doctor` | Verify installation | `req doctor` |
-| `req verify` | Quick installation check | `req verify` |
-| `req sessions` | View active sessions | `req sessions` |
-| `req list` | List all requirements | `req list` |
-| `req prune` | Clean stale data | `req prune` |
-| `req enable` | Enable a requirement | `req enable commit_plan` |
-| `req disable` | Disable a requirement | `req disable commit_plan` |
+| Command | Description |
+|---------|-------------|
+| `req status` | Show requirement status |
+| `req satisfy <name>` | Mark requirement satisfied |
+| `req clear <name>` | Clear a requirement |
+| `req init` | Interactive project setup |
+| `req config` | View/modify configuration |
+| `req doctor` | Verify installation |
+| `req verify` | Quick installation check |
+| `req sessions` | View active sessions |
+| `req list` | List all requirements |
+| `req prune` | Clean stale data |
 
 ## Development Workflow
 
-### Making Changes to the Framework
+### Making Framework Changes
 
-1. **Edit in repository**:
-   ```bash
-   cd /Users/harm/Tools/claude-requirements-framework
-   # Edit files in hooks/, hooks/lib/, etc.
-   ```
+```bash
+cd ~/Tools/claude-requirements-framework
 
-2. **Run tests** (TDD workflow):
-   ```bash
-   python3 hooks/test_requirements.py
-   ```
+# 1. Check sync
+./sync.sh status
 
-3. **Deploy changes**:
-   ```bash
-   ./sync.sh deploy  # Copy repo → ~/.claude/hooks/
-   ```
+# 2. Edit files
+vim hooks/lib/your_file.py
 
-4. **Verify deployment**:
-   ```bash
-   req doctor
-   ```
+# 3. Run tests
+python3 hooks/test_requirements.py
+
+# 4. Deploy
+./sync.sh deploy
+
+# 5. Commit
+git add . && git commit -m "feat: description"
+```
 
 ### Test Coverage
 
-- **Total tests**: 421 (100% pass rate)
-- **Test file**: `hooks/test_requirements.py` (3,792 lines)
-- **Test categories**: 16+ covering all hooks and features
+- **Total tests**: 544 (100% pass rate)
+- **Test file**: `hooks/test_requirements.py`
+- **Run tests**: `python3 ~/.claude/hooks/test_requirements.py`
 
 ## Architecture Decision Records
 
-See `docs/adr/` for architectural decisions:
+| ADR | Decision |
+|-----|----------|
+| ADR-001 | Remove main/master branch skip |
+| ADR-002 | Use Claude Code's native session_id |
+| ADR-003 | Dynamic sync file discovery |
+| ADR-004 | Guard requirement strategy |
+| ADR-005 | Per-project init command |
+| ADR-006 | Plugin-based architecture |
+| ADR-007 | Deterministic command orchestrators |
+| ADR-008 | CLAUDE.md weekly maintenance |
 
-- **ADR-001**: Remove main/master branch skip
-- **ADR-002**: Use Claude Code's native session_id
-- **ADR-003**: Dynamic sync file discovery
-- **ADR-004**: Guard requirement strategy
-- **ADR-005**: Per-project init command
+## Troubleshooting
 
-## Key Resources
+### New Requirement Not Working
 
-- **README**: `/Users/harm/Tools/claude-requirements-framework/README.md`
+1. Check config syntax: `req config my_requirement`
+2. Verify enabled: `enabled: true`
+3. Check trigger_tools matches your use case
+4. Run `req doctor` for diagnostics
+
+### Custom Strategy Not Loading
+
+1. Check file in `hooks/lib/`
+2. Verify registered in `strategy_registry.py`
+3. Deploy: `./sync.sh deploy`
+4. Check for import errors in logs
+
+### Tests Failing
+
+```bash
+# Run verbose
+python3 ~/.claude/hooks/test_requirements.py -v
+
+# Run specific test
+python3 ~/.claude/hooks/test_requirements.py -k "test_name"
+```
+
+## Resources
+
+- **README**: `~/Tools/claude-requirements-framework/README.md`
 - **Development Guide**: `DEVELOPMENT.md`
-- **Framework Docs**: `docs/README-REQUIREMENTS-FRAMEWORK.md`
-- **Sync Tool**: `./sync.sh` (status, deploy, pull commands)
-- **Installation**: `./install.sh`
+- **ADRs**: `docs/adr/`
+- **Sync Tool**: `./sync.sh`
+- **Tests**: `hooks/test_requirements.py`
 
-## When to Use This Skill
+## Example Files
 
-Invoke this skill when you need to:
-
-- ✅ Check the current state of the framework
-- ✅ Understand what features are available
-- ✅ Add a new requirement type to the framework
-- ✅ Customize requirements for a specific project
-- ✅ Troubleshoot framework issues
-- ✅ Understand the architecture and design decisions
-
-**For daily usage** (checking/satisfying requirements), use the `requirements-framework-usage` skill instead.
+- `examples/custom-requirement-strategy.py` - Custom strategy implementation examples
