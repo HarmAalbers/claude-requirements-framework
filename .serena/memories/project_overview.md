@@ -3,3 +3,4 @@
 - Two-location system: repo at `~/Tools/claude-requirements-framework/` is source of truth; deployed hooks live in `~/.claude/hooks/`.
 - Tech stack: Python 3.9 scripts + shell scripts; YAML config via PyYAML; Ruff for lint.
 - Design principles: fail-open (errors never block work); strategy pattern for requirement types; session/branch/permanent scopes.
+- **Internal documentation**: Detailed framework internals are documented in dedicated memories: `framework_internals_index` (navigation), `auto_satisfaction_workflow`, `agent_architecture`, `blocking_requirements_flow`, `hook_lifecycle`, `strategy_pattern_architecture`. Read `framework_internals_index` first to navigate to specific topics.

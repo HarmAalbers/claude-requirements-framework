@@ -6,3 +6,4 @@
 - Update plugin git_hash: `./update-plugin-versions.sh` (or `--check` / `--verify`).
 - CLI examples: `req status`, `req init`, `req config`, `req satisfy`, `req clear`, `req doctor --repo <path>`.
 - Useful shell utilities (Darwin/zsh): `git status`, `git diff`, `git add`, `git commit`, `rg --files`, `rg <pattern>`, `find . -name <glob>`, `ls`.
+- **Framework internals**: When working on framework code (hooks, strategies, agents), read `framework_internals_index` memory first for navigation to detailed technical documentation.

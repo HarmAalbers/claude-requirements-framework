@@ -1,4 +1,5 @@
 - Root docs: `README.md` (overview/usage), `DEVELOPMENT.md` (workflow), `CLAUDE.md` (agent guidance).
+- **Detailed internals**: Framework mechanisms documented in Serena memories (see `framework_internals_index`).
 - `hooks/` entrypoints: `check-requirements.py` (PreToolUse), `handle-session-start.py`, `handle-stop.py`, `handle-session-end.py`, `handle-plan-exit.py`, `auto-satisfy-skills.py`, `clear-single-use.py`, `requirements-cli.py`, `ruff_check.py`, tests.
 - `hooks/lib/` core library: `requirements.py`, `config.py`, `session.py`, `state_storage.py`, strategy modules (`*_strategy.py`), utilities (`git_utils.py`, `logger.py`, etc.).
 - `plugin/` contains agents, commands, skills; `plugin/README.md` docs; `update-plugin-versions.sh` updates git_hash fields.
