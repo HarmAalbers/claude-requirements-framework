@@ -75,7 +75,7 @@ Arguments received: "$ARGUMENTS"
 
 This step is REQUIRED and MUST run before any other agents:
 
-1. Use the Task tool to launch subagent_type="pre-pr-review:tool-validator"
+1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator"
 2. Pass context: File list from /tmp/pr_review_scope.txt
 3. Wait for completion
 4. Parse output for CRITICAL severity issues
@@ -90,7 +90,7 @@ If no critical errors: Continue to Step 5
 ### Step 5: Execute Backward Compatibility Checker (if applicable)
 
 If HAS_SCHEMA_CHANGES is true:
-  1. Use the Task tool to launch subagent_type="pre-pr-review:backward-compatibility-checker"
+  1. Use the Task tool to launch subagent_type="requirements-framework:backward-compatibility-checker"
   2. Wait for completion
   3. Store results for aggregation
 
@@ -100,8 +100,8 @@ If HAS_SCHEMA_CHANGES is false:
 ### Step 6: Execute Core Review Agents (ALWAYS RUN)
 
 The following agents ALWAYS run (they apply to all code):
-- pre-pr-review:code-reviewer
-- pre-pr-review:silent-failure-hunter
+- requirements-framework:code-reviewer
+- requirements-framework:silent-failure-hunter
 
 **Execution mode**:
 
@@ -118,9 +118,9 @@ If PARALLEL_MODE is false:
 Build a list of agents to run based on flags:
 
 **Conditional agents** (only launch if applicable):
-- If HAS_TEST_FILES is true: pre-pr-review:test-analyzer
-- If HAS_TYPE_CHANGES is true: pre-pr-review:type-design-analyzer
-- If HAS_COMMENT_CHANGES is true: pre-pr-review:comment-analyzer
+- If HAS_TEST_FILES is true: requirements-framework:test-analyzer
+- If HAS_TYPE_CHANGES is true: requirements-framework:type-design-analyzer
+- If HAS_COMMENT_CHANGES is true: requirements-framework:comment-analyzer
 
 **Execution mode**:
 
@@ -138,7 +138,7 @@ If PARALLEL_MODE is false:
 
 This step is REQUIRED and MUST run after all review agents complete:
 
-1. Use the Task tool to launch subagent_type="pre-pr-review:code-simplifier"
+1. Use the Task tool to launch subagent_type="requirements-framework:code-simplifier"
 2. Wait for completion
 3. Code simplifier polishes code that has passed all other reviews
 
@@ -233,8 +233,8 @@ or
 ## Usage:
 
 ```bash
-/pre-pr-review:quality-check           # Sequential (thorough)
-/pre-pr-review:quality-check parallel  # Parallel (faster)
+/requirements-framework:quality-check           # Sequential (thorough)
+/requirements-framework:quality-check parallel  # Parallel (faster)
 ```
 
 ## TDD Workflow Integration:
@@ -242,11 +242,11 @@ or
 This command is the final gate before creating a PR:
 
 1. Write failing test ✓
-2. `/pre-pr-review:pre-commit tests` - Verify test quality ✓
+2. `/requirements-framework:pre-commit tests` - Verify test quality ✓
 3. Write implementation ✓
-4. `/pre-pr-review:pre-commit tools code errors` - Check implementation + tools ✓
+4. `/requirements-framework:pre-commit tools code errors` - Check implementation + tools ✓
 5. Refactor ✓
-6. **`/pre-pr-review:quality-check`** ← You are here (runs ALL 8 agents)
+6. **`/requirements-framework:quality-check`** ← You are here (runs ALL 8 agents)
 7. Create PR
 
 **Agent Execution Order**:

@@ -85,7 +85,7 @@ Initialize all flags to false, then set based on arguments:
 ### Step 3: Execute Tool Validator (if enabled) - BLOCKING GATE
 
 If RUN_TOOL_VALIDATOR is true:
-  1. Use the Task tool to launch subagent_type="pre-pr-review:tool-validator"
+  1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator"
   2. Wait for completion
   3. Parse the output for CRITICAL severity issues
   4. If CRITICAL tool errors found (pyright errors, ruff errors, eslint errors):
@@ -99,12 +99,12 @@ If RUN_TOOL_VALIDATOR is true:
 Create a list of agents to run based on flags set in Step 2.
 
 **Agents to launch** (only if their flag is true):
-- pre-pr-review:code-reviewer
-- pre-pr-review:silent-failure-hunter
-- pre-pr-review:backward-compatibility-checker
-- pre-pr-review:test-analyzer
-- pre-pr-review:type-design-analyzer
-- pre-pr-review:comment-analyzer
+- requirements-framework:code-reviewer
+- requirements-framework:silent-failure-hunter
+- requirements-framework:backward-compatibility-checker
+- requirements-framework:test-analyzer
+- requirements-framework:type-design-analyzer
+- requirements-framework:comment-analyzer
 
 **Execution mode**:
 
@@ -121,7 +121,7 @@ If PARALLEL_MODE is false:
 ### Step 5: Execute Code Simplifier (if enabled) - ALWAYS LAST
 
 If RUN_CODE_SIMPLIFIER is true:
-  1. Use the Task tool to launch subagent_type="pre-pr-review:code-simplifier"
+  1. Use the Task tool to launch subagent_type="requirements-framework:code-simplifier"
   2. This MUST run after all other agents complete
   3. Code simplifier polishes code that has passed review
 
@@ -201,13 +201,13 @@ Else:
 ## Usage Examples:
 
 ```bash
-/pre-pr-review:pre-commit                    # Default (tools + code + errors)
-/pre-pr-review:pre-commit tools              # Just run linting/type-checking
-/pre-pr-review:pre-commit compat             # Just check backward compatibility
-/pre-pr-review:pre-commit all                # Comprehensive (all 8 agents)
-/pre-pr-review:pre-commit tests types        # Specific aspects
-/pre-pr-review:pre-commit tools compat code  # Custom combination
-/pre-pr-review:pre-commit all parallel       # Fast comprehensive
+/requirements-framework:pre-commit                    # Default (tools + code + errors)
+/requirements-framework:pre-commit tools              # Just run linting/type-checking
+/requirements-framework:pre-commit compat             # Just check backward compatibility
+/requirements-framework:pre-commit all                # Comprehensive (all 8 agents)
+/requirements-framework:pre-commit tests types        # Specific aspects
+/requirements-framework:pre-commit tools compat code  # Custom combination
+/requirements-framework:pre-commit all parallel       # Fast comprehensive
 ```
 
 ## Tips:

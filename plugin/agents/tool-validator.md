@@ -198,7 +198,7 @@ uv run ruff check --fix backend/tests/
 
 # Re-stage and verify
 git add backend/tests/
-/pre-pr-review:pre-commit tools  # Run this agent again
+/requirements-framework:pre-commit tools  # Run this agent again
 ```
 
 ### Then Commit
@@ -274,7 +274,7 @@ cd backend && uv add --dev pyright
 ## Integration
 
 This agent should be invoked:
-1. **In pre-commit command**: `/pre-pr-review:pre-commit tools`
+1. **In pre-commit command**: `/requirements-framework:pre-commit tools`
 2. **In quality-check command**: As first check before AI agents
 3. **Standalone**: When developer wants quick tool validation
 
