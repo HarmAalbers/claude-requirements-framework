@@ -3,7 +3,7 @@ name: plan-review
 description: "Validate plan against ADRs and create atomic commit strategy"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: uncommitted
+git_hash: f12a597
 ---
 
 # Plan Review Command

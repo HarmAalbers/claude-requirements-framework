@@ -20,25 +20,20 @@ requirements:
       - Edit
       - Write
       - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
     message: |
-      📋 **Commit Plan Required**
+      ## Blocked: commit_plan
 
-      Before making code changes, create a brief plan documenting your approach.
+      **Execute**: `/requirements-framework:plan-review`
 
-      **Why this matters**:
-      - Ensures commits are atomic and reviewable
-      - Prevents "fix comments" and "oops" commits
-      - Follows project conventions and best practices
-      - Makes rollbacks easier and safer
-      - Encourages thoughtful, deliberate changes
+      Creates atomic commit strategy and validates against ADRs.
 
-      **To proceed**: Run `req satisfy commit_plan` after creating a plan
+      ---
+      Fallback: `req satisfy commit_plan`
     checklist:
       - "Identified the changes needed for this feature/fix"
       - "Determined atomic commit boundaries (each commit is reviewable)"
       - "Planned commit sequence and dependencies"
-      - "Considered what can be safely rolled back"
-      - "Created plan file documenting the approach"
 
   # GitHub Ticket Requirement
   # Links work to GitHub issue tracking (disabled by default - opt-in)
@@ -51,23 +46,17 @@ requirements:
       - Write
       - MultiEdit
     message: |
-      🎫 **No GitHub issue linked to this branch**
+      ## Blocked: github_ticket
 
-      Please link a GitHub issue to track this work.
+      No GitHub issue linked to this branch.
 
-      **Why this matters**:
-      - Tracks work status and progress
-      - Links commits to project requirements
-      - Maintains project history and context
-      - Facilitates team coordination
+      **Action**: Link a GitHub issue to track this work.
 
-      **To satisfy**: `req satisfy github_ticket --metadata '{"ticket":"#1234"}'`
-
-      **Note**: This requirement is disabled by default. Enable in project config if needed.
+      ---
+      Fallback: `req satisfy github_ticket --metadata '{"ticket":"#1234"}'`
     checklist:
       - "Created GitHub issue for this work"
       - "Issue number linked to branch"
-      - "Issue describes problem and solution"
 
   # ADR Review Requirement
   # Ensures architectural decisions are reviewed before code changes
@@ -79,23 +68,19 @@ requirements:
       - Edit
       - Write
       - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
     message: |
-      📚 **ADR Review Checkpoint**
+      ## Blocked: adr_reviewed
 
-      Have you reviewed relevant Architecture Decision Records?
+      **Execute**: `/requirements-framework:plan-review`
 
-      **Why this matters**:
-      - Ensures consistency with existing architectural decisions
-      - Prevents conflicting implementations
-      - Documents reasoning for future maintainers
-      - Maintains architectural integrity
+      Runs adr-guardian agent to validate against Architecture Decision Records.
 
-      **To satisfy**: `req satisfy adr_reviewed` after reviewing ADRs
+      ---
+      Fallback: `req satisfy adr_reviewed`
     checklist:
       - "Searched for ADRs related to this change"
-      - "Reviewed decision context and rationale"
       - "Confirmed approach aligns with existing ADRs"
-      - "Noted any ADRs that need updating"
 
   # Protected Branch Guard
   # Prevents direct edits on protected branches (main/master)
@@ -111,28 +96,16 @@ requirements:
       - Write
       - MultiEdit
     message: |
-      🚫 **Cannot edit files on protected branch**
+      ## Blocked: protected_branch
 
-      Direct edits on protected branches are not allowed.
-      Please create a feature branch first:
+      Cannot edit files on protected branch `{branch}`.
 
-      ```bash
-      git checkout -b feature/your-feature-name
-      ```
-
-      **Why this matters**:
-      - Prevents accidental commits to main branch
-      - Enforces PR review workflow
-      - Maintains stable main branch
-
-      **For emergency hotfixes** (current session only):
-      ```bash
-      req approve protected_branch
-      ```
+      **Actions**:
+      1. Create feature branch: `git checkout -b feature/your-feature-name`
+      2. Emergency override: `req approve protected_branch`
     checklist:
       - "Confirmed not on protected branch (master/main)"
       - "Feature branch created for changes"
-      - "Emergency override approved if necessary"
 
   # Single Session Per Project Guard
   # Prevents multiple Claude Code sessions from editing the same project simultaneously
@@ -146,22 +119,16 @@ requirements:
       - Write
       - MultiEdit
     message: |
-      🚫 **Another Claude Code session is active on this project**
+      ## Blocked: single_session_per_project
 
-      To prevent conflicting changes, only one session can edit files at a time.
+      Another Claude Code session is active on this project.
 
-      **Why this matters**:
-      - Prevents concurrent modifications to the same files
-      - Avoids merge conflicts and lost changes
-      - Ensures consistent codebase state
-
-      **Options**:
-      1. Close the other session first
-      2. Wait for the other session to complete
-      3. Override for this session: `req approve single_session_per_project`
+      **Actions**:
+      1. Close the other session
+      2. Wait for completion
+      3. Override: `req approve single_session_per_project`
     checklist:
       - "Confirmed no other active sessions on this project"
-      - "Other session closed or override approved"
 
   # Branch Size Limit (Dynamic Requirement)
   # Automatically calculates branch size and enforces limits
@@ -188,21 +155,16 @@ requirements:
 
     # Message template (supports {variable} substitution)
     blocking_message: |
-      🛑 **Branch size limit: {total} line changes**
+      ## Blocked: branch_size_limit
 
-      Limit: {block_threshold} changes exceeded
+      Branch has **{total}** line changes (limit: {block_threshold}).
+
       {summary}
-      Base: {base_branch}
 
-      **Why this matters**:
-      - Large PRs are harder to review thoroughly
-      - Increases risk of bugs slipping through
-      - Delays feedback and iteration cycles
-      - Makes rollbacks more complex
+      **Recommendation**: Split into smaller, focused PRs after this session.
 
-      **Recommendation**: Consider splitting into smaller, focused PRs after this session.
-
-      **To override this session**: `req approve branch_size_limit`
+      ---
+      Override: `req approve branch_size_limit`
 
   # Pre-Commit Review Requirement
   # Ensures code is reviewed before every commit
@@ -213,19 +175,17 @@ requirements:
     trigger_tools:
       - tool: Bash
         command_pattern: "git\\s+(commit|cherry-pick|revert|merge)"
+    auto_resolve_skill: "requirements-framework:pre-commit"
+    satisfied_by_skill: 'requirements-framework:pre-commit'
     message: |
-      📝 **Code review required before committing**
+      ## Blocked: pre_commit_review
 
-      Run `/requirements-framework:pre-commit` to review your code changes before committing.
+      **Execute**: `/requirements-framework:pre-commit`
 
-      **Why this matters**:
-      - Catches bugs and issues before they're committed
-      - Ensures code quality standards are met
-      - Validates error handling is adequate
-      - Prevents broken commits from entering history
-      - Maintains clean, reviewable commit history
+      Runs code-reviewer, silent-failure-hunter, and tool-validator agents.
 
-      💡 After the review completes, you can commit.
+      ---
+      Fallback: `req satisfy pre_commit_review`
     checklist:
       - "Code follows project conventions"
       - "Error handling is adequate"
@@ -240,23 +200,20 @@ requirements:
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
+    auto_resolve_skill: "requirements-framework:quality-check"
+    satisfied_by_skill: 'requirements-framework:quality-check'
     message: |
-      🔍 **Quality check required before creating PR**
+      ## Blocked: pre_pr_review
 
-      Run `/requirements-framework:quality-check` for comprehensive review before creating a PR.
+      **Execute**: `/requirements-framework:quality-check`
 
-      **Why this matters**:
-      - Catches issues before PR review begins
-      - Reduces review cycles and feedback rounds
-      - Maintains high code quality standards
-      - Validates tests and documentation
-      - Ensures PR is ready for team review
+      Comprehensive quality review with all 8 review agents.
 
-      💡 After the review completes, you can create the PR.
+      ---
+      Fallback: `req satisfy pre_pr_review`
     checklist:
       - "Code has been reviewed for bugs"
       - "Error handling is complete"
-      - "Code follows project style guide"
       - "Tests are adequate (if applicable)"
 
   # Codex AI Review Requirement
@@ -268,17 +225,20 @@ requirements:
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
+    auto_resolve_skill: "requirements-framework:codex-review"
+    satisfied_by_skill: 'requirements-framework:codex-review'
     message: |
-      🤖 **Codex AI Review Required**
+      ## Blocked: codex_reviewer
 
-      Run `/requirements-framework:codex-review` for AI-powered code review.
+      **Execute**: `/requirements-framework:codex-review`
 
-      **After review**: Create PR.
+      AI-powered code review via OpenAI Codex CLI.
+
+      ---
+      Fallback: `req satisfy codex_reviewer`
     checklist:
       - "Codex CLI installed (npm install -g @openai/codex)"
-      - "Logged in (codex login)"
       - "AI review completed"
-      - "Critical findings addressed"
 
 # ============================================================================
 # PLAN MODE TRIGGER EXAMPLES
@@ -295,45 +255,17 @@ requirements:
 #     scope: single_use  # Must re-satisfy for each plan
 #     trigger_tools:
 #       - ExitPlanMode  # ← Triggers when exiting plan mode
+#     auto_resolve_skill: 'requirements-framework:plan-review'
 #     satisfied_by_skill: 'adr-guardian'  # Auto-satisfied by adr-guardian agent
 #     message: |
-#       🔍 **Plan Validation Required**
+#       ## Blocked: adr_plan_validation
 #
-#       Your plan must be validated against ADRs before implementation.
+#       **Execute**: `/requirements-framework:plan-review`
 #
-#       **To proceed**: Run adr-guardian agent to validate plan
-#     checklist:
-#       - "Plan reviewed against relevant ADRs"
-#       - "No architectural conflicts identified"
-#       - "Approach aligns with established decisions"
+#       Validates plan against ADRs before implementation.
 #
-#   # Phase 2: Pre-commit code validation
-#   adr_code_validation:
-#     enabled: false  # Disabled by default - enable per project
-#     type: blocking
-#     scope: single_use  # Must re-satisfy before each commit
-#     trigger_tools:
-#       - tool: Bash
-#         command_pattern: 'git\s+(commit|cherry-pick)'
-#     satisfied_by_skill: 'adr-guardian'
-#     message: |
-#       ✅ **Code Review Against ADRs Required**
-#
-#       Before committing, validate code changes against ADRs.
-#
-#       **To proceed**: Run adr-guardian agent for code review
-#
-# This multi-phase approach ensures ADR compliance at every critical checkpoint:
-# 1. Planning phase - validate approach against ADRs
-# 2. Implementation phase - standard adr_reviewed (session scope)
-# 3. Commit phase - validate code against ADRs
-# 4. PR phase - comprehensive ADR review
-#
-# Benefits:
-# - Catches architectural issues early (at planning time)
-# - Enforces compliance at decision points
-# - Uses single_use scope for commit/PR checkpoints (re-validated each time)
-# - Seamless auto-satisfaction via adr-guardian agent
+#       ---
+#       Fallback: `req satisfy adr_plan_validation`
 
 # ============================================================================
 # PROJECT-SPECIFIC SKILL REQUIREMENTS
@@ -351,19 +283,15 @@ requirements:
 #     trigger_tools:
 #       - tool: Bash
 #         command_pattern: 'gh\s+pr\s+create'
-#     satisfied_by_skill: 'architecture-guardian'  # ← Project-specific skill
+#     auto_resolve_skill: 'architecture-guardian'  # ← Project-specific skill
+#     satisfied_by_skill: 'architecture-guardian'
 #     message: |
-#       🏗️ Run the architecture-guardian skill to review against ADRs
+#       ## Blocked: architecture_review
 #
-# When the specified skill completes, the requirement is automatically
-# satisfied. This provides a seamless workflow similar to the built-in
-# pre-commit and quality-check skills.
+#       **Execute**: `/architecture-guardian`
 #
-# Skill naming conventions:
-# - Project skills: Use skill name from YAML frontmatter (e.g., 'architecture-guardian')
-# - Plugin skills: Use namespaced format (e.g., 'plugin-name:skill-name')
-#
-# The 'satisfied_by_skill' field works with all requirement types and scopes.
+#       ---
+#       Fallback: `req satisfy architecture_review`
 
 # Hooks configuration
 hooks:
