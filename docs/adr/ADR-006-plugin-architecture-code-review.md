@@ -26,8 +26,8 @@ This created a dependency problem:
 The framework plugin structure now includes:
 - `/hooks/` - Python hooks and libraries (copied to ~/.claude/hooks/)
 - `/plugin/` - Plugin components (symlinked)
-  - `/agents/` - 10 specialized agents
-  - `/commands/` - 2 orchestrator commands
+  - `/agents/` - 11 specialized agents
+  - `/commands/` - 3 orchestrator commands
   - `/skills/` - 5 management skills
   - `/.claude-plugin/plugin.json` - Plugin manifest
 
@@ -118,21 +118,23 @@ The framework plugin structure now includes:
 ```
 plugin/
 ├── .claude-plugin/
-│   └── plugin.json (v2.0.4 - updated from v2.0.3)
-├── agents/ (10 total)
-│   ├── adr-guardian.md
+│   └── plugin.json (v2.0.5)
+├── agents/ (11 total)
+│   ├── adr-guardian.md (enhanced with Edit tool for auto-fix)
 │   ├── codex-review-agent.md
-│   ├── code-reviewer.md (NEW)
-│   ├── silent-failure-hunter.md (NEW)
-│   ├── test-analyzer.md (NEW)
-│   ├── type-design-analyzer.md (NEW)
-│   ├── comment-analyzer.md (NEW)
-│   ├── code-simplifier.md (NEW)
-│   ├── tool-validator.md (NEW)
-│   └── backward-compatibility-checker.md (NEW)
-├── commands/ (NEW directory)
-│   ├── pre-commit.md (NEW)
-│   └── quality-check.md (NEW)
+│   ├── commit-planner.md (NEW - creates atomic commit strategies)
+│   ├── code-reviewer.md
+│   ├── silent-failure-hunter.md
+│   ├── test-analyzer.md
+│   ├── type-design-analyzer.md
+│   ├── comment-analyzer.md
+│   ├── code-simplifier.md
+│   ├── tool-validator.md
+│   └── backward-compatibility-checker.md
+├── commands/ (3 total)
+│   ├── pre-commit.md
+│   ├── quality-check.md
+│   └── plan-review.md (NEW - orchestrates plan validation workflow)
 └── skills/ (5 total)
     ├── codex-review/
     ├── requirements-framework-builder/
@@ -174,6 +176,32 @@ requirements:
 When the specified skill completes, the requirement is automatically satisfied.
 This enables project-specific workflows without modifying framework code.
 
+**1:N Skill-to-Requirement Mapping** (v2.1.1+):
+Multiple requirements can map to the same skill. When the skill completes, ALL requirements
+that reference it are satisfied. This enables orchestrator commands to satisfy multiple
+requirements in a single workflow:
+
+```yaml
+# Multiple requirements satisfied by one skill
+requirements:
+  adr_reviewed:
+    enabled: true
+    type: blocking
+    scope: session
+    satisfied_by_skill: 'requirements-framework:plan-review'
+
+  commit_plan:
+    enabled: true
+    type: blocking
+    scope: session
+    satisfied_by_skill: 'requirements-framework:plan-review'  # Same skill!
+```
+
+The `plan-review` command orchestrates:
+1. **adr-guardian** validates plan against ADRs (with auto-fix capability)
+2. **commit-planner** creates atomic commit strategy (appends to plan)
+3. Both `adr_reviewed` and `commit_plan` are auto-satisfied on completion
+
 ### Global Config Updates (examples/global-requirements.yaml)
 ```yaml
 pre_commit_review:
@@ -202,9 +230,12 @@ New agents/commands must:
 - **ADR-007**: Deterministic Command Orchestrators - Documents how the merged commands achieve reliable execution
 - **ADR-004**: Guard Requirement Strategy - Established extensible requirement types
 - **ADR-005**: Per-Project Init Command - User onboarding for the unified framework
+- **ADR-009**: Agent Auto-Fix for Plan Validation - Documents the auto-fix pattern used by adr-guardian
 
 ## References
 
 - Commit: `57d0c1a` - feat: merge comprehensive pre-PR review toolkit into framework
+- Commit: `5148041` - feat: Add automated plan-review workflow (commit-planner agent, plan-review command)
+- Commit: `f12a597` - fix: Address Codex review findings (1:N skill mapping support)
 - Analysis: 3 parallel Opus agents reviewed design, implementation, and usage
-- Components merged: 8 agents, 2 commands (comprehensive improvements applied to all)
+- Components: 11 agents, 3 commands, 5 skills
