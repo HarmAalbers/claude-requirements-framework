@@ -43,12 +43,26 @@ def get_state_dir(project_dir: str) -> Path:
     State is stored in .git/requirements/ which is automatically
     gitignored (anything in .git/ is ignored).
 
+    In git worktrees, state is stored in the COMMON git directory
+    (main repo's .git/) to share requirements across worktrees.
+
     Args:
         project_dir: Project root directory
 
     Returns:
         Path to state directory
     """
+    try:
+        from .git_utils import get_git_common_dir
+    except ImportError:
+        from git_utils import get_git_common_dir
+
+    common_dir = get_git_common_dir(project_dir)
+
+    if common_dir:
+        return Path(common_dir) / 'requirements'
+
+    # Fallback for non-git directories (fail-open)
     return Path(project_dir) / '.git' / 'requirements'
 
 
@@ -56,11 +70,17 @@ def ensure_state_dir(project_dir: str) -> None:
     """
     Create state directory if it doesn't exist.
 
+    Handles both regular repos and worktrees.
+
     Args:
         project_dir: Project root directory
     """
     state_dir = get_state_dir(project_dir)
-    state_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # Fail-open: if we can't create the directory, log and continue
+        get_logger().warning(f"Could not create state dir {state_dir}: {e}")
 
 
 def branch_to_filename(branch: str) -> str:

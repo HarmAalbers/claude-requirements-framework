@@ -16,6 +16,7 @@ requirements:
     enabled: true
     type: blocking
     scope: session  # Resets each session (forces daily planning)
+    description: "Ensures an atomic commit strategy exists before implementation."
     trigger_tools:
       - Edit
       - Write
@@ -41,6 +42,7 @@ requirements:
     enabled: false  # Disabled by default - enable per project if using issue tracking
     type: blocking
     scope: branch  # Once per branch
+    description: "Links work to GitHub issue tracking for traceability."
     trigger_tools:
       - Edit
       - Write
@@ -64,6 +66,7 @@ requirements:
     enabled: true
     type: blocking
     scope: session
+    description: "Ensures changes align with Architecture Decision Records."
     trigger_tools:
       - Edit
       - Write
@@ -88,6 +91,7 @@ requirements:
     enabled: true
     type: guard
     guard_type: protected_branch
+    description: "Prevents direct edits on main/master branches."
     protected_branches:
       - master
       - main
@@ -113,6 +117,7 @@ requirements:
     enabled: false  # Opt-in per project - enable in .claude/requirements.yaml
     type: guard
     guard_type: single_session
+    description: "Prevents multiple sessions from editing the same project simultaneously."
     scope: session  # Approval persists for the session
     trigger_tools:
       - Edit
@@ -136,6 +141,7 @@ requirements:
     enabled: true  # Enabled by default
     type: dynamic  # Calculated automatically, not manually satisfied
     calculator: branch_size_calculator  # References lib/branch_size_calculator.py
+    description: "Automatically calculates branch size and enforces PR size limits."
     scope: session  # Approval persists for session
     trigger_tools:
       - Edit
@@ -172,6 +178,7 @@ requirements:
     enabled: true
     type: blocking
     scope: single_use  # Must re-satisfy before EACH commit
+    description: "Code review before each commit - resets after commit completes."
     trigger_tools:
       - tool: Bash
         command_pattern: "git\\s+(commit|cherry-pick|revert|merge)"
@@ -197,6 +204,7 @@ requirements:
     enabled: true
     type: blocking
     scope: single_use  # Must re-satisfy for each PR creation
+    description: "Comprehensive quality review with all review agents before PR creation."
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
@@ -222,6 +230,7 @@ requirements:
     enabled: true
     type: blocking
     scope: single_use  # Must re-satisfy for each PR creation
+    description: "AI-powered code review via OpenAI Codex CLI before PR creation."
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
@@ -295,5 +304,18 @@ requirements:
 
 # Hooks configuration
 hooks:
+  # SessionStart hook - injects requirement context at session start/resume
+  session_start:
+    inject_context: true  # Enable context injection (default: true)
+    # injection_mode: Controls how much context is injected
+    #   - auto: Adapts based on source (startup→rich, resume→standard, compact→compact)
+    #   - compact: ~150 tokens, high context survival for compaction
+    #   - standard: ~400 tokens, best actionability for resumes
+    #   - rich: ~800 tokens, full definitions/workflow for startups
+    injection_mode: auto  # default: auto
+    # custom_header: Optional project-specific header text
+    # custom_header: "🚀 Project-specific context here"
+
+  # Stop hook - verifies requirements before session ends
   stop:
     verify_requirements: true  # Block session end if requirements unsatisfied

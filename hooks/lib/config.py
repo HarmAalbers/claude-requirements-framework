@@ -741,6 +741,7 @@ class RequirementsConfig:
     HOOK_DEFAULTS: HooksConfigDict = {
         "session_start": {
             "inject_context": True,
+            "injection_mode": "auto",  # auto | compact | standard | rich
         },
         "stop": {
             "verify_requirements": True,

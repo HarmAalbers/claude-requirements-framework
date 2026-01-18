@@ -112,6 +112,33 @@ def get_git_root(project_dir: Optional[str] = None) -> Optional[str]:
     return root if code == 0 and root else None
 
 
+def get_git_common_dir(project_dir: Optional[str] = None) -> Optional[str]:
+    """
+    Get the common git directory (shared across worktrees).
+
+    In a regular repo, returns the .git directory.
+    In a worktree, returns the main repo's .git directory.
+
+    This ensures state is shared across all worktrees of the same repo.
+
+    Args:
+        project_dir: Starting directory (defaults to cwd)
+
+    Returns:
+        Absolute path to common git directory, or None if not in a repo
+    """
+    code, common_dir, _ = run_git("git rev-parse --git-common-dir", project_dir)
+    if code != 0 or not common_dir:
+        return None
+
+    # Handle relative path (git returns ".git" in main repos)
+    if not common_dir.startswith('/'):
+        base = project_dir if project_dir else os.getcwd()
+        common_dir = os.path.abspath(os.path.join(base, common_dir))
+
+    return common_dir
+
+
 def resolve_project_root(start_dir: Optional[str] = None, verbose: bool = True) -> str:
     """
     Resolve the project root directory for requirements framework.
