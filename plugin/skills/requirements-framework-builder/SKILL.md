@@ -25,16 +25,9 @@ Invoke this skill when you need to:
 | Check current status | ❌ No | `requirements-framework-status` |
 | Fix bugs / sync changes | ❌ No | `requirements-framework-development` |
 
-## Framework Quick Status
+**→ For current status metrics**: See `requirements-framework-status` skill
 
-| Metric | Value |
-|--------|-------|
-| Production Code | ~8,500 lines |
-| Test Suite | 544 tests (100% pass) |
-| Hooks | 9 active |
-| Library Modules | 17 |
-| Requirement Types | 3 strategies |
-| Plugin Agents | 17 |
+---
 
 ## How to Extend the Framework
 
@@ -285,62 +278,11 @@ State persists in `.git/requirements/[branch].json`:
 }
 ```
 
-## CLI Commands Reference
+**→ For CLI commands**: See `requirements-framework-usage` skill
+**→ For development workflow**: See `requirements-framework-development` skill
+**→ For ADRs and status**: See `requirements-framework-status` skill
 
-| Command | Description |
-|---------|-------------|
-| `req status` | Show requirement status |
-| `req satisfy <name>` | Mark requirement satisfied |
-| `req clear <name>` | Clear a requirement |
-| `req init` | Interactive project setup |
-| `req config` | View/modify configuration |
-| `req doctor` | Verify installation |
-| `req verify` | Quick installation check |
-| `req sessions` | View active sessions |
-| `req list` | List all requirements |
-| `req prune` | Clean stale data |
-
-## Development Workflow
-
-### Making Framework Changes
-
-```bash
-cd ~/Tools/claude-requirements-framework
-
-# 1. Check sync
-./sync.sh status
-
-# 2. Edit files
-vim hooks/lib/your_file.py
-
-# 3. Run tests
-python3 hooks/test_requirements.py
-
-# 4. Deploy
-./sync.sh deploy
-
-# 5. Commit
-git add . && git commit -m "feat: description"
-```
-
-### Test Coverage
-
-- **Total tests**: 544 (100% pass rate)
-- **Test file**: `hooks/test_requirements.py`
-- **Run tests**: `python3 ~/.claude/hooks/test_requirements.py`
-
-## Architecture Decision Records
-
-| ADR | Decision |
-|-----|----------|
-| ADR-001 | Remove main/master branch skip |
-| ADR-002 | Use Claude Code's native session_id |
-| ADR-003 | Dynamic sync file discovery |
-| ADR-004 | Guard requirement strategy |
-| ADR-005 | Per-project init command |
-| ADR-006 | Plugin-based architecture |
-| ADR-007 | Deterministic command orchestrators |
-| ADR-008 | CLAUDE.md weekly maintenance |
+---
 
 ## Troubleshooting
 
