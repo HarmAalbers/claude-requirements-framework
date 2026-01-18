@@ -26,8 +26,8 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | **Library Modules** | 17 |
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
-| **Plugin Agents** | 10 |
-| **Plugin Commands** | 3 |
+| **Plugin Agents** | 17 |
+| **Plugin Commands** | 5 |
 | **Plugin Skills** | 4 |
 
 **→ Full component inventory**: See `references/component-inventory.md`

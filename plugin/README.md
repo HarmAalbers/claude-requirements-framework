@@ -7,7 +7,7 @@ Comprehensive workflow enforcement and code review automation for Claude Code.
 This plugin provides workflow enforcement, code review agents, and management tools that integrate seamlessly with the Requirements Framework hooks.
 
 **Key Features**:
-- ✨ **10 specialized review agents** - From tool validation to backward compatibility checking
+- ✨ **17 specialized review agents** - From tool validation to backward compatibility checking
 - 🎯 **2 orchestrator commands** - Fast pre-commit and thorough pre-PR workflows
 - 📋 **5 management skills** - Status reporting, usage help, and framework development
 - 🔗 **Hook integration** - Auto-satisfies requirements when commands complete
@@ -471,7 +471,7 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 .claude/plugins/requirements-framework/
 ├── .claude-plugin/
 │   └── plugin.json (v2.0.4)
-├── agents/ (10 agents)
+├── agents/ (17 agents)
 │   ├── adr-guardian.md
 │   ├── backward-compatibility-checker.md
 │   ├── code-reviewer.md
@@ -672,7 +672,7 @@ For issues, questions, or enhancements:
 
 - **v2.0.4** (2024-12-30)
   - Current stable release
-  - 10 agents, 2 commands, 5 skills
+  - 17 agents, 5 commands, 4 skills
   - Auto-satisfy mechanism via PostToolUse hook
   - Comprehensive code review suite
   - Plugin installation via install.sh symlink

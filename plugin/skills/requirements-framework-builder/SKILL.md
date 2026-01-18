@@ -34,7 +34,7 @@ Invoke this skill when you need to:
 | Hooks | 9 active |
 | Library Modules | 17 |
 | Requirement Types | 3 strategies |
-| Plugin Agents | 10 |
+| Plugin Agents | 17 |
 
 ## How to Extend the Framework
 
