@@ -1,6 +1,6 @@
 ---
 name: requirements-framework-builder
-description: This skill should be used when the user asks to "check requirements framework status", "show requirements progress", "extend requirements framework", "add new requirement type", or wants to customize the unified requirements framework. Also triggers on phrases like "where are we with requirements", "requirements status", "requirements framework overview".
+description: This skill should be used when the user asks to "extend requirements framework", "add new requirement type", "create custom strategy", "add custom calculator", "modify framework architecture", "create requirement plugin", or wants to build new requirement strategies. Also triggers on questions about strategy registration, calculator implementation, or auto-satisfaction mappings.
 git_hash: 7953a43
 ---
 
