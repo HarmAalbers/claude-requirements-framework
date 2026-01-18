@@ -16,6 +16,7 @@ requirements:
     - Found relevant ADRs
     - Reviewed decision context
     - Confirmed approach aligns with ADRs
+    satisfied_by_skill: 'requirements-framework:plan-review'
   commit_plan:
     enabled: true
     type: blocking
@@ -33,6 +34,7 @@ requirements:
     - Planned commit sequence
     - Considered rollback strategy
     - Created plan file
+    satisfied_by_skill: 'requirements-framework:plan-review'
   pre_commit_review:
     enabled: true
     type: blocking

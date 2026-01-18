@@ -18,6 +18,7 @@
     "./agents/code-simplifier.md",
     "./agents/backward-compatibility-checker.md",
     "./agents/adr-guardian.md",
-    "./agents/codex-review-agent.md"
+    "./agents/codex-review-agent.md",
+    "./agents/commit-planner.md"
   ]
 }
