@@ -1,6 +1,24 @@
 ---
 name: solid-checker
 description: Use this agent to analyze code for SOLID principle violations. Checks Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. Uses sonnet model for deeper architectural analysis. Reports but does not auto-fix.
+
+Examples:
+<example>
+Context: User wants architectural review.
+user: "Check if my classes follow SOLID principles"
+assistant: "I'll use the solid-checker agent to analyze your code for SOLID principle violations."
+<commentary>
+Use for architectural code quality analysis.
+</commentary>
+</example>
+<example>
+Context: User is refactoring a large class.
+user: "Is this class doing too much?"
+assistant: "I'll use the solid-checker agent to check for Single Responsibility violations and suggest how to split it."
+<commentary>
+Solid-checker uses sonnet for deeper architectural analysis.
+</commentary>
+</example>
 model: sonnet
 color: purple
 git_hash: 7d4da24

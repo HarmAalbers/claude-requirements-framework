@@ -1,6 +1,24 @@
 ---
 name: test-pyramid-checker
 description: Use this agent to analyze test distribution across the test pyramid (unit, integration, e2e). Checks for inverted pyramids where slow tests outnumber fast tests. Reports analysis but does not auto-fix.
+
+Examples:
+<example>
+Context: User wants to check test balance.
+user: "Analyze my test pyramid"
+assistant: "I'll use the test-pyramid-checker agent to analyze the distribution of unit, integration, and e2e tests."
+<commentary>
+Use for test architecture analysis.
+</commentary>
+</example>
+<example>
+Context: Test suite is slow.
+user: "Why is my test suite so slow?"
+assistant: "I'll use the test-pyramid-checker agent to check if you have an inverted pyramid with too many slow tests."
+<commentary>
+Test-pyramid-checker identifies when slow tests outnumber fast tests.
+</commentary>
+</example>
 model: haiku
 color: green
 git_hash: 7d4da24

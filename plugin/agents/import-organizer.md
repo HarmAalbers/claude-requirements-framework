@@ -1,6 +1,24 @@
 ---
 name: import-organizer
 description: Use this agent to automatically organize imports in staged Python files. Moves imports to the top of the file and groups them by stdlib, third-party, and local. Auto-fixes issues by editing files directly.
+
+Examples:
+<example>
+Context: User wants imports organized.
+user: "Organize the imports in my Python files"
+assistant: "I'll use the import-organizer agent to automatically sort and group imports in your staged Python files."
+<commentary>
+Use for automatic import organization.
+</commentary>
+</example>
+<example>
+Context: Imports are scattered throughout the file.
+user: "Move all imports to the top"
+assistant: "I'll use the import-organizer agent to move imports to the top and group them properly."
+<commentary>
+Import-organizer auto-fixes by editing files directly.
+</commentary>
+</example>
 model: haiku
 color: yellow
 git_hash: 7d4da24

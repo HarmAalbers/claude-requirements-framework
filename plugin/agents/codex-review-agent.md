@@ -1,6 +1,24 @@
 ---
 name: codex-review-agent
-description: Orchestrates OpenAI Codex code review workflow
+description: Orchestrates OpenAI Codex code review workflow. Use this agent for AI-powered code review using OpenAI's Codex CLI for advanced static analysis.
+
+Examples:
+<example>
+Context: User wants an external AI code review.
+user: "Run a Codex review on my changes"
+assistant: "I'll use the codex-review-agent to orchestrate an OpenAI Codex code review."
+<commentary>
+Use when the user explicitly requests Codex review.
+</commentary>
+</example>
+<example>
+Context: User wants comprehensive AI analysis.
+user: "Get a second opinion on this code from another AI"
+assistant: "I'll use the codex-review-agent to get an independent AI review from OpenAI Codex."
+<commentary>
+Codex provides a different perspective from Claude's review.
+</commentary>
+</example>
 model: inherit
 color: blue
 git_hash: 7953a43

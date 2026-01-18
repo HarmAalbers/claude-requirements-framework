@@ -1,6 +1,24 @@
 ---
 name: type-checker
 description: Use this agent to check type coverage and strictness in staged Python files. Runs pyright with strict settings and reports missing annotations, implicit Any, and Optional issues. Reports but does not auto-fix.
+
+Examples:
+<example>
+Context: User wants to improve type coverage.
+user: "Check the type annotations in my Python code"
+assistant: "I'll use the type-checker agent to run pyright with strict settings and report missing annotations."
+<commentary>
+Use for type coverage analysis.
+</commentary>
+</example>
+<example>
+Context: User is adding types to a module.
+user: "What's missing from my type annotations?"
+assistant: "I'll use the type-checker agent to find implicit Any types and missing annotations."
+<commentary>
+Type-checker reports but doesn't auto-fix - typing requires judgment.
+</commentary>
+</example>
 model: haiku
 color: blue
 git_hash: 7d4da24

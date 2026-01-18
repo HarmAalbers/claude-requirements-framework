@@ -1,6 +1,24 @@
 ---
 name: comment-cleaner
 description: Use this agent to automatically remove useless comments from staged files. Detects and removes comments that just repeat the code, TODOs without context, commented-out code blocks, and obvious docstrings. Auto-fixes issues by editing files directly.
+
+Examples:
+<example>
+Context: User wants to clean up comments before committing.
+user: "Clean up the comments in my code"
+assistant: "I'll use the comment-cleaner agent to remove useless comments from your staged files."
+<commentary>
+Use for automatic comment cleanup.
+</commentary>
+</example>
+<example>
+Context: Code review found stale comments.
+user: "Remove the commented-out code blocks"
+assistant: "I'll use the comment-cleaner agent to automatically remove commented-out code and other low-value comments."
+<commentary>
+Comment-cleaner auto-fixes by editing files directly.
+</commentary>
+</example>
 model: haiku
 color: yellow
 git_hash: 7d4da24

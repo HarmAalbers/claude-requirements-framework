@@ -1,6 +1,24 @@
 ---
 name: tool-validator
-description: Execute linting and type-checking tools on staged changes to catch CI errors locally
+description: Execute linting and type-checking tools on staged changes to catch CI errors locally. Use this agent to run pyright, ruff, eslint, and other CI tools before committing to catch errors early.
+
+Examples:
+<example>
+Context: User wants to check if their code will pass CI.
+user: "Run the linters before I commit"
+assistant: "I'll use the tool-validator agent to run pyright and ruff on your staged changes."
+<commentary>
+Use tool-validator when the user wants objective tool validation before committing.
+</commentary>
+</example>
+<example>
+Context: User is about to commit and wants to avoid CI failures.
+user: "Will this pass CI?"
+assistant: "I'll use the tool-validator agent to run the same tools CI uses and check for errors."
+<commentary>
+Tool-validator provides deterministic results matching CI tools.
+</commentary>
+</example>
 model: inherit
 color: blue
 git_hash: 7953a43

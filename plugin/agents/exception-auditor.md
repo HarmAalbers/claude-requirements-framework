@@ -1,6 +1,24 @@
 ---
 name: exception-auditor
 description: Use this agent to detect bare exception handling in staged files. Flags `except:` without exception type and overly broad `except Exception:` catches. Reports issues but does not auto-fix (requires developer judgment).
+
+Examples:
+<example>
+Context: User wants to check exception handling.
+user: "Check my exception handling"
+assistant: "I'll use the exception-auditor agent to find bare except clauses and overly broad exception catches."
+<commentary>
+Use for exception handling quality audit.
+</commentary>
+</example>
+<example>
+Context: Code review flagged error handling.
+user: "Find places where I'm catching all exceptions"
+assistant: "I'll use the exception-auditor agent to detect broad exception catches that might hide bugs."
+<commentary>
+Exception-auditor reports but doesn't auto-fix - requires judgment.
+</commentary>
+</example>
 model: haiku
 color: orange
 git_hash: 7d4da24

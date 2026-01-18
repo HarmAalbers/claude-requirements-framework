@@ -1,6 +1,24 @@
 ---
 name: backward-compatibility-checker
-description: Detect breaking changes in schemas, APIs, and contracts that break existing tests
+description: Detect breaking changes in schemas, APIs, and contracts that break existing tests. Use this agent when modifying Pydantic models, database schemas, or API contracts to ensure changes don't break existing code.
+
+Examples:
+<example>
+Context: User modified a Pydantic model.
+user: "I renamed a field in the User model. Will this break anything?"
+assistant: "I'll use the backward-compatibility-checker agent to find code that depends on the old field name."
+<commentary>
+Use when schema or model changes might break existing code.
+</commentary>
+</example>
+<example>
+Context: User is adding a database migration.
+user: "Check if my schema changes need a migration"
+assistant: "I'll use the backward-compatibility-checker agent to analyze your schema changes and verify migration coverage."
+<commentary>
+Use for database schema evolution analysis.
+</commentary>
+</example>
 model: inherit
 color: blue
 git_hash: 7953a43
