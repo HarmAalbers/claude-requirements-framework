@@ -19,6 +19,12 @@
     "./agents/backward-compatibility-checker.md",
     "./agents/adr-guardian.md",
     "./agents/codex-review-agent.md",
-    "./agents/commit-planner.md"
+    "./agents/commit-planner.md",
+    "./agents/comment-cleaner.md",
+    "./agents/import-organizer.md",
+    "./agents/exception-auditor.md",
+    "./agents/type-checker.md",
+    "./agents/solid-checker.md",
+    "./agents/test-pyramid-checker.md"
   ]
 }

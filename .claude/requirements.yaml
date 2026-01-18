@@ -48,4 +48,31 @@ requirements:
     - Code follows conventions
     - Error handling adequate
     - No obvious bugs
+  pre_commit_checks:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+    - tool: Bash
+      command_pattern: git\s+commit
+    satisfied_by_skill: 'requirements-framework:commit-checks'
+    message: |
+      🔍 **Quality Checks Required**
+
+      Run `/requirements-framework:commit-checks` to validate:
+      - Comment cleanup (auto-fix)
+      - Import organization (auto-fix)
+      - Bare exception detection
+      - Type coverage & strictness
+      - SOLID adherence
+      - Test pyramid compliance
+
+      **After checks pass**: Proceed with commit.
+    checklist:
+    - Useless comments removed
+    - Imports organized at top
+    - No bare exceptions
+    - Type coverage adequate
+    - SOLID principles followed
+    - Test pyramid healthy
 inherit: false 
