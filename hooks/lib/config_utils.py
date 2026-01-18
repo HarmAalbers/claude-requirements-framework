@@ -219,6 +219,109 @@ def write_local_config(project_dir: str, config_data: dict) -> str:
         return str(local_file)
 
 
+def summarize_triggers(trigger_tools: list) -> str:
+    """
+    Convert trigger_tools config to human-readable summary.
+
+    Supports two trigger formats:
+    1. Simple string: 'Edit' - tool name
+    2. Complex object: {tool: 'Bash', command_pattern: 'git\\s+commit'} - extracts pattern
+
+    Args:
+        trigger_tools: List of triggers from config (strings or dicts)
+
+    Returns:
+        Human-readable summary string
+
+    Examples:
+        ["Edit", "Write"] → "Edit, Write"
+        [{"tool": "Bash", "command_pattern": "git\\s+commit"}] → "git commit"
+        ["Edit", {"tool": "Bash", "command_pattern": "git\\s+(commit|merge)"}] → "Edit, git commit/merge"
+    """
+    if not trigger_tools:
+        return "Edit, Write, MultiEdit"
+
+    summaries = []
+    for trigger in trigger_tools:
+        if isinstance(trigger, str):
+            summaries.append(trigger)
+        elif isinstance(trigger, dict):
+            tool = trigger.get('tool', '')
+            pattern = trigger.get('command_pattern', '')
+
+            if pattern and tool == 'Bash':
+                # Extract human-readable command from regex pattern
+                # Common patterns: git\s+commit → git commit
+                #                  git\s+(commit|merge) → git commit/merge
+                #                  gh\s+pr\s+create → gh pr create
+                human_cmd = pattern
+                # Replace regex whitespace with space
+                human_cmd = human_cmd.replace('\\s+', ' ').replace('\\s', ' ')
+                # Handle alternation groups: (commit|merge) → commit/merge
+                human_cmd = re.sub(r'\(([^)]+)\)', lambda m: m.group(1).replace('|', '/'), human_cmd)
+                # Remove remaining regex artifacts
+                human_cmd = human_cmd.replace('\\', '').replace('^', '').replace('$', '')
+                summaries.append(human_cmd)
+            else:
+                summaries.append(tool)
+
+    return ", ".join(summaries) if summaries else "Edit, Write, MultiEdit"
+
+
+def get_requirement_description(req_config: dict) -> str:
+    """
+    Get description from config, falling back to first sentence of message.
+
+    Provides a concise description of what a requirement does, useful for
+    context injection where space is limited.
+
+    Args:
+        req_config: Requirement configuration dictionary
+
+    Returns:
+        Description string (never empty)
+
+    Examples:
+        {'description': 'Ensures ADRs are reviewed'} → "Ensures ADRs are reviewed"
+        {'message': 'Run /plan-review. Creates commit strategy.'} → "Run /plan-review."
+        {} → "No description available."
+    """
+    # Prefer explicit description field
+    if desc := req_config.get('description'):
+        if isinstance(desc, str) and desc.strip():
+            return desc.strip()
+
+    # Fall back to first sentence of message
+    if msg := req_config.get('message'):
+        if isinstance(msg, str) and msg.strip():
+            # Skip markdown headers (##, **) at start
+            lines = msg.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                # Skip empty lines and markdown headers
+                if not line or line.startswith('#'):
+                    continue
+                # Handle bold markdown at start: **Execute**: `/plan-review` → extract content
+                if line.startswith('**'):
+                    # Try to extract useful content from bold line
+                    # Match pattern like **Label**: content or **Label** content
+                    bold_match = re.match(r'\*\*[^*]+\*\*:?\s*(.+)', line)
+                    if bold_match:
+                        content = bold_match.group(1).strip()
+                        if content:
+                            return content[:100] + ('...' if len(content) > 100 else '')
+                    continue  # Skip pure bold headers without content
+                # Found content line - extract first sentence
+                # Look for period followed by space or end
+                match = re.match(r'^([^.!?]+[.!?])', line)
+                if match:
+                    return match.group(1).strip()
+                # No sentence ending found, return whole line (truncated)
+                return line[:100] + ('...' if len(line) > 100 else '')
+
+    return "No description available."
+
+
 def write_project_config(project_dir: str, config_data: dict) -> str:
     """
     Write configuration to project file.

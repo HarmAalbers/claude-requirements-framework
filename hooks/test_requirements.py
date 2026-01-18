@@ -413,6 +413,115 @@ def test_git_root_resolution(runner: TestRunner):
                 os.environ.pop('CLAUDE_PROJECT_DIR', None)
 
 
+def test_git_worktree_support(runner: TestRunner):
+    """Test that state is shared across git worktrees."""
+    print("\n📦 Testing git worktree support...")
+    from git_utils import get_git_common_dir, is_git_repo
+    from state_storage import get_state_dir
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        main_repo = os.path.join(tmpdir, "main")
+        worktree_path = os.path.join(tmpdir, "worktree")
+
+        # Create main repo with initial commit
+        os.makedirs(main_repo)
+        subprocess.run(["git", "init"], cwd=main_repo, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=main_repo, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=main_repo, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=main_repo, capture_output=True)
+
+        # Create worktree
+        result = subprocess.run(
+            ["git", "worktree", "add", worktree_path, "-b", "feature"],
+            cwd=main_repo,
+            capture_output=True
+        )
+
+        if result.returncode != 0:
+            runner.test("Git worktree creation", False, f"Failed: {result.stderr.decode()}")
+            return
+
+        runner.test("Git worktree created", os.path.exists(worktree_path))
+
+        # Test 1: Worktree .git is a file (not directory)
+        worktree_git = os.path.join(worktree_path, ".git")
+        runner.test("Worktree .git is file", os.path.isfile(worktree_git))
+
+        # Test 2: get_git_common_dir returns main repo's .git
+        common_dir_main = get_git_common_dir(main_repo)
+        common_dir_wt = get_git_common_dir(worktree_path)
+        expected_common = os.path.join(main_repo, ".git")
+
+        runner.test(
+            "Main repo common dir correct",
+            os.path.realpath(common_dir_main) == os.path.realpath(expected_common),
+            f"Expected {expected_common}, got {common_dir_main}"
+        )
+        runner.test(
+            "Worktree common dir matches main",
+            os.path.realpath(common_dir_wt) == os.path.realpath(common_dir_main),
+            f"Expected {common_dir_main}, got {common_dir_wt}"
+        )
+
+        # Test 3: State directories point to same location
+        state_dir_main = get_state_dir(main_repo)
+        state_dir_wt = get_state_dir(worktree_path)
+
+        runner.test(
+            "State dirs match across worktrees",
+            os.path.realpath(state_dir_main) == os.path.realpath(state_dir_wt),
+            f"Main: {state_dir_main}, WT: {state_dir_wt}"
+        )
+
+        # Test 4: Requirements satisfied in main are visible from worktree
+        reqs_main = BranchRequirements("feature", "test-session", main_repo)
+        reqs_main.satisfy("test_req", "branch", method="test")
+
+        # Load from worktree - should see the same state
+        reqs_wt = BranchRequirements("feature", "test-session", worktree_path)
+        runner.test(
+            "State shared: requirement visible from worktree",
+            reqs_wt.is_satisfied("test_req", "branch"),
+            "Requirement satisfied in main should be visible from worktree"
+        )
+
+        # Test 5: Requirements satisfied in worktree visible from main
+        reqs_wt.satisfy("another_req", "branch", method="test-wt")
+
+        # Reload from main - should see worktree's change
+        reqs_main_reload = BranchRequirements("feature", "test-session", main_repo)
+        runner.test(
+            "State shared: requirement from worktree visible in main",
+            reqs_main_reload.is_satisfied("another_req", "branch"),
+            "Requirement satisfied in worktree should be visible from main"
+        )
+
+        # Cleanup worktree
+        subprocess.run(["git", "worktree", "remove", worktree_path], cwd=main_repo, capture_output=True)
+
+
+def test_git_common_dir_fallback(runner: TestRunner):
+    """Test that get_git_common_dir handles non-git directories gracefully."""
+    print("\n📦 Testing get_git_common_dir fallback...")
+    from git_utils import get_git_common_dir
+    from state_storage import get_state_dir
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Not a git repo - should return None
+        common_dir = get_git_common_dir(tmpdir)
+        runner.test("Non-repo returns None", common_dir is None, f"Got: {common_dir}")
+
+        # State dir should fall back to .git/requirements/
+        state_dir = get_state_dir(tmpdir)
+        expected = os.path.join(tmpdir, ".git", "requirements")
+        runner.test(
+            "Fallback state dir correct",
+            str(state_dir) == expected,
+            f"Expected {expected}, got {state_dir}"
+        )
+
+
 def test_hook_from_subdirectory(runner: TestRunner):
     """Test hook works correctly when called from subdirectory."""
     print("\n📦 Testing hook from subdirectory...")
@@ -6600,6 +6709,270 @@ requirements:
         runner.test("Read tool does not trigger plan mode requirements", result3.returncode == 0 and not result3.stdout)
 
 
+def test_summarize_triggers(runner: TestRunner):
+    """Test summarize_triggers helper function."""
+    print("\n📦 Testing summarize_triggers helper...")
+
+    from config_utils import summarize_triggers
+
+    # Test empty list (defaults)
+    result = summarize_triggers([])
+    runner.test("Empty list returns default", result == "Edit, Write, MultiEdit",
+               f"Got: {result}")
+
+    # Test None
+    result = summarize_triggers(None)
+    runner.test("None returns default", result == "Edit, Write, MultiEdit",
+               f"Got: {result}")
+
+    # Test simple tool names
+    result = summarize_triggers(["Edit", "Write"])
+    runner.test("Simple tools joined", result == "Edit, Write",
+               f"Got: {result}")
+
+    # Test complex trigger with command pattern
+    result = summarize_triggers([{"tool": "Bash", "command_pattern": "git\\s+commit"}])
+    runner.test("Git commit pattern humanized", result == "git commit",
+               f"Got: {result}")
+
+    # Test alternation group
+    result = summarize_triggers([{"tool": "Bash", "command_pattern": "git\\s+(commit|merge)"}])
+    runner.test("Alternation group humanized", result == "git commit/merge",
+               f"Got: {result}")
+
+    # Test gh pr create pattern
+    result = summarize_triggers([{"tool": "Bash", "command_pattern": "gh\\s+pr\\s+create"}])
+    runner.test("GH PR pattern humanized", result == "gh pr create",
+               f"Got: {result}")
+
+    # Test mixed simple and complex
+    result = summarize_triggers(["Edit", {"tool": "Bash", "command_pattern": "git\\s+commit"}])
+    runner.test("Mixed triggers joined", result == "Edit, git commit",
+               f"Got: {result}")
+
+    # Test complex trigger without pattern (just tool name)
+    result = summarize_triggers([{"tool": "Bash"}])
+    runner.test("Complex without pattern returns tool name", result == "Bash",
+               f"Got: {result}")
+
+
+def test_get_requirement_description(runner: TestRunner):
+    """Test get_requirement_description helper function."""
+    print("\n📦 Testing get_requirement_description helper...")
+
+    from config_utils import get_requirement_description
+
+    # Test explicit description field
+    config = {"description": "Ensures ADRs are reviewed before implementation."}
+    result = get_requirement_description(config)
+    runner.test("Returns explicit description", result == "Ensures ADRs are reviewed before implementation.",
+               f"Got: {result}")
+
+    # Test fallback to message (first sentence)
+    config = {"message": "Run /plan-review. Creates commit strategy."}
+    result = get_requirement_description(config)
+    runner.test("Falls back to message first sentence", result == "Run /plan-review.",
+               f"Got: {result}")
+
+    # Test message with markdown header skipped
+    config = {"message": "## Blocked: commit_plan\n\n**Execute**: `/plan-review`"}
+    result = get_requirement_description(config)
+    runner.test("Skips markdown headers", "`/plan-review`" in result,
+               f"Got: {result}")
+
+    # Test empty config
+    config = {}
+    result = get_requirement_description(config)
+    runner.test("Empty config returns fallback", result == "No description available.",
+               f"Got: {result}")
+
+    # Test whitespace-only description
+    config = {"description": "   "}
+    result = get_requirement_description(config)
+    runner.test("Whitespace description uses fallback", result == "No description available.",
+               f"Got: {result}")
+
+    # Test description takes precedence over message
+    config = {"description": "Short desc", "message": "Long message here."}
+    result = get_requirement_description(config)
+    runner.test("Description takes precedence over message", result == "Short desc",
+               f"Got: {result}")
+
+
+def test_session_start_format_tiers(runner: TestRunner):
+    """Test session start format tier functions."""
+    print("\n📦 Testing session start format tiers...")
+
+    # Import dynamically to ensure path setup
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+
+    # We need to import from the hook file, not lib
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook", hook_path)
+    session_start_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(session_start_module)
+
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test-formats"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "description": "Test commit plan description.",
+                    "auto_resolve_skill": "requirements-framework:plan-review"
+                },
+                "pre_commit_review": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "single_use",
+                    "trigger_tools": [{"tool": "Bash", "command_pattern": "git\\s+commit"}]
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test-formats", "test-session", tmpdir)
+
+        # Test compact format
+        compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/test-formats")
+        runner.test("Compact format has requirements header", "Requirements:" in compact,
+                   f"Got: {compact[:200]}")
+        runner.test("Compact format is concise", len(compact) < 500,
+                   f"Length: {len(compact)}")
+
+        # Test standard format
+        standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/test-formats")
+        runner.test("Standard format has table header", "| Requirement |" in standard,
+                   f"Missing table header")
+        runner.test("Standard format has workflow section", "Workflow" in standard,
+                   f"Missing Workflow section")
+        runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
+                   f"Missing triggers")
+
+        # Test rich format
+        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/test-formats")
+        runner.test("Rich format has briefing header", "Session Briefing" in rich,
+                   f"Missing briefing header")
+        runner.test("Rich format has definitions section", "Requirement Definitions" in rich,
+                   f"Missing definitions section")
+        runner.test("Rich format has scope reference", "Scope Reference" in rich,
+                   f"Missing scope reference")
+        runner.test("Rich format has workflow guide", "Workflow Guide" in rich,
+                   f"Missing workflow guide")
+        runner.test("Rich format includes description", "Test commit plan description" in rich,
+                   f"Missing description")
+
+        # Test adaptive format selector
+        # Test auto mode with startup source
+        auto_startup = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "startup")
+        runner.test("Auto mode startup uses rich format", "Session Briefing" in auto_startup,
+                   f"Expected rich format for startup")
+
+        # Test auto mode with resume source
+        auto_resume = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "resume")
+        runner.test("Auto mode resume uses standard format", "| Requirement |" in auto_resume,
+                   f"Expected standard format for resume")
+
+        # Test auto mode with compact source
+        auto_compact = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "compact")
+        runner.test("Auto mode compact uses compact format", "Requirements:" in auto_compact and "Session Briefing" not in auto_compact,
+                   f"Expected compact format for compact source")
+
+    # Test empty requirements config
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/empty-test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        # Create config with no requirements
+        empty_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(empty_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/empty-test", "test-session", tmpdir)
+
+        # Test compact format with empty requirements
+        compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/empty-test")
+        runner.test("Compact handles empty requirements", "No requirements configured" in compact,
+                   f"Got: {compact}")
+
+        # Test standard format with empty requirements
+        standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/empty-test")
+        runner.test("Standard handles empty requirements", "(none configured)" in standard,
+                   f"Got: {standard[:300]}")
+
+        # Test rich format with empty requirements
+        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/empty-test")
+        runner.test("Rich handles empty requirements", "(No requirements configured)" in rich or "(none configured)" in rich,
+                   f"Got: {rich[:300]}")
+
+    # Test guard requirement formatting
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/guard-test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        guard_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch_guard": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["main", "master"]
+                },
+                "single_session_guard": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(guard_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/guard-test", "test-session", tmpdir)
+
+        # Test rich format includes guard status text
+        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/guard-test")
+        runner.test("Rich format shows protected branch guard status",
+                   "not on protected branch" in rich or "protected_branch_guard" in rich,
+                   f"Got: {rich[:500]}")
+        runner.test("Rich format shows single session guard status",
+                   "no other sessions" in rich or "single_session_guard" in rich,
+                   f"Got: {rich[:500]}")
+
+        # Test standard format includes guard type
+        standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/guard-test")
+        runner.test("Standard format shows guard type", "guard" in standard,
+                   f"Got: {standard[:400]}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -6614,6 +6987,8 @@ def main():
     test_session_key_migration(runner)
     test_git_utils_module(runner)
     test_git_root_resolution(runner)
+    test_git_worktree_support(runner)
+    test_git_common_dir_fallback(runner)
     test_hook_from_subdirectory(runner)
     test_cli_from_subdirectory(runner)
     test_not_in_git_repo_fallback(runner)
@@ -6726,6 +7101,11 @@ def main():
 
     # Plan mode trigger tests
     test_plan_mode_triggers(runner)
+
+    # Session start context injection tests
+    test_summarize_triggers(runner)
+    test_get_requirement_description(runner)
+    test_session_start_format_tiers(runner)
 
     return runner.summary()
 
