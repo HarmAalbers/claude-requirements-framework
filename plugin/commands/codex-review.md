@@ -226,6 +226,6 @@ After this output, if successful, the command will output:
 - Predictable, testable, reliable execution
 
 **Agent autonomy**:
-- Agent has `autonomous: true` in frontmatter
-- Runs without manual input (prerequisite checks are informational only)
+- Agent is designed to run without manual input (prerequisite checks are informational only)
+- Handles all error cases and edge conditions internally
 - Proper tool permissions: Bash, Read, Grep, Glob (sufficient for all operations)
