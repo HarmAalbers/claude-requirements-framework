@@ -31,7 +31,7 @@ sys.path.insert(0, str(lib_path))
 
 from config import RequirementsConfig
 from requirements import BranchRequirements
-from session import update_registry, cleanup_stale_sessions, normalize_session_id
+from session import update_registry, cleanup_stale_sessions, normalize_session_id, get_active_sessions
 from logger import get_logger
 from hook_utils import early_hook_setup
 from console import emit_text
@@ -110,6 +110,83 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
     return "\n".join(lines)
 
 
+def check_other_sessions_warning(config: RequirementsConfig, project_dir: str,
+                                  session_id: str, logger) -> str | None:
+    """
+    Check if other sessions are active on this project and generate warning.
+
+    Only generates a warning if a single_session guard is configured.
+    This is informational only - does not block.
+
+    Args:
+        config: RequirementsConfig instance
+        project_dir: Current project directory
+        session_id: Current session ID
+        logger: Logger instance
+
+    Returns:
+        Warning message string if other sessions exist, None otherwise
+    """
+    # Check if any single_session guard is configured
+    has_single_session_guard = False
+    for req_name in config.get_all_requirements():
+        if not config.is_requirement_enabled(req_name):
+            continue
+        req_type = config.get_requirement_type(req_name)
+        if req_type != 'guard':
+            continue
+        try:
+            guard_config = config.get_guard_config(req_name)
+            if guard_config and guard_config.get('guard_type') == 'single_session':
+                has_single_session_guard = True
+                break
+        except (ValueError, KeyError):
+            continue
+
+    if not has_single_session_guard:
+        return None
+
+    # Check for other active sessions on this project
+    try:
+        active = get_active_sessions(project_dir=project_dir)
+        other_sessions = [s for s in active if s.get('id') != session_id]
+
+        if not other_sessions:
+            return None
+
+        # Generate warning message
+        import time
+        lines = ["⚠️  **Other Claude Code sessions detected on this project**", ""]
+
+        for sess in other_sessions:
+            sess_id = sess.get('id', 'unknown')
+            branch = sess.get('branch', 'unknown')
+            last_active = sess.get('last_active', 0)
+
+            if last_active:
+                elapsed = int(time.time()) - last_active
+                if elapsed < 60:
+                    time_str = f"{elapsed}s ago"
+                elif elapsed < 3600:
+                    time_str = f"{elapsed // 60}m ago"
+                else:
+                    time_str = f"{elapsed // 3600}h ago"
+            else:
+                time_str = "unknown"
+
+            lines.append(f"  • `{sess_id}` on `{branch}` (active {time_str})")
+
+        lines.append("")
+        lines.append("**Note**: Edits may be blocked to prevent conflicts.")
+        lines.append("Use `req approve single_session_per_project` to override if needed.")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.warning("Failed to check other sessions", error=str(e))
+        return None
+
+
 def main() -> int:
     """Hook entry point."""
     # Parse stdin input
@@ -183,6 +260,14 @@ See `req init --help` for options.
             update_registry(session_id, project_dir, branch)
         except Exception as e:
             logger.error("Failed to update registry", error=str(e))
+
+        # 2b. Check for other sessions and warn if single_session guard is enabled
+        other_sessions_warning = check_other_sessions_warning(
+            config, project_dir, session_id, logger
+        )
+        if other_sessions_warning:
+            emit_text(other_sessions_warning)
+            emit_text("")  # Add blank line before status
 
         # 3. Inject context if configured (default: True)
         if config.get_hook_config('session_start', 'inject_context', True):

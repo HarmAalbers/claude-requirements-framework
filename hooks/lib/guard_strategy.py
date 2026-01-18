@@ -62,12 +62,14 @@ class GuardRequirementStrategy(RequirementStrategy):
             guard_type = req_config['guard_type']
         except ValueError as e:
             # Invalid config - fail open with warning
-            from lib.logger import log_warning
+            from strategy_utils import log_warning
             log_warning(f"Invalid guard requirement config for '{req_name}': {e}")
             return None
 
         if guard_type == 'protected_branch':
             return self._check_protected_branch(req_name, config, context)
+        elif guard_type == 'single_session':
+            return self._check_single_session(req_name, config, context)
 
         # Unknown guard type - fail open
         return None
@@ -99,7 +101,7 @@ class GuardRequirementStrategy(RequirementStrategy):
             protected_branches = req_config.get('protected_branches', ['master', 'main'])
         except ValueError as e:
             # Invalid config - fail open with warning
-            from lib.logger import log_warning
+            from strategy_utils import log_warning
             log_warning(f"Invalid guard requirement config for '{req_name}': {e}")
             return None
 
@@ -145,6 +147,116 @@ class GuardRequirementStrategy(RequirementStrategy):
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:
             cache_key = f"{context.get('project_dir', '')}:{branch}:{session_id}:{req_name}"
+
+            if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
+                # Suppress verbose message - show minimal indicator instead
+                minimal_message = f"⏸️ Guard requirement `{req_name}` not satisfied (waiting...)"
+                return create_denial_response(minimal_message)
+
+        # Show full message (first time or after TTL expiration)
+        return create_denial_response(message)
+
+    def _check_single_session(self, req_name: str, config: RequirementsConfig,
+                              context: dict) -> Optional[dict]:
+        """
+        Check if another session is active on this project.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            context: Context with session_id and project_dir
+
+        Returns:
+            None if no other sessions are active
+            Denial response if another session is active on the same project
+        """
+        try:
+            from session import get_active_sessions
+        except ImportError as e:
+            # Fail open if session module unavailable, but log the error
+            from strategy_utils import log_warning
+            log_warning(f"single_session guard disabled - session module import failed: {e}")
+            return None
+
+        project_dir = context.get('project_dir')
+        current_session = context.get('session_id')
+
+        if not project_dir:
+            return None  # No project context - fail open
+
+        # Get active sessions for this project
+        # get_active_sessions already filters out stale sessions via is_process_alive()
+        active = get_active_sessions(project_dir=project_dir)
+
+        # Exclude current session from the list
+        other_sessions = [s for s in active if s.get('id') != current_session]
+
+        if not other_sessions:
+            return None  # No conflict - allow
+
+        # Another session is active - create denial
+        return self._create_single_session_denial(req_name, config, other_sessions, context)
+
+    def _create_single_session_denial(self, req_name: str, config: RequirementsConfig,
+                                      other_sessions: list, context: dict) -> dict:
+        """
+        Create denial response for single session violation.
+
+        Args:
+            req_name: Requirement name
+            config: Configuration
+            other_sessions: List of other active sessions on the same project
+            context: Context dict
+
+        Returns:
+            Hook response dict with denial
+        """
+        import time
+
+        # Get custom message or build default
+        custom_message = config.get_attribute(req_name, 'message', None)
+
+        if custom_message:
+            message = custom_message
+        else:
+            message = "🚫 **Another Claude Code session is active on this project**\n\n"
+            message += "To prevent conflicting changes, only one session can edit files at a time.\n\n"
+            message += "**Active sessions:**\n"
+
+            for sess in other_sessions:
+                sess_id = sess.get('id', 'unknown')
+                branch = sess.get('branch', 'unknown')
+                ppid = sess.get('ppid', 'unknown')
+                last_active = sess.get('last_active', 0)
+
+                # Format last active time
+                if last_active:
+                    elapsed = int(time.time()) - last_active
+                    if elapsed < 60:
+                        time_str = f"{elapsed}s ago"
+                    elif elapsed < 3600:
+                        time_str = f"{elapsed // 60}m ago"
+                    else:
+                        time_str = f"{elapsed // 3600}h ago"
+                else:
+                    time_str = "unknown"
+
+                message += f"- `{sess_id}` on `{branch}` (PID {ppid}, active {time_str})\n"
+
+            message += "\n**Options:**\n"
+            message += "1. Wait for the other session to complete or close it\n"
+            message += "2. Close the other session manually\n"
+            message += f"3. Override for this session: `req approve {req_name}`\n"
+
+        # Add session context
+        session_id = context.get('session_id', 'unknown')
+        project_dir = context.get('project_dir', 'unknown')
+        message += f"\n\n**Current session**: `{session_id}`"
+        message += f"\n**Project**: `{project_dir}`"
+
+        # Deduplication check to prevent spam from parallel tool calls
+        if self.dedup_cache:
+            cache_key = f"{project_dir}:{session_id}:{req_name}:single_session"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
                 # Suppress verbose message - show minimal indicator instead

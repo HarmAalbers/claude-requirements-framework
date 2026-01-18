@@ -134,6 +134,35 @@ requirements:
       - "Feature branch created for changes"
       - "Emergency override approved if necessary"
 
+  # Single Session Per Project Guard
+  # Prevents multiple Claude Code sessions from editing the same project simultaneously
+  single_session_per_project:
+    enabled: false  # Opt-in per project - enable in .claude/requirements.yaml
+    type: guard
+    guard_type: single_session
+    scope: session  # Approval persists for the session
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      🚫 **Another Claude Code session is active on this project**
+
+      To prevent conflicting changes, only one session can edit files at a time.
+
+      **Why this matters**:
+      - Prevents concurrent modifications to the same files
+      - Avoids merge conflicts and lost changes
+      - Ensures consistent codebase state
+
+      **Options**:
+      1. Close the other session first
+      2. Wait for the other session to complete
+      3. Override for this session: `req approve single_session_per_project`
+    checklist:
+      - "Confirmed no other active sessions on this project"
+      - "Other session closed or override approved"
+
   # Branch Size Limit (Dynamic Requirement)
   # Automatically calculates branch size and enforces limits
   branch_size_limit:

@@ -3631,6 +3631,388 @@ def test_guard_status_display_context_aware(runner: TestRunner):
                    "Should be satisfied when manually approved even on protected branch")
 
 
+def test_single_session_guard_allows_when_alone(runner: TestRunner):
+    """Test that single_session guard allows when only current session exists."""
+    print("\n📦 Testing single_session guard allows when alone...")
+
+    try:
+        from guard_strategy import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+        import session
+
+        # Create config with single_session requirement
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "single_session_per_project": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session-1", tmpdir)
+
+        # Mock registry with empty sessions (no other sessions)
+        test_registry = Path(tmpdir) / "test-sessions.json"
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            # Create empty registry
+            with open(test_registry, 'w') as f:
+                json.dump({"sessions": {}}, f)
+
+            context = {
+                'project_dir': tmpdir,
+                'branch': 'master',
+                'session_id': 'test-session-1',
+                'tool_name': 'Edit'
+            }
+
+            # Should allow when no other sessions
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Allows when no other sessions", result is None,
+                       f"Expected None, got: {result}")
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
+def test_single_session_guard_blocks_with_other_session(runner: TestRunner):
+    """Test that single_session guard blocks when another session is active."""
+    print("\n📦 Testing single_session guard blocks with other session...")
+
+    try:
+        from guard_strategy import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+        import session
+        import time
+
+        # Create config with single_session requirement
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "single_session_per_project": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session-2", tmpdir)
+
+        # Mock registry with another session on the same project
+        test_registry = Path(tmpdir) / "test-sessions.json"
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            # Create registry with another session on the same project
+            # Use current PID as ppid to make it look "alive"
+            current_pid = os.getpid()
+            with open(test_registry, 'w') as f:
+                json.dump({
+                    "sessions": {
+                        "other-ses": {
+                            "pid": current_pid,
+                            "ppid": current_pid,  # Use current PID so is_process_alive returns True
+                            "project_dir": tmpdir,
+                            "branch": "feature/other",
+                            "started_at": int(time.time()),
+                            "last_active": int(time.time())
+                        }
+                    }
+                }, f)
+
+            context = {
+                'project_dir': tmpdir,
+                'branch': 'master',
+                'session_id': 'test-session-2',
+                'tool_name': 'Edit'
+            }
+
+            # Should block when another session is active
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Blocks when another session active", result is not None,
+                       f"Expected denial, got: {result}")
+            if result:
+                runner.test("Has denial message", "message" in result or "hookSpecificOutput" in result,
+                           f"Result: {result}")
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
+def test_single_session_guard_approval_bypasses(runner: TestRunner):
+    """Test that approval bypasses the single_session guard."""
+    print("\n📦 Testing single_session guard approval bypass...")
+
+    try:
+        from guard_strategy import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+        import session
+        import time
+
+        # Create config
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "single_session_per_project": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session-3", tmpdir)
+
+        # Mock registry with another session
+        test_registry = Path(tmpdir) / "test-sessions.json"
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            current_pid = os.getpid()
+            with open(test_registry, 'w') as f:
+                json.dump({
+                    "sessions": {
+                        "other-ses": {
+                            "pid": current_pid,
+                            "ppid": current_pid,
+                            "project_dir": tmpdir,
+                            "branch": "feature/other",
+                            "started_at": int(time.time()),
+                            "last_active": int(time.time())
+                        }
+                    }
+                }, f)
+
+            context = {
+                'project_dir': tmpdir,
+                'branch': 'master',
+                'session_id': 'test-session-3',
+                'tool_name': 'Edit'
+            }
+
+            # First verify it blocks without approval
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Blocks without approval", result is not None,
+                       "Should block before approval")
+
+            # Now approve and verify bypass
+            reqs.satisfy("single_session_per_project", scope='session')
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Allows after approval", result is None,
+                       f"Should allow after approval, got: {result}")
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
+def test_single_session_guard_excludes_current_session(runner: TestRunner):
+    """Test that current session is excluded from other session count."""
+    print("\n📦 Testing single_session guard excludes current session...")
+
+    try:
+        from guard_strategy import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+        import session
+        import time
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "single_session_per_project": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "my-sessio", tmpdir)  # 8 char session ID
+
+        # Mock registry with ONLY the current session
+        test_registry = Path(tmpdir) / "test-sessions.json"
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            current_pid = os.getpid()
+            with open(test_registry, 'w') as f:
+                json.dump({
+                    "sessions": {
+                        "my-sessio": {  # Same ID as current session
+                            "pid": current_pid,
+                            "ppid": current_pid,
+                            "project_dir": tmpdir,
+                            "branch": "master",
+                            "started_at": int(time.time()),
+                            "last_active": int(time.time())
+                        }
+                    }
+                }, f)
+
+            context = {
+                'project_dir': tmpdir,
+                'branch': 'master',
+                'session_id': 'my-sessio',  # Same ID as in registry
+                'tool_name': 'Edit'
+            }
+
+            # Should allow because the only session is current session
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Allows when only current session in registry", result is None,
+                       f"Expected None (current session should be excluded), got: {result}")
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
+def test_single_session_guard_filters_by_project(runner: TestRunner):
+    """Test that sessions on other projects don't trigger the guard."""
+    print("\n📦 Testing single_session guard filters by project...")
+
+    try:
+        from guard_strategy import GuardRequirementStrategy
+    except ImportError:
+        runner.test("GuardRequirementStrategy exists", False, "Strategy not implemented yet")
+        return
+
+    strategy = GuardRequirementStrategy()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+
+        from config import RequirementsConfig
+        from requirements import BranchRequirements
+        import session
+        import time
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "single_session_per_project": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "single_session"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", "test-session-5", tmpdir)
+
+        # Mock registry with session on DIFFERENT project
+        test_registry = Path(tmpdir) / "test-sessions.json"
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            current_pid = os.getpid()
+            with open(test_registry, 'w') as f:
+                json.dump({
+                    "sessions": {
+                        "other-ses": {
+                            "pid": current_pid,
+                            "ppid": current_pid,
+                            "project_dir": "/some/other/project",  # Different project!
+                            "branch": "main",
+                            "started_at": int(time.time()),
+                            "last_active": int(time.time())
+                        }
+                    }
+                }, f)
+
+            context = {
+                'project_dir': tmpdir,  # Different from session in registry
+                'branch': 'master',
+                'session_id': 'test-session-5',
+                'tool_name': 'Edit'
+            }
+
+            # Should allow because other session is on different project
+            result = strategy.check("single_session_per_project", config, reqs, context)
+            runner.test("Allows when other session on different project", result is None,
+                       f"Expected None (filtered by project), got: {result}")
+        finally:
+            session.get_registry_path = original_get_registry_path
+
+
 def test_remove_session_from_registry(runner: TestRunner):
     """Test remove_session_from_registry function."""
     print("\n📦 Testing remove_session_from_registry...")
@@ -6127,6 +6509,13 @@ def main():
     test_guard_strategy_unknown_guard_type_allows(runner)
     test_guard_hook_integration(runner)
     test_guard_status_display_context_aware(runner)
+
+    # Single session guard tests
+    test_single_session_guard_allows_when_alone(runner)
+    test_single_session_guard_blocks_with_other_session(runner)
+    test_single_session_guard_approval_bypasses(runner)
+    test_single_session_guard_excludes_current_session(runner)
+    test_single_session_guard_filters_by_project(runner)
 
     # Colors module tests
     test_colors_module(runner)
