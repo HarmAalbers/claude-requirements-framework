@@ -74,21 +74,50 @@ get_skill_md_files() {
     fi
 }
 
+# Get all files recursively from a directory with prefix
+get_all_files_recursive() {
+    local dir="$1"
+    local base_dir="$2"
+    if [ -d "$dir" ]; then
+        find "$dir" -type f 2>/dev/null | while read -r f; do
+            echo "${f#$base_dir/}"
+        done
+    fi
+}
+
+# Directories to skip in deployed plugin (marketplace cache, etc.)
+is_deploy_only_dir() {
+    local dirname="$1"
+    case "$dirname" in
+        marketplaces) return 0 ;;  # Marketplace cache
+        *) return 1 ;;
+    esac
+}
+
 # Get all plugin files to sync (union of repo and deployed)
 get_all_plugin_files() {
     {
-        # Agents
-        get_plugin_md_files "$PLUGIN_REPO_DIR/agents" "agents/"
-        get_plugin_md_files "$PLUGIN_DEPLOY_DIR/agents" "agents/"
-        # Commands
-        get_plugin_md_files "$PLUGIN_REPO_DIR/commands" "commands/"
-        get_plugin_md_files "$PLUGIN_DEPLOY_DIR/commands" "commands/"
-        # Skills (recursive)
-        get_skill_md_files "$PLUGIN_REPO_DIR/skills" "$PLUGIN_REPO_DIR"
-        get_skill_md_files "$PLUGIN_DEPLOY_DIR/skills" "$PLUGIN_DEPLOY_DIR"
-        # Root README
+        # All subdirectories from repo (agents, commands, skills, mcps, etc.)
+        for subdir in "$PLUGIN_REPO_DIR"/*/; do
+            [ -d "$subdir" ] || continue
+            local dirname=$(basename "$subdir")
+            [[ "$dirname" == .* ]] && continue
+            get_all_files_recursive "$subdir" "$PLUGIN_REPO_DIR"
+        done
+        # All subdirectories from deployed (only if also in repo)
+        for subdir in "$PLUGIN_DEPLOY_DIR"/*/; do
+            [ -d "$subdir" ] || continue
+            local dirname=$(basename "$subdir")
+            [[ "$dirname" == .* ]] && continue
+            # Skip deploy-only directories (marketplaces, etc.)
+            is_deploy_only_dir "$dirname" && continue
+            get_all_files_recursive "$subdir" "$PLUGIN_DEPLOY_DIR"
+        done
+        # Root files
         [ -f "$PLUGIN_REPO_DIR/README.md" ] && echo "README.md"
         [ -f "$PLUGIN_DEPLOY_DIR/README.md" ] && echo "README.md"
+        [ -f "$PLUGIN_REPO_DIR/.mcp.json" ] && echo ".mcp.json"
+        [ -f "$PLUGIN_DEPLOY_DIR/.mcp.json" ] && echo ".mcp.json"
         # Plugin metadata
         [ -f "$PLUGIN_REPO_DIR/.claude-plugin/plugin.json" ] && echo ".claude-plugin/plugin.json"
         [ -f "$PLUGIN_DEPLOY_DIR/.claude-plugin/plugin.json" ] && echo ".claude-plugin/plugin.json"
@@ -169,6 +198,31 @@ show_status() {
             fi
         fi
     done < <(get_all_plugin_files)
+
+    # File count summary
+    echo -e "${BLUE}Summary (repo → deployed):${NC}"
+
+    # Hooks
+    local repo_hooks=$(find "$REPO_DIR/hooks" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    local deploy_hooks=$(find "$DEPLOY_DIR" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    local repo_lib=$(find "$REPO_DIR/hooks/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    local deploy_lib=$(find "$DEPLOY_DIR/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    printf "  %-12s %s → %s\n" "Hooks:" "$repo_hooks" "$deploy_hooks"
+    printf "  %-12s %s → %s\n" "Lib:" "$repo_lib" "$deploy_lib"
+
+    # Plugin components (dynamic)
+    for subdir in "$PLUGIN_REPO_DIR"/*/; do
+        [ -d "$subdir" ] || continue
+        local dirname=$(basename "$subdir")
+        [[ "$dirname" == .* ]] && continue
+        local repo_count=$(find "$subdir" -type f 2>/dev/null | wc -l | tr -d ' ')
+        local deploy_count=$(find "$PLUGIN_DEPLOY_DIR/$dirname" -type f 2>/dev/null | wc -l | tr -d ' ')
+        # Capitalize first letter for display
+        local first_char=$(echo "$dirname" | cut -c1 | tr '[:lower:]' '[:upper:]')
+        local rest=$(echo "$dirname" | cut -c2-)
+        local display_name="${first_char}${rest}:"
+        printf "  %-12s %s → %s\n" "$display_name" "$repo_count" "$deploy_count"
+    done
 
     echo ""
     if [ "$has_hook_issues" = false ] && [ "$has_plugin_issues" = false ]; then
@@ -288,39 +342,39 @@ deploy_plugin() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # Create plugin directories if they don't exist
-    mkdir -p "$PLUGIN_DEPLOY_DIR/agents"
-    mkdir -p "$PLUGIN_DEPLOY_DIR/commands"
-    mkdir -p "$PLUGIN_DEPLOY_DIR/skills"
-    mkdir -p "$PLUGIN_DEPLOY_DIR/.claude-plugin"
+    # Create base plugin directory
+    mkdir -p "$PLUGIN_DEPLOY_DIR"
 
-    # Copy agents
-    echo "Copying agent files..."
-    for f in "$PLUGIN_REPO_DIR/agents/"*.md; do
-        [ -f "$f" ] && cp -v "$f" "$PLUGIN_DEPLOY_DIR/agents/"
+    # Sync all subdirectories in plugin/ (agents, commands, skills, mcps, etc.)
+    # This is generic - adding new component types doesn't require script changes
+    for dir in "$PLUGIN_REPO_DIR"/*/; do
+        [ -d "$dir" ] || continue
+        local dirname=$(basename "$dir")
+
+        # Skip hidden directories (handled separately)
+        [[ "$dirname" == .* ]] && continue
+
+        echo "Copying $dirname..."
+        # Remove old and copy fresh to avoid orphaned files
+        rm -rf "$PLUGIN_DEPLOY_DIR/$dirname"
+        # Use dirname without trailing slash to copy the directory itself
+        cp -r "${dir%/}" "$PLUGIN_DEPLOY_DIR/"
+        local count=$(find "$PLUGIN_DEPLOY_DIR/$dirname" -type f 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Copied $count file(s)"
+        echo ""
     done
 
-    # Copy commands
-    echo ""
-    echo "Copying command files..."
-    for f in "$PLUGIN_REPO_DIR/commands/"*.md; do
-        [ -f "$f" ] && cp -v "$f" "$PLUGIN_DEPLOY_DIR/commands/"
-    done
-
-    # Copy skills (recursively - skills have subdirectories with references)
-    echo ""
-    echo "Copying skill files..."
-    if [ -d "$PLUGIN_REPO_DIR/skills" ]; then
-        # Remove old skills and copy fresh to avoid orphaned files
-        rm -rf "$PLUGIN_DEPLOY_DIR/skills"
-        cp -r "$PLUGIN_REPO_DIR/skills" "$PLUGIN_DEPLOY_DIR/"
-        echo "  Copied skills directory (recursive)"
-    fi
-
-    # Copy plugin metadata
-    echo ""
+    # Copy plugin metadata (.claude-plugin/)
     echo "Copying plugin metadata..."
+    mkdir -p "$PLUGIN_DEPLOY_DIR/.claude-plugin"
     cp -v "$PLUGIN_REPO_DIR/.claude-plugin/plugin.json" "$PLUGIN_DEPLOY_DIR/.claude-plugin/"
+
+    # Copy .mcp.json if it exists
+    if [ -f "$PLUGIN_REPO_DIR/.mcp.json" ]; then
+        echo ""
+        echo "Copying MCP configuration..."
+        cp -v "$PLUGIN_REPO_DIR/.mcp.json" "$PLUGIN_DEPLOY_DIR/"
+    fi
 
     # Copy README
     cp -v "$PLUGIN_REPO_DIR/README.md" "$PLUGIN_DEPLOY_DIR/"
