@@ -31,7 +31,7 @@ Environment:
 Design:
     - FAIL OPEN on any error (log but don't block)
     - Skip if no project config exists
-    - Register session in registry on every invocation (for CLI discovery)
+    - Register session in registry when project context exists (for CLI discovery)
 """
 import os
 import sys
@@ -43,7 +43,7 @@ sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
 from config import matches_trigger
-from session import update_registry, get_active_sessions, normalize_session_id
+from session import update_registry, normalize_session_id
 from strategy_registry import STRATEGIES
 from logger import get_logger
 from hook_utils import early_hook_setup, parse_hook_input, extract_file_path
@@ -94,6 +94,8 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
     """
     Create batched denial message for all unsatisfied requirements.
 
+    Uses directive-first format optimized for autonomous resolution.
+
     Args:
         unsatisfied: List of tuples (req_name, req_config)
         session_id: Current session ID
@@ -105,43 +107,67 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
     """
     req_names = [r[0] for r in unsatisfied]
 
-    lines = ["**Unsatisfied Requirements**", ""]
-    lines.append("The following requirements must be satisfied before making changes:")
-    lines.append("")
+    # Group requirements by their auto_resolve_skill
+    skill_groups: dict[str, list[str]] = {}
+    no_skill_reqs: list[tuple[str, dict]] = []
 
     for req_name, req_config in unsatisfied:
-        scope = req_config.get('scope', 'session')
-        message = req_config.get('message', f'"{req_name}" not satisfied.')
-        lines.append(f"- **{req_name}** ({scope} scope)")
-        lines.append(f"  {message}")
+        auto_skill = req_config.get('auto_resolve_skill', '')
+        if auto_skill:
+            if auto_skill not in skill_groups:
+                skill_groups[auto_skill] = []
+            skill_groups[auto_skill].append(req_name)
+        else:
+            no_skill_reqs.append((req_name, req_config))
 
-        # Add checklist if present
-        checklist = req_config.get('checklist', [])
-        if checklist:
-            lines.append("  **Checklist**:")
-            for i, item in enumerate(checklist, 1):
-                lines.append(f"  ⬜ {i}. {item}")
+    lines = []
+
+    if len(unsatisfied) == 1:
+        # Single requirement - use direct format
+        req_name, req_config = unsatisfied[0]
+        auto_skill = req_config.get('auto_resolve_skill', '')
+        message = req_config.get('message', '')
+
+        if message:
+            # Use the configured message (which should be directive-first)
+            lines.append(message.strip())
+        else:
+            # Fallback format
+            lines.append(f"## Blocked: {req_name}")
+            lines.append("")
+            if auto_skill:
+                lines.append(f"**Execute**: `/{auto_skill}`")
+            else:
+                lines.append(f"**Action**: `req satisfy {req_name} --session {session_id}`")
+    else:
+        # Multiple requirements - use tabular format
+        lines.append("## Blocked: Multiple Requirements")
         lines.append("")
 
-    # Add session context
-    lines.append(f"**Current session**: `{session_id}`")
+        # If all requirements can be resolved by the same skill, highlight that
+        if len(skill_groups) == 1 and not no_skill_reqs:
+            skill = list(skill_groups.keys())[0]
+            reqs = skill_groups[skill]
+            lines.append(f"**Execute**: `/{skill}`")
+            lines.append("")
+            lines.append(f"Satisfies: {', '.join(reqs)}")
+        else:
+            # Show table of requirements and their resolutions
+            lines.append("| Requirement | Execute |")
+            lines.append("|-------------|---------|")
 
-    active_sessions = get_active_sessions(project_dir=project_dir, branch=branch)
-    if len(active_sessions) > 1:
-        lines.append("")
-        lines.append("**Other active sessions**:")
-        for sess in active_sessions:
-            if sess['id'] != session_id:
-                lines.append(f"  • `{sess['id']}` [PID {sess['pid']}]")
+            for skill, reqs in skill_groups.items():
+                for req_name in reqs:
+                    lines.append(f"| {req_name} | `/{skill}` |")
 
+            for req_name, req_config in no_skill_reqs:
+                lines.append(f"| {req_name} | `req satisfy {req_name}` |")
+
+    # Add fallback command
     lines.append("")
-
-    # Single command to satisfy all
+    lines.append("---")
     req_list = ' '.join(req_names)
-    lines.append("💡 **To satisfy all requirements at once**:")
-    lines.append("```bash")
-    lines.append(f"req satisfy {req_list} --session {session_id}")
-    lines.append("```")
+    lines.append(f"Fallback: `req satisfy {req_list} --session {session_id}`")
 
     return {
         "hookSpecificOutput": {

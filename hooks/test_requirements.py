@@ -2112,10 +2112,13 @@ def test_checklist_rendering(runner: TestRunner):
         except (json.JSONDecodeError, KeyError):
             message = result.stdout
 
-        runner.test("Output contains checklist header", "**Checklist**:" in message, f"Message: {message}")
-        runner.test("Output contains item 1", "⬜ 1. Item 1" in message, f"Message: {message}")
-        runner.test("Output contains item 2", "⬜ 2. Item 2" in message, f"Message: {message}")
-        runner.test("Output contains item 3", "⬜ 3. Item 3" in message, f"Message: {message}")
+        # New directive-first format: message is used as-is, checklists are for documentation only
+        # The message should contain the custom message text and fallback command
+        runner.test("Output contains configured message", "Need plan!" in message, f"Message: {message}")
+        runner.test("Output contains fallback command", "req satisfy" in message, f"Message: {message}")
+        # Session ID gets normalized to 8 chars, so "checklist1" becomes "checklis"
+        runner.test("Output contains session id", "checklis" in message, f"Message: {message}")
+        runner.test("Output is directive format (contains Blocked or message)", "Blocked" in message or "Need plan!" in message, f"Message: {message}")
 
         # Test with empty checklist
         config_empty = {
@@ -4019,7 +4022,7 @@ def test_remove_session_from_registry(runner: TestRunner):
 
     # Import will fail until implemented
     try:
-        from session import remove_session_from_registry, update_registry, get_registry_path
+        from session import remove_session_from_registry, update_registry
     except ImportError:
         runner.test("remove_session_from_registry exists", False, "Function not implemented yet")
         return
@@ -4229,7 +4232,7 @@ def test_progress_module(runner: TestRunner):
         first_result = progress_enabled()
         os.environ['SHOW_PROGRESS'] = '0'  # Change env
         second_result = progress_enabled()  # Should use cached value
-        runner.test("progress_enabled caches result", first_result == second_result == True)
+        runner.test("progress_enabled caches result", first_result is True and second_result is True)
         os.environ.pop('SHOW_PROGRESS', None)
 
         # Test 6: reset_progress_cache clears cache
@@ -4312,7 +4315,6 @@ def test_progress_module(runner: TestRunner):
         runner.test("progress_context debug collects steps", len(p._steps) == 2)
 
         # Test 15: progress_context min_duration logic (fast operation)
-        start = time.time()
         with progress_context("Fast", min_duration=1.0) as p:
             pass  # Instant
         # Should have cleared without finishing (no visible output)
@@ -5630,6 +5632,158 @@ def test_satisfied_by_skill_field(runner: TestRunner):
                    config.get_attribute('commit_plan', 'satisfied_by_skill') is None)
 
 
+def test_auto_resolve_skill_field(runner: TestRunner):
+    """Test auto_resolve_skill configuration field."""
+    print("\n🎯 Testing auto_resolve_skill field...")
+
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True)
+        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmpdir, capture_output=True)
+        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmpdir, capture_output=True)
+
+        # Create .claude directory
+        os.makedirs(f"{tmpdir}/.claude")
+
+        # Test 1: Valid auto_resolve_skill field
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'code_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'single_use',
+                    'trigger_tools': ['Edit'],
+                    'auto_resolve_skill': 'requirements-framework:pre-commit',
+                    'message': 'Test message'
+                }
+            }
+        }
+
+        config_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
+        with open(config_file, 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        runner.test("Config loads with valid auto_resolve_skill",
+                   config.get_attribute('code_review', 'auto_resolve_skill') == 'requirements-framework:pre-commit')
+        runner.test("No validation errors for valid auto_resolve_skill", len(config.get_validation_errors()) == 0)
+
+        # Test 2: Invalid auto_resolve_skill (non-string)
+        invalid_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'code_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'auto_resolve_skill': 123,  # Should be string
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(invalid_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid auto_resolve_skill (non-string) rejected",
+                   any('must be str' in e or 'must be a string' in e for e in errors))
+
+        # Test 3: Invalid auto_resolve_skill (empty string)
+        empty_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'code_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'auto_resolve_skill': '',  # Empty string
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(empty_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid auto_resolve_skill (empty string) rejected",
+                   any('cannot be empty' in e for e in errors))
+
+        # Test 4: Invalid auto_resolve_skill (whitespace only)
+        whitespace_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'code_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'auto_resolve_skill': '   ',  # Whitespace only
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(whitespace_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        errors = config.get_validation_errors()
+        runner.test("Invalid auto_resolve_skill (whitespace only) rejected",
+                   any('cannot be empty' in e for e in errors))
+
+        # Test 5: Requirement without auto_resolve_skill is valid
+        no_skill_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(no_skill_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        runner.test("Requirement without auto_resolve_skill is valid",
+                   len(config.get_validation_errors()) == 0)
+        runner.test("auto_resolve_skill returns None when not set",
+                   config.get_attribute('commit_plan', 'auto_resolve_skill') is None)
+
+        # Test 6: Both auto_resolve_skill and satisfied_by_skill can coexist
+        both_skills_config = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'pre_commit_review': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'single_use',
+                    'auto_resolve_skill': 'requirements-framework:pre-commit',
+                    'satisfied_by_skill': 'requirements-framework:pre-commit',
+                }
+            }
+        }
+
+        with open(config_file, 'w') as f:
+            json.dump(both_skills_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        runner.test("Both auto_resolve_skill and satisfied_by_skill coexist",
+                   len(config.get_validation_errors()) == 0)
+        runner.test("auto_resolve_skill accessible",
+                   config.get_attribute('pre_commit_review', 'auto_resolve_skill') == 'requirements-framework:pre-commit')
+        runner.test("satisfied_by_skill accessible",
+                   config.get_attribute('pre_commit_review', 'satisfied_by_skill') == 'requirements-framework:pre-commit')
+
+
 def test_edge_cases(runner: TestRunner):
     """Test edge cases: concurrent access, permissions, Windows compatibility."""
     print("\n📦 Testing edge cases...")
@@ -6561,6 +6715,9 @@ def main():
 
     # Satisfied by skill field tests
     test_satisfied_by_skill_field(runner)
+
+    # Auto resolve skill field tests
+    test_auto_resolve_skill_field(runner)
 
     # Hook utils module tests
     test_early_hook_setup(runner)

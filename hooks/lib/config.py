@@ -81,6 +81,7 @@ class RequirementConfigBase(TypedDict, total=False):
     message: str
     short_message: str  # Brief message for deduplication scenarios
     satisfied_by_skill: str
+    auto_resolve_skill: str  # Skill command for autonomous resolution
 
 
 class BlockingRequirementConfig(RequirementConfigBase, total=False):
@@ -133,6 +134,7 @@ class RequirementConfigDict(TypedDict, total=False):
     short_message: str  # Brief message for deduplication scenarios
     type: RequirementType
     satisfied_by_skill: str
+    auto_resolve_skill: str  # Skill command for autonomous resolution
     calculator: str
     thresholds: dict[str, float]
     guard_type: str
@@ -492,6 +494,9 @@ class RequirementValidator:
         # Validate satisfied_by_skill if present (applies to all types)
         self._validate_satisfied_by_skill(req_name, req_config)
 
+        # Validate auto_resolve_skill if present (applies to all types)
+        self._validate_auto_resolve_skill(req_name, req_config)
+
         self._validate_requirement_type(req_name, req_config, req_type)
 
     def _validate_requirement_type(
@@ -628,6 +633,21 @@ class RequirementValidator:
         if not skill_name.strip():
             raise ValueError(f"Requirement '{req_name}' field 'satisfied_by_skill' cannot be empty")
 
+    def _validate_auto_resolve_skill(
+        self, req_name: str, req_config: Mapping[str, Any]
+    ) -> None:
+        """Validate auto_resolve_skill if present."""
+        if "auto_resolve_skill" not in req_config:
+            return
+
+        skill_name = req_config["auto_resolve_skill"]
+        if not isinstance(skill_name, str):
+            raise ValueError(
+                f"Requirement '{req_name}' field 'auto_resolve_skill' must be a string"
+            )
+        if not skill_name.strip():
+            raise ValueError(f"Requirement '{req_name}' field 'auto_resolve_skill' cannot be empty")
+
     def _validate_blocking_fields(
         self, req_name: str, req_config: Mapping[str, Any]
     ) -> None:
@@ -711,6 +731,7 @@ class RequirementsConfig:
         "message": RequirementFieldRule(str),
         "type": RequirementFieldRule(str, allowed={"blocking", "dynamic", "guard"}),
         "satisfied_by_skill": RequirementFieldRule(str),
+        "auto_resolve_skill": RequirementFieldRule(str),  # Skill for autonomous resolution
     }
     DEFAULT_TRIGGER_TOOLS: tuple[str, ...] = ("Edit", "Write", "MultiEdit")
     DEFAULT_VERSION: str = "1.0"

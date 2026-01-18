@@ -18,9 +18,10 @@ try:
     from requirements import BranchRequirements
     from config import RequirementsConfig
     from strategy_utils import create_denial_response
-except ImportError:
-    # For testing, allow imports to fail gracefully
-    pass
+except ImportError as e:
+    # For testing, allow imports to fail gracefully but log warning
+    import sys
+    sys.stderr.write(f"[WARNING] blocking_strategy import failed: {e}\n")
 
 
 class BlockingRequirementStrategy(RequirementStrategy):
@@ -53,7 +54,7 @@ class BlockingRequirementStrategy(RequirementStrategy):
     def _create_denial_response(self, req_name: str, config: RequirementsConfig,
                                 context: dict) -> dict:
         """
-        Create denial response with formatted message.
+        Create denial response with directive-first message format.
 
         Args:
             req_name: Requirement name
@@ -64,35 +65,32 @@ class BlockingRequirementStrategy(RequirementStrategy):
             Hook response dict
         """
         # Get requirement config using type-safe accessor
-        # For blocking requirements, use get_blocking_config() for type safety
-        # Falls back to get_requirement() if type-specific accessor fails
         try:
             req_config = config.get_blocking_config(req_name)
             if not req_config:
-                # Requirement not found - use generic accessor as fallback
                 req_config = config.get_requirement(req_name)
         except ValueError:
-            # Not a blocking type - use generic accessor as fallback
             req_config = config.get_requirement(req_name)
 
-        message = req_config.get('message', f'Requirement "{req_name}" not satisfied.')
+        session_id = context.get('session_id', 'unknown')
 
-        # Add checklist if present
-        checklist = req_config.get('checklist', [])
-        if checklist:
-            message += "\n\n**Checklist**:"
-            for i, item in enumerate(checklist, 1):
-                message += f"\n⬜ {i}. {item}"
+        # Use configured message if present (should be directive-first format)
+        message = req_config.get('message', '')
 
-        # Add session context
-        session_id = context['session_id']
-        message += f"\n\n**Current session**: `{session_id}`"
+        if not message:
+            # Generate directive-first fallback message
+            auto_skill = req_config.get('auto_resolve_skill', '')
+            lines = [f"## Blocked: {req_name}", ""]
 
-        # Add helper hint
-        message += f"\n\n💡 **To satisfy from terminal**:"
-        message += f"\n```bash"
-        message += f"\nreq satisfy {req_name} --session {session_id}"
-        message += f"\n```"
+            if auto_skill:
+                lines.append(f"**Execute**: `/{auto_skill}`")
+            else:
+                lines.append(f"**Action**: `req satisfy {req_name} --session {session_id}`")
+
+            lines.append("")
+            lines.append("---")
+            lines.append(f"Fallback: `req satisfy {req_name} --session {session_id}`")
+            message = "\n".join(lines)
 
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:

@@ -42,8 +42,14 @@ def main() -> int:
         stdin_content = sys.stdin.read()
         if stdin_content:
             input_data = json.loads(stdin_content)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        # Log parse error but fail open
+        logger = get_logger(base_context={"hook": "PlanExit"})
+        logger.error(
+            "Failed to parse hook input JSON",
+            error=str(e),
+            stdin_preview=stdin_content[:200] if stdin_content else "empty"
+        )
 
     # Only run this hook for ExitPlanMode tool
     tool_name = input_data.get('tool_name')
@@ -113,34 +119,37 @@ def main() -> int:
         if not unsatisfied:
             return 0  # All satisfied, nothing to show
 
-        # Format proactive message
+        # Format directive message
         req_names = [r[0] for r in unsatisfied]
-        lines = [
-            "📋 **Requirements Check** (Plan Mode Exited)",
-            "",
-            "Before proceeding with implementation, these requirements need to be satisfied:",
-            ""
-        ]
 
-        for req_name, req_config in unsatisfied:
-            scope = req_config.get('scope', 'session')
-            message = req_config.get('message', '')
-            lines.append(f"- **{req_name}** ({scope} scope)")
-            if message:
-                lines.append(f"  {message}")
+        # Check if all unsatisfied requirements can be resolved by plan-review
+        all_plan_review = all(
+            req_config.get('auto_resolve_skill', '') == 'requirements-framework:plan-review'
+            for _, req_config in unsatisfied
+        )
+
+        lines = ["## Plan Validation Required", ""]
+
+        if all_plan_review:
+            # Simple directive when plan-review resolves all
+            lines.append("**Execute**: `/requirements-framework:plan-review`")
+            lines.append("")
+            lines.append(f"Satisfies: {', '.join(req_names)}")
+        else:
+            # Show table for mixed requirements
+            lines.append("| Requirement | Execute |")
+            lines.append("|-------------|---------|")
+
+            for req_name, req_config in unsatisfied:
+                auto_skill = req_config.get('auto_resolve_skill', '')
+                if auto_skill:
+                    lines.append(f"| {req_name} | `/{auto_skill}` |")
+                else:
+                    lines.append(f"| {req_name} | `req satisfy {req_name}` |")
 
         lines.append("")
-        lines.append(f"**Session**: `{session_id}`")
-        lines.append("")
-        lines.append("💡 **Recommended**: Run `/requirements-framework:plan-review` to:")
-        lines.append("   - Validate plan against ADRs (auto-fixes violations)")
-        lines.append("   - Create atomic commit strategy (appends to plan)")
-        lines.append("   - Auto-satisfy both requirements")
-        lines.append("")
-        lines.append("Or satisfy manually:")
-        lines.append("```bash")
-        lines.append(f"req satisfy {' '.join(req_names)} --session {session_id}")
-        lines.append("```")
+        lines.append("---")
+        lines.append(f"Fallback: `req satisfy {' '.join(req_names)} --session {session_id}`")
 
         # PostToolUse output goes to Claude's context
         emit_text("\n".join(lines))

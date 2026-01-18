@@ -21,9 +21,10 @@ try:
     from requirements import BranchRequirements
     from config import RequirementsConfig
     from strategy_utils import create_denial_response
-except ImportError:
-    # For testing, allow imports to fail gracefully
-    pass
+except ImportError as e:
+    # For testing, allow imports to fail gracefully but log warning
+    import sys
+    sys.stderr.write(f"[WARNING] guard_strategy import failed: {e}\n")
 
 
 class GuardRequirementStrategy(RequirementStrategy):
@@ -71,7 +72,9 @@ class GuardRequirementStrategy(RequirementStrategy):
         elif guard_type == 'single_session':
             return self._check_single_session(req_name, config, context)
 
-        # Unknown guard type - fail open
+        # Unknown guard type - fail open but log warning
+        from strategy_utils import log_warning
+        log_warning(f"Guard requirement '{req_name}' has unknown guard_type '{guard_type}' - skipped")
         return None
 
     def _check_protected_branch(self, req_name: str, config: RequirementsConfig,
@@ -116,6 +119,8 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         Create denial response for protected branch violation.
 
+        Uses directive-first format for autonomous resolution.
+
         Args:
             req_name: Requirement name
             config: Configuration
@@ -125,35 +130,36 @@ class GuardRequirementStrategy(RequirementStrategy):
         Returns:
             Hook response dict with denial
         """
-        # Get custom message or use default
+        session_id = context.get('session_id', 'unknown')
+
+        # Get custom message (should be directive-first format)
         custom_message = config.get_attribute(req_name, 'message', None)
 
         if custom_message:
-            message = custom_message
+            # Use configured message as-is (directive-first format)
+            # Substitute {branch} placeholder if present
+            message = custom_message.replace('{branch}', branch)
         else:
-            message = f"🚫 **Cannot edit files on protected branch '{branch}'**\n\n"
-            message += "Direct edits on protected branches are not allowed.\n\n"
-            message += "**Options:**\n"
-            message += "1. Create a feature branch first:\n"
-            message += f"   `git checkout -b feature/your-feature-name`\n\n"
-            message += "2. Override for emergency hotfix (current session only):\n"
-            message += f"   `req approve {req_name}`"
-
-        # Add session context
-        session_id = context.get('session_id', 'unknown')
-        message += f"\n\n**Current session**: `{session_id}`"
-        message += f"\n**Branch**: `{branch}`"
+            # Directive-first fallback
+            lines = [
+                f"## Blocked: {req_name}",
+                "",
+                f"Cannot edit files on protected branch `{branch}`.",
+                "",
+                "**Actions**:",
+                "1. Create feature branch: `git checkout -b feature/your-feature-name`",
+                f"2. Emergency override: `req approve {req_name}`",
+            ]
+            message = "\n".join(lines)
 
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:
             cache_key = f"{context.get('project_dir', '')}:{branch}:{session_id}:{req_name}"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                # Suppress verbose message - show minimal indicator instead
-                minimal_message = f"⏸️ Guard requirement `{req_name}` not satisfied (waiting...)"
+                minimal_message = f"⏸️ Guard `{req_name}` blocked (waiting...)"
                 return create_denial_response(minimal_message)
 
-        # Show full message (first time or after TTL expiration)
         return create_denial_response(message)
 
     def _check_single_session(self, req_name: str, config: RequirementsConfig,
@@ -202,6 +208,8 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         Create denial response for single session violation.
 
+        Uses directive-first format for autonomous resolution.
+
         Args:
             req_name: Requirement name
             config: Configuration
@@ -211,25 +219,32 @@ class GuardRequirementStrategy(RequirementStrategy):
         Returns:
             Hook response dict with denial
         """
-        import time
+        session_id = context.get('session_id', 'unknown')
+        project_dir = context.get('project_dir', 'unknown')
 
-        # Get custom message or build default
+        # Get custom message (should be directive-first format)
         custom_message = config.get_attribute(req_name, 'message', None)
 
         if custom_message:
+            # Use configured message as-is
             message = custom_message
         else:
-            message = "🚫 **Another Claude Code session is active on this project**\n\n"
-            message += "To prevent conflicting changes, only one session can edit files at a time.\n\n"
-            message += "**Active sessions:**\n"
+            # Directive-first fallback with session info
+            import time
+
+            lines = [
+                f"## Blocked: {req_name}",
+                "",
+                "Another Claude Code session is active on this project.",
+                "",
+                "**Active sessions**:",
+            ]
 
             for sess in other_sessions:
                 sess_id = sess.get('id', 'unknown')
                 branch = sess.get('branch', 'unknown')
-                ppid = sess.get('ppid', 'unknown')
                 last_active = sess.get('last_active', 0)
 
-                # Format last active time
                 if last_active:
                     elapsed = int(time.time()) - last_active
                     if elapsed < 60:
@@ -241,27 +256,23 @@ class GuardRequirementStrategy(RequirementStrategy):
                 else:
                     time_str = "unknown"
 
-                message += f"- `{sess_id}` on `{branch}` (PID {ppid}, active {time_str})\n"
+                lines.append(f"- `{sess_id}` on `{branch}` ({time_str})")
 
-            message += "\n**Options:**\n"
-            message += "1. Wait for the other session to complete or close it\n"
-            message += "2. Close the other session manually\n"
-            message += f"3. Override for this session: `req approve {req_name}`\n"
-
-        # Add session context
-        session_id = context.get('session_id', 'unknown')
-        project_dir = context.get('project_dir', 'unknown')
-        message += f"\n\n**Current session**: `{session_id}`"
-        message += f"\n**Project**: `{project_dir}`"
+            lines.extend([
+                "",
+                "**Actions**:",
+                "1. Close the other session",
+                "2. Wait for completion",
+                f"3. Override: `req approve {req_name}`",
+            ])
+            message = "\n".join(lines)
 
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:
             cache_key = f"{project_dir}:{session_id}:{req_name}:single_session"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                # Suppress verbose message - show minimal indicator instead
-                minimal_message = f"⏸️ Guard requirement `{req_name}` not satisfied (waiting...)"
+                minimal_message = f"⏸️ Guard `{req_name}` blocked (waiting...)"
                 return create_denial_response(minimal_message)
 
-        # Show full message (first time or after TTL expiration)
         return create_denial_response(message)

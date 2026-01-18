@@ -40,7 +40,7 @@ from console import emit_text
 def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
                        session_id: str, branch: str) -> str:
     """
-    Format detailed requirement status with instructions.
+    Format detailed requirement status with rules for autonomous operation.
 
     Args:
         reqs: BranchRequirements manager
@@ -59,11 +59,21 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
         lines.append(custom_header.strip())
         lines.append("")
 
-    lines.append("📋 **Requirements Framework Status**")
+    # Rules preamble for autonomous operation
+    lines.append("## Requirements Framework: Active Rules")
+    lines.append("")
+    lines.append("**Mode**: Autonomous Resolution Enabled")
+    lines.append("")
+    lines.append("When a requirement blocks an operation, run the specified skill automatically.")
     lines.append("")
 
-    # List all enabled requirements with status
+    # Build tabular requirement status
+    lines.append("| Requirement | Status | Auto-Resolve |")
+    lines.append("|-------------|--------|--------------|")
+
     has_requirements = False
+    unsatisfied_reqs = []
+
     for req_name in config.get_all_requirements():
         if not config.is_requirement_enabled(req_name):
             continue
@@ -75,9 +85,6 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
 
         # Context-aware checking for guard requirements
         if req_type == 'guard':
-            # For guard requirements, evaluate the actual condition
-            # (e.g., "not on protected branch") rather than just checking
-            # if it was manually satisfied
             context = {
                 'branch': branch,
                 'session_id': session_id,
@@ -85,27 +92,44 @@ def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
             }
             satisfied = reqs.is_guard_satisfied(req_name, config, context)
         else:
-            # Regular satisfaction check for blocking/dynamic requirements
             satisfied = reqs.is_satisfied(req_name, scope)
 
         status = "✅" if satisfied else "⬜"
-        lines.append(f"  {status} **{req_name}** ({scope} scope)")
+
+        # Get auto-resolve skill or provide default action
+        auto_resolve = req_config.get('auto_resolve_skill', '')
+        if auto_resolve:
+            resolve_action = f"`/{auto_resolve}`"
+        elif req_type == 'guard':
+            # Guards have condition-specific actions
+            guard_config = config.get_guard_config(req_name)
+            if guard_config and guard_config.get('guard_type') == 'protected_branch':
+                resolve_action = "Create feature branch"
+            elif guard_config and guard_config.get('guard_type') == 'single_session':
+                resolve_action = "Close other session"
+            else:
+                resolve_action = f"`req approve {req_name}`"
+        elif req_type == 'dynamic':
+            resolve_action = f"`req approve {req_name}`"
+        else:
+            resolve_action = f"`req satisfy {req_name}`"
+
+        lines.append(f"| {req_name} | {status} | {resolve_action} |")
+
+        if not satisfied:
+            unsatisfied_reqs.append(req_name)
 
     if not has_requirements:
-        lines.append("  No requirements configured")
+        lines.append("| (none configured) | - | - |")
 
     lines.append("")
-    lines.append(f"**Project**: `{reqs.project_dir}`")
-    lines.append(f"**Branch**: `{branch}`")
+    lines.append(f"**Context**: `{branch}` @ `{reqs.project_dir}`")
     lines.append(f"**Session**: `{session_id}`")
-    lines.append("")
-    lines.append("⚠️  **Requirements state is PER-PROJECT**")
-    lines.append("Satisfying in one project won't affect another!")
-    lines.append("")
-    lines.append("💡 **Commands**:")
-    lines.append("  • `req status` - View detailed status")
-    lines.append("  • `req satisfy <name>` - Mark requirement satisfied")
-    lines.append("  • `req clear <name>` - Clear a requirement")
+
+    # Provide batch satisfy command if there are unsatisfied requirements
+    if unsatisfied_reqs:
+        lines.append("")
+        lines.append(f"**Fallback**: `req satisfy {' '.join(unsatisfied_reqs)} --session {session_id}`")
 
     return "\n".join(lines)
 
@@ -195,8 +219,14 @@ def main() -> int:
         stdin_content = sys.stdin.read()
         if stdin_content:
             input_data = json.loads(stdin_content)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        # Log parse error but fail open
+        logger = get_logger(base_context={"hook": "SessionStart"})
+        logger.error(
+            "Failed to parse hook input JSON",
+            error=str(e),
+            stdin_preview=stdin_content[:200] if stdin_content else "empty"
+        )
 
     # Get session ID from stdin (Claude Code always provides this)
     raw_session = input_data.get('session_id')

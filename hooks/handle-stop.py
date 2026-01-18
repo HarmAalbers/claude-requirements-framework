@@ -48,8 +48,14 @@ def main() -> int:
         stdin_content = sys.stdin.read()
         if stdin_content:
             input_data = json.loads(stdin_content)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        # Log parse error but fail open
+        logger = get_logger(base_context={"hook": "Stop"})
+        logger.error(
+            "Failed to parse hook input JSON",
+            error=str(e),
+            stdin_preview=stdin_content[:200] if stdin_content else "empty"
+        )
 
     # CRITICAL: Prevent infinite loops
     # If stop_hook_active is True, Claude already continued once due to this hook
@@ -136,15 +142,43 @@ def main() -> int:
         if unsatisfied:
             logger.info("Blocking stop - requirements unsatisfied", requirements=unsatisfied)
 
-            # Format helpful message
-            req_list = ', '.join(unsatisfied)
+            # Build resolution-guided message
+            lines = ["## Cannot Complete: Unsatisfied Requirements", ""]
+
+            # Group by auto_resolve_skill
+            skill_groups: dict[str, list[str]] = {}
+            no_skill_reqs: list[str] = []
+
+            for req_name in unsatisfied:
+                req_config = config.get_requirement(req_name)
+                auto_skill = req_config.get('auto_resolve_skill', '') if req_config else ''
+                if auto_skill:
+                    if auto_skill not in skill_groups:
+                        skill_groups[auto_skill] = []
+                    skill_groups[auto_skill].append(req_name)
+                else:
+                    no_skill_reqs.append(req_name)
+
+            # Show tabular resolution guide
+            lines.append("| Requirement | Execute |")
+            lines.append("|-------------|---------|")
+
+            for skill, reqs in skill_groups.items():
+                for req_name in reqs:
+                    lines.append(f"| {req_name} | `/{skill}` |")
+
+            for req_name in no_skill_reqs:
+                lines.append(f"| {req_name} | `req satisfy {req_name}` |")
+
+            lines.append("")
+            lines.append("Run the resolution skills above to satisfy requirements.")
+            lines.append("")
+            lines.append("---")
+            lines.append(f"Fallback: `req satisfy {' '.join(unsatisfied)} --session {session_id}`")
+
             response = {
                 "decision": "block",
-                "reason": (
-                    f"⚠️ **Requirements not satisfied**: {req_list}\n\n"
-                    "Please satisfy these requirements before finishing, or use "
-                    "`req satisfy <name>` to mark them complete."
-                )
+                "reason": "\n".join(lines)
             }
             emit_json(response)
         else:
