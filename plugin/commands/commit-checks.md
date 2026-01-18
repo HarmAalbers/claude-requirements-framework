@@ -3,7 +3,7 @@ name: commit-checks
 description: "Quality checks before committing - runs 6 specialized agents"
 argument-hint: "[--skip-autofix]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: uncommitted
+git_hash: 7d4da24
 ---
 
 # Pre-Commit Quality Checks

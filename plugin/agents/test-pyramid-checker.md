@@ -3,7 +3,7 @@ name: test-pyramid-checker
 description: Use this agent to analyze test distribution across the test pyramid (unit, integration, e2e). Checks for inverted pyramids where slow tests outnumber fast tests. Reports analysis but does not auto-fix.
 model: haiku
 color: green
-git_hash: uncommitted
+git_hash: 7d4da24
 allowed-tools: ["Read", "Glob", "Grep", "Bash"]
 ---
 

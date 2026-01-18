@@ -3,7 +3,7 @@ name: exception-auditor
 description: Use this agent to detect bare exception handling in staged files. Flags `except:` without exception type and overly broad `except Exception:` catches. Reports issues but does not auto-fix (requires developer judgment).
 model: haiku
 color: orange
-git_hash: uncommitted
+git_hash: 7d4da24
 allowed-tools: ["Read", "Glob", "Grep", "Bash"]
 ---
 

@@ -21,7 +21,7 @@ assistant: "I'll use the test-analyzer agent to review test coverage quality."
 </example>
 model: inherit
 color: blue
-git_hash: 2b32a20
+git_hash: 7953a43
 ---
 
 You are an expert test coverage analyst specializing in code review. Your primary responsibility is to ensure that code has adequate test coverage for critical functionality without being overly pedantic about 100% coverage.

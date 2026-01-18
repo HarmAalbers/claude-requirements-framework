@@ -3,7 +3,7 @@ name: solid-checker
 description: Use this agent to analyze code for SOLID principle violations. Checks Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. Uses sonnet model for deeper architectural analysis. Reports but does not auto-fix.
 model: sonnet
 color: purple
-git_hash: uncommitted
+git_hash: 7d4da24
 allowed-tools: ["Read", "Glob", "Grep"]
 ---
 

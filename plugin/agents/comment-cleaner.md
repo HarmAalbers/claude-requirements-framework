@@ -3,7 +3,7 @@ name: comment-cleaner
 description: Use this agent to automatically remove useless comments from staged files. Detects and removes comments that just repeat the code, TODOs without context, commented-out code blocks, and obvious docstrings. Auto-fixes issues by editing files directly.
 model: haiku
 color: yellow
-git_hash: uncommitted
+git_hash: 7d4da24
 allowed-tools: ["Read", "Edit", "Glob", "Grep", "Bash"]
 ---
 

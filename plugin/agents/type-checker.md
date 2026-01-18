@@ -3,7 +3,7 @@ name: type-checker
 description: Use this agent to check type coverage and strictness in staged Python files. Runs pyright with strict settings and reports missing annotations, implicit Any, and Optional issues. Reports but does not auto-fix.
 model: haiku
 color: blue
-git_hash: uncommitted
+git_hash: 7d4da24
 allowed-tools: ["Read", "Glob", "Grep", "Bash"]
 ---
 

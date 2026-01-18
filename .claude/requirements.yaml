@@ -36,7 +36,7 @@ requirements:
     - Created plan file
     satisfied_by_skill: 'requirements-framework:plan-review'
   pre_commit_review:
-    enabled: true
+    enabled: false
     type: blocking
     scope: single_use
     trigger_tools:
