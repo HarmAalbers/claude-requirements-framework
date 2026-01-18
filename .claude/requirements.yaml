@@ -1,4 +1,49 @@
-inherit: true
-requirements: {}
 version: '1.0'
 enabled: true
+requirements:
+  adr_reviewed:
+    enabled: true
+    type: blocking
+    scope: session
+    trigger_tools:
+    - Edit
+    - Write
+    - MultiEdit
+    message: "\U0001F4DA **ADR Review Checkpoint**\n\nHave you reviewed relevant Architecture\
+      \ Decision Records?\n\n**To satisfy**: `req satisfy adr_reviewed` after reviewing\
+      \ ADRs\n"
+    checklist:
+    - Found relevant ADRs
+    - Reviewed decision context
+    - Confirmed approach aligns with ADRs
+  commit_plan:
+    enabled: true
+    type: blocking
+    scope: session
+    trigger_tools:
+    - Edit
+    - Write
+    - MultiEdit
+    message: "\U0001F4CB **Commit Plan Required**\n\nBefore making code changes, create\
+      \ a brief plan documenting your approach.\n\n**To proceed**: Run `req satisfy\
+      \ commit_plan` after creating a plan\n"
+    checklist:
+    - Identified the changes needed
+    - Determined atomic commit boundaries
+    - Planned commit sequence
+    - Considered rollback strategy
+    - Created plan file
+  pre_commit_review:
+    enabled: true
+    type: blocking
+    scope: single_use
+    trigger_tools:
+    - tool: Bash
+      command_pattern: git\s+(commit|cherry-pick|revert|merge)
+    message: "\U0001F4DD **Code review before commit**\n\nRun `/requirements-framework:pre-commit`\
+      \ to review changes.\n\n**After review**: Proceed with commit.\n"
+    checklist:
+    - Code follows conventions
+    - Error handling adequate
+    - No obvious bugs
+inherit: false 
