@@ -4,7 +4,7 @@ PostToolUse hook for Skill tool - auto-satisfies requirements when skills comple
 
 This hook runs after a Skill tool completes and checks if the skill
 maps to a requirement that should be auto-satisfied. This enables
-a seamless workflow where running /pre-pr-review:pre-commit automatically
+a seamless workflow where running /requirements-framework:quality-check:pre-commit automatically
 satisfies the pre_commit_review requirement.
 
 Input (stdin):
@@ -43,6 +43,7 @@ DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
+    'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed'],
 }
 
 
