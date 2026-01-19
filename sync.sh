@@ -6,7 +6,7 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="$HOME/.claude/hooks"
 
 # Plugin directories
-PLUGIN_REPO_DIR="$REPO_DIR/plugin"
+PLUGIN_REPO_DIR="$REPO_DIR/plugins/requirements-framework"
 PLUGIN_DEPLOY_DIR="$HOME/.claude/plugins/requirements-framework"
 
 # Colors for output
@@ -345,7 +345,7 @@ deploy_plugin() {
     # Create base plugin directory
     mkdir -p "$PLUGIN_DEPLOY_DIR"
 
-    # Sync all subdirectories in plugin/ (agents, commands, skills, mcps, etc.)
+    # Sync all subdirectories in plugins/requirements-framework/ (agents, commands, skills, mcps, etc.)
     # This is generic - adding new component types doesn't require script changes
     for dir in "$PLUGIN_REPO_DIR"/*/; do
         [ -d "$dir" ] || continue

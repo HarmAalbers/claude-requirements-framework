@@ -250,90 +250,6 @@ configure_path() {
 # Call PATH configuration
 configure_path
 
-# Setup plugin symlink
-setup_plugin_symlink() {
-    echo ""
-    echo "🔌 Setting up plugin symlink..."
-
-    local plugin_source="$REPO_DIR/plugin"
-    local plugin_target="$HOME/.claude/plugins/requirements-framework"
-
-    # Check if plugin exists in repo
-    if [ ! -d "$plugin_source" ]; then
-        echo "⚠️  Plugin directory not found at $plugin_source"
-        echo "   Skipping plugin setup."
-        return 0
-    fi
-
-    # Create plugins directory if it doesn't exist
-    mkdir -p "$HOME/.claude/plugins"
-
-    # Check if symlink or directory already exists
-    if [ -L "$plugin_target" ]; then
-        # It's a symlink - check if it points to the right place
-        local current_target=$(readlink "$plugin_target")
-        if [ "$current_target" = "$plugin_source" ]; then
-            echo "✅ Plugin symlink already exists and is correct"
-            return 0
-        else
-            echo "⚠️  Plugin symlink exists but points to: $current_target"
-            read -p "Replace with correct symlink? [Y/n] " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                rm "$plugin_target"
-            else
-                echo "   Skipped plugin setup"
-                return 0
-            fi
-        fi
-    elif [ -e "$plugin_target" ]; then
-        # Something exists but it's not a symlink
-        echo "⚠️  $plugin_target exists but is not a symlink"
-        echo "   Please manually remove it to install the plugin."
-        return 1
-    fi
-
-    # Create the symlink
-    ln -s "$plugin_source" "$plugin_target"
-
-    # Verify symlink
-    if [ -L "$plugin_target" ] && [ -d "$plugin_target" ]; then
-        echo "✅ Plugin symlinked: ~/.claude/plugins/requirements-framework"
-        echo "   → $plugin_source"
-
-        # Show plugin contents for verification
-        if [ -f "$plugin_target/.claude-plugin/plugin.json" ]; then
-            local plugin_version=$(python3 -c "import json; print(json.load(open('$plugin_target/.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "unknown")
-            echo "   Plugin version: $plugin_version"
-
-            # Count components
-            local agent_count=$(ls -1 "$plugin_source/agents"/*.md 2>/dev/null | wc -l | tr -d ' ')
-            local command_count=$(ls -1 "$plugin_source/commands"/*.md 2>/dev/null | wc -l | tr -d ' ')
-            local skill_count=$(ls -1 "$plugin_source/skills" 2>/dev/null | wc -l | tr -d ' ')
-
-            echo "   Components: $agent_count agents, $command_count commands, $skill_count skills"
-            echo ""
-            echo "   📝 Verify plugin loaded:"
-            echo "      1. Start Claude Code session"
-            echo "      2. Type: /requirements-framework:"
-            echo "      3. Should autocomplete to pre-commit and quality-check"
-            echo ""
-            echo "   📖 Plugin documentation:"
-            echo "      • Installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
-            echo "      • Plugin README: $REPO_DIR/plugin/README.md"
-            echo "      • Components: $REPO_DIR/README.md#plugin-components"
-        fi
-    else
-        echo "❌ Failed to create plugin symlink"
-        return 1
-    fi
-
-    return 0
-}
-
-# Call plugin setup
-setup_plugin_symlink
-
 # Display marketplace installation instructions
 display_marketplace_instructions() {
     echo ""
@@ -341,12 +257,12 @@ display_marketplace_instructions() {
     echo ""
     echo "   **Option 1: Test with CLI Flag (Recommended for Development)**"
     echo "   Launch Claude Code with plugin temporarily loaded:"
-    echo "   $ claude --plugin-dir ~/.claude/plugins/requirements-framework"
+    echo "   $ claude --plugin-dir $REPO_DIR/plugins/requirements-framework"
     echo ""
     echo "   **Option 2: Persistent Installation via Marketplace**"
     echo "   For permanent installation, use the local marketplace:"
     echo "   1. In Claude Code session, run:"
-    echo "      /plugin marketplace add $REPO_DIR/.claude-plugin/marketplace.json"
+    echo "      /plugin marketplace add $REPO_DIR"
     echo "   2. Then install the plugin:"
     echo "      /plugin install requirements-framework@requirements-framework-local"
     echo "   3. Verify:"
@@ -636,20 +552,15 @@ else
     VERIFICATION_PASSED=false
 fi
 
-# Test 6: Check plugin installation
+# Test 6: Check plugin marketplace
 echo ""
-echo "6️⃣  Checking plugin installation..."
-if [ -L "$HOME/.claude/plugins/requirements-framework" ]; then
-    if [ -d "$HOME/.claude/plugins/requirements-framework" ]; then
-        echo "   ✅ Plugin symlink is valid"
-    else
-        echo "   ❌ Plugin symlink is broken"
-        VERIFICATION_PASSED=false
-    fi
-elif [ -d "$HOME/.claude/plugins/requirements-framework" ]; then
-    echo "   ⚠️  Plugin directory exists (not symlinked)"
+echo "6️⃣  Checking plugin marketplace..."
+if [ -f "$REPO_DIR/.claude-plugin/marketplace.json" ]; then
+    marketplace_version=$(python3 -c "import json; print(json.load(open('$REPO_DIR/.claude-plugin/marketplace.json'))['plugins'][0]['version'])" 2>/dev/null || echo "unknown")
+    echo "   ✅ Local marketplace available (v$marketplace_version)"
+    echo "   ℹ️  Install plugin via: /plugin install requirements-framework@requirements-framework-local"
 else
-    echo "   ⚠️  Plugin not installed"
+    echo "   ⚠️  Marketplace manifest not found"
 fi
 
 # Test 7: Check global config
@@ -714,10 +625,9 @@ echo "✅ Installation Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📦 What was installed:"
-echo "   • 4 lifecycle hooks (PreToolUse, SessionStart, Stop, SessionEnd)"
+echo "   • 5 lifecycle hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd)"
 echo "   • 'req' CLI command at ~/.local/bin/req"
 echo "   • Global configuration at ~/.claude/requirements.yaml"
-echo "   • Plugin at ~/.claude/plugins/requirements-framework"
 echo ""
 
 # Show Codex status
@@ -760,7 +670,7 @@ echo ""
 echo "📖 Documentation:"
 echo "   • Main README: $REPO_DIR/README.md"
 echo "   • Plugin installation: $REPO_DIR/docs/PLUGIN-INSTALLATION.md"
-echo "   • Plugin README: $REPO_DIR/plugin/README.md"
+echo "   • Plugin README: $REPO_DIR/plugins/requirements-framework/README.md"
 echo "   • Plugin commands: /requirements-framework:pre-commit, /requirements-framework:quality-check"
 echo "   • Plugin skills: Type 'show requirements framework status' in Claude Code"
 echo "   • Config reference: $REPO_DIR/examples/"

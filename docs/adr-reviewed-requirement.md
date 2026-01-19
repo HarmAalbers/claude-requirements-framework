@@ -634,7 +634,7 @@ Note: `req approve` is for dynamic requirements only (e.g., `branch_size_limit`)
 
 The framework includes an `adr-guardian` agent for automated ADR compliance checking.
 
-**Location**: `plugin/agents/adr-guardian.md`
+**Location**: `plugins/requirements-framework/agents/adr-guardian.md`
 
 **Capabilities**:
 - Reviews plans against ADRs before implementation

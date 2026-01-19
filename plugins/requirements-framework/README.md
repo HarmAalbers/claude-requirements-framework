@@ -323,25 +323,33 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 
 ## Installation
 
-### Current Installation
+### Recommended Installation (Marketplace)
 
-The plugin is installed automatically by `install.sh`:
+The plugin is installed via Claude Code's marketplace system:
 
 ```bash
+# 1. Run install.sh to set up hooks and local marketplace
 cd ~/Tools/claude-requirements-framework
 ./install.sh
+
+# 2. In Claude Code session, add the local marketplace
+/plugin marketplace add ~/Tools/claude-requirements-framework
+
+# 3. Install the plugin
+/plugin install requirements-framework@requirements-framework-local
 ```
 
 **What happens:**
 1. Hooks copied to `~/.claude/hooks/`
-2. Plugin symlinked to `~/.claude/plugins/requirements-framework/`
+2. Plugin installed to cache: `~/.claude/plugins/cache/requirements-framework-local/`
 3. Verification checks run
 4. Component count displayed
 
 **Verify installation:**
 ```bash
-# Check symlink
-ls -la ~/.claude/plugins/requirements-framework
+# Check installed version
+/plugin list
+# Should show: requirements-framework@2.0.5
 
 # Test commands
 /requirements-framework:pre-commit tools
@@ -350,24 +358,29 @@ ls -la ~/.claude/plugins/requirements-framework
 "Show requirements framework status"
 ```
 
+**To update the plugin:**
+```bash
+/plugin uninstall requirements-framework@requirements-framework-local
+/plugin marketplace update requirements-framework-local
+/plugin install requirements-framework@requirements-framework-local
+```
+
 For detailed installation, troubleshooting, and verification steps:
 - **[Plugin Installation Guide](../../docs/PLUGIN-INSTALLATION.md)** - Comprehensive reference
 
-### Future Installation (When Marketplace Available)
+### Alternative: CLI Flag (For Development)
 
-**Global Installation:**
+Use the `--plugin-dir` flag for live development without persistent installation:
+
 ```bash
-claude plugin install requirements-framework@marketplace
-
-# Or from local
-claude plugin install ~/Tools/claude-requirements-framework
+# Launch Claude Code with plugin loaded temporarily
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugin
 ```
 
-**Per-Project Installation:**
-```bash
-cd your-project
-claude plugin install requirements-framework --scope project
-```
+**Benefits:**
+- Changes to plugin files are immediately available (live reload)
+- No need to reinstall after each change
+- Ideal for developing and testing plugin components
 
 ## Configuration
 
@@ -468,9 +481,9 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ### Plugin Structure
 
 ```
-.claude/plugins/requirements-framework/
+~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/
 ├── .claude-plugin/
-│   └── plugin.json (v2.0.4)
+│   └── plugin.json (v2.0.5)
 ├── agents/ (17 agents)
 │   ├── adr-guardian.md
 │   ├── backward-compatibility-checker.md
@@ -486,7 +499,7 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 │   ├── pre-commit.md
 │   ├── quality-check.md
 │   └── codex-review.md
-└── skills/ (4 skills)
+└── skills/ (5 skills)
     ├── requirements-framework-builder/
     ├── requirements-framework-development/
     ├── requirements-framework-status/
@@ -670,10 +683,16 @@ For issues, questions, or enhancements:
 
 ## Version History
 
-- **v2.0.4** (2024-12-30)
+- **v2.0.5** (2025-01-19)
   - Current stable release
-  - 17 agents, 5 commands, 4 skills
+  - 17 agents, 3 commands, 5 skills
+  - **Plugin installation via marketplace** (replaces symlink method)
+  - Added `sync-versions.sh` for version consistency
+  - Fixed relative path issues in plugin.json
   - Auto-satisfy mechanism via PostToolUse hook
   - Comprehensive code review suite
-  - Plugin installation via install.sh symlink
   - Integration with requirements framework hooks
+
+- **v2.0.4** (2024-12-30)
+  - 17 agents, 3 commands, 4 skills
+  - Plugin installation via install.sh symlink (deprecated)

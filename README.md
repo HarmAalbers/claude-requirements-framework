@@ -34,11 +34,21 @@ The installer will:
 1. Copy hooks to `~/.claude/hooks/`
 2. Install the global configuration to `~/.claude/requirements.yaml`
 3. Register all hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
-4. Create plugin symlink at `~/.claude/plugins/requirements-framework`
+4. Display marketplace installation instructions for the plugin
+
+### Install Plugin via Marketplace
+
+After running `install.sh`, install the plugin via Claude Code's marketplace system:
+
+```bash
+# In Claude Code session:
+/plugin marketplace add ~/Tools/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework-local
+```
 
 ### Verify Plugin Installation
 
-After running `install.sh`, verify the plugin loaded successfully:
+Verify the plugin loaded successfully:
 
 ```bash
 # Check plugin appears in Claude Code
@@ -48,14 +58,16 @@ After running `install.sh`, verify the plugin loaded successfully:
 # Should autocomplete to:
 # - /requirements-framework:pre-commit [aspects]
 # - /requirements-framework:quality-check [parallel]
+# - /requirements-framework:codex-review [focus]
 
-# Or check the symlink:
-ls -la ~/.claude/plugins/requirements-framework
+# Check installed version:
+/plugin list
+# Should show: requirements-framework@2.0.5
 ```
 
 For detailed installation, troubleshooting, and component reference:
 - **[Plugin Installation Guide](docs/PLUGIN-INSTALLATION.md)** - Comprehensive reference
-- **[Plugin README](plugin/README.md)** - Plugin-specific docs
+- **[Plugin README](plugins/requirements-framework/README.md)** - Plugin-specific docs
 - **[Plugin Components](#plugin-components)** (below) - Agent/command/skill descriptions
 
 ### Project Setup

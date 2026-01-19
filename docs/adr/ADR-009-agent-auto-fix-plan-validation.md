@@ -94,7 +94,7 @@ The adr-guardian agent now includes `Edit` in its `allowed-tools` and can:
 
 ### Agent Configuration
 ```yaml
-# In plugin/agents/adr-guardian.md frontmatter
+# In plugins/requirements-framework/agents/adr-guardian.md frontmatter
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
 ```
 
@@ -122,5 +122,5 @@ auto-fixed, edit the plan file directly to fix them, then re-validate.
 ## References
 
 - Commit: `5148041` - feat: Add automated plan-review workflow
-- Agent: `plugin/agents/adr-guardian.md`
-- Command: `plugin/commands/plan-review.md`
+- Agent: `plugins/requirements-framework/agents/adr-guardian.md`
+- Command: `plugins/requirements-framework/commands/plan-review.md`

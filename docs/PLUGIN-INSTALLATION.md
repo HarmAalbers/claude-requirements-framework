@@ -24,8 +24,8 @@ The Requirements Framework plugin extends Claude Code with workflow automation a
 - **2 orchestrator commands** - `/requirements-framework:pre-commit`, `/requirements-framework:quality-check`
 - **5 management skills** - Status reporting, usage help, framework building, development workflow, Codex review
 
-**Installation Location:** `~/.claude/plugins/requirements-framework/` (symlink)
-**Plugin Version:** 2.0.4
+**Installation Location:** `~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/`
+**Plugin Version:** 2.0.5
 **Component Details:** See [Plugin Components](../README.md#plugin-components) in main README
 
 ---
@@ -69,7 +69,7 @@ Type: /requirements-framework:
 
 **Official method** for permanent plugin installation:
 
-**Step 1:** Run install.sh to set up symlink and create marketplace
+**Step 1:** Run install.sh to set up hooks and local marketplace
 
 ```bash
 cd ~/Tools/claude-requirements-framework
@@ -80,7 +80,7 @@ cd ~/Tools/claude-requirements-framework
 
 ```
 # In Claude Code session
-/plugin marketplace add /Users/harm/Tools/claude-requirements-framework/.claude-plugin/marketplace.json
+/plugin marketplace add ~/Tools/claude-requirements-framework
 ```
 
 **Step 3:** Install the plugin from marketplace
@@ -107,28 +107,22 @@ cd ~/Tools/claude-requirements-framework
 /plugin install requirements-framework@requirements-framework-local
 ```
 
-### Method 3: Manual Symlink (Legacy)
+### Method 3: Manual Symlink (Deprecated)
 
-**Note:** This creates the symlink but does NOT register the plugin with Claude Code. The plugin won't be discoverable without additional steps (Method 1 or 2).
+> **⚠️ DEPRECATED:** This method is no longer recommended. Use Method 2 (Marketplace) for persistent installation or Method 1 (CLI Flag) for development.
+
+**Note:** Symlink installation has been deprecated in v2.0.5 because it conflicts with marketplace installation and causes version tracking issues.
+
+If you have an existing symlink at `~/.claude/plugins/requirements-framework/`, remove it and use marketplace installation instead:
 
 ```bash
-# Create plugins directory
-mkdir -p ~/.claude/plugins
+# Remove deprecated symlink
+rm -rf ~/.claude/plugins/requirements-framework
 
-# Create symlink
-ln -s ~/Tools/claude-requirements-framework/plugin \
-      ~/.claude/plugins/requirements-framework
-
-# Verify
-ls -la ~/.claude/plugins/requirements-framework
+# Use marketplace installation (Method 2)
 ```
 
-**Use this only for:**
-- Preparing for Method 1 (CLI flag testing)
-- Setting up before marketplace installation
-- Debugging symlink issues
-
-**This alone does NOT make the plugin available** - you must use Method 1 (CLI flag) or Method 2 (marketplace) to actually load it
+**For development with live reload**, use the `--plugin-dir` flag (Method 1) instead of creating a symlink
 
 ---
 
@@ -136,27 +130,25 @@ ls -la ~/.claude/plugins/requirements-framework
 
 After installation, verify the plugin loaded successfully:
 
-### Step 1: Check Symlink Exists
+### Step 1: Check Plugin Installation
 
 ```bash
-ls -la ~/.claude/plugins/requirements-framework
+# In Claude Code session
+/plugin list
 ```
 
 **Expected output:**
 ```
-lrwxr-xr-x  ... → /path/to/repo/.claude/plugins/requirements-framework
+requirements-framework@2.0.5 (requirements-framework-local)
 ```
 
-**Verify:**
-- Shows as symlink (first character is `l`)
-- Points to correct source directory
-- Source directory exists and is accessible
-
-**Quick check:**
+**Verify via filesystem:**
 ```bash
-test -L ~/.claude/plugins/requirements-framework && echo "✓ Symlink exists" || echo "✗ Missing"
-readlink ~/.claude/plugins/requirements-framework
-test -f ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json && echo "✓ Valid plugin" || echo "✗ Invalid"
+# Check cache directory exists
+ls ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
+
+# Check plugin manifest
+cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json | head -5
 ```
 
 ### Step 2: Test Commands
@@ -197,14 +189,14 @@ You: "Show requirements framework status"
 ### Step 4: Check Plugin Manifest
 
 ```bash
-cat ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json
+cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json
 ```
 
 **Expected fields:**
 ```json
 {
   "name": "requirements-framework",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Claude Code Requirements Framework - Enforces development workflow...",
   "skills": [...],
   "commands": [...],
@@ -213,10 +205,10 @@ cat ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json
 ```
 
 **Verify:**
-- Version is `2.0.4`
+- Version is `2.0.5`
 - 5 skills listed
-- 2 commands listed
-- 10 agents listed
+- 3 commands listed
+- 17 agents listed
 
 ---
 
@@ -228,58 +220,61 @@ cat ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json
 
 **Diagnosis:**
 ```bash
-# Check if symlink exists
-test -L ~/.claude/plugins/requirements-framework && echo "Symlink exists" || echo "Missing"
+# Check if plugin is installed
+/plugin list
 
-# Check where it points
-readlink ~/.claude/plugins/requirements-framework
+# Check cache directory
+ls ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
 
 # Check if manifest exists
-test -f ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json && echo "Manifest found" || echo "Missing"
-
-# Check manifest validity
-python3 -c "import json; json.load(open('$HOME/.claude/plugins/requirements-framework/.claude-plugin/plugin.json'))"
+test -f ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json && echo "Manifest found" || echo "Missing"
 ```
 
 **Solutions:**
 
-1. **Symlink missing** → Run `./install.sh` or create manually (Method 2)
-2. **Wrong target** → Remove and recreate:
+1. **Plugin not installed** → Install via marketplace:
    ```bash
-   rm ~/.claude/plugins/requirements-framework
-   cd ~/Tools/claude-requirements-framework
-   ./install.sh
+   /plugin marketplace add ~/Tools/claude-requirements-framework
+   /plugin install requirements-framework@requirements-framework-local
    ```
-3. **Manifest missing** → Update repo:
+2. **Old version cached** → Reinstall:
+   ```bash
+   /plugin uninstall requirements-framework@requirements-framework-local
+   /plugin marketplace update requirements-framework-local
+   /plugin install requirements-framework@requirements-framework-local
+   ```
+3. **Manifest missing** → Update repo and reinstall:
    ```bash
    cd ~/Tools/claude-requirements-framework
    git pull
+   /plugin marketplace update requirements-framework-local
+   /plugin uninstall requirements-framework@requirements-framework-local
+   /plugin install requirements-framework@requirements-framework-local
    ```
 4. **Plugin not loading** → Restart Claude Code session
 
-### Symlink Points to Wrong Location
+### Conflicting Installation (Symlink + Marketplace)
 
-**Symptom:** Symlink exists but points to old/incorrect location
+**Symptom:** Plugin behaves unexpectedly, wrong version shown
+
+**Cause:** Both a symlink AND marketplace installation exist
 
 **Fix:**
 ```bash
-# Remove old symlink
-rm ~/.claude/plugins/requirements-framework
+# Remove deprecated symlink if it exists
+rm -rf ~/.claude/plugins/requirements-framework
 
-# Recreate with correct path
-cd ~/Tools/claude-requirements-framework
-./install.sh
-```
+# Verify only marketplace installation remains
+ls ~/.claude/plugins/
+# Should NOT show "requirements-framework" directory
 
-**Verify:**
-```bash
-readlink ~/.claude/plugins/requirements-framework
-# Should match your actual repo location
+# Check plugin via marketplace
+/plugin list
 ```
 
 ### Permission Errors
 
-**Symptom:** "Permission denied" when creating symlink or accessing plugin
+**Symptom:** "Permission denied" when installing plugin
 
 **Diagnosis:**
 ```bash
@@ -292,9 +287,9 @@ ls -la ~/.claude/plugins/
 # Fix ownership
 sudo chown -R $(whoami) ~/.claude/
 
-# Recreate symlink
-cd ~/Tools/claude-requirements-framework
-./install.sh
+# Reinstall
+/plugin uninstall requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework-local
 ```
 
 ### Commands Work But Skills Don't
@@ -325,7 +320,7 @@ Use phrases from the `description` field.
 
 **Symptom:** Plugin version doesn't match expected or doesn't update
 
-**Cause:** Symlink may be broken, or repo needs updating
+**Cause:** Marketplace cache may be stale, or repo needs updating
 
 **Fix:**
 ```bash
@@ -333,17 +328,19 @@ Use phrases from the `description` field.
 cd ~/Tools/claude-requirements-framework
 git pull
 
-# Symlink updates automatically
-cat ~/.claude/plugins/requirements-framework/.claude-plugin/plugin.json | grep version
+# Sync version numbers
+./sync-versions.sh --verify
+
+# Update marketplace and reinstall
+/plugin marketplace update requirements-framework-local
+/plugin uninstall requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework-local
+
+# Verify version
+/plugin list
 ```
 
-**Expected:** Version should match what's in repo
-
-**Force reinstall:**
-```bash
-rm ~/.claude/plugins/requirements-framework
-./install.sh
-```
+**Expected:** Version should match what's in `plugins/requirements-framework/.claude-plugin/plugin.json`
 
 ### Plugin Directory Not Found
 
@@ -355,10 +352,10 @@ rm ~/.claude/plugins/requirements-framework
 ```bash
 cd ~/Tools/claude-requirements-framework
 git pull
-git log --oneline -5 plugin/
+git log --oneline -5 plugins/requirements-framework/
 
 # Verify directory exists
-ls -la plugin/.claude-plugin/plugin.json
+ls -la plugins/requirements-framework/.claude-plugin/plugin.json
 ```
 
 **If missing:**
@@ -392,14 +389,14 @@ The Requirements Framework has two complementary components:
 
 ### Plugin (Workflow Automation Tools)
 
-**Location:** `~/.claude/plugins/requirements-framework/` (symlink)
+**Location:** `~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/`
 **Purpose:** Provide agents, commands, and skills to satisfy requirements
 **Components:**
-- 10 agents (code review, workflow enforcement)
-- 2 commands (pre-commit, quality-check orchestrators)
+- 17 agents (code review, workflow enforcement)
+- 3 commands (pre-commit, quality-check, codex-review orchestrators)
 - 5 skills (management and status)
 
-**Installed by:** Symlinked by `install.sh`
+**Installed by:** Marketplace installation (copied to cache)
 
 ### How They Work Together
 
@@ -451,13 +448,20 @@ The Requirements Framework has two complementary components:
 
 ### Live Editing Workflow
 
-The symlink enables immediate updates without reinstallation:
+For development, use the `--plugin-dir` flag to load the plugin directly from the repo:
+
+```bash
+# Launch Claude Code with plugin loaded from repo
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
+```
+
+Changes to plugin files are immediately available (live reload):
 
 ```bash
 # 1. Edit agent in repo
-vim ~/Tools/claude-requirements-framework/plugin/agents/code-reviewer.md
+vim ~/Tools/claude-requirements-framework/plugins/requirements-framework/agents/code-reviewer.md
 
-# 2. Changes are live immediately (symlink)
+# 2. Changes are live immediately (--plugin-dir loads from repo)
 # No restart needed - Claude Code auto-reloads plugins
 
 # 3. Test in Claude Code
@@ -465,7 +469,7 @@ vim ~/Tools/claude-requirements-framework/plugin/agents/code-reviewer.md
 
 # 4. Commit changes
 cd ~/Tools/claude-requirements-framework
-git add plugin/agents/code-reviewer.md
+git add plugins/requirements-framework/agents/code-reviewer.md
 git commit -m "feat(agent): enhance code-reviewer detection"
 ```
 
@@ -474,7 +478,7 @@ git commit -m "feat(agent): enhance code-reviewer detection"
 **Agent changes:**
 ```bash
 # Edit agent
-vim plugin/agents/test-analyzer.md
+vim plugins/requirements-framework/agents/test-analyzer.md
 
 # Test via command (agents invoked by commands)
 /requirements-framework:pre-commit tests
@@ -483,7 +487,7 @@ vim plugin/agents/test-analyzer.md
 **Command changes:**
 ```bash
 # Edit command
-vim plugin/commands/pre-commit.md
+vim plugins/requirements-framework/commands/pre-commit.md
 
 # Test directly
 /requirements-framework:pre-commit all
@@ -492,24 +496,31 @@ vim plugin/commands/pre-commit.md
 **Skill changes:**
 ```bash
 # Edit skill
-vim plugin/skills/requirements-framework-status/skill.md
+vim plugins/requirements-framework/skills/requirements-framework-status/skill.md
 
 # Test via natural language
 "Show requirements framework status"
 ```
 
-### Sync Not Needed
+### Development vs Production
 
-**Plugin:** Symlinked - no sync needed, changes immediate
-**Hooks:** Copied - requires sync
+**Development (--plugin-dir flag):**
+- Changes to plugin files are immediately available
+- No reinstall needed - Claude Code auto-reloads
 
+**Production (Marketplace installation):**
+- Changes require reinstall via marketplace commands:
+  ```bash
+  /plugin marketplace update requirements-framework-local
+  /plugin uninstall requirements-framework@requirements-framework-local
+  /plugin install requirements-framework@requirements-framework-local
+  ```
+
+**Hooks:** Always require sync (copied to `~/.claude/hooks/`)
 ```bash
-# For hook changes only:
 ./sync.sh status   # Check sync status
 ./sync.sh deploy   # Deploy hooks
 ```
-
-**Plugin changes:** No sync required (symlink keeps in sync automatically)
 
 ---
 
@@ -556,7 +567,7 @@ requirements:
 ### Main Documentation
 - **[Main README](../README.md)** - Framework overview and quick start
 - **[Plugin Components](../README.md#plugin-components)** - Detailed agent/command/skill descriptions
-- **[Plugin README](../plugin/README.md)** - Plugin-specific usage guide
+- **[Plugin README](../plugins/requirements-framework/README.md)** - Plugin-specific usage guide
 
 ### Architecture
 - **[ADR-006: Plugin Architecture](./adr/ADR-006-plugin-architecture-code-review.md)** - Design decisions for plugin system
@@ -594,7 +605,7 @@ requirements:
 
 ## Version History
 
-- **v2.0.4** - Current stable release with 10 agents, 2 commands, 5 skills
+- **v2.0.5** - Current stable release with 10 agents, 3 commands, 5 skills
   - Plugin installation via install.sh
   - Auto-satisfy mechanism for requirements
   - Comprehensive code review suite

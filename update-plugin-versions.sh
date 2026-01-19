@@ -185,17 +185,17 @@ main() {
     # Find all agents
     while IFS= read -r file; do
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugin/agents/ github-issues-plugin/agents/ -name "*.md" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/agents/ github-issues-plugin/agents/ -name "*.md" -type f 2>/dev/null)
 
     # Find all commands
     while IFS= read -r file; do
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugin/commands/ -name "*.md" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/commands/ -name "*.md" -type f 2>/dev/null)
 
     # Find all skills
     while IFS= read -r file; do
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugin/skills/ -name "skill.md" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/skills/ -name "skill.md" -type f 2>/dev/null)
 
     if [ ${#files[@]} -eq 0 ]; then
         echo -e "${RED}✗ No plugin component files found${NC}"
@@ -274,7 +274,7 @@ main() {
             echo -e "${GREEN}✓ All plugin components versioned successfully!${NC}"
             echo ""
             echo "Next steps:"
-            echo "  1. Review changes: git diff plugin/ github-issues-plugin/"
+            echo "  1. Review changes: git diff plugins/requirements-framework/ github-issues-plugin/"
             echo "  2. Commit: git add . && git commit -m 'feat: add git hash version tracking'"
             echo "  3. Deploy: ./sync.sh deploy"
         fi

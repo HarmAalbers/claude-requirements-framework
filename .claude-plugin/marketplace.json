@@ -6,8 +6,8 @@
   "description": "Local marketplace for requirements framework plugin development",
   "plugins": [{
     "name": "requirements-framework",
-    "version": "2.0.4",
+    "version": "2.0.5",
     "description": "Claude Code Requirements Framework - Workflow enforcement and code review",
-    "source": "./plugin"
+    "source": "./plugins/requirements-framework"
   }]
 }

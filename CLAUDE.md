@@ -170,14 +170,28 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 10 agents, 3 commands, and 4 skills that extend Claude Code's capabilities. To test these components during development:
+The framework includes 17 agents, 3 commands, and 5 skills that extend Claude Code's capabilities.
+
+### Development Testing (Live Reload)
+
+For development, use the `--plugin-dir` flag for live reload:
 
 ```bash
-# Launch Claude Code with plugin loaded (official method)
-claude --plugin-dir ~/.claude/plugins/requirements-framework
+# Launch Claude Code with plugin loaded directly from repo
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugin
 
-# This loads the plugin without persistent installation
 # Changes to plugin files are immediately available (live reload)
+```
+
+### Production Testing (Marketplace Installation)
+
+For testing the installed plugin:
+
+```bash
+# Reinstall to get latest version
+/plugin uninstall requirements-framework@requirements-framework-local
+/plugin marketplace update requirements-framework-local
+/plugin install requirements-framework@requirements-framework-local
 ```
 
 **Test commands:**
@@ -198,7 +212,7 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 - code-simplifier, backward-compatibility-checker
 - adr-guardian, codex-review-agent
 
-**For persistent installation**, see `docs/PLUGIN-INSTALLATION.md` for marketplace-based setup.
+**For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
 
 ## Serena MCP Configuration
 
@@ -284,4 +298,4 @@ See `examples/global-requirements.yaml` for full example configuration.
 - `docs/adr/` - Architecture Decision Records documenting key design decisions
   - ADR-004: Guard requirement strategy
   - ADR-008: CLAUDE.md weekly maintenance process
-- `plugin/README.md` - Plugin architecture with agents, commands, and skills
+- `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills

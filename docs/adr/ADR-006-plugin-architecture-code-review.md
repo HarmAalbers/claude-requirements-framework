@@ -25,8 +25,8 @@ This created a dependency problem:
 
 The framework plugin structure now includes:
 - `/hooks/` - Python hooks and libraries (copied to ~/.claude/hooks/)
-- `/plugin/` - Plugin components (symlinked)
-  - `/agents/` - 11 specialized agents
+- `/plugins/requirements-framework/` - Plugin components (installed via marketplace)
+  - `/agents/` - 17 specialized agents
   - `/commands/` - 3 orchestrator commands
   - `/skills/` - 5 management skills
   - `/.claude-plugin/plugin.json` - Plugin manifest
@@ -44,12 +44,13 @@ The framework plugin structure now includes:
 **Agent types integrated**:
 - Workflow enforcement agents (adr-guardian, codex-review-agent)
 - Code review agents (8 specialized reviewers)
-- All agents accessed via plugin symlink
+- All agents accessed via marketplace-installed plugin
 
 **Installation pattern**:
 - Hooks copied (need to be in ~/.claude/hooks/)
-- Plugin symlinked (live updates from repo)
-- Both managed by single install script
+- Plugin installed via marketplace (copied to cache)
+- `sync-versions.sh` keeps version numbers consistent
+- Both managed by single install script + marketplace commands
 
 ## Prohibited
 
@@ -58,9 +59,10 @@ The framework plugin structure now includes:
 - Do NOT reference skills from external plugins in requirements config
 - Do NOT split related functionality across multiple plugins
 
-**Copying plugin components**:
-- Do NOT copy plugin files to ~/.claude/ (use symlink)
-- Symlink enables live updates without reinstallation
+**Conflicting installation methods**:
+- Do NOT use both symlink AND marketplace installation simultaneously
+- Choose ONE installation method (marketplace recommended for users)
+- For development, use `--plugin-dir` flag instead of symlink
 
 **Mixed namespaces**:
 - Do NOT mix `/pre-pr-review:` and `/requirements-framework:` namespaces
@@ -69,14 +71,14 @@ The framework plugin structure now includes:
 ## Consequences
 
 ### Positive
-- ✅ Users get complete solution in one `./install.sh` command
+- ✅ Users get complete solution via `./install.sh` + marketplace commands
 - ✅ No missing dependency errors
 - ✅ Single source of truth (one git repository)
 - ✅ Version controlled together
 - ✅ Simpler mental model (one framework, not two plugins)
 - ✅ Easier to maintain (single codebase)
-- ✅ Backed up during reinstallation
-- ✅ Live updates via symlink
+- ✅ Plugin updates via marketplace (`/plugin marketplace update`)
+- ✅ Clear version tracking (`sync-versions.sh --verify`)
 
 ### Negative
 - ⚠️ Tighter coupling between requirements and review agents
@@ -116,7 +118,7 @@ The framework plugin structure now includes:
 
 ### Plugin Structure
 ```
-plugin/
+plugins/requirements-framework/
 ├── .claude-plugin/
 │   └── plugin.json (v2.0.5)
 ├── agents/ (11 total)
@@ -214,13 +216,15 @@ pre_pr_review:
 ## Enforcement
 
 This architecture is enforced by:
-1. **install.sh** - Installs framework hooks + symlinks plugin (single command)
-2. **plugin.json** - Declares all 10 agents + 2 commands
-3. **Auto-satisfy mapping** - Wires commands to requirements
-4. **Global config** - References framework namespace only
+1. **install.sh** - Installs framework hooks + displays marketplace instructions
+2. **marketplace.json** - Advertises plugin version for marketplace installation
+3. **plugin.json** - Declares all 17 agents + 3 commands + 5 skills
+4. **sync-versions.sh** - Keeps version numbers consistent across all files
+5. **Auto-satisfy mapping** - Wires commands to requirements
+6. **Global config** - References framework namespace only
 
 New agents/commands must:
-- Be added to `plugin/`
+- Be added to `plugins/requirements-framework/`
 - Be registered in `plugin.json`
 - Use `/requirements-framework:` namespace
 - If auto-satisfying: Added to DEFAULT_SKILL_MAPPINGS or use `satisfied_by_skill` in config
