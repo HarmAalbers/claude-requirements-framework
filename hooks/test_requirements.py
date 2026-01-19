@@ -6860,8 +6860,8 @@ def test_session_start_format_tiers(runner: TestRunner):
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/test-formats")
         runner.test("Standard format has table header", "| Requirement |" in standard,
                    f"Missing table header")
-        runner.test("Standard format has workflow section", "Workflow" in standard,
-                   f"Missing Workflow section")
+        runner.test("Standard format has Quick Start section", "Quick Start" in standard,
+                   f"Missing Quick Start section")
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
                    f"Missing triggers")
 
@@ -6971,6 +6971,181 @@ def test_session_start_format_tiers(runner: TestRunner):
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/guard-test")
         runner.test("Standard format shows guard type", "guard" in standard,
                    f"Got: {standard[:400]}")
+
+
+def test_session_start_quick_start_helpers(runner: TestRunner):
+    """Test Quick Start helper functions for session start formatting."""
+    print("\n📦 Testing Quick Start helper functions...")
+
+    # Import dynamically to ensure path setup
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+
+    # Import from the hook file
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook", hook_path)
+    session_start_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(session_start_module)
+
+    # Test _shorten_skill_name
+    shorten = session_start_module._shorten_skill_name
+
+    runner.test("Shorten: namespaced skill path",
+               shorten('/requirements-framework:plan-review') == '/plan-review',
+               f"Got: {shorten('/requirements-framework:plan-review')}")
+
+    runner.test("Shorten: namespaced skill path with backticks",
+               shorten('`/requirements-framework:plan-review`') == '/plan-review',
+               f"Got: {shorten('`/requirements-framework:plan-review`')}")
+
+    runner.test("Shorten: simple skill path unchanged",
+               shorten('/simple-skill') == '/simple-skill',
+               f"Got: {shorten('/simple-skill')}")
+
+    runner.test("Shorten: req command unchanged",
+               shorten('req satisfy foo') == 'req satisfy foo',
+               f"Got: {shorten('req satisfy foo')}")
+
+    runner.test("Shorten: manual action unchanged",
+               shorten('Create feature branch') == 'Create feature branch',
+               f"Got: {shorten('Create feature branch')}")
+
+    # Test _group_by_resolve_action
+    group_fn = session_start_module._group_by_resolve_action
+
+    # Mock requirement data
+    req_data = [
+        {'name': 'adr_reviewed', 'satisfied': False, 'resolve_action': '`/requirements-framework:plan-review`', 'triggers': 'Edit, Write'},
+        {'name': 'commit_plan', 'satisfied': False, 'resolve_action': '`/requirements-framework:plan-review`', 'triggers': 'Edit, Write'},
+        {'name': 'pre_commit', 'satisfied': False, 'resolve_action': '`/requirements-framework:commit-checks`', 'triggers': 'git commit'},
+        {'name': 'already_done', 'satisfied': True, 'resolve_action': '`/some-skill`', 'triggers': 'Edit'},
+    ]
+
+    groups = group_fn(req_data)
+
+    runner.test("Group: excludes satisfied requirements",
+               'already_done' not in str(groups),
+               f"Got: {groups}")
+
+    runner.test("Group: combines requirements with same resolve action",
+               len(groups.get('/plan-review', [])) == 2,
+               f"Got: {groups}")
+
+    runner.test("Group: separates different resolve actions",
+               '/commit-checks' in groups and '/plan-review' in groups,
+               f"Got keys: {list(groups.keys())}")
+
+    runner.test("Group: skill commands come first",
+               list(groups.keys())[0].startswith('/'),
+               f"First key: {list(groups.keys())[0]}")
+
+    # Test with manual actions
+    req_data_mixed = [
+        {'name': 'feature_branch', 'satisfied': False, 'resolve_action': 'Create feature branch', 'triggers': 'Edit'},
+        {'name': 'skill_req', 'satisfied': False, 'resolve_action': '`/my-skill`', 'triggers': 'Edit'},
+    ]
+    groups_mixed = group_fn(req_data_mixed)
+
+    runner.test("Group: skill commands before manual actions",
+               list(groups_mixed.keys()) == ['/my-skill', 'Create feature branch'],
+               f"Got order: {list(groups_mixed.keys())}")
+
+    # Test _format_quick_start
+    format_qs = session_start_module._format_quick_start
+
+    # Test with unsatisfied requirements
+    lines = format_qs(req_data)
+    joined = '\n'.join(lines)
+
+    runner.test("Quick Start: has header",
+               "### Quick Start" in joined,
+               f"Got: {joined[:200]}")
+
+    runner.test("Quick Start: shows run command",
+               "**Run `/plan-review`**" in joined,
+               f"Got: {joined}")
+
+    runner.test("Quick Start: groups requirements",
+               "`adr_reviewed`" in joined and "`commit_plan`" in joined,
+               f"Got: {joined}")
+
+    runner.test("Quick Start: uses rocket emoji for edit-triggered",
+               "🚀" in joined,
+               f"Got: {joined}")
+
+    runner.test("Quick Start: uses magnifier emoji for commit-triggered",
+               "🔍" in joined,
+               f"Got: {joined}")
+
+    # Test with all satisfied
+    all_satisfied = [
+        {'name': 'done1', 'satisfied': True, 'resolve_action': '`/skill`', 'triggers': 'Edit'},
+        {'name': 'done2', 'satisfied': True, 'resolve_action': '`/skill`', 'triggers': 'Edit'},
+    ]
+    empty_lines = format_qs(all_satisfied)
+
+    runner.test("Quick Start: empty when all satisfied",
+               len(empty_lines) == 0,
+               f"Got: {empty_lines}")
+
+    # Integration test: Quick Start appears in all formats
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/quick-start-test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config_content = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "adr_reviewed": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "auto_resolve_skill": "requirements-framework:plan-review"
+                },
+                "commit_plan": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "auto_resolve_skill": "requirements-framework:plan-review"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/quick-start-test", "test-session", tmpdir)
+
+        # Rich format should have Quick Start
+        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/quick-start-test")
+        runner.test("Rich format includes Quick Start section",
+                   "### Quick Start" in rich,
+                   f"Got: {rich[:500]}")
+        runner.test("Rich format Quick Start uses short skill name",
+                   "/plan-review" in rich and "requirements-framework:plan-review" not in rich.split("Quick Start")[1].split("---")[0],
+                   f"Got Quick Start section: {rich.split('Quick Start')[1].split('---')[0][:200] if 'Quick Start' in rich else 'no section'}")
+
+        # Standard format should have Quick Start
+        standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/quick-start-test")
+        runner.test("Standard format includes Quick Start section",
+                   "### Quick Start" in standard,
+                   f"Got: {standard[:500]}")
+
+        # Compact format uses grouping
+        compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/quick-start-test")
+        runner.test("Compact format uses short skill name",
+                   "/plan-review" in compact,
+                   f"Got: {compact}")
+        runner.test("Compact format groups requirements by action",
+                   "Run `/plan-review`" in compact,
+                   f"Got: {compact}")
 
 
 def main():
@@ -7106,6 +7281,7 @@ def main():
     test_summarize_triggers(runner)
     test_get_requirement_description(runner)
     test_session_start_format_tiers(runner)
+    test_session_start_quick_start_helpers(runner)
 
     return runner.summary()
 

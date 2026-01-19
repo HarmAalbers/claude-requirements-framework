@@ -104,6 +104,90 @@ def _get_requirement_status_data(reqs: BranchRequirements, config: RequirementsC
     return results
 
 
+def _shorten_skill_name(skill_path: str) -> str:
+    """
+    Convert full skill path to short name.
+
+    Examples:
+        '/requirements-framework:plan-review' -> '/plan-review'
+        '`/requirements-framework:plan-review`' -> '/plan-review'
+        'req satisfy foo' -> 'req satisfy foo'  (unchanged)
+        '/simple-skill' -> '/simple-skill'  (unchanged, no namespace)
+    """
+    # Strip backticks
+    skill_path = skill_path.strip('`')
+
+    # Extract short name from namespaced path
+    if ':' in skill_path and skill_path.startswith('/'):
+        # '/requirements-framework:plan-review' -> '/plan-review'
+        return '/' + skill_path.split(':')[-1]
+
+    return skill_path
+
+
+def _group_by_resolve_action(req_data: list[dict]) -> dict[str, list[dict]]:
+    """
+    Group unsatisfied requirements by their resolve action (short name).
+
+    Returns dict mapping action -> list of requirement dicts.
+    Groups that resolve via skill commands come first.
+    """
+    groups: dict[str, list[dict]] = {}
+    for r in req_data:
+        if r['satisfied']:
+            continue
+        action = _shorten_skill_name(r['resolve_action'])
+        if action not in groups:
+            groups[action] = []
+        groups[action].append(r)
+
+    # Sort: skill commands first, then manual commands
+    skill_groups = {k: v for k, v in groups.items() if k.startswith('/')}
+    other_groups = {k: v for k, v in groups.items() if not k.startswith('/')}
+
+    return {**skill_groups, **other_groups}
+
+
+def _format_quick_start(req_data: list[dict]) -> list[str]:
+    """
+    Format the Quick Start section showing actions grouped by resolve command.
+
+    Returns list of lines for the Quick Start section, or empty list if
+    all requirements are satisfied.
+    """
+    groups = _group_by_resolve_action(req_data)
+
+    if not groups:
+        return []
+
+    lines = ["### Quick Start", ""]
+
+    for action, reqs in groups.items():
+        req_names = ", ".join(f"`{r['name']}`" for r in reqs)
+
+        # Determine trigger context
+        triggers = set()
+        for r in reqs:
+            if 'git commit' in r['triggers']:
+                triggers.add('commit')
+            elif 'Edit' in r['triggers'] or 'Write' in r['triggers']:
+                triggers.add('edit')
+
+        if action.startswith('/'):
+            # Skill command
+            if 'commit' in triggers:
+                lines.append(f"🔍 **Run `{action}`** before `git commit` → satisfies {req_names}")
+            else:
+                lines.append(f"🚀 **Run `{action}`** → satisfies {req_names}")
+        else:
+            # Manual action (e.g., "Create feature branch", "req satisfy foo")
+            lines.append(f"📋 **{action}** → satisfies {req_names}")
+
+        lines.append("")
+
+    return lines
+
+
 def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
                           session_id: str, branch: str) -> str:
     """
@@ -114,7 +198,7 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     Example output:
         ## Requirements: 2/4 satisfied
 
-        **Unsatisfied**: `adr_reviewed`, `commit_plan` → `/plan-review`
+        **Run `/plan-review`** → `adr_reviewed`, `commit_plan`
         **Fallback**: `req satisfy adr_reviewed commit_plan --session abc123`
     """
     req_data = _get_requirement_status_data(reqs, config, session_id, branch)
@@ -127,20 +211,21 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
 
     lines = [f"## Requirements: {satisfied_count}/{total_count} satisfied"]
 
+    # Group unsatisfied requirements by their short resolve action
+    groups = _group_by_resolve_action(req_data)
+    if groups:
+        lines.append("")
+        for action, reqs_in_group in groups.items():
+            names = ", ".join(f"`{r['name']}`" for r in reqs_in_group)
+            if action.startswith('/'):
+                lines.append(f"**Run `{action}`** → {names}")
+            else:
+                lines.append(f"**{action}** → {names}")
+
+    # Fallback with all unsatisfied requirements
     unsatisfied = [r for r in req_data if not r['satisfied']]
     if unsatisfied:
-        names = ", ".join(f"`{r['name']}`" for r in unsatisfied)
-        # Find common resolve action if any
-        resolve_skills = set()
-        for r in unsatisfied:
-            if r['resolve_action'].startswith('`/'):
-                resolve_skills.add(r['resolve_action'])
-        if len(resolve_skills) == 1:
-            lines.append(f"\n**Unsatisfied**: {names} → {resolve_skills.pop()}")
-        else:
-            lines.append(f"\n**Unsatisfied**: {names}")
-
-    lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`" if unsatisfied else "")
+        lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`")
 
     return "\n".join(line for line in lines if line)
 
@@ -158,13 +243,11 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
 
         **Branch**: `master` @ `/project/path` | **Session**: `6d4487f4`
 
-        | Requirement | Type | Scope | Status | Triggers | Resolve |
-        |-------------|------|-------|--------|----------|---------|
-        | adr_reviewed | blocking | session | ⬜ | Edit, Write | `/plan-review` |
-        ...
+        ### Quick Start
+        🚀 **Run `/plan-review`** → satisfies `adr_reviewed`, `commit_plan`
 
-        ### Workflow
-        - **Edit/Write blocked?** → Run `/plan-review` first
+        | Requirement | Status | Triggers | Resolve |
+        ...
 
         **Fallback**: `req satisfy <name> --session 6d4487f4`
     """
@@ -174,48 +257,27 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
     lines.append(f"**Branch**: `{branch}` @ `{reqs.project_dir}` | **Session**: `{session_id}`")
     lines.append("")
 
-    # Table header
-    lines.append("| Requirement | Type | Scope | Status | Triggers | Resolve |")
-    lines.append("|-------------|------|-------|--------|----------|---------|")
+    # Quick Start section (action-oriented)
+    quick_start = _format_quick_start(req_data)
+    if quick_start:
+        lines.extend(quick_start)
+
+    # Status table (compact version without Type column)
+    lines.append("| Requirement | Status | Triggers | Resolve |")
+    lines.append("|-------------|--------|----------|---------|")
 
     unsatisfied_reqs = []
     for r in req_data:
         status = "✅" if r['satisfied'] else "⬜"
-        scope_display = r['scope'] if r['type'] != 'guard' else "-"
-        lines.append(f"| {r['name']} | {r['type']} | {scope_display} | {status} | {r['triggers']} | {r['resolve_action']} |")
+        short_resolve = _shorten_skill_name(r['resolve_action'])
+        if short_resolve.startswith('/'):
+            short_resolve = f"`{short_resolve}`"
+        lines.append(f"| {r['name']} | {status} | {r['triggers']} | {short_resolve} |")
         if not r['satisfied']:
             unsatisfied_reqs.append(r)
 
     if not req_data:
-        lines.append("| (none configured) | - | - | - | - | - |")
-
-    # Workflow hints based on what's unsatisfied
-    lines.append("")
-    lines.append("### Workflow")
-
-    edit_blocked = any(r for r in unsatisfied_reqs if 'Edit' in r['triggers'] or 'Write' in r['triggers'])
-    commit_blocked = any(r for r in unsatisfied_reqs if 'git commit' in r['triggers'])
-
-    if edit_blocked:
-        edit_skills = set()
-        for r in unsatisfied_reqs:
-            if ('Edit' in r['triggers'] or 'Write' in r['triggers']) and r['resolve_action'].startswith('`/'):
-                edit_skills.add(r['resolve_action'])
-        if edit_skills:
-            lines.append(f"- **Edit/Write blocked?** → Run {', '.join(sorted(edit_skills))} first")
-        else:
-            lines.append("- **Edit/Write blocked?** → Satisfy requirements first")
-
-    if commit_blocked:
-        commit_skills = set()
-        for r in unsatisfied_reqs:
-            if 'git commit' in r['triggers'] and r['resolve_action'].startswith('`/'):
-                commit_skills.add(r['resolve_action'])
-        if commit_skills:
-            lines.append(f"- **Commit blocked?** → Run {', '.join(sorted(commit_skills))} first")
-
-    if not edit_blocked and not commit_blocked and unsatisfied_reqs:
-        lines.append("- Requirements ready for most operations")
+        lines.append("| (none configured) | - | - | - |")
 
     # Fallback
     if unsatisfied_reqs:
@@ -244,16 +306,26 @@ def format_rich_status(reqs: BranchRequirements, config: RequirementsConfig,
     lines.append("---")
     lines.append("")
 
+    # Quick Start section (action-oriented) - immediately after header
+    quick_start = _format_quick_start(req_data)
+    if quick_start:
+        lines.extend(quick_start)
+        lines.append("---")
+        lines.append("")
+
     # Requirement Definitions
     lines.append("### Requirement Definitions")
     lines.append("")
 
     for r in req_data:
         scope_info = f", {r['scope']}-scoped" if r['type'] != 'guard' else ""
+        short_resolve = _shorten_skill_name(r['resolve_action'])
+        if short_resolve.startswith('/'):
+            short_resolve = f"`{short_resolve}`"
         lines.append(f"**{r['name']}** ({r['type']}{scope_info})")
         lines.append(f"> {r['description']}")
         lines.append(f"> Triggers: {r['triggers']}")
-        lines.append(f"> Resolve: {r['resolve_action']}")
+        lines.append(f"> Resolve: {short_resolve}")
         lines.append("")
 
     if not req_data:
@@ -299,46 +371,18 @@ def format_rich_status(reqs: BranchRequirements, config: RequirementsConfig,
 
     lines.append("")
 
-    # Workflow Guide
+    # Workflow Guide (simplified since Quick Start covers the main action)
     lines.append("---")
     lines.append("")
     lines.append("### Workflow Guide")
     lines.append("")
 
-    # Determine what skills are needed
-    planning_skills = set()
-    commit_skills = set()
-    pr_skills = set()
-
-    for r in unsatisfied_reqs:
-        if 'Edit' in r['triggers'] or 'Write' in r['triggers']:
-            if r['resolve_action'].startswith('`/'):
-                planning_skills.add(r['resolve_action'].strip('`'))
-        if 'git commit' in r['triggers']:
-            if r['resolve_action'].startswith('`/'):
-                commit_skills.add(r['resolve_action'].strip('`'))
-        if 'gh pr' in r['triggers']:
-            if r['resolve_action'].startswith('`/'):
-                pr_skills.add(r['resolve_action'].strip('`'))
-
-    if planning_skills or unsatisfied_reqs:
-        lines.append("**Starting implementation?**")
-        step = 1
-        if planning_skills:
-            lines.append(f"{step}. Run `/{list(planning_skills)[0]}` to satisfy planning requirements")
-            step += 1
-        lines.append(f"{step}. Make your edits")
-        step += 1
-        if commit_skills:
-            lines.append(f"{step}. Run `/{list(commit_skills)[0]}` before committing")
-        lines.append("")
+    lines.append("**Starting implementation?**")
+    lines.append("1. Make your edits")
+    lines.append("")
 
     lines.append("**Common patterns**:")
     lines.append("- New session → satisfy planning requirements first")
-    if commit_skills:
-        lines.append(f"- Before commit → `/{list(commit_skills)[0]}`")
-    if pr_skills:
-        lines.append(f"- Creating PR → `/{list(pr_skills)[0]}`")
     lines.append("")
 
     # Fallback
