@@ -35,9 +35,105 @@ sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
 from session import normalize_session_id
+from session_metrics import SessionMetrics
 from logger import get_logger
 from hook_utils import early_hook_setup
-from console import emit_json
+from console import emit_json, emit_text
+
+
+def _should_prompt_session_review(config, session_id: str, project_dir: str,
+                                   branch: str, logger) -> bool:
+    """
+    Check if we should prompt for session review.
+
+    Conditions:
+    - Session learning is enabled in config
+    - prompt_on_stop is enabled (default: True)
+    - Session had meaningful activity (>5 tool uses)
+
+    Args:
+        config: RequirementsConfig instance
+        session_id: Current session ID
+        project_dir: Project directory
+        branch: Current branch
+        logger: Logger instance
+
+    Returns:
+        True if should prompt, False otherwise
+    """
+    try:
+        # Check config for session_learning settings
+        learning_config = config.get_hook_config('session_learning', 'enabled', False)
+        if not learning_config:
+            return False
+
+        prompt_on_stop = config.get_hook_config('session_learning', 'prompt_on_stop', True)
+        if not prompt_on_stop:
+            return False
+
+        # Check session metrics for meaningful activity
+        metrics = SessionMetrics(session_id, project_dir, branch)
+        summary = metrics.get_summary()
+
+        tool_uses = summary.get('tool_uses', 0)
+        min_tool_uses = config.get_hook_config('session_learning', 'min_tool_uses', 5)
+
+        if tool_uses < min_tool_uses:
+            logger.debug(
+                "Session too short for review prompt",
+                tool_uses=tool_uses,
+                min_required=min_tool_uses
+            )
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.warning(f"Failed to check session review conditions: {e}")
+        return False
+
+
+def _emit_session_review_prompt(session_id: str, project_dir: str,
+                                branch: str, logger) -> None:
+    """
+    Emit a prompt suggesting session review.
+
+    Args:
+        session_id: Current session ID
+        project_dir: Project directory
+        branch: Current branch
+        logger: Logger instance
+    """
+    try:
+        # Get session summary for the prompt
+        metrics = SessionMetrics(session_id, project_dir, branch)
+        summary = metrics.get_summary()
+
+        tool_uses = summary.get('tool_uses', 0)
+        blocked_count = summary.get('blocked_count', 0)
+        skills_used = summary.get('skills_used', 0)
+
+        # Build prompt message
+        lines = [
+            "",
+            "---",
+            "",
+            "**Session Learning Available**",
+            "",
+            f"This session had {tool_uses} tool uses"
+            + (f" ({blocked_count} blocked)" if blocked_count > 0 else "")
+            + (f", {skills_used} skills" if skills_used > 0 else "") + ".",
+            "",
+            "Run `/session-reflect` to analyze patterns and improve future sessions.",
+            "Run `/session-reflect quick` for a quick summary.",
+            ""
+        ]
+
+        emit_text("\n".join(lines))
+        logger.info("Emitted session review prompt", tool_uses=tool_uses)
+
+    except Exception as e:
+        logger.warning(f"Failed to emit session review prompt: {e}")
 
 
 def main() -> int:
@@ -183,6 +279,10 @@ def main() -> int:
             emit_json(response)
         else:
             logger.debug("All requirements satisfied - allowing stop")
+
+            # Check if we should prompt for session review
+            if _should_prompt_session_review(config, session_id, project_dir, branch, logger):
+                _emit_session_review_prompt(session_id, project_dir, branch, logger)
 
         return 0
 

@@ -7148,6 +7148,314 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
                    f"Got: {compact}")
 
 
+def test_session_metrics_module(runner: TestRunner):
+    """Test session metrics module."""
+    print("\n📦 Testing session_metrics module...")
+
+    from session_metrics import (
+        get_sessions_dir,
+        get_metrics_path,
+        create_empty_metrics,
+        load_metrics,
+        save_metrics,
+        delete_metrics,
+        list_session_metrics,
+        SessionMetrics
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Simulate git repo
+        os.makedirs(f"{tmpdir}/.git/requirements/sessions", exist_ok=True)
+
+        # Test 1: get_sessions_dir
+        sessions_dir = get_sessions_dir(tmpdir)
+        runner.test("get_sessions_dir returns Path",
+                   "sessions" in str(sessions_dir),
+                   f"Got: {sessions_dir}")
+
+        # Test 2: get_metrics_path
+        path = get_metrics_path("abc12345", tmpdir)
+        runner.test("get_metrics_path includes session_id",
+                   "abc12345.json" in str(path),
+                   f"Got: {path}")
+
+        # Test 3: create_empty_metrics
+        metrics = create_empty_metrics("test1234", tmpdir, "main")
+        runner.test("create_empty_metrics has session_id",
+                   metrics.get('session_id') == "test1234")
+        runner.test("create_empty_metrics has branch",
+                   metrics.get('branch') == "main")
+        runner.test("create_empty_metrics has started_at",
+                   metrics.get('started_at') is not None)
+
+        # Test 4: save_metrics and load_metrics
+        save_metrics("test1234", tmpdir, metrics)
+        loaded = load_metrics("test1234", tmpdir)
+        runner.test("load_metrics returns saved data",
+                   loaded.get('session_id') == "test1234")
+
+        # Test 5: SessionMetrics class - record_tool_use
+        sm = SessionMetrics("sess5678", tmpdir, "feature/test")
+        sm.record_tool_use("Edit", file="src/auth.py", blocked=True, requirement="commit_plan")
+        sm.record_tool_use("Edit", file="src/auth.py")
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records tool use",
+                   loaded.get('tools', {}).get('Edit', {}).get('count') == 2,
+                   f"Got: {loaded.get('tools')}")
+        runner.test("SessionMetrics records blocked count",
+                   loaded.get('tools', {}).get('Edit', {}).get('blocked_count') == 1)
+
+        # Test 6: SessionMetrics - record_requirement_trigger
+        sm.record_requirement_trigger("commit_plan", blocked=True)
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records requirement trigger",
+                   loaded.get('requirements', {}).get('commit_plan', {}).get('triggered_at') is not None)
+
+        # Test 7: SessionMetrics - record_requirement_satisfied
+        sm.record_requirement_satisfied("commit_plan", "skill")
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records requirement satisfied",
+                   loaded.get('requirements', {}).get('commit_plan', {}).get('satisfied_by') == "skill")
+
+        # Test 8: SessionMetrics - record_skill_use
+        sm.record_skill_use("pre-commit")
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records skill use",
+                   len(loaded.get('skills', [])) == 1)
+
+        # Test 9: SessionMetrics - record_agent_use
+        sm.record_agent_use("code-reviewer")
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records agent use",
+                   len(loaded.get('agents', [])) == 1)
+
+        # Test 10: SessionMetrics - record_error
+        sm.record_error("blocked", message="Test error", requirement="commit_plan")
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("SessionMetrics records errors",
+                   len(loaded.get('errors', [])) == 1)
+
+        # Test 11: SessionMetrics - get_summary
+        summary = sm.get_summary()
+        runner.test("get_summary returns dict",
+                   isinstance(summary, dict))
+        runner.test("get_summary includes tool_uses",
+                   summary.get('tool_uses') == 2)
+        runner.test("get_summary includes skills_used",
+                   summary.get('skills_used') == 1)
+
+        # Test 12: SessionMetrics - finalize_session
+        sm.finalize_session()
+        sm.save()
+
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("finalize_session sets ended_at",
+                   loaded.get('ended_at') is not None)
+
+        # Test 13: list_session_metrics
+        sessions = list_session_metrics(tmpdir)
+        runner.test("list_session_metrics returns list",
+                   isinstance(sessions, list))
+        runner.test("list_session_metrics finds sessions",
+                   len(sessions) >= 1,
+                   f"Got: {len(sessions)}")
+
+        # Test 14: delete_metrics
+        delete_metrics("test1234", tmpdir)
+        loaded = load_metrics("test1234", tmpdir)
+        runner.test("delete_metrics removes file",
+                   loaded is None)
+
+        # Test 15: Fail-open behavior - no exceptions raised
+        bad_metrics = SessionMetrics("bad", "/nonexistent/path", "main")
+        try:
+            bad_metrics.record_tool_use("Edit")
+            bad_metrics.save()
+            runner.test("SessionMetrics fails open on bad path", True)
+        except Exception as e:
+            runner.test("SessionMetrics fails open on bad path", False, str(e))
+
+
+def test_learning_updates_module(runner: TestRunner):
+    """Test learning updates module."""
+    print("\n📦 Testing learning_updates module...")
+
+    from learning_updates import (
+        get_history_path,
+        content_hash,
+        create_empty_history,
+        load_history,
+        save_history,
+        record_update,
+        get_recent_updates,
+        get_update_by_id,
+        mark_rolled_back,
+        get_learning_stats,
+        LearningUpdater
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Simulate git repo
+        os.makedirs(f"{tmpdir}/.git/requirements", exist_ok=True)
+        os.makedirs(f"{tmpdir}/.serena/memories", exist_ok=True)
+
+        # Test 1: get_history_path
+        path = get_history_path(tmpdir)
+        runner.test("get_history_path returns Path",
+                   "learning_history.json" in str(path),
+                   f"Got: {path}")
+
+        # Test 2: content_hash
+        hash1 = content_hash("test content")
+        hash2 = content_hash("test content")
+        hash3 = content_hash("different content")
+        runner.test("content_hash is deterministic", hash1 == hash2)
+        runner.test("content_hash differs for different content", hash1 != hash3)
+        runner.test("content_hash is 12 chars", len(hash1) == 12)
+
+        # Test 3: create_empty_history
+        history = create_empty_history()
+        runner.test("create_empty_history has version",
+                   history.get('version') == "1.0")
+        runner.test("create_empty_history has stats",
+                   'stats' in history)
+        runner.test("create_empty_history has empty updates",
+                   history.get('updates') == [])
+
+        # Test 4: save_history and load_history
+        save_history(tmpdir, history)
+        loaded = load_history(tmpdir)
+        runner.test("load_history returns saved data",
+                   loaded.get('version') == "1.0")
+
+        # Test 5: record_update
+        update_id = record_update(
+            tmpdir,
+            "sess1234",
+            "memory",
+            ".serena/memories/test.md",
+            "create",
+            "New memory content",
+            None,
+            {"confidence": 0.85}
+        )
+        runner.test("record_update returns update_id",
+                   update_id == 0)
+
+        # Test 6: get_recent_updates
+        updates = get_recent_updates(tmpdir)
+        runner.test("get_recent_updates returns list",
+                   isinstance(updates, list))
+        runner.test("get_recent_updates has recorded update",
+                   len(updates) == 1)
+        runner.test("Update has correct type",
+                   updates[0].get('type') == 'memory')
+
+        # Test 7: get_update_by_id
+        update = get_update_by_id(tmpdir, 0)
+        runner.test("get_update_by_id returns update",
+                   update is not None)
+        runner.test("Update has correct target",
+                   update.get('target') == ".serena/memories/test.md")
+
+        # Test 8: get_update_by_id with invalid id
+        invalid = get_update_by_id(tmpdir, 999)
+        runner.test("get_update_by_id returns None for invalid id",
+                   invalid is None)
+
+        # Test 9: get_learning_stats
+        stats = get_learning_stats(tmpdir)
+        runner.test("get_learning_stats returns dict",
+                   isinstance(stats, dict))
+        runner.test("Stats has total_updates",
+                   stats.get('total_updates') == 1)
+        runner.test("Stats has memories_updated",
+                   stats.get('memories_updated') == 1)
+
+        # Test 10: mark_rolled_back
+        # First record an update with previous content
+        update_id2 = record_update(
+            tmpdir, "sess1234", "memory", ".serena/memories/test2.md",
+            "append", "New content", "Previous content"
+        )
+        success = mark_rolled_back(tmpdir, update_id2)
+        runner.test("mark_rolled_back returns True",
+                   success)
+
+        update = get_update_by_id(tmpdir, update_id2)
+        runner.test("Update marked as rolled_back",
+                   update.get('rolled_back') is True)
+
+        # Test 11: mark_rolled_back with invalid id
+        success = mark_rolled_back(tmpdir, 999)
+        runner.test("mark_rolled_back returns False for invalid id",
+                   not success)
+
+        # Test 12: LearningUpdater - apply_memory_update create
+        updater = LearningUpdater("upd12345", tmpdir)
+        success = updater.apply_memory_update(
+            ".serena/memories/workflow-patterns.md",
+            "# Workflow Patterns\n\nThis project uses TDD.",
+            action='create',
+            confidence=0.9,
+            evidence=["pytest ran 12 times"]
+        )
+        runner.test("apply_memory_update create succeeds", success)
+
+        memory_path = Path(tmpdir) / ".serena/memories/workflow-patterns.md"
+        runner.test("Memory file created", memory_path.exists())
+
+        # Test 13: LearningUpdater - apply_memory_update append
+        success = updater.apply_memory_update(
+            ".serena/memories/workflow-patterns.md",
+            "Additional pattern: Code review before commit.",
+            action='append',
+            confidence=0.85
+        )
+        runner.test("apply_memory_update append succeeds", success)
+
+        content = memory_path.read_text()
+        runner.test("Memory file appended",
+                   "Session Learning:" in content and "Additional pattern" in content)
+
+        # Test 14: Stats updated after LearningUpdater operations
+        stats = get_learning_stats(tmpdir)
+        runner.test("Stats updated after LearningUpdater",
+                   stats.get('memories_updated') >= 3,
+                   f"Got: {stats.get('memories_updated')}")
+
+        # Test 15: LearningUpdater rollback
+        history = load_history(tmpdir)
+        last_id = len(history.get('updates', [])) - 1
+        success = updater.rollback_update(last_id)
+        runner.test("rollback_update succeeds", success)
+
+        # Test 16: Fail-open behavior
+        bad_updater = LearningUpdater("bad", "/nonexistent/path")
+        try:
+            result = bad_updater.apply_memory_update(
+                ".serena/memories/test.md",
+                "test content",
+                action='create'
+            )
+            # Should return False but not raise
+            runner.test("LearningUpdater fails open on bad path", result is False)
+        except Exception as e:
+            runner.test("LearningUpdater fails open on bad path", False, str(e))
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -7282,6 +7590,10 @@ def main():
     test_get_requirement_description(runner)
     test_session_start_format_tiers(runner)
     test_session_start_quick_start_helpers(runner)
+
+    # Session learning module tests
+    test_session_metrics_module(runner)
+    test_learning_updates_module(runner)
 
     return runner.summary()
 

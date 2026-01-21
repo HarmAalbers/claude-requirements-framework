@@ -25,6 +25,7 @@
     "./agents/exception-auditor.md",
     "./agents/type-checker.md",
     "./agents/solid-checker.md",
-    "./agents/test-pyramid-checker.md"
+    "./agents/test-pyramid-checker.md",
+    "./agents/session-analyzer.md"
   ]
 }

@@ -33,6 +33,7 @@ from config import RequirementsConfig
 from config_utils import summarize_triggers, get_requirement_description
 from requirements import BranchRequirements
 from session import update_registry, cleanup_stale_sessions, normalize_session_id, get_active_sessions
+from session_metrics import SessionMetrics
 from logger import get_logger
 from hook_utils import early_hook_setup
 from console import emit_text
@@ -617,6 +618,14 @@ See `req init --help` for options.
             update_registry(session_id, project_dir, branch)
         except Exception as e:
             logger.error("Failed to update registry", error=str(e))
+
+        # 2a. Initialize session metrics for learning system
+        try:
+            metrics = SessionMetrics(session_id, project_dir, branch)
+            metrics.save()  # Creates metrics file if it doesn't exist
+            logger.debug("Session metrics initialized")
+        except Exception as e:
+            logger.warning("Failed to initialize session metrics", error=str(e))
 
         # 2b. Check for other sessions and warn if single_session guard is enabled
         other_sessions_warning = check_other_sessions_warning(

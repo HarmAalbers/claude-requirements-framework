@@ -319,3 +319,15 @@ hooks:
   # Stop hook - verifies requirements before session ends
   stop:
     verify_requirements: true  # Block session end if requirements unsatisfied
+
+  # Session Learning - analyzes sessions to improve future efficiency
+  session_learning:
+    enabled: false  # Set to true to enable session learning
+    prompt_on_stop: true  # Prompt for /session-reflect before session ends
+    min_tool_uses: 5  # Minimum tool uses before prompting for review
+    # max_recommendations: 5  # Maximum recommendations per session
+    # confidence_threshold: 0.7  # Only show recommendations above this confidence
+    # update_targets:  # What can be updated by learning
+    #   - memories  # .serena/memories/ files
+    #   - skills    # Plugin skill files
+    #   - commands  # Plugin command files (arguments only)

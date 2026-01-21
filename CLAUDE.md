@@ -85,7 +85,7 @@ SessionEnd (handle-session-end.py) - session ends
 - `handle-session-end.py` - SessionEnd hook (cleanup)
 - `requirements-cli.py` - `req` command implementation
 - `ruff_check.py` - Ruff linter hook
-- `test_requirements.py` - Test suite (544 tests)
+- `test_requirements.py` - Test suite (780+ tests)
 - `test_branch_size_calculator.py` - Branch size calculator tests
 
 **Core Library** (in `hooks/lib/`):
@@ -115,6 +115,10 @@ SessionEnd (handle-session-end.py) - session ends
 - `feature_selector.py` - Feature selection logic
 - `init_presets.py` - Initialization presets
 - `interactive.py` - Interactive prompts
+
+**Session Learning** (in `hooks/lib/`):
+- `session_metrics.py` - Session data collection and storage
+- `learning_updates.py` - Apply and track learning updates with rollback
 
 ## Plugin Component Versioning
 
@@ -292,6 +296,47 @@ See `examples/global-requirements.yaml` for full example configuration.
 | `branch` | Persists across sessions on same branch |
 | `permanent` | Never auto-cleared |
 | `single_use` | Cleared after trigger command completes |
+
+## Session Learning
+
+The session learning system helps Claude Code improve over time by analyzing sessions and suggesting updates to memories, skills, and commands.
+
+### Enable Session Learning
+
+Add to your `.claude/requirements.yaml`:
+
+```yaml
+hooks:
+  session_learning:
+    enabled: true
+    prompt_on_stop: true  # Prompts for review when ending session
+    min_tool_uses: 5      # Minimum activity before prompting
+```
+
+### Usage
+
+```bash
+/session-reflect          # Full analysis with recommendations
+/session-reflect quick    # Quick summary statistics
+/session-reflect analyze-only  # Analysis without applying changes
+
+req learning stats        # Show learning statistics
+req learning list         # List recent updates
+req learning rollback 3   # Undo update #3
+```
+
+### Storage
+
+- Session metrics: `.git/requirements/sessions/<session_id>.json`
+- Learning history: `.git/requirements/learning_history.json`
+- Updated memories: `.serena/memories/*.md`
+
+### Design
+
+- **Fail-open**: Metric recording errors never block execution
+- **Atomic writes**: File locking + atomic rename for data safety
+- **User approval**: All updates require user approval before applying
+- **Rollback capable**: Every change recorded with previous content hash
 
 ## Additional Documentation
 - `DEVELOPMENT.md` - Comprehensive development guide with detailed implementation notes

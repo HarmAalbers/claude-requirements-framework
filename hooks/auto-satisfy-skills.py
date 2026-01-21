@@ -33,6 +33,7 @@ from requirements import BranchRequirements
 from config import RequirementsConfig
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import normalize_session_id
+from session_metrics import SessionMetrics
 from logger import get_logger
 from hook_utils import extract_skill_name
 
@@ -161,6 +162,9 @@ def main() -> int:
         reqs = BranchRequirements(branch, session_id, project_dir)
         satisfied_reqs = []
 
+        # Initialize session metrics for learning system
+        metrics = SessionMetrics(session_id, project_dir, branch)
+
         # Satisfy all mapped requirements
         for req_name in req_names:
             if not config.is_requirement_enabled(req_name):
@@ -169,6 +173,13 @@ def main() -> int:
             scope = config.get_scope(req_name)
             reqs.satisfy(req_name, scope, method='skill', metadata={'skill': skill_name})
             satisfied_reqs.append(req_name)
+
+            # Record requirement satisfaction in metrics
+            metrics.record_requirement_satisfied(req_name, f'skill:{skill_name}')
+
+        # Record skill usage in metrics
+        metrics.record_skill_use(skill_name)
+        metrics.save()
 
         # Output success message (visible to user)
         if satisfied_reqs:
