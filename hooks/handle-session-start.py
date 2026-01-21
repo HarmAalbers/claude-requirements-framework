@@ -627,7 +627,23 @@ See `req init --help` for options.
         except Exception as e:
             logger.warning("Failed to initialize session metrics", error=str(e))
 
-        # 2b. Check for other sessions and warn if single_session guard is enabled
+        # 2b. Auto-register project in project registry (for upgrade discovery)
+        try:
+            from project_registry import ProjectRegistry
+            from feature_catalog import detect_configured_features
+
+            registry = ProjectRegistry()
+            raw_config = config.get_raw_config()
+            features = detect_configured_features(raw_config)
+            enabled = [f for f, e in features.items() if e]
+            has_inherit = raw_config.get("inherit", False)
+            registry.register_project(project_dir, enabled, has_inherit)
+            logger.debug("Project registered in upgrade registry", features=len(enabled))
+        except Exception as e:
+            # Fail silently - this is opportunistic
+            logger.debug("Failed to register project", error=str(e))
+
+        # 2c. Check for other sessions and warn if single_session guard is enabled
         other_sessions_warning = check_other_sessions_warning(
             config, project_dir, session_id, logger
         )

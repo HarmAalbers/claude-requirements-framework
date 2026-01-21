@@ -338,9 +338,46 @@ req learning rollback 3   # Undo update #3
 - **User approval**: All updates require user approval before applying
 - **Rollback capable**: Every change recorded with previous content hash
 
+## Cross-Project Feature Upgrade
+
+The `req upgrade` command helps discover and adopt new framework features across all projects on your machine.
+
+### Usage
+
+```bash
+req upgrade scan               # Scan machine for projects using the framework
+req upgrade status             # Show feature status for current project
+req upgrade status --all       # Show all tracked projects (brief)
+req upgrade recommend          # Generate YAML snippets for missing features
+req upgrade recommend -f NAME  # Show snippet for specific feature
+```
+
+### How It Works
+
+1. **Project Registry**: Stores discovered projects at `~/.claude/project_registry.json`
+2. **Feature Catalog**: Tracks all available features with version info and YAML examples
+3. **Auto-Registration**: Projects are registered when sessions start (no manual scan needed)
+
+### Example
+
+```bash
+$ req upgrade status
+Feature Status: /Users/harm/Work/my-project
+────────────────────────────────────────────────
+  Requirements:
+    commit_plan               ✓ Enabled
+    session_learning          ○ Not configured
+────────────────────────────────────────────────
+  Enabled: 2/12 features
+
+$ req upgrade recommend --feature session_learning
+# Shows ready-to-copy YAML snippet
+```
+
 ## Additional Documentation
 - `DEVELOPMENT.md` - Comprehensive development guide with detailed implementation notes
 - `docs/adr/` - Architecture Decision Records documenting key design decisions
   - ADR-004: Guard requirement strategy
   - ADR-008: CLAUDE.md weekly maintenance process
+  - ADR-010: Cross-project feature upgrade system
 - `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills

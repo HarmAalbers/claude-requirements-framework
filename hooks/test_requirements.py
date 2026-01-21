@@ -7501,6 +7501,265 @@ def test_learning_updates_module(runner: TestRunner):
             runner.test("LearningUpdater fails open on bad path", False, str(e))
 
 
+def test_feature_catalog_module(runner: TestRunner):
+    """Test feature catalog module."""
+    print("\n📦 Testing feature_catalog module...")
+
+    from feature_catalog import (
+        get_all_features,
+        get_features_by_category,
+        detect_configured_features,
+        get_missing_features,
+        get_enabled_features,
+        get_feature_yaml,
+        get_feature_info,
+        get_new_features_since,
+        CATEGORY_REQUIREMENTS,
+        CATEGORY_HOOKS,
+        CATEGORY_GUARDS,
+    )
+
+    # Test 1: get_all_features returns dict
+    features = get_all_features()
+    runner.test("get_all_features returns dict",
+               isinstance(features, dict))
+    runner.test("get_all_features has features",
+               len(features) > 0)
+
+    # Test 2: Known features exist
+    runner.test("commit_plan feature exists",
+               'commit_plan' in features)
+    runner.test("session_learning feature exists",
+               'session_learning' in features)
+    runner.test("protected_branch feature exists",
+               'protected_branch' in features)
+
+    # Test 3: Feature metadata structure
+    commit_plan = features.get('commit_plan', {})
+    runner.test("Feature has name",
+               'name' in commit_plan)
+    runner.test("Feature has category",
+               'category' in commit_plan)
+    runner.test("Feature has config_path",
+               'config_path' in commit_plan)
+    runner.test("Feature has description",
+               'description' in commit_plan)
+    runner.test("Feature has example_yaml",
+               'example_yaml' in commit_plan)
+
+    # Test 4: get_features_by_category
+    req_features = get_features_by_category(CATEGORY_REQUIREMENTS)
+    runner.test("get_features_by_category returns dict",
+               isinstance(req_features, dict))
+    runner.test("Requirements category has commit_plan",
+               'commit_plan' in req_features)
+    runner.test("Requirements category doesn't have session_learning",
+               'session_learning' not in req_features)
+
+    guard_features = get_features_by_category(CATEGORY_GUARDS)
+    runner.test("Guards category has protected_branch",
+               'protected_branch' in guard_features)
+
+    hook_features = get_features_by_category(CATEGORY_HOOKS)
+    runner.test("Hooks category has session_learning",
+               'session_learning' in hook_features)
+
+    # Test 5: detect_configured_features with sample config
+    sample_config = {
+        'requirements': {
+            'commit_plan': {'enabled': True},
+            'adr_reviewed': {'enabled': False},
+        },
+        'hooks': {
+            'session_learning': {'enabled': True}
+        }
+    }
+    configured = detect_configured_features(sample_config)
+    runner.test("detect_configured_features returns dict",
+               isinstance(configured, dict))
+    runner.test("commit_plan detected as enabled",
+               configured.get('commit_plan') is True)
+    runner.test("adr_reviewed detected as disabled",
+               configured.get('adr_reviewed') is False)
+    runner.test("session_learning detected as enabled",
+               configured.get('session_learning') is True)
+
+    # Test 6: get_missing_features
+    missing = get_missing_features(sample_config)
+    runner.test("get_missing_features returns list",
+               isinstance(missing, list))
+    runner.test("Missing features doesn't include commit_plan",
+               'commit_plan' not in missing)
+    runner.test("Missing features includes protected_branch",
+               'protected_branch' in missing)
+
+    # Test 7: get_enabled_features
+    enabled = get_enabled_features(sample_config)
+    runner.test("get_enabled_features returns list",
+               isinstance(enabled, list))
+    runner.test("Enabled features includes commit_plan",
+               'commit_plan' in enabled)
+    runner.test("Enabled features includes session_learning",
+               'session_learning' in enabled)
+    runner.test("Enabled features doesn't include adr_reviewed",
+               'adr_reviewed' not in enabled)
+
+    # Test 8: get_feature_yaml
+    yaml_snippet = get_feature_yaml('session_learning')
+    runner.test("get_feature_yaml returns string",
+               isinstance(yaml_snippet, str))
+    runner.test("YAML snippet contains feature config",
+               'session_learning' in yaml_snippet)
+    runner.test("YAML snippet contains enabled field",
+               'enabled' in yaml_snippet)
+
+    # Test 9: get_feature_yaml for unknown feature
+    unknown = get_feature_yaml('nonexistent_feature')
+    runner.test("get_feature_yaml returns None for unknown",
+               unknown is None)
+
+    # Test 10: get_feature_info
+    info = get_feature_info('commit_plan')
+    runner.test("get_feature_info returns dict",
+               isinstance(info, dict))
+    runner.test("Info has name",
+               info.get('name') == "Commit Planning")
+
+    # Test 11: get_feature_info for unknown
+    info = get_feature_info('nonexistent')
+    runner.test("get_feature_info returns None for unknown",
+               info is None)
+
+    # Test 12: get_new_features_since
+    new_features = get_new_features_since("1.0")
+    runner.test("get_new_features_since returns list",
+               isinstance(new_features, list))
+    # session_learning was introduced in 1.1
+    runner.test("session_learning is new since 1.0",
+               'session_learning' in new_features)
+    runner.test("commit_plan is not new since 1.0",
+               'commit_plan' not in new_features)
+
+    # Test 13: get_new_features_since with current version
+    new_features = get_new_features_since("1.1")
+    runner.test("No features new since 1.1",
+               'session_learning' not in new_features)
+
+
+def test_project_registry_module(runner: TestRunner):
+    """Test project registry module."""
+    print("\n📦 Testing project_registry module...")
+
+    from project_registry import ProjectRegistry
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a custom registry path in temp dir
+        registry_path = Path(tmpdir) / ".claude" / "project_registry.json"
+
+        # Create a mock project structure
+        mock_project1 = Path(tmpdir) / "project1"
+        mock_project1.mkdir()
+        (mock_project1 / ".git").mkdir()
+        (mock_project1 / ".claude").mkdir()
+        (mock_project1 / ".claude" / "requirements.yaml").write_text("enabled: true")
+
+        mock_project2 = Path(tmpdir) / "project2"
+        mock_project2.mkdir()
+        (mock_project2 / ".git").mkdir()
+        (mock_project2 / ".claude").mkdir()
+        (mock_project2 / ".claude" / "requirements.yaml").write_text("enabled: true")
+
+        # Test 1: Registry initialization
+        registry = ProjectRegistry(registry_path=registry_path)
+        runner.test("ProjectRegistry initializes",
+                   registry is not None)
+
+        # Test 2: Read empty registry
+        data = registry.read()
+        runner.test("read returns dict",
+                   isinstance(data, dict))
+        runner.test("Empty registry has version",
+                   data.get('version') == "1.0")
+        runner.test("Empty registry has empty projects",
+                   data.get('projects') == {})
+
+        # Test 3: Register a project
+        success = registry.register_project(
+            str(mock_project1),
+            configured_features=['commit_plan', 'adr_reviewed'],
+            has_global_inherit=True
+        )
+        runner.test("register_project returns True",
+                   success)
+
+        # Test 4: Read registered project
+        data = registry.read()
+        projects = data.get('projects', {})
+        runner.test("Registry has registered project",
+                   str(mock_project1.resolve()) in projects)
+
+        project_info = projects.get(str(mock_project1.resolve()), {})
+        runner.test("Project has configured_features",
+                   project_info.get('configured_features') == ['commit_plan', 'adr_reviewed'])
+        runner.test("Project has has_global_inherit",
+                   project_info.get('has_global_inherit') is True)
+        runner.test("Project has discovered_at",
+                   project_info.get('discovered_at') is not None)
+        runner.test("Project has last_seen",
+                   project_info.get('last_seen') is not None)
+
+        # Test 5: list_projects
+        projects_list = registry.list_projects()
+        runner.test("list_projects returns list",
+                   isinstance(projects_list, list))
+        runner.test("list_projects has one project",
+                   len(projects_list) == 1)
+        runner.test("Project has path key",
+                   projects_list[0].get('path') == str(mock_project1.resolve()))
+
+        # Test 6: get_project
+        project = registry.get_project(str(mock_project1))
+        runner.test("get_project returns dict",
+                   isinstance(project, dict))
+        runner.test("get_project has correct features",
+                   project.get('configured_features') == ['commit_plan', 'adr_reviewed'])
+
+        # Test 7: get_project for unknown path
+        unknown = registry.get_project("/nonexistent/path")
+        runner.test("get_project returns None for unknown",
+                   unknown is None)
+
+        # Test 8: scan_for_projects
+        discovered = registry.scan_for_projects([Path(tmpdir)], max_depth=2)
+        runner.test("scan_for_projects returns list",
+                   isinstance(discovered, list))
+        runner.test("scan_for_projects finds projects",
+                   len(discovered) >= 1,
+                   f"Found: {discovered}")
+
+        # Test 9: prune_stale (remove project2's config to make it stale)
+        registry.register_project(str(mock_project2), ['commit_plan'])
+        # Verify it was registered
+        runner.test("Project2 registered before prune",
+                   len(registry.list_projects()) == 2)
+
+        # Remove the config file to make it stale
+        (mock_project2 / ".claude" / "requirements.yaml").unlink()
+
+        removed = registry.prune_stale()
+        runner.test("prune_stale removes stale projects",
+                   removed == 1,
+                   f"Removed: {removed}")
+        runner.test("Only valid project remains",
+                   len(registry.list_projects()) == 1)
+
+        # Test 10: Write atomicity (write and verify)
+        registry2 = ProjectRegistry(registry_path=registry_path)
+        data2 = registry2.read()
+        runner.test("Registry persists across instances",
+                   len(data2.get('projects', {})) == 1)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -7639,6 +7898,10 @@ def main():
     # Session learning module tests
     test_session_metrics_module(runner)
     test_learning_updates_module(runner)
+
+    # Feature catalog and project registry tests
+    test_feature_catalog_module(runner)
+    test_project_registry_module(runner)
 
     return runner.summary()
 

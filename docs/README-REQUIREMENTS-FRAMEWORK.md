@@ -332,6 +332,12 @@ req sessions
 
 # Cleanup stale state
 req prune
+
+# Cross-project feature upgrade
+req upgrade scan               # Scan machine for projects
+req upgrade status             # Show feature status for current project
+req upgrade status --all       # Show all tracked projects
+req upgrade recommend          # Generate YAML for missing features
 ```
 
 ## Scope Types
@@ -528,6 +534,7 @@ requirements:
 
 ## Version History
 
+- **v2.4** - **Cross-project feature upgrade** - `req upgrade` command for discovering and adopting new features across projects
 - **v2.3** - **`satisfied_by_skill` field** - Connect project skills to auto-satisfy requirements
 - **v2.2** - Full session lifecycle hooks (SessionStart, Stop, SessionEnd)
 - **v2.1** - Message deduplication for parallel tool calls
@@ -554,6 +561,7 @@ Framework code lives in `~/.claude/hooks/`. To update:
 - **Progress**: `~/.claude/requirements-framework-progress.json`
 - **Log File**: `~/.claude/requirements.log`
 - **Session Registry**: `~/.claude/sessions.json`
+- **Project Registry**: `~/.claude/project_registry.json`
 
 ---
 
