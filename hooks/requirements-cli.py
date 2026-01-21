@@ -29,6 +29,8 @@ from requirements import BranchRequirements
 from config import RequirementsConfig, load_yaml
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
+from session_metrics import list_session_metrics, load_metrics
+from learning_updates import get_recent_updates, get_learning_stats, mark_rolled_back, get_update_by_id
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
 from console import emit_text
@@ -2560,6 +2562,198 @@ def cmd_init(args) -> int:
         return 1
 
 
+def cmd_learning(args) -> int:
+    """
+    Manage session learning system.
+
+    Subcommands:
+        list     - Show recent learning updates
+        stats    - Show learning statistics
+        rollback - Rollback a specific update
+        disable  - Disable learning for this project
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    project_dir = get_project_dir()
+
+    if not is_git_repo(project_dir):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+
+    subcommand = args.learning_command or 'stats'
+
+    if subcommand == 'list':
+        return _cmd_learning_list(project_dir, args)
+    elif subcommand == 'stats':
+        return _cmd_learning_stats(project_dir)
+    elif subcommand == 'rollback':
+        return _cmd_learning_rollback(project_dir, args)
+    elif subcommand == 'disable':
+        return _cmd_learning_disable(project_dir)
+    else:
+        out(error(f"❌ Unknown subcommand: {subcommand}"), file=sys.stderr)
+        return 1
+
+
+def _cmd_learning_list(project_dir: str, args) -> int:
+    """List recent learning updates."""
+    count = getattr(args, 'count', 10)
+    updates = get_recent_updates(project_dir, count=count)
+
+    if not updates:
+        out(info("No learning updates recorded yet."))
+        out(dim("Run /session-reflect to analyze a session and create updates."))
+        return 0
+
+    out(header("📚 Recent Learning Updates"))
+    out()
+
+    for update in updates:
+        update_id = update.get('id', '?')
+        timestamp = update.get('datetime', 'unknown')
+        update_type = update.get('type', 'unknown')
+        target = update.get('target', 'unknown')
+        action = update.get('action', 'unknown')
+        rolled_back = update.get('rolled_back', False)
+
+        status = dim("[rolled back]") if rolled_back else ""
+        out(f"  {bold(f'#{update_id}')} {timestamp} {status}")
+        out(f"      Type: {update_type}")
+        out(f"      Target: {target}")
+        out(f"      Action: {action}")
+
+        metadata = update.get('metadata', {})
+        if metadata.get('confidence'):
+            out(f"      Confidence: {metadata['confidence']:.0%}")
+        out()
+
+    out(hint("Use 'req learning rollback <id>' to undo an update"))
+    return 0
+
+
+def _cmd_learning_stats(project_dir: str) -> int:
+    """Show learning statistics."""
+    stats = get_learning_stats(project_dir)
+
+    out(header("📊 Learning Statistics"))
+    out()
+
+    total = stats.get('total_updates', 0)
+    if total == 0:
+        out(info("No learning updates recorded yet."))
+        out(dim("Run /session-reflect to start learning from your sessions."))
+        return 0
+
+    out(f"  Total Updates:     {bold(str(total))}")
+    out(f"  Memories Updated:  {stats.get('memories_updated', 0)}")
+    out(f"  Skills Updated:    {stats.get('skills_updated', 0)}")
+    out(f"  Commands Updated:  {stats.get('commands_updated', 0)}")
+    out(f"  Rollbacks:         {stats.get('rollbacks', 0)}")
+    out()
+
+    # Show session metrics summary
+    sessions = list_session_metrics(project_dir, max_age_days=7)
+    if sessions:
+        out(header("📈 Recent Sessions (last 7 days)"))
+        out()
+        for sess in sessions[:5]:
+            sess_id = sess.get('session_id', 'unknown')
+            branch = sess.get('branch', 'unknown')
+            tool_count = sess.get('tool_count', 0)
+            out(f"  {sess_id} on {branch}: {tool_count} tool uses")
+        if len(sessions) > 5:
+            out(dim(f"  ... and {len(sessions) - 5} more"))
+    else:
+        out(dim("No session metrics available."))
+
+    return 0
+
+
+def _cmd_learning_rollback(project_dir: str, args) -> int:
+    """Rollback a specific update."""
+    update_id = getattr(args, 'update_id', None)
+
+    if update_id is None:
+        out(error("❌ Please specify an update ID to rollback"), file=sys.stderr)
+        out(hint("Use 'req learning list' to see available updates"))
+        return 1
+
+    try:
+        update_id = int(update_id)
+    except ValueError:
+        out(error(f"❌ Invalid update ID: {update_id}"), file=sys.stderr)
+        return 1
+
+    # Get the update first
+    update = get_update_by_id(project_dir, update_id)
+    if not update:
+        out(error(f"❌ Update #{update_id} not found"), file=sys.stderr)
+        return 1
+
+    if update.get('rolled_back'):
+        out(warning(f"⚠️  Update #{update_id} was already rolled back"))
+        return 0
+
+    if not update.get('rollback_available'):
+        out(error(f"❌ Rollback not available for update #{update_id}"), file=sys.stderr)
+        out(dim("This update was a create action without previous content."))
+        out(hint("You can manually delete the file or use git to restore."))
+        return 1
+
+    # Mark as rolled back
+    if mark_rolled_back(project_dir, update_id):
+        out(success(f"✅ Marked update #{update_id} as rolled back"))
+        out()
+        out(warning("⚠️  Note: The file content was not automatically restored."))
+        out(hint("Use git to restore the file, or manually edit it:"))
+        out(dim(f"   git checkout -- {update.get('target', 'unknown')}"))
+        return 0
+    else:
+        out(error(f"❌ Failed to rollback update #{update_id}"), file=sys.stderr)
+        return 1
+
+
+def _cmd_learning_disable(project_dir: str) -> int:
+    """Disable learning for this project."""
+    config_path = Path(project_dir) / '.claude' / 'requirements.local.yaml'
+
+    try:
+        # Load existing config or create new
+        if config_path.exists():
+            with open(config_path) as f:
+                config_data = load_yaml(f)
+        else:
+            config_data = {}
+
+        # Disable session learning
+        if 'hooks' not in config_data:
+            config_data['hooks'] = {}
+        if 'session_learning' not in config_data['hooks']:
+            config_data['hooks']['session_learning'] = {}
+
+        config_data['hooks']['session_learning']['enabled'] = False
+
+        # Write config
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        import yaml
+        with open(config_path, 'w') as f:
+            yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        out(success("✅ Session learning disabled for this project"))
+        out(dim(f"   Config: {config_path}"))
+        out()
+        out(hint("To re-enable: remove 'session_learning.enabled: false' from config"))
+        return 0
+
+    except Exception as e:
+        out(error(f"❌ Failed to disable learning: {e}"), file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -2689,6 +2883,24 @@ Environment Variables:
     doctor_parser.add_argument('--json', action='store_true', help='Output results in JSON format for scripting')
     doctor_parser.add_argument('--ci', action='store_true', help='CI-friendly mode: only fail on code/hook issues, not missing Claude Code config')
 
+    # learning
+    learning_parser = subparsers.add_parser('learning', help='Manage session learning system')
+    learning_subparsers = learning_parser.add_subparsers(dest='learning_command', help='Learning subcommand')
+
+    # learning list
+    learning_list = learning_subparsers.add_parser('list', help='Show recent learning updates')
+    learning_list.add_argument('--count', '-n', type=int, default=10, help='Number of updates to show')
+
+    # learning stats
+    learning_subparsers.add_parser('stats', help='Show learning statistics')
+
+    # learning rollback
+    learning_rollback = learning_subparsers.add_parser('rollback', help='Rollback a specific update')
+    learning_rollback.add_argument('update_id', type=int, help='Update ID to rollback')
+
+    # learning disable
+    learning_subparsers.add_parser('disable', help='Disable learning for this project')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -2710,6 +2922,7 @@ Environment Variables:
         'config': cmd_config,
         'verify': cmd_verify,
         'doctor': cmd_doctor,
+        'learning': cmd_learning,
     }
 
     return commands[args.command](args)

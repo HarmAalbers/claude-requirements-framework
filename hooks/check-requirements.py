@@ -44,6 +44,7 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from config import matches_trigger
 from session import update_registry, normalize_session_id
+from session_metrics import SessionMetrics
 from strategy_registry import STRATEGIES
 from logger import get_logger
 from hook_utils import early_hook_setup, parse_hook_input, extract_file_path
@@ -301,6 +302,9 @@ def main() -> int:
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)
 
+        # Initialize session metrics for learning system
+        metrics = SessionMetrics(session_id, project_dir, branch)
+
         # Collect all unsatisfied requirements (batch blocking)
         unsatisfied = []
 
@@ -388,11 +392,25 @@ def main() -> int:
                 requirements=[r[0] for r in unsatisfied],
                 count=len(unsatisfied),
             )
+
+            # Record blocked tool usage in metrics
+            for req_name, _ in unsatisfied:
+                metrics.record_tool_use(
+                    tool_name,
+                    file=file_path,
+                    blocked=True,
+                    requirement=req_name
+                )
+                metrics.record_requirement_trigger(req_name, blocked=True)
+            metrics.save()
+
             response = create_batched_denial(unsatisfied, session_id, project_dir, branch)
             emit_json(response)
             return 0
 
-        # All requirements satisfied or passed
+        # All requirements satisfied or passed - record successful tool use
+        metrics.record_tool_use(tool_name, file=file_path, blocked=False)
+        metrics.save()
         return 0
 
     except Exception as e:
