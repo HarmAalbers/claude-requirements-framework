@@ -61,16 +61,59 @@ class TestRunner:
 def test_session_module(runner: TestRunner):
     """Test session management."""
     print("\n📦 Testing session module...")
-    from session import get_session_id, clear_session_cache
+    import session
+    from session import get_session_id, clear_session_cache, SessionNotFoundError
 
-    # Test that get_session_id() raises error when no registry
-    from session import SessionNotFoundError
-    try:
-        # Should raise SessionNotFoundError since we're not in a Claude Code session
-        session_id = get_session_id()
-        runner.test("get_session_id raises without registry", False, f"Should have raised, got: {session_id}")
-    except SessionNotFoundError as e:
-        runner.test("get_session_id raises helpful error", "No Claude Code session" in str(e))
+    # Use temp registry to isolate test from real environment
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_registry = Path(tmpdir) / "test-sessions.json"
+
+        # Mock get_registry_path for testing
+        original_get_registry_path = session.get_registry_path
+        session.get_registry_path = lambda: test_registry
+
+        try:
+            # Test 1: get_session_id raises when registry doesn't exist
+            try:
+                session_id = get_session_id()
+                runner.test("get_session_id raises without registry", False, f"Should have raised, got: {session_id}")
+            except SessionNotFoundError as e:
+                runner.test("get_session_id raises without registry",
+                           "No active Claude Code session" in str(e),
+                           f"Got: {str(e)[:80]}")
+
+            # Test 2: get_session_id raises when registry exists but empty
+            test_registry.write_text('{"version": "1.0", "sessions": {}}')
+            try:
+                session_id = get_session_id()
+                runner.test("get_session_id raises with empty registry", False, f"Should have raised, got: {session_id}")
+            except SessionNotFoundError as e:
+                runner.test("get_session_id raises with empty registry",
+                           "No active Claude Code sessions" in str(e),
+                           f"Got: {str(e)[:80]}")
+
+            # Test 3: get_session_id raises when no matching session (PPID mismatch)
+            test_registry.write_text(json.dumps({
+                "version": "1.0",
+                "sessions": {
+                    "abc12345": {
+                        "pid": 999999,
+                        "ppid": 999998,  # Won't match current PPID
+                        "project_dir": "/some/other/project",
+                        "branch": "main"
+                    }
+                }
+            }))
+            try:
+                session_id = get_session_id()
+                runner.test("get_session_id raises on PPID mismatch", False, f"Should have raised, got: {session_id}")
+            except SessionNotFoundError as e:
+                runner.test("get_session_id raises on PPID mismatch",
+                           "No Claude Code session found" in str(e),
+                           f"Got: {str(e)[:80]}")
+        finally:
+            # Restore original function
+            session.get_registry_path = original_get_registry_path
 
     # Test clear cache (should still work even though we don't use temp files anymore)
     clear_session_cache()
