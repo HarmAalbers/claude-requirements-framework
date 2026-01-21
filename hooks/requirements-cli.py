@@ -982,10 +982,10 @@ def cmd_verify(args) -> int:
     # Test 2: Check hook registration
     out()
     out(info("2. Checking hook registration..."))
-    settings_file = Path.home() / '.claude' / 'settings.local.json'
+    settings_file = Path.home() / '.claude' / 'settings.json'
 
     if not settings_file.exists():
-        out(error("  ❌ settings.local.json not found"))
+        out(error("  ❌ settings.json not found"))
         out(dim("     Run: ./install.sh to register hooks"))
         issues_found = True
     else:
@@ -1007,7 +1007,7 @@ def cmd_verify(args) -> int:
                 out(success("  ✅ All hooks registered in settings"))
 
         except (json.JSONDecodeError, OSError) as e:
-            out(error(f"  ❌ Cannot read settings.local.json: {e}"))
+            out(error(f"  ❌ Cannot read settings.json: {e}"))
             issues_found = True
 
     # Test 3: Test PreToolUse hook responds
@@ -1190,7 +1190,7 @@ def _check_hook_registered(hook_type: str, settings_file: Path) -> dict:
                 'category': 'hook_registration',
                 'status': 'fail',
                 'severity': 'critical',
-                'message': f'{hook_type} hook: settings.local.json not found',
+                'message': f'{hook_type} hook: settings.json not found',
                 'fix': {
                     'description': 'Run ./install.sh to create settings file',
                     'safe': False,
@@ -1231,7 +1231,7 @@ def _check_hook_registered(hook_type: str, settings_file: Path) -> dict:
             'severity': 'critical',
             'message': f'{hook_type} hook: Error reading settings ({e})',
             'fix': {
-                'description': 'Fix settings.local.json syntax or run ./install.sh',
+                'description': 'Fix settings.json syntax or run ./install.sh',
                 'safe': False,
                 'command': None
             }
@@ -1429,7 +1429,7 @@ def cmd_doctor(args) -> int:
 
     claude_dir = Path.home() / ".claude"
     hooks_dir = claude_dir / "hooks"
-    settings_file = claude_dir / "settings.local.json"
+    settings_file = claude_dir / "settings.json"
 
     # Run all checks
     all_checks = []
@@ -1441,7 +1441,7 @@ def cmd_doctor(args) -> int:
     # Hook file checks
     all_checks.extend(_check_all_hook_files(hooks_dir))
 
-    # Hook registration checks (skip in CI mode - settings.local.json won't exist)
+    # Hook registration checks (skip in CI mode - settings.json won't exist)
     if not ci_mode:
         all_checks.extend(_check_all_hook_registrations(settings_file))
 
