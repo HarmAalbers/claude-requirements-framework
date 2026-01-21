@@ -2754,6 +2754,297 @@ def _cmd_learning_disable(project_dir: str) -> int:
         return 1
 
 
+# ============================================================================
+# UPGRADE COMMAND
+# ============================================================================
+
+def cmd_upgrade(args) -> int:
+    """
+    Manage cross-project feature upgrades.
+
+    Subcommands:
+        scan      - Scan machine for projects using the framework
+        status    - Show feature status for a project
+        recommend - Generate YAML recommendations for missing features
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    subcommand = args.upgrade_command or 'status'
+
+    if subcommand == 'scan':
+        return _cmd_upgrade_scan(args)
+    elif subcommand == 'status':
+        return _cmd_upgrade_status(args)
+    elif subcommand == 'recommend':
+        return _cmd_upgrade_recommend(args)
+    else:
+        out(error(f"❌ Unknown subcommand: {subcommand}"), file=sys.stderr)
+        return 1
+
+
+def _cmd_upgrade_scan(args) -> int:
+    """Scan machine for projects using the requirements framework."""
+    from project_registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+
+    # Parse custom scan paths if provided
+    scan_paths = None
+    if hasattr(args, 'paths') and args.paths:
+        scan_paths = [Path(p) for p in args.paths]
+
+    out(header("🔍 Scanning for projects..."))
+    out()
+
+    result = registry.update_and_scan(scan_paths)
+
+    out(success(f"✅ Scan complete"))
+    out()
+    out(f"   New projects:     {result['new']}")
+    out(f"   Updated:          {result['updated']}")
+    out(f"   Removed (stale):  {result['removed']}")
+    out(f"   Total tracked:    {result['total']}")
+    out()
+
+    if result['total'] > 0:
+        out(hint("Run 'req upgrade --all' to see feature status across all projects"))
+    else:
+        out(info("No projects found with .claude/requirements.yaml"))
+        out(hint("Run 'req init' in a project to get started"))
+
+    return 0
+
+
+def _cmd_upgrade_status(args) -> int:
+    """Show feature status for a project or all projects."""
+    from feature_catalog import (
+        get_all_features,
+        detect_configured_features,
+        CATEGORY_REQUIREMENTS,
+        CATEGORY_HOOKS,
+        CATEGORY_GUARDS,
+    )
+    from project_registry import ProjectRegistry
+
+    registry = ProjectRegistry()
+
+    # Determine which project(s) to show
+    if hasattr(args, 'all') and args.all:
+        # Show all tracked projects
+        projects = registry.list_projects()
+        if not projects:
+            out(info("No projects tracked. Run 'req upgrade scan' first."))
+            return 0
+
+        out(header("📊 Feature Status: All Projects"))
+        out()
+
+        for project in projects:
+            _show_project_status(project['path'], brief=True)
+            out()
+
+        out(hint("Run 'req upgrade status <path>' for detailed view of a specific project"))
+        return 0
+
+    # Single project
+    if hasattr(args, 'path') and args.path:
+        project_path = args.path
+    else:
+        project_path = get_project_dir()
+
+    if not is_git_repo(project_path):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+
+    # Check if config exists
+    config_path = Path(project_path) / ".claude" / "requirements.yaml"
+    if not config_path.exists():
+        out(warning(f"⚠️  No requirements config found at {config_path}"))
+        out(hint("Run 'req init' to create one"))
+        return 1
+
+    return _show_project_status(project_path, brief=False)
+
+
+def _show_project_status(project_path: str, brief: bool = False) -> int:
+    """Show feature status for a single project."""
+    from feature_catalog import (
+        get_all_features,
+        detect_configured_features,
+        CATEGORY_REQUIREMENTS,
+        CATEGORY_HOOKS,
+        CATEGORY_GUARDS,
+    )
+
+    try:
+        config = RequirementsConfig(project_dir=project_path)
+        raw_config = config.get_raw_config()
+    except Exception as e:
+        out(error(f"❌ Failed to load config: {e}"), file=sys.stderr)
+        return 1
+
+    configured = detect_configured_features(raw_config)
+    features = get_all_features()
+
+    # Group by category
+    categories = {
+        CATEGORY_REQUIREMENTS: [],
+        CATEGORY_GUARDS: [],
+        CATEGORY_HOOKS: [],
+    }
+
+    for name, info in features.items():
+        cat = info.get('category', CATEGORY_REQUIREMENTS)
+        status = configured.get(name, False)
+        categories[cat].append((name, info, status))
+
+    if brief:
+        # One-line summary
+        enabled = sum(1 for s in configured.values() if s)
+        total = len(configured)
+        path_display = project_path
+        if len(path_display) > 50:
+            path_display = "..." + path_display[-47:]
+        out(f"  {path_display}")
+        out(dim(f"     {enabled}/{total} features enabled"))
+        return 0
+
+    # Full status display
+    out(header(f"Feature Status: {project_path}"))
+    out(dim("─" * 60))
+
+    # Category display order
+    category_order = [
+        (CATEGORY_REQUIREMENTS, "Requirements"),
+        (CATEGORY_GUARDS, "Guards"),
+        (CATEGORY_HOOKS, "Hooks"),
+    ]
+
+    missing_count = 0
+    for cat_key, cat_label in category_order:
+        items = categories.get(cat_key, [])
+        if not items:
+            continue
+
+        out()
+        out(bold(f"  {cat_label}:"))
+
+        for name, info, enabled in sorted(items, key=lambda x: x[0]):
+            if enabled:
+                status_str = success("✓ Enabled")
+            else:
+                status_str = dim("○ Not configured")
+                missing_count += 1
+
+            introduced = info.get('introduced', '1.0')
+            name_display = f"{name:<25}"
+            out(f"    {name_display} {status_str}")
+            if not enabled and not brief:
+                out(dim(f"      └─ {info.get('description', '')}"))
+
+    out()
+    out(dim("─" * 60))
+
+    enabled_count = sum(1 for s in configured.values() if s)
+    total_count = len(configured)
+    out(f"  Enabled: {enabled_count}/{total_count} features")
+
+    if missing_count > 0:
+        out()
+        out(hint(f"Run 'req upgrade recommend' to see integration snippets for {missing_count} unconfigured features"))
+
+    return 0
+
+
+def _cmd_upgrade_recommend(args) -> int:
+    """Generate YAML recommendations for missing features."""
+    from feature_catalog import (
+        get_all_features,
+        detect_configured_features,
+        get_missing_features,
+        get_feature_yaml,
+        get_feature_info,
+    )
+
+    # Determine project
+    if hasattr(args, 'path') and args.path:
+        project_path = args.path
+    else:
+        project_path = get_project_dir()
+
+    if not is_git_repo(project_path):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+
+    # Check if config exists
+    config_path = Path(project_path) / ".claude" / "requirements.yaml"
+    if not config_path.exists():
+        out(warning(f"⚠️  No requirements config found at {config_path}"))
+        out(hint("Run 'req init' to create one"))
+        return 1
+
+    try:
+        config = RequirementsConfig(project_dir=project_path)
+        raw_config = config.get_raw_config()
+    except Exception as e:
+        out(error(f"❌ Failed to load config: {e}"), file=sys.stderr)
+        return 1
+
+    # Get missing features
+    missing = get_missing_features(raw_config)
+
+    # Filter to specific feature if requested
+    if hasattr(args, 'feature') and args.feature:
+        if args.feature not in missing:
+            if args.feature in get_all_features():
+                out(success(f"✓ '{args.feature}' is already configured"))
+            else:
+                out(error(f"❌ Unknown feature: {args.feature}"), file=sys.stderr)
+            return 0
+        missing = [args.feature]
+
+    if not missing:
+        out(success("✅ All available features are configured!"))
+        return 0
+
+    out(header(f"Recommendations for: {project_path}"))
+    out(dim("─" * 60))
+    out()
+
+    for feature_name in sorted(missing):
+        info = get_feature_info(feature_name)
+        if not info:
+            continue
+
+        yaml_snippet = get_feature_yaml(feature_name)
+        if not yaml_snippet:
+            continue
+
+        introduced = info.get('introduced', '1.0')
+        version_note = f" (New in v{introduced})" if introduced != "1.0" else ""
+
+        out(bold(f"### {info.get('name', feature_name)}{version_note}"))
+        out(dim(info.get('description', '')))
+        out()
+        out(f"Add to {config_path.name}:")
+        out(dim("```yaml"))
+        for line in yaml_snippet.strip().split('\n'):
+            out(line)
+        out(dim("```"))
+        out()
+        out(dim("─" * 60))
+        out()
+
+    out(hint("Copy the YAML snippets above to your config file"))
+    out(hint("Then run 'req upgrade status' to verify"))
+
+    return 0
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -2901,6 +3192,24 @@ Environment Variables:
     # learning disable
     learning_subparsers.add_parser('disable', help='Disable learning for this project')
 
+    # upgrade
+    upgrade_parser = subparsers.add_parser('upgrade', help='Manage cross-project feature upgrades')
+    upgrade_subparsers = upgrade_parser.add_subparsers(dest='upgrade_command', help='Upgrade subcommand')
+
+    # upgrade scan
+    upgrade_scan = upgrade_subparsers.add_parser('scan', help='Scan machine for projects using the framework')
+    upgrade_scan.add_argument('paths', nargs='*', help='Additional paths to scan')
+
+    # upgrade status
+    upgrade_status = upgrade_subparsers.add_parser('status', help='Show feature status for a project')
+    upgrade_status.add_argument('path', nargs='?', help='Project path (default: current directory)')
+    upgrade_status.add_argument('--all', '-a', action='store_true', help='Show all tracked projects')
+
+    # upgrade recommend
+    upgrade_recommend = upgrade_subparsers.add_parser('recommend', help='Generate YAML recommendations')
+    upgrade_recommend.add_argument('path', nargs='?', help='Project path (default: current directory)')
+    upgrade_recommend.add_argument('--feature', '-f', help='Show recommendation for specific feature only')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -2923,6 +3232,7 @@ Environment Variables:
         'verify': cmd_verify,
         'doctor': cmd_doctor,
         'learning': cmd_learning,
+        'upgrade': cmd_upgrade,
     }
 
     return commands[args.command](args)
