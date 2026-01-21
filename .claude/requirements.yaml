@@ -95,6 +95,27 @@ requirements:
 
       ---
       Override: `req approve branch_size_limit`
+  single_session_per_project:
+    enabled: true
+    type: guard
+    guard_type: single_session
+    description: "Prevents multiple sessions from editing the same project simultaneously."
+    scope: session
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    message: |
+      ## Blocked: single_session_per_project
+
+      Another Claude Code session is active on this project.
+
+      **Actions**:
+      1. Close the other session
+      2. Wait for completion
+      3. Override: `req approve single_session_per_project`
+    checklist:
+      - "Confirmed no other active sessions on this project"
   pre_commit_review:
     enabled: true
     type: blocking
@@ -163,4 +184,13 @@ requirements:
     checklist:
     - Codex CLI installed (npm install -g @openai/codex)
     - AI review completed
+
+hooks:
+  session_start:
+    inject_context: true
+    injection_mode: auto
+  session_learning:
+    enabled: true
+    prompt_on_stop: true
+    min_tool_uses: 5
 inherit: true
