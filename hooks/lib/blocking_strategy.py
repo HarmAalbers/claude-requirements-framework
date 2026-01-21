@@ -10,7 +10,7 @@ These requirements must be manually satisfied via the CLI using
 Examples: commit_plan, adr_reviewed, github_ticket
 """
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 # Import from sibling modules
 try:
@@ -22,6 +22,9 @@ except ImportError as e:
     # For testing, allow imports to fail gracefully but log warning
     import sys
     sys.stderr.write(f"[WARNING] blocking_strategy import failed: {e}\n")
+
+if TYPE_CHECKING:
+    from messages import MessageLoader
 
 
 class BlockingRequirementStrategy(RequirementStrategy):
@@ -56,6 +59,8 @@ class BlockingRequirementStrategy(RequirementStrategy):
         """
         Create denial response with directive-first message format.
 
+        Uses MessageLoader if available, otherwise falls back to inline config messages.
+
         Args:
             req_name: Requirement name
             config: Configuration
@@ -74,12 +79,34 @@ class BlockingRequirementStrategy(RequirementStrategy):
 
         session_id = context.get('session_id', 'unknown')
 
-        # Use configured message if present (should be directive-first format)
-        message = req_config.get('message', '')
+        # Try to use externalized messages from MessageLoader
+        message_loader = self._get_message_loader(context)
+        if message_loader:
+            try:
+                messages = message_loader.get_messages(req_name, 'blocking')
+                formatted = messages.format(
+                    req_name=req_name,
+                    session_id=session_id,
+                    branch=context.get('branch', ''),
+                    project_dir=context.get('project_dir', ''),
+                )
+                message = formatted.blocking_message
+                short_msg = formatted.short_message
+            except Exception:
+                # Fall back to inline config messages if loader fails
+                message = None
+                short_msg = None
+        else:
+            message = None
+            short_msg = None
+
+        # Fall back to inline config message if no externalized message
+        if not message and req_config:
+            message = req_config.get('message', '')
 
         if not message:
             # Generate directive-first fallback message
-            auto_skill = req_config.get('auto_resolve_skill', '')
+            auto_skill = req_config.get('auto_resolve_skill', '') if req_config else ''
             lines = [f"## Blocked: {req_name}", ""]
 
             if auto_skill:
@@ -92,14 +119,17 @@ class BlockingRequirementStrategy(RequirementStrategy):
             lines.append(f"Fallback: `req satisfy {req_name} --session {session_id}`")
             message = "\n".join(lines)
 
+        # Fall back to inline config short message
+        if not short_msg:
+            default_short = f"Requirement `{req_name}` not satisfied (waiting...)"
+            short_msg = req_config.get('short_message', default_short) if req_config else default_short
+
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:
             cache_key = f"{context['project_dir']}:{context['branch']}:{session_id}:{req_name}"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                # Suppress verbose message - show configurable short message instead
-                default_short = f"⏸️ Requirement `{req_name}` not satisfied (waiting...)"
-                short_msg = req_config.get('short_message', default_short)
+                # Suppress verbose message - show short message instead
                 return create_denial_response(short_msg)
 
         # Show full message (first time or after TTL expiration)

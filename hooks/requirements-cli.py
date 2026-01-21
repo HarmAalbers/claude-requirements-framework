@@ -3045,6 +3045,223 @@ def _cmd_upgrade_recommend(args) -> int:
     return 0
 
 
+def cmd_messages(args) -> int:
+    """
+    Manage externalized message files.
+
+    Subcommands:
+        validate - Validate all message files
+        list     - List loaded message files and their sources
+
+    Args:
+        args: Parsed arguments
+
+    Returns:
+        Exit code
+    """
+    subcommand = args.messages_command or 'validate'
+
+    if subcommand == 'validate':
+        return _cmd_messages_validate(args)
+    elif subcommand == 'list':
+        return _cmd_messages_list(args)
+    else:
+        out(error(f"Unknown subcommand: {subcommand}"), file=sys.stderr)
+        return 1
+
+
+def _cmd_messages_validate(args) -> int:
+    """Validate all message files for configured requirements."""
+    from messages import MessageLoader
+    from message_validator import MessageValidator
+
+    project_dir = get_project_dir()
+
+    if not is_git_repo(project_dir):
+        out(error("Not in a git repository"), file=sys.stderr)
+        return 1
+
+    # Load config to get list of requirements
+    try:
+        config = RequirementsConfig(project_dir)
+    except Exception as e:
+        out(error(f"Failed to load config: {e}"), file=sys.stderr)
+        return 1
+
+    requirements = list(config.get_all_requirements())
+
+    if not requirements:
+        out(info("No requirements configured."))
+        out(hint("Run 'req init' to configure requirements."))
+        return 0
+
+    out(header("Validating Message Files"))
+    out()
+
+    # Use MessageLoader to validate
+    loader = MessageLoader(project_dir, strict=True)
+    errors = loader.validate_all(requirements)
+
+    # Also run the full validator on all cascade directories
+    validator = MessageValidator()
+    summary = validator.validate_cascade(project_dir)
+
+    if errors or not summary.is_valid:
+        out(error("Validation failed"))
+        out()
+
+        if errors:
+            out(bold("Requirement message errors:"))
+            for err in errors:
+                out(f"  - {err}")
+            out()
+
+        if not summary.is_valid:
+            out(bold("File validation errors:"))
+            for result in summary.results:
+                if not result.is_valid:
+                    out(f"  {result.file_path}:")
+                    for err in result.errors:
+                        out(f"    - {err}")
+            out()
+
+        # Show fix hint
+        fix_mode = getattr(args, 'fix', False)
+        if fix_mode:
+            out(info("Generating missing message files..."))
+            _generate_missing_messages(project_dir, config, requirements)
+        else:
+            out(hint("Run 'req messages validate --fix' to generate missing files"))
+
+        return 1
+
+    out(success(f"All message files valid ({len(requirements)} requirements)"))
+
+    # Show summary of loaded files
+    out()
+    out(dim("Loaded from:"))
+    for req_name in requirements:
+        file_path = loader.get_message_file_path(req_name)
+        if file_path:
+            out(dim(f"  {req_name}: {file_path}"))
+        else:
+            out(dim(f"  {req_name}: (using template defaults)"))
+
+    return 0
+
+
+def _generate_missing_messages(project_dir: str, config: RequirementsConfig, requirements: list) -> None:
+    """Generate missing message files from templates."""
+    from messages import MessageLoader
+    from message_validator import generate_message_file
+
+    loader = MessageLoader(project_dir, strict=False)
+    global_dir = loader.paths.global_dir
+
+    # Ensure directory exists
+    global_dir.mkdir(parents=True, exist_ok=True)
+
+    generated = 0
+    for req_name in requirements:
+        file_path = global_dir / f"{req_name}.yaml"
+        if file_path.exists():
+            continue
+
+        # Get requirement config for type info
+        req_config = config.get_requirement(req_name)
+        if not req_config:
+            continue
+
+        req_type = req_config.get('type', 'blocking')
+        auto_skill = req_config.get('auto_resolve_skill', '')
+        description = req_config.get('description', '')
+
+        # Generate and write the file
+        content = generate_message_file(req_name, req_type, auto_skill, description)
+        file_path.write_text(content)
+        out(success(f"  Generated: {file_path}"))
+        generated += 1
+
+    if generated:
+        out()
+        out(info(f"Generated {generated} message file(s)"))
+    else:
+        out(info("No files to generate"))
+
+
+def _cmd_messages_list(args) -> int:
+    """List message files and their cascade sources."""
+    from messages import MessageLoader
+
+    project_dir = get_project_dir()
+
+    if not is_git_repo(project_dir):
+        out(error("Not in a git repository"), file=sys.stderr)
+        return 1
+
+    loader = MessageLoader(project_dir, strict=False)
+
+    out(header("Message File Locations"))
+    out()
+
+    # Show cascade directories
+    out(bold("Cascade directories (priority order):"))
+    out(f"  1. Local:   {loader.paths.local_dir}")
+    local_exists = loader.paths.local_dir.exists()
+    out(dim(f"              {'(exists)' if local_exists else '(not found)'}"))
+
+    out(f"  2. Project: {loader.paths.project_dir}")
+    project_exists = loader.paths.project_dir.exists()
+    out(dim(f"              {'(exists)' if project_exists else '(not found)'}"))
+
+    out(f"  3. Global:  {loader.paths.global_dir}")
+    global_exists = loader.paths.global_dir.exists()
+    out(dim(f"              {'(exists)' if global_exists else '(not found)'}"))
+
+    out()
+
+    # List files in each directory
+    for name, dir_path in [
+        ("Global", loader.paths.global_dir),
+        ("Project", loader.paths.project_dir),
+        ("Local", loader.paths.local_dir),
+    ]:
+        if not dir_path.exists():
+            continue
+
+        files = list(dir_path.glob("*.yaml"))
+        if files:
+            out(bold(f"{name} messages ({dir_path}):"))
+            for f in sorted(files):
+                out(f"  {f.name}")
+            out()
+
+    # Show requirement resolution
+    try:
+        config = RequirementsConfig(project_dir)
+        requirements = list(config.get_all_requirements())
+
+        if requirements:
+            out(bold("Requirement message resolution:"))
+            for req_name in requirements:
+                file_path = loader.get_message_file_path(req_name)
+                if file_path:
+                    # Determine which cascade level
+                    if str(file_path).startswith(str(loader.paths.local_dir)):
+                        level = "local"
+                    elif str(file_path).startswith(str(loader.paths.project_dir)):
+                        level = "project"
+                    else:
+                        level = "global"
+                    out(f"  {req_name}: {file_path.name} [{level}]")
+                else:
+                    out(dim(f"  {req_name}: (template defaults)"))
+    except Exception:
+        pass
+
+    return 0
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -3210,6 +3427,17 @@ Environment Variables:
     upgrade_recommend.add_argument('path', nargs='?', help='Project path (default: current directory)')
     upgrade_recommend.add_argument('--feature', '-f', help='Show recommendation for specific feature only')
 
+    # messages
+    messages_parser = subparsers.add_parser('messages', help='Manage externalized message files')
+    messages_subparsers = messages_parser.add_subparsers(dest='messages_command', help='Messages subcommand')
+
+    # messages validate
+    messages_validate = messages_subparsers.add_parser('validate', help='Validate all message files')
+    messages_validate.add_argument('--fix', action='store_true', help='Generate missing message files')
+
+    # messages list
+    messages_subparsers.add_parser('list', help='List message files and their sources')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -3233,6 +3461,7 @@ Environment Variables:
         'doctor': cmd_doctor,
         'learning': cmd_learning,
         'upgrade': cmd_upgrade,
+        'messages': cmd_messages,
     }
 
     return commands[args.command](args)

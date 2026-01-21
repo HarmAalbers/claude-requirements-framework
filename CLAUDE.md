@@ -120,6 +120,10 @@ SessionEnd (handle-session-end.py) - session ends
 - `session_metrics.py` - Session data collection and storage
 - `learning_updates.py` - Apply and track learning updates with rollback
 
+**Message System** (in `hooks/lib/`):
+- `messages.py` - MessageLoader for externalized YAML messages (see ADR-011)
+- `message_validator.py` - Validation for message files
+
 ## Plugin Component Versioning
 
 All plugin components (agents, commands, skills) include a `git_hash` field in their YAML frontmatter showing the last commit that modified the file. This enables version tracking and A/B testing of component effectiveness.
@@ -338,6 +342,63 @@ req learning rollback 3   # Undo update #3
 - **User approval**: All updates require user approval before applying
 - **Rollback capable**: Every change recorded with previous content hash
 
+## Message Externalization
+
+Framework messages are stored in external YAML files for customization without code changes.
+
+### Message Directory Cascade
+```
+~/.claude/messages/              # Global defaults
+<project>/.claude/messages/      # Project-specific (version controlled)
+<project>/.claude/messages.local/ # Local overrides (gitignored)
+```
+
+Priority: **local > project > global** (same as requirements config)
+
+### Message File Schema
+Each requirement has 6 required fields:
+```yaml
+version: "1.0"
+blocking_message: |
+  ## Blocked: {req_name}
+  **Execute**: `/{satisfied_by_skill}`
+short_message: "Requirement `{req_name}` not satisfied (waiting...)"
+success_message: "Requirement `{req_name}` satisfied"
+header: "Commit Plan"
+action_label: "Run `/plan-review`"
+fallback_text: "req satisfy {req_name}"
+```
+
+### Special Files
+- `_templates.yaml` - Default templates by requirement type (blocking/guard/dynamic)
+- `_status.yaml` - Status briefing format templates (compact/standard/rich)
+
+### CLI Commands
+```bash
+req messages validate           # Validate all message files
+req messages validate --fix     # Generate missing files from templates
+req messages list               # List loaded files with cascade sources
+```
+
+### Customizing Messages
+```bash
+# Project-level override
+mkdir -p .claude/messages
+cat > .claude/messages/commit_plan.yaml << 'EOF'
+version: "1.0"
+blocking_message: |
+  ## Need a Plan First
+  Run `/plan-review` before editing.
+short_message: "Plan required"
+success_message: "Plan approved"
+header: "Planning"
+action_label: "`/plan-review`"
+fallback_text: "req satisfy commit_plan"
+EOF
+```
+
+See ADR-011 for design details.
+
 ## Cross-Project Feature Upgrade
 
 The `req upgrade` command helps discover and adopt new framework features across all projects on your machine.
@@ -380,4 +441,5 @@ $ req upgrade recommend --feature session_learning
   - ADR-004: Guard requirement strategy
   - ADR-008: CLAUDE.md weekly maintenance process
   - ADR-010: Cross-project feature upgrade system
+  - ADR-011: Externalize messages to YAML files
 - `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills

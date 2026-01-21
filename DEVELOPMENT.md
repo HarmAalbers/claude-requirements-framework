@@ -145,7 +145,9 @@ git push
 │       ├── requirement_strategies.py  → ~/.claude/hooks/lib/requirement_strategies.py
 │       ├── requirements.py            → ~/.claude/hooks/lib/requirements.py
 │       ├── session.py                 → ~/.claude/hooks/lib/session.py
-│       └── state_storage.py           → ~/.claude/hooks/lib/state_storage.py
+│       ├── state_storage.py           → ~/.claude/hooks/lib/state_storage.py
+│       ├── messages.py                → ~/.claude/hooks/lib/messages.py
+│       └── message_validator.py       → ~/.claude/hooks/lib/message_validator.py
 ├── examples/                           (Not deployed)
 ├── docs/                               (Not deployed, includes ADRs)
 ├── sync.sh                             (Sync script - uses dynamic file discovery)
@@ -263,6 +265,105 @@ Or manually:
 ```bash
 rm /tmp/claude-message-dedup-$(id -u).json
 ```
+
+---
+
+## New in v2.2: Message Externalization
+
+### Feature Overview
+
+**Problem**: Framework messages were hardcoded in Python files (~180 strings), making customization difficult without code changes.
+
+**Solution**: External YAML files with cascade loading (same pattern as requirements config).
+
+### Directory Structure
+
+```
+~/.claude/
+  messages/                    # Global defaults
+    _templates.yaml            # Shared templates by type
+    _status.yaml               # Status format templates
+    commit_plan.yaml           # Per-requirement messages
+    adr_reviewed.yaml
+    ...
+
+<project>/.claude/
+  messages/                    # Project-specific (version controlled)
+  messages.local/              # Local overrides (gitignored)
+```
+
+### Files Involved
+
+- `hooks/lib/messages.py` (NEW - Core MessageLoader class)
+- `hooks/lib/message_validator.py` (NEW - Validation logic)
+- `hooks/lib/base_strategy.py` (MODIFIED - `_get_message_loader()` method)
+- `hooks/lib/blocking_strategy.py` (MODIFIED - Uses MessageLoader)
+- `hooks/lib/guard_strategy.py` (MODIFIED - Uses MessageLoader)
+- `hooks/check-requirements.py` (MODIFIED - Injects MessageLoader into context)
+- `hooks/requirements-cli.py` (MODIFIED - `req messages` command)
+
+### Message File Schema
+
+Each requirement needs 6 fields:
+
+```yaml
+version: "1.0"
+blocking_message: |
+  ## Blocked: {req_name}
+  **Execute**: `/{satisfied_by_skill}`
+short_message: "Requirement `{req_name}` not satisfied (waiting...)"
+success_message: "Requirement `{req_name}` satisfied"
+header: "Commit Plan"
+action_label: "Run `/plan-review`"
+fallback_text: "req satisfy {req_name}"
+```
+
+### CLI Commands
+
+```bash
+# Validate all message files
+req messages validate
+
+# Generate missing files from templates
+req messages validate --fix
+
+# List files with cascade sources
+req messages list
+```
+
+### Testing Message Customization
+
+```bash
+# Create project override
+mkdir -p .claude/messages
+cat > .claude/messages/commit_plan.yaml << 'EOF'
+version: "1.0"
+blocking_message: |
+  ## Custom Message
+  This is a project-specific blocking message.
+short_message: "Custom short message"
+success_message: "Custom success"
+header: "Custom Header"
+action_label: "Custom action"
+fallback_text: "req satisfy commit_plan"
+EOF
+
+# Verify it loads
+req messages list
+# Should show: commit_plan.yaml (project)
+
+# Test the message appears
+# Trigger a requirement block
+```
+
+### Design Notes
+
+- **Cascade Priority**: local > project > global (same as requirements config)
+- **Strict Mode**: Off at runtime (`strict=False`) for backwards compatibility
+- **Context Injection**: MessageLoader passed via context dict to singleton strategies
+- **Calculator Messages**: Stay in code (need access to dynamic result data)
+
+See ADR-011 for full design rationale.
 
 ---
 

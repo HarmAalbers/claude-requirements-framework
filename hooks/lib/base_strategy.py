@@ -11,7 +11,7 @@ must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 # Import from sibling modules
 try:
@@ -23,6 +23,9 @@ except ImportError:
     # For testing, allow imports to fail gracefully
     pass
 
+if TYPE_CHECKING:
+    from messages import MessageLoader
+
 
 class RequirementStrategy(ABC):
     """
@@ -30,17 +33,45 @@ class RequirementStrategy(ABC):
 
     Each requirement type (blocking, dynamic, guard) has its own strategy class
     that implements the check() method.
+
+    Message Loading:
+        Strategies support externalized messages via MessageLoader. The loader
+        can be passed either:
+        1. At construction: __init__(message_loader=loader)
+        2. Per-call via context: context['message_loader'] = loader
+
+        Context-based loading is preferred for singleton strategies.
     """
 
-    def __init__(self):
+    def __init__(self, message_loader: Optional['MessageLoader'] = None):
         """
-        Initialize strategy with message deduplication cache.
+        Initialize strategy with message deduplication cache and optional message loader.
+
+        Args:
+            message_loader: Optional MessageLoader for externalized messages.
+                          If None, uses inline messages from config (backwards compatible).
 
         Note:
             Cache initialization failures are logged but don't prevent strategy creation.
             If cache fails, all messages will be shown (fail-open behavior).
         """
+        self._message_loader = message_loader
         self._init_dedup_cache()
+
+    def _get_message_loader(self, context: dict) -> Optional['MessageLoader']:
+        """
+        Get message loader from context or instance.
+
+        Prefers context-based loader (for per-call configuration) over
+        instance loader (for singleton strategies).
+
+        Args:
+            context: Context dict that may contain 'message_loader'
+
+        Returns:
+            MessageLoader if available, None otherwise
+        """
+        return context.get('message_loader') or self._message_loader
 
     def _init_dedup_cache(self) -> None:
         """

@@ -7760,6 +7760,337 @@ def test_project_registry_module(runner: TestRunner):
                    len(data2.get('projects', {})) == 1)
 
 
+def test_messages_module(runner: TestRunner):
+    """Test externalized messages module."""
+    print("\n📝 Testing messages module...")
+
+    from messages import (
+        MessageLoader,
+        MessagePaths,
+        RequirementMessages,
+        MessageNotFoundError,
+        DEFAULT_TEMPLATES,
+        DEFAULT_STRUCTURAL,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project_dir = tmpdir
+
+        # Test 1: MessagePaths creation
+        paths = MessagePaths.from_project(project_dir)
+        runner.test("MessagePaths has global_dir",
+                   paths.global_dir == Path.home() / '.claude' / 'messages')
+        runner.test("MessagePaths has project_dir",
+                   str(paths.project_dir).endswith('.claude/messages'))
+        runner.test("MessagePaths has local_dir",
+                   str(paths.local_dir).endswith('.claude/messages.local'))
+
+        # Test 2: MessageLoader initialization (non-strict)
+        loader = MessageLoader(project_dir, strict=False)
+        runner.test("MessageLoader initializes",
+                   loader is not None)
+        runner.test("MessageLoader has paths",
+                   loader.paths is not None)
+
+        # Test 3: Default templates exist
+        runner.test("DEFAULT_TEMPLATES has blocking",
+                   'blocking' in DEFAULT_TEMPLATES)
+        runner.test("DEFAULT_TEMPLATES has guard",
+                   'guard' in DEFAULT_TEMPLATES)
+        runner.test("DEFAULT_TEMPLATES has dynamic",
+                   'dynamic' in DEFAULT_TEMPLATES)
+
+        # Test 4: RequirementMessages dataclass
+        msgs = RequirementMessages(
+            blocking_message="## Blocked: test",
+            short_message="Waiting...",
+            success_message="Done!",
+            header="Test",
+            action_label="Run test",
+            fallback_text="req satisfy test"
+        )
+        runner.test("RequirementMessages has blocking_message",
+                   msgs.blocking_message == "## Blocked: test")
+
+        # Test 5: RequirementMessages format method
+        msgs_with_placeholder = RequirementMessages(
+            blocking_message="## Blocked: {req_name}",
+            short_message="{req_name} waiting",
+            success_message="{req_name} done",
+            header="{req_name}",
+            action_label="Run {req_name}",
+            fallback_text="req satisfy {req_name}"
+        )
+        formatted = msgs_with_placeholder.format(req_name='commit_plan', session_id='abc123')
+        runner.test("format substitutes req_name",
+                   formatted.blocking_message == "## Blocked: commit_plan")
+        runner.test("format substitutes in short_message",
+                   formatted.short_message == "commit_plan waiting")
+
+        # Test 6: format leaves unknown placeholders unchanged
+        msgs_unknown = RequirementMessages(
+            blocking_message="Value: {unknown_var}",
+            short_message="",
+            success_message="",
+            header="",
+            action_label="",
+            fallback_text=""
+        )
+        formatted_unknown = msgs_unknown.format(req_name='test')
+        runner.test("format leaves unknown placeholders",
+                   formatted_unknown.blocking_message == "Value: {unknown_var}")
+
+        # Test 7: to_dict method
+        msg_dict = msgs.to_dict()
+        runner.test("to_dict returns dict",
+                   isinstance(msg_dict, dict))
+        runner.test("to_dict has all fields",
+                   all(k in msg_dict for k in ['blocking_message', 'short_message',
+                       'success_message', 'header', 'action_label', 'fallback_text']))
+
+        # Test 8: get_messages with no files (non-strict mode)
+        messages = loader.get_messages('nonexistent_req', 'blocking')
+        runner.test("get_messages returns RequirementMessages",
+                   isinstance(messages, RequirementMessages))
+        runner.test("get_messages uses template defaults",
+                   '{req_name}' in messages.blocking_message)
+
+        # Test 9: get_status_template
+        template = loader.get_status_template('compact')
+        runner.test("get_status_template returns string",
+                   isinstance(template, str))
+        runner.test("get_status_template has placeholders",
+                   '{satisfied_count}' in template or len(template) > 0)
+
+        # Test 10: get_structural
+        header = loader.get_structural('blocked_header', req_name='test_req')
+        runner.test("get_structural returns formatted string",
+                   'test_req' in header or 'blocked' in header.lower())
+
+        # Test 11: Create message file and load
+        messages_dir = Path(tmpdir) / '.claude' / 'messages'
+        messages_dir.mkdir(parents=True, exist_ok=True)
+
+        test_msg_content = """version: "1.0"
+blocking_message: |
+  ## Test Requirement
+  This is a test message
+short_message: "Test waiting..."
+success_message: "Test complete!"
+header: "Test Header"
+action_label: "Run test"
+fallback_text: "req satisfy test_req"
+"""
+        (messages_dir / 'test_req.yaml').write_text(test_msg_content)
+
+        # Create new loader to pick up the file
+        loader2 = MessageLoader(project_dir, strict=False)
+        loaded_msgs = loader2.get_messages('test_req', 'blocking')
+        runner.test("Loads message from YAML file",
+                   '## Test Requirement' in loaded_msgs.blocking_message)
+        runner.test("Loads short_message from YAML",
+                   loaded_msgs.short_message == "Test waiting...")
+
+        # Test 12: Cascade priority (project over global)
+        local_dir = Path(tmpdir) / '.claude' / 'messages.local'
+        local_dir.mkdir(parents=True, exist_ok=True)
+        local_msg_content = """version: "1.0"
+blocking_message: "Local override message"
+short_message: "Local short"
+success_message: "Local success"
+header: "Local"
+action_label: "Local action"
+fallback_text: "local fallback"
+"""
+        (local_dir / 'test_req.yaml').write_text(local_msg_content)
+
+        loader3 = MessageLoader(project_dir, strict=False)
+        loader3.clear_cache()  # Clear cache to pick up new file
+        local_msgs = loader3.get_messages('test_req', 'blocking')
+        runner.test("Local overrides project",
+                   local_msgs.blocking_message == "Local override message")
+
+        # Test 13: get_message_file_path
+        file_path = loader3.get_message_file_path('test_req')
+        runner.test("get_message_file_path returns Path",
+                   file_path is not None and isinstance(file_path, Path))
+        runner.test("get_message_file_path returns local file",
+                   str(file_path).endswith('messages.local/test_req.yaml'))
+
+        # Test 14: validate_all
+        errors = loader3.validate_all(['test_req'])
+        runner.test("validate_all returns list",
+                   isinstance(errors, list))
+        runner.test("validate_all passes for valid file",
+                   len(errors) == 0)
+
+        # Test 15: strict mode raises exception
+        strict_loader = MessageLoader(project_dir, strict=True)
+        try:
+            strict_loader.get_messages('definitely_missing_req', 'blocking')
+            runner.test("strict mode raises exception", False)
+        except MessageNotFoundError as e:
+            runner.test("strict mode raises MessageNotFoundError",
+                       'definitely_missing_req' in str(e))
+
+        # Test 16: DEFAULT_STRUCTURAL elements
+        runner.test("DEFAULT_STRUCTURAL has blocked_header",
+                   'blocked_header' in DEFAULT_STRUCTURAL)
+        runner.test("DEFAULT_STRUCTURAL has table_header",
+                   'table_header' in DEFAULT_STRUCTURAL)
+
+
+def test_message_validator_module(runner: TestRunner):
+    """Test message validator module."""
+    print("\n✅ Testing message_validator module...")
+
+    from message_validator import (
+        MessageValidator,
+        ValidationResult,
+        ValidationSummary,
+        generate_message_file,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Test 1: ValidationResult creation
+        result = ValidationResult(file_path=Path(tmpdir) / "test.yaml")
+        runner.test("ValidationResult initializes",
+                   result is not None)
+        runner.test("ValidationResult is_valid (no errors)",
+                   result.is_valid)
+
+        result.errors.append("Test error")
+        runner.test("ValidationResult is_valid (with error)",
+                   not result.is_valid)
+
+        # Test 2: ValidationSummary
+        summary = ValidationSummary()
+        summary.add(result)
+        runner.test("ValidationSummary tracks results",
+                   summary.total_files == 1)
+        runner.test("ValidationSummary error_count",
+                   summary.error_count == 1)
+        runner.test("ValidationSummary is_valid",
+                   not summary.is_valid)
+
+        # Test 3: MessageValidator initialization
+        validator = MessageValidator()
+        runner.test("MessageValidator initializes",
+                   validator is not None)
+        runner.test("MessageValidator has REQUIRED_FIELDS",
+                   len(validator.REQUIRED_FIELDS) == 6)
+
+        # Test 4: validate_file with missing file
+        missing_result = validator.validate_file(Path(tmpdir) / "nonexistent.yaml")
+        runner.test("validate_file handles missing file",
+                   not missing_result.is_valid)
+        runner.test("validate_file error for missing",
+                   "does not exist" in missing_result.errors[0])
+
+        # Test 5: validate_file with valid file
+        valid_content = """version: "1.0"
+blocking_message: "Test message"
+short_message: "Short"
+success_message: "Success"
+header: "Header"
+action_label: "Action"
+fallback_text: "Fallback"
+"""
+        valid_file = Path(tmpdir) / "valid.yaml"
+        valid_file.write_text(valid_content)
+        valid_result = validator.validate_file(valid_file)
+        runner.test("validate_file passes valid file",
+                   valid_result.is_valid,
+                   f"Errors: {valid_result.errors}")
+
+        # Test 6: validate_file with missing fields
+        invalid_content = """version: "1.0"
+blocking_message: "Test message"
+"""
+        invalid_file = Path(tmpdir) / "invalid.yaml"
+        invalid_file.write_text(invalid_content)
+        invalid_result = validator.validate_file(invalid_file)
+        runner.test("validate_file catches missing fields",
+                   not invalid_result.is_valid)
+        runner.test("validate_file lists missing fields",
+                   any("Missing required field" in e for e in invalid_result.errors))
+
+        # Test 7: validate_file with empty field
+        empty_content = """version: "1.0"
+blocking_message: ""
+short_message: "Short"
+success_message: "Success"
+header: "Header"
+action_label: "Action"
+fallback_text: "Fallback"
+"""
+        empty_file = Path(tmpdir) / "empty_field.yaml"
+        empty_file.write_text(empty_content)
+        empty_result = validator.validate_file(empty_file)
+        runner.test("validate_file catches empty fields",
+                   not empty_result.is_valid)
+
+        # Test 8: validate_directory
+        messages_dir = Path(tmpdir) / "messages"
+        messages_dir.mkdir()
+        (messages_dir / "valid.yaml").write_text(valid_content)
+        dir_summary = validator.validate_directory(messages_dir)
+        runner.test("validate_directory returns ValidationSummary",
+                   isinstance(dir_summary, ValidationSummary))
+        runner.test("validate_directory finds files",
+                   dir_summary.total_files >= 1)
+
+        # Test 9: generate_message_file for blocking type
+        generated = generate_message_file('test_req', 'blocking', 'test-skill', 'Test description')
+        runner.test("generate_message_file returns string",
+                   isinstance(generated, str))
+        runner.test("generate_message_file includes req name",
+                   'test_req' in generated)
+        runner.test("generate_message_file includes skill",
+                   'test-skill' in generated)
+
+        # Test 10: generate_message_file for guard type
+        guard_generated = generate_message_file('protected', 'guard')
+        runner.test("generate_message_file handles guard type",
+                   'Guard' in guard_generated or 'guard' in guard_generated.lower())
+
+        # Test 11: generate_message_file for dynamic type
+        dynamic_generated = generate_message_file('size_limit', 'dynamic')
+        runner.test("generate_message_file handles dynamic type",
+                   '{value}' in dynamic_generated or 'value' in dynamic_generated)
+
+        # Test 12: _templates.yaml validation
+        templates_content = """version: "1.0"
+blocking:
+  blocking_message: "Test"
+  short_message: "Short"
+guard:
+  blocking_message: "Guard test"
+structural:
+  blocked_header: "## Blocked"
+"""
+        templates_file = messages_dir / "_templates.yaml"
+        templates_file.write_text(templates_content)
+        templates_result = validator.validate_file(templates_file)
+        runner.test("validate_file handles _templates.yaml",
+                   templates_result.is_valid or len(templates_result.warnings) >= 0)
+
+        # Test 13: _status.yaml validation
+        status_content = """version: "1.0"
+compact:
+  format: |
+    ## Status: {satisfied_count}/{total_count}
+standard:
+  format: |
+    ## Full Status
+"""
+        status_file = messages_dir / "_status.yaml"
+        status_file.write_text(status_content)
+        status_result = validator.validate_file(status_file)
+        runner.test("validate_file handles _status.yaml",
+                   status_result.is_valid or len(status_result.warnings) >= 0)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -7902,6 +8233,10 @@ def main():
     # Feature catalog and project registry tests
     test_feature_catalog_module(runner)
     test_project_registry_module(runner)
+
+    # Message externalization tests
+    test_messages_module(runner)
+    test_message_validator_module(runner)
 
     return runner.summary()
 

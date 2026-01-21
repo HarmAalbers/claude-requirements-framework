@@ -13,7 +13,7 @@ Guards are different from blocking/dynamic requirements:
 Examples: protected_branch (prevents edits on main/master)
 """
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 # Import from sibling modules
 try:
@@ -25,6 +25,9 @@ except ImportError as e:
     # For testing, allow imports to fail gracefully but log warning
     import sys
     sys.stderr.write(f"[WARNING] guard_strategy import failed: {e}\n")
+
+if TYPE_CHECKING:
+    from messages import MessageLoader
 
 
 class GuardRequirementStrategy(RequirementStrategy):
@@ -119,7 +122,7 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         Create denial response for protected branch violation.
 
-        Uses directive-first format for autonomous resolution.
+        Uses MessageLoader if available, otherwise falls back to inline config messages.
 
         Args:
             req_name: Requirement name
@@ -132,33 +135,56 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         session_id = context.get('session_id', 'unknown')
 
-        # Get custom message (should be directive-first format)
-        custom_message = config.get_attribute(req_name, 'message', None)
+        # Try to use externalized messages from MessageLoader
+        message = None
+        short_msg = None
+        message_loader = self._get_message_loader(context)
 
-        if custom_message:
-            # Use configured message as-is (directive-first format)
-            # Substitute {branch} placeholder if present
-            message = custom_message.replace('{branch}', branch)
-        else:
-            # Directive-first fallback
-            lines = [
-                f"## Blocked: {req_name}",
-                "",
-                f"Cannot edit files on protected branch `{branch}`.",
-                "",
-                "**Actions**:",
-                "1. Create feature branch: `git checkout -b feature/your-feature-name`",
-                f"2. Emergency override: `req approve {req_name}`",
-            ]
-            message = "\n".join(lines)
+        if message_loader:
+            try:
+                messages = message_loader.get_messages(req_name, 'guard')
+                formatted = messages.format(
+                    req_name=req_name,
+                    session_id=session_id,
+                    branch=branch,
+                    project_dir=context.get('project_dir', ''),
+                )
+                message = formatted.blocking_message
+                short_msg = formatted.short_message
+            except Exception:
+                # Fall back to inline config messages if loader fails
+                pass
+
+        # Fall back to inline config message
+        if not message:
+            custom_message = config.get_attribute(req_name, 'message', None)
+
+            if custom_message:
+                # Use configured message as-is (directive-first format)
+                # Substitute {branch} placeholder if present
+                message = custom_message.replace('{branch}', branch)
+            else:
+                # Directive-first fallback
+                lines = [
+                    f"## Blocked: {req_name}",
+                    "",
+                    f"Cannot edit files on protected branch `{branch}`.",
+                    "",
+                    "**Actions**:",
+                    "1. Create feature branch: `git checkout -b feature/your-feature-name`",
+                    f"2. Emergency override: `req approve {req_name}`",
+                ]
+                message = "\n".join(lines)
+
+        if not short_msg:
+            short_msg = f"Guard `{req_name}` blocked (waiting...)"
 
         # Deduplication check to prevent spam from parallel tool calls
         if self.dedup_cache:
             cache_key = f"{context.get('project_dir', '')}:{branch}:{session_id}:{req_name}"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                minimal_message = f"⏸️ Guard `{req_name}` blocked (waiting...)"
-                return create_denial_response(minimal_message)
+                return create_denial_response(short_msg)
 
         return create_denial_response(message)
 
@@ -208,7 +234,9 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         Create denial response for single session violation.
 
-        Uses directive-first format for autonomous resolution.
+        Uses MessageLoader if available, otherwise falls back to inline config messages.
+        Note: Single session guard generates dynamic session info, so the externalized
+        message serves as a fallback template.
 
         Args:
             req_name: Requirement name
@@ -221,6 +249,24 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         session_id = context.get('session_id', 'unknown')
         project_dir = context.get('project_dir', 'unknown')
+
+        # Try to get short message from loader
+        short_msg = None
+        message_loader = self._get_message_loader(context)
+        if message_loader:
+            try:
+                messages = message_loader.get_messages(req_name, 'guard')
+                formatted = messages.format(
+                    req_name=req_name,
+                    session_id=session_id,
+                    project_dir=project_dir,
+                )
+                short_msg = formatted.short_message
+            except Exception:
+                pass
+
+        if not short_msg:
+            short_msg = f"Guard `{req_name}` blocked (waiting...)"
 
         # Get custom message (should be directive-first format)
         custom_message = config.get_attribute(req_name, 'message', None)
@@ -272,7 +318,6 @@ class GuardRequirementStrategy(RequirementStrategy):
             cache_key = f"{project_dir}:{session_id}:{req_name}:single_session"
 
             if not self.dedup_cache.should_show_message(cache_key, message, ttl=5):
-                minimal_message = f"⏸️ Guard `{req_name}` blocked (waiting...)"
-                return create_denial_response(minimal_message)
+                return create_denial_response(short_msg)
 
         return create_denial_response(message)

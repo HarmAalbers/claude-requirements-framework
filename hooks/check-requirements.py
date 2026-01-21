@@ -51,6 +51,12 @@ from hook_utils import early_hook_setup, parse_hook_input, extract_file_path
 from console import emit_json
 from progress import show_progress, clear_progress
 
+# Optional import for externalized messages (fail-open if unavailable)
+try:
+    from messages import MessageLoader
+except ImportError:
+    MessageLoader = None
+
 
 def should_skip_plan_file(file_path: str) -> bool:
     """
@@ -337,11 +343,20 @@ def main() -> int:
                 continue
 
             # Execute strategy to check requirement
+            # Create message loader for externalized messages (fail-open)
+            message_loader = None
+            if MessageLoader:
+                try:
+                    message_loader = MessageLoader(project_dir, strict=False)
+                except Exception:
+                    pass  # Fail-open: use inline messages if loader fails
+
             context = {
                 'project_dir': project_dir,
                 'branch': branch,
                 'session_id': session_id,
                 'tool_name': tool_name,
+                'message_loader': message_loader,
             }
 
             logger.debug(

@@ -40,6 +40,15 @@ How the framework uses strategy pattern for extensible requirement types
 - Dispatch flow in check-requirements.py
 - Adding new strategy types
 
+### 📝 **Message Externalization** (ADR-011)
+How framework messages are stored in external YAML files
+- Message files in `~/.claude/messages/` (global) and `.claude/messages/` (project)
+- Cascade loading: local > project > global (same as requirements config)
+- `_templates.yaml` for type-based defaults, `_status.yaml` for status formats
+- 6 required fields per requirement: blocking_message, short_message, success_message, header, action_label, fallback_text
+- CLI validation: `req messages validate`, `req messages list`
+- Files: `hooks/lib/messages.py`, `hooks/lib/message_validator.py`
+
 ## Quick Reference by Task
 
 ### "How do requirements get satisfied automatically?"
@@ -57,6 +66,9 @@ How the framework uses strategy pattern for extensible requirement types
 ### "How do I add a new requirement type?"
 → Read `strategy_pattern_architecture`
 
+### "How do I customize requirement messages?"
+→ See ADR-011 (Message Externalization) above, or use `req messages` CLI
+
 ## File Locations (Most Important)
 
 **Hooks**:
@@ -70,6 +82,8 @@ How the framework uses strategy pattern for extensible requirement types
 - `hooks/lib/config.py` - Configuration loading
 - `hooks/lib/blocking_strategy.py` - Blocking requirement logic
 - `hooks/lib/strategy_registry.py` - Strategy dispatch
+- `hooks/lib/messages.py` - Externalized message loading
+- `hooks/lib/message_validator.py` - Message file validation
 
 **Plugin**:
 - `plugin/agents/*.md` - Agent definitions
