@@ -5906,8 +5906,10 @@ def test_auto_resolve_skill_field(runner: TestRunner):
         config = RequirementsConfig(tmpdir)
         runner.test("Requirement without auto_resolve_skill is valid",
                    len(config.get_validation_errors()) == 0)
+        attr_value = config.get_attribute('commit_plan', 'auto_resolve_skill')
         runner.test("auto_resolve_skill returns None when not set",
-                   config.get_attribute('commit_plan', 'auto_resolve_skill') is None)
+                   attr_value is None,
+                   f"Got: {attr_value!r} (type={type(attr_value).__name__})")
 
         # Test 6: Both auto_resolve_skill and satisfied_by_skill can coexist
         both_skills_config = {
