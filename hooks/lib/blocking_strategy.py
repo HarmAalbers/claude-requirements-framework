@@ -113,10 +113,6 @@ class BlockingRequirementStrategy(RequirementStrategy):
                 lines.append(f"**Execute**: `/{auto_skill}`")
             else:
                 lines.append(f"**Action**: `req satisfy {req_name} --session {session_id}`")
-
-            lines.append("")
-            lines.append("---")
-            lines.append(f"Fallback: `req satisfy {req_name} --session {session_id}`")
             message = "\n".join(lines)
 
         # Fall back to inline config short message

@@ -581,16 +581,27 @@ def cmd_satisfy(args) -> int:
                     out(dim(f"   Session: {session_id}"))
         else:
             # Blocking requirement - standard satisfaction
+            # Track bypass for plan-related requirements satisfied via CLI
+            plan_requirements = {'commit_plan', 'adr_reviewed', 'tdd_planned'}
+            if req_name in plan_requirements:
+                method = 'cli_bypass'
+                req_metadata = metadata.copy() if metadata else {}
+                req_metadata['bypass'] = True
+                req_metadata['method'] = 'cli_manual'
+            else:
+                method = 'cli'
+                req_metadata = metadata if metadata else None
+
             if branch_level_mode:
                 # Force branch scope when --branch is explicit
-                reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
+                reqs.satisfy(req_name, scope='branch', method=method, metadata=req_metadata)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
                     out(info("   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Use config's scope (existing behavior)
                 scope = config.get_scope(req_name)
-                reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
+                reqs.satisfy(req_name, scope, method=method, metadata=req_metadata)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)"))
 

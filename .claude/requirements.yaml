@@ -17,9 +17,6 @@ requirements:
       **Execute**: `/requirements-framework:plan-review`
 
       Creates atomic commit strategy and validates against ADRs.
-
-      ---
-      Fallback: `req satisfy commit_plan`
     checklist:
     - Identified the changes needed
     - Determined atomic commit boundaries
@@ -40,12 +37,29 @@ requirements:
       **Execute**: `/requirements-framework:plan-review`
 
       Runs adr-guardian agent to validate against Architecture Decision Records.
-
-      ---
-      Fallback: `req satisfy adr_reviewed`
     checklist:
     - Searched for ADRs related to this change
     - Confirmed approach aligns with existing ADRs
+  tdd_planned:
+    enabled: true
+    type: blocking
+    scope: session
+    description: "Ensures the plan includes TDD strategy and test cases per feature."
+    trigger_tools:
+    - Edit
+    - Write
+    - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
+    message: |
+      ## Blocked: tdd_planned
+
+      **Execute**: `/requirements-framework:plan-review`
+
+      Validates TDD readiness: test strategy and test cases per feature.
+    checklist:
+    - Plan has a testing strategy section
+    - Each feature identifies tests to write first
+    - TDD sequence is documented
   protected_branch:
     enabled: true
     type: guard
@@ -132,9 +146,6 @@ requirements:
       **Execute**: `/requirements-framework:pre-commit`
 
       Runs code-reviewer, silent-failure-hunter, and tool-validator agents.
-
-      ---
-      Fallback: `req satisfy pre_commit_review`
     checklist:
     - Code follows project conventions
     - Error handling is adequate
@@ -155,9 +166,6 @@ requirements:
       **Execute**: `/requirements-framework:quality-check`
 
       Comprehensive quality review with all 8 review agents.
-
-      ---
-      Fallback: `req satisfy pre_pr_review`
     checklist:
     - Code has been reviewed for bugs
     - Error handling is complete
@@ -178,9 +186,6 @@ requirements:
       **Execute**: `/requirements-framework:codex-review`
 
       AI-powered code review via OpenAI Codex CLI.
-
-      ---
-      Fallback: `req satisfy codex_reviewer`
     checklist:
     - Codex CLI installed (npm install -g @openai/codex)
     - AI review completed
