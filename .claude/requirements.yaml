@@ -198,4 +198,6 @@ hooks:
     enabled: true
     prompt_on_stop: true
     min_tool_uses: 5
+  stop:
+    verify_requirements: true
 inherit: true
