@@ -5888,11 +5888,12 @@ def test_auto_resolve_skill_field(runner: TestRunner):
                    any('cannot be empty' in e for e in errors))
 
         # Test 5: Requirement without auto_resolve_skill is valid
+        # Use a unique name to avoid global config cascade injecting auto_resolve_skill
         no_skill_config = {
             'version': '1.0',
             'enabled': True,
             'requirements': {
-                'commit_plan': {
+                'test_no_skill_req': {
                     'enabled': True,
                     'type': 'blocking',
                     'scope': 'session',
@@ -5906,7 +5907,7 @@ def test_auto_resolve_skill_field(runner: TestRunner):
         config = RequirementsConfig(tmpdir)
         runner.test("Requirement without auto_resolve_skill is valid",
                    len(config.get_validation_errors()) == 0)
-        attr_value = config.get_attribute('commit_plan', 'auto_resolve_skill')
+        attr_value = config.get_attribute('test_no_skill_req', 'auto_resolve_skill')
         runner.test("auto_resolve_skill returns None when not set",
                    attr_value is None,
                    f"Got: {attr_value!r} (type={type(attr_value).__name__})")
