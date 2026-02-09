@@ -581,16 +581,27 @@ def cmd_satisfy(args) -> int:
                     out(dim(f"   Session: {session_id}"))
         else:
             # Blocking requirement - standard satisfaction
+            # Track bypass for plan-related requirements satisfied via CLI
+            plan_requirements = {'commit_plan', 'adr_reviewed', 'tdd_planned'}
+            if req_name in plan_requirements:
+                method = 'cli_bypass'
+                req_metadata = metadata.copy() if metadata else {}
+                req_metadata['bypass'] = True
+                req_metadata['method'] = 'cli_manual'
+            else:
+                method = 'cli'
+                req_metadata = metadata if metadata else None
+
             if branch_level_mode:
                 # Force branch scope when --branch is explicit
-                reqs.satisfy(req_name, scope='branch', method='cli', metadata=metadata if metadata else None)
+                reqs.satisfy(req_name, scope='branch', method=method, metadata=req_metadata)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' at branch level for {branch}"))
                     out(info("   ℹ️  All current and future sessions on this branch are now satisfied"))
             else:
                 # Use config's scope (existing behavior)
                 scope = config.get_scope(req_name)
-                reqs.satisfy(req_name, scope, method='cli', metadata=metadata if metadata else None)
+                reqs.satisfy(req_name, scope, method=method, metadata=req_metadata)
                 if len(requirements) == 1:
                     out(success(f"✅ Satisfied '{req_name}' for {branch} ({scope} scope)"))
 
@@ -982,33 +993,25 @@ def cmd_verify(args) -> int:
     # Test 2: Check hook registration
     out()
     out(info("2. Checking hook registration..."))
-    settings_file = Path.home() / '.claude' / 'settings.json'
+    settings_path, settings = _load_settings_file(claude_dir)
 
-    if not settings_file.exists():
+    if not settings_path:
         out(error("  ❌ settings.json not found"))
         out(dim("     Run: ./install.sh to register hooks"))
         issues_found = True
     else:
-        try:
-            with open(settings_file) as f:
-                settings = json.load(f)
+        hooks_config = settings.get('hooks', {})
+        expected_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']
+        missing_hooks = []
 
-            hooks_config = settings.get('hooks', {})
-            expected_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']
-            missing_hooks = []
+        for hook_type in expected_hooks:
+            if hook_type not in hooks_config:
+                missing_hooks.append(hook_type)
+                out(error(f"  ❌ {hook_type} hook not registered"))
+                issues_found = True
 
-            for hook_type in expected_hooks:
-                if hook_type not in hooks_config:
-                    missing_hooks.append(hook_type)
-                    out(error(f"  ❌ {hook_type} hook not registered"))
-                    issues_found = True
-
-            if not missing_hooks:
-                out(success("  ✅ All hooks registered in settings"))
-
-        except (json.JSONDecodeError, OSError) as e:
-            out(error(f"  ❌ Cannot read settings.json: {e}"))
-            issues_found = True
+        if not missing_hooks:
+            out(success("  ✅ All hooks registered in settings"))
 
     # Test 3: Test PreToolUse hook responds
     out()
@@ -1429,7 +1432,8 @@ def cmd_doctor(args) -> int:
 
     claude_dir = Path.home() / ".claude"
     hooks_dir = claude_dir / "hooks"
-    settings_file = claude_dir / "settings.json"
+    settings_path, _ = _load_settings_file(claude_dir)
+    settings_file = settings_path or (claude_dir / "settings.json")
 
     # Run all checks
     all_checks = []
@@ -1441,7 +1445,7 @@ def cmd_doctor(args) -> int:
     # Hook file checks
     all_checks.extend(_check_all_hook_files(hooks_dir))
 
-    # Hook registration checks (skip in CI mode - settings.json won't exist)
+    # Hook registration checks (skip in CI mode - settings files won't exist)
     if not ci_mode:
         all_checks.extend(_check_all_hook_registrations(settings_file))
 

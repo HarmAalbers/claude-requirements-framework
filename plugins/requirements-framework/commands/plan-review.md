@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: "Validate plan against ADRs and create atomic commit strategy"
+description: "Validate plan against ADRs, verify TDD readiness, and create atomic commit strategy"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 7953a43
@@ -10,8 +10,9 @@ git_hash: 7953a43
 
 Automated plan validation and commit planning workflow. This command:
 1. Validates the plan against Architecture Decision Records (auto-fixes violations)
-2. Creates an atomic commit strategy (appends to plan file)
-3. Auto-satisfies `adr_reviewed` and `commit_plan` requirements
+2. Validates TDD readiness (auto-adds testing strategy if missing)
+3. Creates an atomic commit strategy (appends to plan file)
+4. Auto-satisfies `adr_reviewed`, `tdd_planned`, and `commit_plan` requirements
 
 ## Deterministic Execution Workflow
 
@@ -67,9 +68,39 @@ This step validates the plan against ADRs and auto-fixes violations where possib
      - Output the full agent response (explains what ADR is needed)
      - **STOP** - do not proceed to commit planning
 
-### Step 3: Run Commit Planner
+### Step 3: Run TDD Validator - BLOCKING GATE
 
-After ADR validation passes, create the commit strategy.
+After ADR validation passes, verify the plan includes TDD elements.
+
+1. Use the Task tool to launch:
+   - `subagent_type`: "requirements-framework:tdd-validator"
+   - `prompt`: Include the following context:
+     ```
+     Review the plan file at [PLAN_FILE] for TDD readiness.
+
+     IMPORTANT: You have Edit tool access. If TDD elements are missing but
+     the plan is clear enough, add them directly to the plan file.
+
+     Check for:
+     1. A Testing Strategy / Test Plan section
+     2. Test types identified per feature/component
+     3. TDD sequence (write tests first)
+
+     Output APPROVED if the plan has TDD elements (after any auto-fixes).
+     Output BLOCKED if the plan is too vague to determine testing approach.
+     ```
+
+2. Wait for agent completion
+
+3. Parse the agent output for verdict:
+   - If **APPROVED**: Continue to Step 4
+   - If **BLOCKED**:
+     - Output the full agent response (explains what needs to be added)
+     - **STOP** - do not proceed to commit planning
+
+### Step 4: Run Commit Planner
+
+After ADR and TDD validation pass, create the commit strategy.
 
 1. Use the Task tool to launch:
    - `subagent_type`: "requirements-framework:commit-planner"
@@ -87,9 +118,9 @@ After ADR validation passes, create the commit strategy.
 
 3. Confirm commit plan was appended to the plan file
 
-### Step 4: Output Success Summary
+### Step 5: Output Success Summary
 
-After both agents complete successfully:
+After all agents complete successfully:
 
 ```markdown
 ## Plan Review Complete
@@ -100,12 +131,20 @@ After both agents complete successfully:
 - Status: APPROVED
 - [Any auto-fixes applied]
 
+### TDD Validation
+- Status: APPROVED
+- [Any auto-fixes applied (e.g., testing strategy section added)]
+
 ### Commit Strategy
 - [Number] commits planned
 - [Brief summary from commit-planner]
 
 ### Requirements Satisfied
-Both `adr_reviewed` and `commit_plan` requirements are now satisfied.
+All three planning requirements are now satisfied:
+- `adr_reviewed` - Architecture Decision Records validated
+- `tdd_planned` - TDD readiness verified
+- `commit_plan` - Atomic commit strategy created
+
 You can proceed with implementation.
 
 ### Next Steps
@@ -138,14 +177,16 @@ You can proceed with implementation.
 Run this command after exiting plan mode. It will:
 1. Find your most recent plan
 2. Validate it against ADRs (auto-fixing where possible)
-3. Create an atomic commit strategy
-4. Satisfy both planning requirements
+3. Validate TDD readiness (auto-adding testing strategy if needed)
+4. Create an atomic commit strategy
+5. Satisfy all three planning requirements
 
 ## Integration with Requirements Framework
 
 This command is designed to work with the requirements framework:
 - Satisfies `adr_reviewed` requirement (session scope)
+- Satisfies `tdd_planned` requirement (session scope)
 - Satisfies `commit_plan` requirement (session scope)
-- Both requirements use `satisfied_by_skill: 'requirements-framework:plan-review'`
+- All three requirements use `auto_resolve_skill: 'requirements-framework:plan-review'`
 
-After running this command, Edit/Write tools will no longer be blocked by these requirements for the current session.
+After running this command, Edit/Write tools will no longer be blocked by these planning requirements for the current session.
