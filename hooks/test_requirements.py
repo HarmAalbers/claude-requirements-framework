@@ -7641,10 +7641,92 @@ def test_feature_catalog_module(runner: TestRunner):
     runner.test("commit_plan is not new since 1.0",
                'commit_plan' not in new_features)
 
-    # Test 13: get_new_features_since with current version
+    # Test 13: get_new_features_since with later versions
     new_features = get_new_features_since("1.1")
-    runner.test("No features new since 1.1",
+    runner.test("session_learning is not new since 1.1",
                'session_learning' not in new_features)
+    runner.test("tdd_planned is new since 1.1",
+               'tdd_planned' in new_features)
+
+
+def test_feature_catalog_project_sync(runner: TestRunner):
+    """Test that feature catalog stays in sync with project config."""
+    print("\n🔄 Testing feature catalog ↔ project config sync...")
+
+    from feature_catalog import FEATURE_CATALOG
+
+    # Load project config - try repo root first, then look for sync source
+    repo_root = Path(__file__).resolve().parent.parent
+    project_config_path = repo_root / ".claude" / "requirements.yaml"
+    if not project_config_path.exists():
+        # When running from deployed location (~/.claude/hooks/), find the repo
+        # via sync.sh's known source path
+        alt_root = Path.home() / "Tools" / "claude-requirements-framework"
+        project_config_path = alt_root / ".claude" / "requirements.yaml"
+    if not project_config_path.exists():
+        print("  ⚠️ Project config not found, skipping sync tests")
+        return
+
+    import yaml
+    with open(project_config_path) as f:
+        project_config = yaml.safe_load(f) or {}
+
+    project_reqs = project_config.get("requirements", {})
+    project_hooks = project_config.get("hooks", {})
+
+    # Group 1: Every requirement in project config must have a catalog entry
+    for req_name in project_reqs:
+        runner.test(
+            f"Project req '{req_name}' has catalog entry",
+            req_name in FEATURE_CATALOG,
+        )
+
+    # Group 2: Every hook in project config must have a catalog entry
+    # Hooks are mapped by config_path, e.g. "hooks.session_learning" -> "session_learning"
+    # Some hooks like "session_start" map to "session_start", "stop" maps to "stop_verification"
+    hook_catalog_paths = {}
+    for name, info in FEATURE_CATALOG.items():
+        cp = info.get("config_path", "")
+        if cp.startswith("hooks."):
+            hook_key = cp.split(".", 1)[1]
+            hook_catalog_paths[hook_key] = name
+
+    for hook_name in project_hooks:
+        runner.test(
+            f"Project hook '{hook_name}' has catalog entry",
+            hook_name in hook_catalog_paths,
+        )
+
+    # Group 3: Every default_enabled catalog feature must exist in project config
+    for feat_name, feat_info in FEATURE_CATALOG.items():
+        if not feat_info.get("default_enabled", False):
+            continue
+
+        config_path = feat_info.get("config_path", "")
+        parts = config_path.split(".")
+
+        current = project_config
+        found = True
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                found = False
+                break
+
+        runner.test(
+            f"Default-enabled '{feat_name}' exists in project config",
+            found,
+        )
+
+    # Group 4: Every catalog entry's config_path has valid prefix
+    valid_prefixes = ("requirements.", "hooks.")
+    for feat_name, feat_info in FEATURE_CATALOG.items():
+        config_path = feat_info.get("config_path", "")
+        runner.test(
+            f"Catalog '{feat_name}' config_path has valid prefix",
+            any(config_path.startswith(p) for p in valid_prefixes),
+        )
 
 
 def test_project_registry_module(runner: TestRunner):
@@ -8233,6 +8315,7 @@ def main():
 
     # Feature catalog and project registry tests
     test_feature_catalog_module(runner)
+    test_feature_catalog_project_sync(runner)
     test_project_registry_module(runner)
 
     # Message externalization tests

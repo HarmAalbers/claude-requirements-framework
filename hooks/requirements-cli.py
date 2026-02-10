@@ -2785,6 +2785,8 @@ def cmd_upgrade(args) -> int:
         return _cmd_upgrade_status(args)
     elif subcommand == 'recommend':
         return _cmd_upgrade_recommend(args)
+    elif subcommand == 'apply':
+        return _cmd_upgrade_apply(args)
     else:
         out(error(f"❌ Unknown subcommand: {subcommand}"), file=sys.stderr)
         return 1
@@ -3045,6 +3047,188 @@ def _cmd_upgrade_recommend(args) -> int:
 
     out(hint("Copy the YAML snippets above to your config file"))
     out(hint("Then run 'req upgrade status' to verify"))
+
+    return 0
+
+
+def _cmd_upgrade_apply(args) -> int:
+    """Apply missing features to a config file."""
+    import tempfile
+
+    import yaml
+    from config_utils import deep_merge
+    from feature_catalog import (
+        get_all_features,
+        get_unconfigured_features,
+        get_feature_info,
+        get_feature_yaml,
+    )
+    from interactive import confirm, checkbox
+
+    # Determine project directory once for consistent use
+    project_dir = get_project_dir()
+
+    # Determine target file path
+    target = getattr(args, 'target', 'global')
+    if target == 'global':
+        target_path = Path.home() / '.claude' / 'requirements.yaml'
+    elif target == 'project':
+        target_path = Path(project_dir) / '.claude' / 'requirements.yaml'
+    elif target == 'local':
+        target_path = Path(project_dir) / '.claude' / 'requirements.local.yaml'
+    else:
+        out(error(f"Unknown target: {target}"), file=sys.stderr)
+        return 1
+
+    if not target_path.exists():
+        out(error(f"Target config not found: {target_path}"), file=sys.stderr)
+        out(hint("Run 'req init' to create one"))
+        return 1
+
+    # Load existing config (cascade-merged for detection, raw target for writing)
+    try:
+        config = RequirementsConfig(project_dir=project_dir)
+        merged_config = config.get_raw_config()
+    except Exception as e:
+        out(error(f"Failed to load config: {e}"), file=sys.stderr)
+        return 1
+
+    # Find truly unconfigured features (absent, not just disabled)
+    unconfigured = get_unconfigured_features(merged_config)
+
+    if not unconfigured:
+        out(success("All features are already configured!"))
+        return 0
+
+    # Filter by specific feature if requested
+    specific_feature = getattr(args, 'feature', None)
+    if specific_feature:
+        if specific_feature not in unconfigured:
+            all_features = get_all_features()
+            if specific_feature in all_features:
+                out(success(f"'{specific_feature}' is already configured"))
+                return 0
+            else:
+                out(error(f"Unknown feature: {specific_feature}"), file=sys.stderr)
+                return 1
+        selected = [specific_feature]
+    elif getattr(args, 'yes', False):
+        selected = unconfigured
+    else:
+        # Interactive selection
+        choices = []
+        for name in sorted(unconfigured):
+            feat_info = get_feature_info(name)
+            desc = feat_info.get('description', '') if feat_info else ''
+            choices.append(f"{name} - {desc}")
+
+        selected_labels = checkbox(
+            "Select features to apply:",
+            choices,
+            default=choices,  # All selected by default
+        )
+
+        if not selected_labels:
+            out(info("No features selected"))
+            return 0
+
+        # Extract feature names from labels
+        selected = [label.split(' - ')[0] for label in selected_labels]
+
+    # Parse and merge each feature's YAML
+    features_to_merge = {}
+    merged_features = []
+    for feature_name in selected:
+        yaml_snippet = get_feature_yaml(feature_name)
+        if not yaml_snippet:
+            out(warning(f"Skipping {feature_name}: no YAML template in catalog"))
+            continue
+        try:
+            parsed = yaml.safe_load(yaml_snippet)
+            if isinstance(parsed, dict):
+                deep_merge(features_to_merge, parsed)
+                merged_features.append(feature_name)
+            else:
+                out(warning(f"Skipping {feature_name}: YAML template is not a mapping"))
+        except yaml.YAMLError as e:
+            out(warning(f"Skipping {feature_name}: invalid YAML ({e})"))
+            continue
+
+    if not features_to_merge:
+        out(warning("No features to apply"))
+        return 0
+
+    # Show what will be added
+    out(header(f"Features to apply to {target_path.name}:"))
+    out()
+    for name in merged_features:
+        feat_info = get_feature_info(name)
+        desc = feat_info.get('description', '') if feat_info else ''
+        out(f"  + {bold(name)}: {desc}")
+    out()
+
+    dry_run = getattr(args, 'dry_run', False)
+    if dry_run:
+        out(dim("--- Dry run: YAML to merge ---"))
+        out(yaml.safe_dump(features_to_merge, default_flow_style=False, sort_keys=False))
+        out(dim("--- End dry run ---"))
+        return 0
+
+    # Confirm
+    skip_confirm = getattr(args, 'yes', False) or specific_feature
+    if not skip_confirm:
+        out(warning("PyYAML will strip comments from the target file."))
+        if not confirm(f"Apply {len(merged_features)} feature(s) to {target_path.name}?"):
+            out(info("Cancelled"))
+            return 0
+
+    # Load raw target file (not cascade-merged)
+    try:
+        with open(target_path, 'r') as f:
+            target_config = yaml.safe_load(f) or {}
+    except Exception as e:
+        out(error(f"Failed to read {target_path}: {e}"), file=sys.stderr)
+        return 1
+
+    # Create backup
+    backup_path = target_path.with_suffix('.yaml.bak')
+    try:
+        import shutil
+        shutil.copy2(target_path, backup_path)
+        out(dim(f"Backup: {backup_path}"))
+    except Exception as e:
+        out(error(f"Could not create backup: {e}"), file=sys.stderr)
+        if not getattr(args, 'yes', False):
+            if not confirm("Continue WITHOUT backup?", default=False):
+                out(info("Cancelled"))
+                return 1
+        else:
+            out(warning("Proceeding without backup (--yes flag)"))
+
+    # Deep merge and write atomically
+    deep_merge(target_config, features_to_merge)
+
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            suffix='.yaml',
+            dir=str(target_path.parent),
+        )
+        with os.fdopen(fd, 'w') as f:
+            yaml.safe_dump(target_config, f, default_flow_style=False, sort_keys=False)
+        os.replace(tmp_path, target_path)
+    except Exception as e:
+        out(error(f"Failed to write {target_path}: {e}"), file=sys.stderr)
+        try:
+            if tmp_path:
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+        return 1
+
+    out()
+    out(success(f"Applied {len(merged_features)} feature(s) to {target_path.name}"))
+    out(hint("Run 'req upgrade status' to verify"))
 
     return 0
 
@@ -3430,6 +3614,14 @@ Environment Variables:
     upgrade_recommend = upgrade_subparsers.add_parser('recommend', help='Generate YAML recommendations')
     upgrade_recommend.add_argument('path', nargs='?', help='Project path (default: current directory)')
     upgrade_recommend.add_argument('--feature', '-f', help='Show recommendation for specific feature only')
+
+    # upgrade apply
+    upgrade_apply = upgrade_subparsers.add_parser('apply', help='Apply missing features to a config file')
+    upgrade_apply.add_argument('--feature', '-f', help='Apply specific feature only')
+    upgrade_apply.add_argument('--target', '-t', choices=['global', 'project', 'local'],
+                               default='global', help='Target config file (default: global)')
+    upgrade_apply.add_argument('--dry-run', action='store_true', help='Show what would be added without writing')
+    upgrade_apply.add_argument('--yes', '-y', action='store_true', help='Skip confirmation prompt')
 
     # messages
     messages_parser = subparsers.add_parser('messages', help='Manage externalized message files')

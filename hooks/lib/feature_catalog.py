@@ -15,6 +15,7 @@ Usage:
         get_all_features,
         detect_configured_features,
         get_missing_features,
+        get_unconfigured_features,
         get_feature_yaml
     )
 
@@ -93,6 +94,34 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
 
       ---
       Fallback: `req satisfy adr_reviewed`""",
+    },
+    "tdd_planned": {
+        "name": "TDD Planning",
+        "category": CATEGORY_REQUIREMENTS,
+        "config_path": "requirements.tdd_planned",
+        "description": "Ensure plan includes TDD strategy and test cases per feature",
+        "introduced": "1.2",
+        "default_enabled": True,
+        "example_yaml": """requirements:
+  tdd_planned:
+    enabled: true
+    type: blocking
+    scope: session
+    description: "Ensures the plan includes TDD strategy and test cases per feature."
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
+    message: |
+      ## Blocked: tdd_planned
+
+      **Execute**: `/requirements-framework:plan-review`
+
+      Validates TDD readiness: test strategy and test cases per feature.
+
+      ---
+      Fallback: `req satisfy tdd_planned`""",
     },
     "pre_commit_review": {
         "name": "Pre-Commit Review",
@@ -406,6 +435,40 @@ def get_missing_features(config: Dict[str, Any]) -> List[str]:
     """
     configured = detect_configured_features(config)
     return [name for name, enabled in configured.items() if not enabled]
+
+
+def get_unconfigured_features(config: Dict[str, Any]) -> List[str]:
+    """
+    Get features that are truly absent from config (not just disabled).
+
+    Unlike get_missing_features() which treats disabled features as missing,
+    this only returns features with no config entry at all. Used by
+    'req upgrade apply' to avoid re-adding deliberately disabled features.
+
+    Args:
+        config: Loaded requirements config dict
+
+    Returns:
+        List of feature names not present in config
+    """
+    result = []
+    for feature_name, feature_info in FEATURE_CATALOG.items():
+        config_path = feature_info.get("config_path", "")
+        parts = config_path.split(".")
+
+        current = config
+        found = True
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                found = False
+                break
+
+        if not found:
+            result.append(feature_name)
+
+    return result
 
 
 def get_enabled_features(config: Dict[str, Any]) -> List[str]:
