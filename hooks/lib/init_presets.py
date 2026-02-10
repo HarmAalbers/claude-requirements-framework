@@ -157,6 +157,24 @@ Have you reviewed relevant Architecture Decision Records?
                 ],
             },
 
+            'tdd_planned': {
+                'enabled': True,
+                'type': 'blocking',
+                'scope': 'session',
+                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
+                'message': '''🧪 **TDD Plan Required**
+
+Ensure your plan includes a testing strategy with test cases per feature.
+
+**To satisfy**: `req satisfy tdd_planned` after planning tests
+''',
+                'checklist': [
+                    'Plan has a testing strategy section',
+                    'Each feature identifies tests to write first',
+                    'TDD sequence is documented',
+                ],
+            },
+
             'protected_branch': {
                 'enabled': True,
                 'type': 'guard',

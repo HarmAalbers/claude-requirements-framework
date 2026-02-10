@@ -85,6 +85,32 @@ requirements:
       - "Searched for ADRs related to this change"
       - "Confirmed approach aligns with existing ADRs"
 
+  # TDD Planning Requirement
+  # Ensures the plan includes a TDD strategy and test cases per feature
+  tdd_planned:
+    enabled: true
+    type: blocking
+    scope: session
+    description: "Ensures the plan includes TDD strategy and test cases per feature."
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
+    message: |
+      ## Blocked: tdd_planned
+
+      **Execute**: `/requirements-framework:plan-review`
+
+      Validates TDD readiness: test strategy and test cases per feature.
+
+      ---
+      Fallback: `req satisfy tdd_planned`
+    checklist:
+      - "Plan has a testing strategy section"
+      - "Each feature identifies tests to write first"
+      - "TDD sequence is documented"
+
   # Protected Branch Guard
   # Prevents direct edits on protected branches (main/master)
   protected_branch:
