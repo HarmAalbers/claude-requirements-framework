@@ -974,7 +974,8 @@ def cmd_verify(args) -> int:
         "requirements-cli.py"
     ]
 
-    hooks_dir = Path.home() / '.claude' / 'hooks'
+    claude_dir = Path.home() / '.claude'
+    hooks_dir = claude_dir / 'hooks'
     missing_files = []
     for hook_file in hook_files:
         hook_path = hooks_dir / hook_file
