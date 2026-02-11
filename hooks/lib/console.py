@@ -181,3 +181,20 @@ def emit_text(message: str, stream: Optional[TextIO] = None) -> None:
 def emit_json(payload: dict, stream: Optional[TextIO] = None) -> None:
     """Write JSON payload to a stream (stdout by default)."""
     emit_text(json.dumps(payload), stream=stream)
+
+
+def emit_hook_context(hook_event_name: str, context_text: str,
+                      stream: Optional[TextIO] = None) -> None:
+    """Write structured hookSpecificOutput JSON for context injection.
+
+    Uses the Claude Code hook protocol's additionalContext field so that
+    the injected text reliably appears as a system-reminder in the
+    conversation, regardless of terminal environment.
+    """
+    payload = {
+        "hookSpecificOutput": {
+            "hookEventName": hook_event_name,
+            "additionalContext": context_text,
+        }
+    }
+    emit_json(payload, stream=stream)
