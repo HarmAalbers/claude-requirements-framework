@@ -25,7 +25,7 @@ requirements:
     message: |
       ## Blocked: commit_plan
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/{auto_resolve_skill}`
 
       Creates atomic commit strategy and validates against ADRs.
 
@@ -75,7 +75,7 @@ requirements:
     message: |
       ## Blocked: adr_reviewed
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/{auto_resolve_skill}`
 
       Runs adr-guardian agent to validate against Architecture Decision Records.
 
@@ -100,7 +100,7 @@ requirements:
     message: |
       ## Blocked: tdd_planned
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/{auto_resolve_skill}`
 
       Validates TDD readiness: test strategy and test cases per feature.
 
@@ -213,7 +213,7 @@ requirements:
     message: |
       ## Blocked: pre_commit_review
 
-      **Execute**: `/requirements-framework:pre-commit`
+      **Execute**: `/{auto_resolve_skill}`
 
       Runs code-reviewer, silent-failure-hunter, and tool-validator agents.
 
@@ -239,7 +239,7 @@ requirements:
     message: |
       ## Blocked: pre_pr_review
 
-      **Execute**: `/requirements-framework:quality-check`
+      **Execute**: `/{auto_resolve_skill}`
 
       Comprehensive quality review with all 8 review agents.
 
@@ -265,7 +265,7 @@ requirements:
     message: |
       ## Blocked: codex_reviewer
 
-      **Execute**: `/requirements-framework:codex-review`
+      **Execute**: `/{auto_resolve_skill}`
 
       AI-powered code review via OpenAI Codex CLI.
 
@@ -295,7 +295,7 @@ requirements:
 #     message: |
 #       ## Blocked: adr_plan_validation
 #
-#       **Execute**: `/requirements-framework:plan-review`
+#       **Execute**: `/{auto_resolve_skill}`
 #
 #       Validates plan against ADRs before implementation.
 #

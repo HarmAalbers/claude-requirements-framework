@@ -135,6 +135,9 @@ class GuardRequirementStrategy(RequirementStrategy):
         """
         session_id = context.get('session_id', 'unknown')
 
+        # Get auto_resolve_skill for message substitution
+        auto_resolve_skill = config.get_attribute(req_name, 'auto_resolve_skill', '')
+
         # Try to use externalized messages from MessageLoader
         message = None
         short_msg = None
@@ -148,6 +151,7 @@ class GuardRequirementStrategy(RequirementStrategy):
                     session_id=session_id,
                     branch=branch,
                     project_dir=context.get('project_dir', ''),
+                    auto_resolve_skill=auto_resolve_skill,
                 )
                 message = formatted.blocking_message
                 short_msg = formatted.short_message
@@ -161,8 +165,10 @@ class GuardRequirementStrategy(RequirementStrategy):
 
             if custom_message:
                 # Use configured message as-is (directive-first format)
-                # Substitute {branch} placeholder if present
+                # Substitute placeholders if present
                 message = custom_message.replace('{branch}', branch)
+                message = message.replace('{auto_resolve_skill}', auto_resolve_skill)
+                message = message.replace('{session_id}', session_id)
             else:
                 # Directive-first fallback
                 lines = [
@@ -250,6 +256,9 @@ class GuardRequirementStrategy(RequirementStrategy):
         session_id = context.get('session_id', 'unknown')
         project_dir = context.get('project_dir', 'unknown')
 
+        # Get auto_resolve_skill for message substitution
+        auto_resolve_skill = config.get_attribute(req_name, 'auto_resolve_skill', '')
+
         # Try to get short message from loader
         short_msg = None
         message_loader = self._get_message_loader(context)
@@ -260,6 +269,7 @@ class GuardRequirementStrategy(RequirementStrategy):
                     req_name=req_name,
                     session_id=session_id,
                     project_dir=project_dir,
+                    auto_resolve_skill=auto_resolve_skill,
                 )
                 short_msg = formatted.short_message
             except Exception:
@@ -272,8 +282,10 @@ class GuardRequirementStrategy(RequirementStrategy):
         custom_message = config.get_attribute(req_name, 'message', None)
 
         if custom_message:
-            # Use configured message as-is
-            message = custom_message
+            # Use configured message - substitute placeholders
+            message = custom_message.replace('{auto_resolve_skill}', auto_resolve_skill)
+            message = message.replace('{session_id}', session_id)
+            message = message.replace('{project_dir}', project_dir)
         else:
             # Directive-first fallback with session info
             import time

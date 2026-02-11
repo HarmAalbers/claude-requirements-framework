@@ -79,6 +79,9 @@ class BlockingRequirementStrategy(RequirementStrategy):
 
         session_id = context.get('session_id', 'unknown')
 
+        # Get auto_resolve_skill for message substitution
+        auto_resolve_skill = req_config.get('auto_resolve_skill', '') if req_config else ''
+
         # Try to use externalized messages from MessageLoader
         message_loader = self._get_message_loader(context)
         if message_loader:
@@ -89,6 +92,7 @@ class BlockingRequirementStrategy(RequirementStrategy):
                     session_id=session_id,
                     branch=context.get('branch', ''),
                     project_dir=context.get('project_dir', ''),
+                    auto_resolve_skill=auto_resolve_skill,
                 )
                 message = formatted.blocking_message
                 short_msg = formatted.short_message
@@ -103,6 +107,9 @@ class BlockingRequirementStrategy(RequirementStrategy):
         # Fall back to inline config message if no externalized message
         if not message and req_config:
             message = req_config.get('message', '')
+            if message:
+                message = message.replace('{auto_resolve_skill}', auto_resolve_skill)
+                message = message.replace('{session_id}', session_id)
 
         if not message:
             # Generate directive-first fallback message
