@@ -8174,6 +8174,167 @@ standard:
                    status_result.is_valid or len(status_result.warnings) >= 0)
 
 
+def test_auto_resolve_skill_substitution(runner: TestRunner):
+    """Test auto_resolve_skill placeholder substitution in messages."""
+    print("\n📦 Testing auto_resolve_skill substitution...")
+
+    from messages import RequirementMessages
+    from blocking_strategy import BlockingRequirementStrategy
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    # Test 1: RequirementMessages.format() substitutes {auto_resolve_skill} when passed
+    msgs = RequirementMessages(
+        blocking_message="**Execute**: `/{auto_resolve_skill}`",
+        short_message="{req_name} waiting",
+        success_message="{req_name} done",
+        header="{req_name}",
+        action_label="Run `/{auto_resolve_skill}`",
+        fallback_text="req satisfy {req_name}"
+    )
+    formatted = msgs.format(
+        req_name='commit_plan',
+        auto_resolve_skill='requirements-framework:plan-review'
+    )
+    runner.test("format substitutes auto_resolve_skill in blocking_message",
+               formatted.blocking_message == "**Execute**: `/requirements-framework:plan-review`")
+    runner.test("format substitutes auto_resolve_skill in action_label",
+               formatted.action_label == "Run `/requirements-framework:plan-review`")
+
+    # Test 2: RequirementMessages.format() leaves {auto_resolve_skill} unchanged when NOT passed
+    formatted_no_skill = msgs.format(req_name='commit_plan')
+    runner.test("format leaves auto_resolve_skill unchanged when not passed",
+               '{auto_resolve_skill}' in formatted_no_skill.blocking_message)
+
+    # Test 3: Blocking strategy passes auto_resolve_skill to inline config fallback
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'test_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                    'trigger_tools': ['Edit'],
+                    'auto_resolve_skill': 'my-plugin:my-skill',
+                    'message': '## Blocked\n\n**Execute**: `/{auto_resolve_skill}`',
+                }
+            }
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        config_path = os.path.join(tmpdir, ".claude", "requirements.yaml")
+        with open(config_path, 'w') as f:
+            import yaml
+            yaml.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Edit',
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+        }
+
+        result = strategy.check('test_req', config, reqs, context)
+        runner.test("Blocking strategy returns denial for unsatisfied req",
+                   result is not None)
+
+        # The denial message should have {auto_resolve_skill} substituted
+        if result:
+            deny_msg = result.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+            runner.test("Inline fallback substitutes auto_resolve_skill",
+                       '/my-plugin:my-skill' in deny_msg)
+            runner.test("Inline fallback does not contain raw placeholder",
+                       '{auto_resolve_skill}' not in deny_msg)
+
+    # Test 4: Inline config fallback with empty auto_resolve_skill
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'test_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                    'trigger_tools': ['Edit'],
+                    'message': '## Blocked\n\n**Execute**: `/{auto_resolve_skill}`',
+                }
+            }
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        config_path = os.path.join(tmpdir, ".claude", "requirements.yaml")
+        with open(config_path, 'w') as f:
+            import yaml
+            yaml.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Edit',
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+        }
+
+        result = strategy.check('test_req', config, reqs, context)
+        runner.test("Blocking strategy with empty auto_resolve_skill returns denial",
+                   result is not None)
+
+        # With no auto_resolve_skill configured, the placeholder should be replaced with empty string
+        if result:
+            deny_msg = result.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+            runner.test("Empty auto_resolve_skill replaces placeholder with empty string",
+                       '{auto_resolve_skill}' not in deny_msg)
+
+    # Test 5: session_id is also substituted in inline fallback
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'test_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'session',
+                    'trigger_tools': ['Edit'],
+                    'auto_resolve_skill': 'my-plugin:my-skill',
+                    'message': 'Run `/{auto_resolve_skill}` or fallback: `req satisfy test_req --session {session_id}`',
+                }
+            }
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        config_path = os.path.join(tmpdir, ".claude", "requirements.yaml")
+        with open(config_path, 'w') as f:
+            import yaml
+            yaml.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "test-session-42", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Edit',
+            'session_id': 'test-session-42',
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+        }
+
+        result = strategy.check('test_req', config, reqs, context)
+        if result:
+            deny_msg = result.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+            runner.test("Inline fallback substitutes session_id",
+                       'test-session-42' in deny_msg)
+            runner.test("Inline fallback substitutes both placeholders",
+                       '/my-plugin:my-skill' in deny_msg and 'test-session-42' in deny_msg)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -8321,6 +8482,7 @@ def main():
     # Message externalization tests
     test_messages_module(runner)
     test_message_validator_module(runner)
+    test_auto_resolve_skill_substitution(runner)
 
     return runner.summary()
 
