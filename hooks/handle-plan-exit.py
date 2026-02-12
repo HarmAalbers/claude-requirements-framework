@@ -34,6 +34,19 @@ from hook_utils import early_hook_setup
 from console import emit_hook_context
 
 
+def _shorten_skill_name(skill_path: str) -> str:
+    """
+    Convert namespaced skill path to short slash command.
+
+    Examples:
+        '/requirements-framework:plan-review' -> '/plan-review'
+        '/simple-skill' -> '/simple-skill'
+    """
+    if ':' in skill_path and skill_path.startswith('/'):
+        return '/' + skill_path.split(':')[-1]
+    return skill_path
+
+
 def main() -> int:
     """Hook entry point."""
     # Parse stdin input
@@ -132,7 +145,9 @@ def main() -> int:
 
         if all_plan_review:
             # Simple directive when plan-review resolves all
-            lines.append("**Execute**: `/requirements-framework:plan-review`")
+            lines.append("**Next Action (run now)**: `/plan-review`")
+            lines.append("")
+            lines.append("Run this immediately after exiting plan mode, before any Edit/Write call.")
             lines.append("")
             lines.append(f"Satisfies: {', '.join(req_names)}")
         else:
@@ -143,13 +158,14 @@ def main() -> int:
             for req_name, req_config in unsatisfied:
                 auto_skill = req_config.get('auto_resolve_skill', '')
                 if auto_skill:
-                    lines.append(f"| {req_name} | `/{auto_skill}` |")
+                    short_skill = _shorten_skill_name(f"/{auto_skill}")
+                    lines.append(f"| {req_name} | `{short_skill}` |")
                 else:
                     lines.append(f"| {req_name} | `req satisfy {req_name}` |")
 
         lines.append("")
         lines.append("---")
-        lines.append(f"Fallback: `req satisfy {' '.join(req_names)} --session {session_id}`")
+        lines.append(f"Manual fallback: `req satisfy {' '.join(req_names)} --session {session_id}`")
 
         # PostToolUse output goes to Claude's context via structured JSON
         emit_hook_context("PostToolUse", "\n".join(lines))

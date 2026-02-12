@@ -1,7 +1,7 @@
 ---
 name: plan-review
-description: "Validate plan against ADRs, verify TDD readiness, and create atomic commit strategy"
-argument-hint: ""
+description: "Validate plan against ADRs and TDD, then generate atomic commit strategy"
+argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 7953a43
 ---
@@ -11,8 +11,11 @@ git_hash: 7953a43
 Automated plan validation and commit planning workflow. This command:
 1. Validates the plan against Architecture Decision Records (auto-fixes violations)
 2. Validates TDD readiness (auto-adds testing strategy if missing)
-3. Creates an atomic commit strategy (appends to plan file)
+3. Generates an atomic commit strategy (appends to plan file)
 4. Auto-satisfies `adr_reviewed`, `tdd_planned`, and `commit_plan` requirements
+
+**Arguments:** "$ARGUMENTS"
+- Optional: provide a specific plan file path (recommended when multiple plans exist)
 
 ## Deterministic Execution Workflow
 
@@ -20,13 +23,26 @@ You MUST follow these steps in exact order. This is a blocking workflow - each s
 
 ### Step 1: Locate the Plan File
 
-Find the most recent plan file, checking project-local first, then global:
+First preference: explicit argument. Fallback: auto-discover latest plan (project-local first, then global):
 
 ```bash
-# Check project-local plans first, then fall back to global
-PLAN_FILE=$(ls -t .claude/plans/*.md 2>/dev/null | head -1)
+# If user passed an argument, use it directly
+PLAN_FILE="$ARGUMENTS"
+
+# Trim surrounding whitespace and optional quotes
+PLAN_FILE=$(echo "$PLAN_FILE" | sed 's/^ *//; s/ *$//; s/^"//; s/"$//')
+
+# Expand "~/" prefix for user-provided paths
+if [ -n "$PLAN_FILE" ] && [ "${PLAN_FILE#~/}" != "$PLAN_FILE" ]; then
+  PLAN_FILE="$HOME/${PLAN_FILE#~/}"
+fi
+
+# If no argument provided, auto-discover
 if [ -z "$PLAN_FILE" ]; then
-  PLAN_FILE=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
+  PLAN_FILE=$(ls -t .claude/plans/*.md 2>/dev/null | head -1)
+  if [ -z "$PLAN_FILE" ]; then
+    PLAN_FILE=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
+  fi
 fi
 echo "$PLAN_FILE"
 ```
@@ -37,8 +53,10 @@ If no plan file found (PLAN_FILE is empty):
 - **STOP** - do not proceed to other steps
 
 If plan file found:
+- Verify file exists and is readable. If not, output: "Plan file not found or unreadable: [PLAN_FILE]" and **STOP**
 - Store the path as PLAN_FILE
 - Output: "Found plan file: [PLAN_FILE]"
+- If this is not the intended plan, **STOP** and rerun with an explicit path argument
 
 ### Step 2: Run ADR Guardian - BLOCKING GATE
 
@@ -100,13 +118,13 @@ After ADR validation passes, verify the plan includes TDD elements.
 
 ### Step 4: Run Commit Planner
 
-After ADR and TDD validation pass, create the commit strategy.
+After ADR and TDD validation pass, generate the commit strategy.
 
 1. Use the Task tool to launch:
    - `subagent_type`: "requirements-framework:commit-planner"
    - `prompt`: Include the following context:
      ```
-     Analyze the plan file at [PLAN_FILE] and create an atomic commit strategy.
+     Analyze the plan file at [PLAN_FILE] and generate an atomic commit strategy.
 
      IMPORTANT: Use the Edit tool to APPEND the commit plan to the plan file.
      Do not create a separate file.
@@ -172,13 +190,15 @@ You can proceed with implementation.
 
 ```bash
 /requirements-framework:plan-review
+/requirements-framework:plan-review .claude/plans/my-plan.md
+/requirements-framework:plan-review ~/.claude/plans/stateful-meandering-hopper.md
 ```
 
-Run this command after exiting plan mode. It will:
+Run this command immediately after exiting plan mode. It will:
 1. Find your most recent plan
 2. Validate it against ADRs (auto-fixing where possible)
 3. Validate TDD readiness (auto-adding testing strategy if needed)
-4. Create an atomic commit strategy
+4. Generate an atomic commit strategy
 5. Satisfy all three planning requirements
 
 ## Integration with Requirements Framework

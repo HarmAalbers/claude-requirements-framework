@@ -16,7 +16,7 @@ requirements:
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Creates atomic commit strategy and validates against ADRs.
+      Generates atomic commit strategy after ADR and TDD validation.
     checklist:
     - Identified the changes needed
     - Determined atomic commit boundaries

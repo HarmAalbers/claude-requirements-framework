@@ -109,8 +109,10 @@ def main() -> int:
         if not skill_name:
             return 0
 
-        # Get project context
-        project_dir = resolve_project_root(verbose=False)
+        # Get project context from hook input when available.
+        # This avoids resolving against the hook process cwd in cross-project workflows.
+        hook_cwd = input_data.get('cwd')
+        project_dir = resolve_project_root(start_dir=hook_cwd, verbose=False)
 
         # Check if project has requirements config
         config_file = Path(project_dir) / '.claude' / 'requirements.yaml'

@@ -66,6 +66,8 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
 
       **Execute**: `/requirements-framework:plan-review`
 
+      Generates atomic commit strategy after ADR and TDD validation.
+
       ---
       Fallback: `req satisfy commit_plan`""",
     },
