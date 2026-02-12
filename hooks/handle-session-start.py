@@ -18,7 +18,8 @@ Input (stdin JSON):
 
 Output:
 - Structured JSON with hookSpecificOutput.additionalContext (injected into Claude's context)
-- Or empty if inject_context is disabled
+- May include session warnings even if inject_context is disabled
+- Empty if no context to inject and no warnings
 """
 import json
 import os
@@ -647,7 +648,7 @@ See `req init --help` for options.""")
             config, project_dir, session_id, logger
         )
 
-        # 3. Inject context if configured (default: True)
+        # 3. Assemble and inject context (warnings + status) if applicable
         inject_context = config.get_hook_config('session_start', 'inject_context', True)
 
         parts = []
