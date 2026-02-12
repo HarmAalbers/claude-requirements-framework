@@ -17,7 +17,7 @@ Input (stdin JSON):
 }
 
 Output:
-- Plain text status (injected into Claude's context)
+- Structured JSON with hookSpecificOutput.additionalContext (injected into Claude's context)
 - Or empty if inject_context is disabled
 """
 import json
@@ -36,7 +36,7 @@ from session import update_registry, cleanup_stale_sessions, normalize_session_i
 from session_metrics import SessionMetrics
 from logger import get_logger
 from hook_utils import early_hook_setup
-from console import emit_text
+from console import emit_hook_context
 
 
 def _get_requirement_status_data(reqs: BranchRequirements, config: RequirementsConfig,
@@ -588,14 +588,13 @@ def main() -> int:
         # Suggest init if no project config (only on startup, not resume/compact)
         source = input_data.get('source', 'startup')
         if not has_project_config and source == 'startup':
-            emit_text("""💡 **No requirements config found for this project**
+            emit_hook_context("SessionStart", """💡 **No requirements config found for this project**
 
 To set up the requirements framework, run:
   `req init`
 
 Or create `.claude/requirements.yaml` manually.
-See `req init --help` for options.
-""")
+See `req init --help` for options.""")
             return 0
 
         # Skip if config wasn't loaded (shouldn't happen given checks above)
@@ -647,15 +646,23 @@ See `req init --help` for options.
         other_sessions_warning = check_other_sessions_warning(
             config, project_dir, session_id, logger
         )
-        if other_sessions_warning:
-            emit_text(other_sessions_warning)
-            emit_text("")  # Add blank line before status
 
         # 3. Inject context if configured (default: True)
-        if config.get_hook_config('session_start', 'inject_context', True):
-            reqs = BranchRequirements(branch, session_id, project_dir)
-            status = format_adaptive_status(reqs, config, session_id, branch, source)
-            emit_text(status)
+        inject_context = config.get_hook_config('session_start', 'inject_context', True)
+
+        parts = []
+        if other_sessions_warning:
+            parts.append(other_sessions_warning)
+        if inject_context:
+            try:
+                reqs = BranchRequirements(branch, session_id, project_dir)
+                status = format_adaptive_status(reqs, config, session_id, branch, source)
+                parts.append(status)
+            except Exception as e:
+                logger.error("Failed to format status", error=str(e))
+
+        if parts:
+            emit_hook_context("SessionStart", "\n\n".join(parts))
 
         return 0
 
