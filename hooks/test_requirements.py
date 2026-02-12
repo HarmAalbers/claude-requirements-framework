@@ -58,6 +58,21 @@ class TestRunner:
         return 0 if self.failed == 0 else 1
 
 
+def extract_hook_context(stdout: str) -> str:
+    """Extract additionalContext from hookSpecificOutput JSON.
+
+    Hooks that use emit_hook_context() emit structured JSON. This helper
+    extracts the text payload so test assertions can check content without
+    caring about the JSON envelope.  Falls back to raw stdout for backward
+    compatibility with hooks that still emit plain text.
+    """
+    try:
+        data = json.loads(stdout)
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+    except (json.JSONDecodeError, AttributeError):
+        return stdout
+
+
 def test_session_module(runner: TestRunner):
     """Test session management."""
     print("\n📦 Testing session module...")
@@ -2458,7 +2473,7 @@ def test_session_start_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart no config = pass", result.returncode == 0)
-        runner.test("SessionStart suggests init", "req init" in result.stdout,
+        runner.test("SessionStart suggests init", "req init" in extract_hook_context(result.stdout),
                    f"Expected 'req init' in output, got: {result.stdout[:200]}")
 
         # Test without config on resume (should NOT suggest init) - provide session_id
@@ -2468,7 +2483,7 @@ def test_session_start_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart resume = no init suggestion",
-                   "req init" not in result.stdout,
+                   "req init" not in extract_hook_context(result.stdout),
                    f"Should not suggest init on resume: {result.stdout[:200]}")
 
         # Create config with context injection enabled
@@ -2493,7 +2508,8 @@ def test_session_start_hook(runner: TestRunner):
             input=json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"statustest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
-        runner.test("SessionStart outputs status", "Requirements" in result.stdout or "commit_plan" in result.stdout,
+        ctx = extract_hook_context(result.stdout)
+        runner.test("SessionStart outputs status", "Requirements" in ctx or "commit_plan" in ctx,
                    f"Got: {result.stdout}")
 
         # Test with inject_context=False (should be silent)
@@ -2537,9 +2553,10 @@ def test_session_start_hook(runner: TestRunner):
             input=json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"headertest"}),
             cwd=tmpdir, capture_output=True, text=True
         )
-        runner.test("Custom header displayed", "SolarMonkey Context" in result.stdout,
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Custom header displayed", "SolarMonkey Context" in ctx,
                    f"Got: {result.stdout[:300]}")
-        runner.test("Custom header before status", result.stdout.find("SolarMonkey") < result.stdout.find("Requirements"),
+        runner.test("Custom header before status", ctx.find("SolarMonkey") < ctx.find("Requirements"),
                    "Custom header should appear before Requirements status")
 
     # Test non-git directory (should pass silently)
@@ -2551,6 +2568,76 @@ def test_session_start_hook(runner: TestRunner):
         )
         runner.test("SessionStart non-git = pass", result.returncode == 0)
         runner.test("SessionStart non-git = silent", result.stdout.strip() == "")
+
+
+def test_session_start_json_format(runner: TestRunner):
+    """Test that SessionStart hook emits structured JSON with hookSpecificOutput."""
+    print("\n📦 Testing SessionStart JSON format...")
+
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    if not hook_path.exists():
+        runner.test("SessionStart hook exists", False, "Hook file not found")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Test no-config path emits valid JSON envelope
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "jsontest1"}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("No-config output is valid JSON", result.returncode == 0)
+        try:
+            data = json.loads(result.stdout)
+            hook_output = data.get("hookSpecificOutput", {})
+            runner.test("No-config has hookSpecificOutput key",
+                       "hookSpecificOutput" in data)
+            runner.test("No-config has hookEventName",
+                       hook_output.get("hookEventName") == "SessionStart")
+            runner.test("No-config has additionalContext",
+                       "additionalContext" in hook_output)
+            runner.test("No-config context contains req init",
+                       "req init" in hook_output.get("additionalContext", ""))
+        except json.JSONDecodeError:
+            runner.test("No-config output is valid JSON", False,
+                       f"Could not parse JSON: {result.stdout[:200]}")
+
+        # Test with config emits valid JSON envelope
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {"session_start": {"inject_context": True}},
+            "requirements": {
+                "test_req": {"enabled": True, "scope": "session", "message": "Test!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "jsontest2"}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        try:
+            data = json.loads(result.stdout)
+            hook_output = data.get("hookSpecificOutput", {})
+            runner.test("Config output has hookSpecificOutput",
+                       "hookSpecificOutput" in data)
+            runner.test("Config output hookEventName is SessionStart",
+                       hook_output.get("hookEventName") == "SessionStart")
+            ctx = hook_output.get("additionalContext", "")
+            runner.test("Config output context has requirements status",
+                       "Requirements" in ctx or "test_req" in ctx,
+                       f"Got context: {ctx[:200]}")
+        except json.JSONDecodeError:
+            runner.test("Config output is valid JSON", False,
+                       f"Could not parse JSON: {result.stdout[:200]}")
 
 
 def test_stop_hook(runner: TestRunner):
@@ -8376,6 +8463,7 @@ def main():
     test_hook_config(runner)
     test_remove_session_from_registry(runner)
     test_session_start_hook(runner)
+    test_session_start_json_format(runner)
     test_stop_hook(runner)
     test_session_end_hook(runner)
 
