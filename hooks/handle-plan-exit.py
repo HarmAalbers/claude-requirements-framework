@@ -15,7 +15,7 @@ Input (stdin JSON):
 }
 
 Output:
-- Plain text status message (shown to Claude in context)
+- Structured JSON with hookSpecificOutput.additionalContext (shown to Claude in context)
 - Empty if all requirements satisfied
 """
 import json
@@ -31,7 +31,7 @@ from requirements import BranchRequirements
 from session import update_registry, normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
-from console import emit_text
+from console import emit_hook_context
 
 
 def main() -> int:
@@ -151,8 +151,8 @@ def main() -> int:
         lines.append("---")
         lines.append(f"Fallback: `req satisfy {' '.join(req_names)} --session {session_id}`")
 
-        # PostToolUse output goes to Claude's context
-        emit_text("\n".join(lines))
+        # PostToolUse output goes to Claude's context via structured JSON
+        emit_hook_context("PostToolUse", "\n".join(lines))
 
         logger.info("Plan exit - showed requirements", requirements=req_names)
         return 0
