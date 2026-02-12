@@ -2592,14 +2592,15 @@ def test_session_start_json_format(runner: TestRunner):
         runner.test("No-config output is valid JSON", result.returncode == 0)
         try:
             data = json.loads(result.stdout)
+            hook_output = data.get("hookSpecificOutput", {})
             runner.test("No-config has hookSpecificOutput key",
                        "hookSpecificOutput" in data)
             runner.test("No-config has hookEventName",
-                       data.get("hookSpecificOutput", {}).get("hookEventName") == "SessionStart")
+                       hook_output.get("hookEventName") == "SessionStart")
             runner.test("No-config has additionalContext",
-                       "additionalContext" in data.get("hookSpecificOutput", {}))
+                       "additionalContext" in hook_output)
             runner.test("No-config context contains req init",
-                       "req init" in data["hookSpecificOutput"]["additionalContext"])
+                       "req init" in hook_output.get("additionalContext", ""))
         except json.JSONDecodeError:
             runner.test("No-config output is valid JSON", False,
                        f"Could not parse JSON: {result.stdout[:200]}")
@@ -2625,11 +2626,12 @@ def test_session_start_json_format(runner: TestRunner):
         )
         try:
             data = json.loads(result.stdout)
+            hook_output = data.get("hookSpecificOutput", {})
             runner.test("Config output has hookSpecificOutput",
                        "hookSpecificOutput" in data)
             runner.test("Config output hookEventName is SessionStart",
-                       data.get("hookSpecificOutput", {}).get("hookEventName") == "SessionStart")
-            ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+                       hook_output.get("hookEventName") == "SessionStart")
+            ctx = hook_output.get("additionalContext", "")
             runner.test("Config output context has requirements status",
                        "Requirements" in ctx or "test_req" in ctx,
                        f"Got context: {ctx[:200]}")
