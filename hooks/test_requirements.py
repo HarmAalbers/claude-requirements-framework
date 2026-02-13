@@ -8422,6 +8422,217 @@ def test_auto_resolve_skill_substitution(runner: TestRunner):
                        '/my-plugin:my-skill' in deny_msg and 'test-session-42' in deny_msg)
 
 
+def test_teammate_idle_hook(runner: TestRunner):
+    """Test TeammateIdle hook behavior."""
+    print("\n📦 Testing TeammateIdle hook...")
+
+    hook_path = Path(__file__).parent / "handle-teammate-idle.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Test 1: No config = pass (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("No config = exit 0", result.returncode == 0)
+
+        # Test 2: Config with agent_teams disabled = exit 0
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "agent_teams": {
+                    "enabled": False,
+                    "keep_working_on_idle": False
+                }
+            },
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            import yaml
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Agent teams disabled = exit 0", result.returncode == 0)
+
+        # Test 3: Config with keep_working_on_idle = true → exit 2
+        config["hooks"]["agent_teams"]["enabled"] = True
+        config["hooks"]["agent_teams"]["keep_working_on_idle"] = True
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("keep_working_on_idle = exit 2", result.returncode == 2)
+        runner.test("Feedback message in stdout", "code-reviewer" in result.stdout)
+
+        # Test 4: Empty stdin = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Empty stdin = fail open", result.returncode == 0)
+
+        # Test 5: Malformed JSON = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='not-json',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Malformed JSON = fail open", result.returncode == 0)
+
+        # Test 6: Missing fields = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"hook_type": "TeammateIdle"}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Missing fields = fail open", result.returncode == 0)
+
+
+def test_task_completed_hook(runner: TestRunner):
+    """Test TaskCompleted hook behavior."""
+    print("\n📦 Testing TaskCompleted hook...")
+
+    hook_path = Path(__file__).parent / "handle-task-completed.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+
+        # Test 1: No config = pass (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "Code quality review",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("No config = exit 0", result.returncode == 0)
+
+        # Test 2: Config with validation disabled = exit 0
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "agent_teams": {
+                    "enabled": True,
+                    "validate_task_completion": False
+                }
+            },
+            "requirements": {}
+        }
+        import yaml
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "Code quality review",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Validation disabled = exit 0", result.returncode == 0)
+
+        # Test 3: Validation enabled, empty task_subject = exit 2
+        config["hooks"]["agent_teams"]["validate_task_completion"] = True
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Empty task_subject with validation = exit 2", result.returncode == 2)
+
+        # Test 4: Validation enabled, valid task = exit 0
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "Code quality review",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Valid task with validation = exit 0", result.returncode == 0)
+
+        # Test 5: Empty stdin = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Empty stdin = fail open", result.returncode == 0)
+
+        # Test 6: Malformed JSON = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='not-json',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Malformed JSON = fail open", result.returncode == 0)
+
+        # Test 7: Missing fields = fail open (exit 0)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"hook_type": "TaskCompleted"}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Missing fields = fail open", result.returncode == 0)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -8571,6 +8782,10 @@ def main():
     test_messages_module(runner)
     test_message_validator_module(runner)
     test_auto_resolve_skill_substitution(runner)
+
+    # Agent Teams hook tests
+    test_teammate_idle_hook(runner)
+    test_task_completed_hook(runner)
 
     return runner.summary()
 
