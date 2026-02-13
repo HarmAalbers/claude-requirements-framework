@@ -3,7 +3,7 @@ name: plan-review
 description: "Validate plan against ADRs and TDD, then generate atomic commit strategy"
 argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 7953a43
+git_hash: 88d1585
 ---
 
 # Plan Review Command
