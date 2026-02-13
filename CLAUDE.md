@@ -49,6 +49,7 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Maps: /requirements-framework:pre-commit → pre_commit_review
     → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
+    → Maps: /requirements-framework:plan-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
     → Maps: /requirements-framework:deep-review → pre_pr_review
     → Maps: /requirements-framework:arch-review → adr_reviewed
 
@@ -234,7 +235,7 @@ For testing the installed plugin:
 - code-reviewer, tool-validator, silent-failure-hunter
 - test-analyzer, type-design-analyzer, comment-analyzer
 - code-simplifier, backward-compatibility-checker
-- adr-guardian, codex-review-agent
+- adr-guardian, codex-review-agent, solid-reviewer
 
 **For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
 
