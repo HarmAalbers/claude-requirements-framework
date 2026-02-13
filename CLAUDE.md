@@ -31,7 +31,7 @@ The framework exists in two places that must stay synchronized:
 
 Always run `./sync.sh status` before committing to ensure both locations are in sync.
 
-### Session Lifecycle (Six Hooks)
+### Session Lifecycle (Eight Hooks)
 ```
 SessionStart (handle-session-start.py)
     → Clean stale sessions
@@ -49,6 +49,8 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Maps: /requirements-framework:pre-commit → pre_commit_review
     → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
+    → Maps: /requirements-framework:deep-review → pre_pr_review
+    → Maps: /requirements-framework:arch-review → adr_reviewed
 
 PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
@@ -66,6 +68,16 @@ Stop (handle-stop.py) - when Claude finishes
 SessionEnd (handle-session-end.py) - session ends
     → Remove session from registry
     → Optional: clear session state
+
+TeammateIdle (handle-teammate-idle.py) - when teammate goes idle (ADR-012)
+    → Log idle event to session metrics
+    → Optionally re-engage idle teammate (exit code 2)
+    → Disabled by default (hooks.agent_teams.keep_working_on_idle)
+
+TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
+    → Record task completion in session metrics
+    → Optionally validate task output quality
+    → Disabled by default (hooks.agent_teams.validate_task_completion)
 ```
 
 ### Configuration Cascade
@@ -83,9 +95,11 @@ SessionEnd (handle-session-end.py) - session ends
 - `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
 - `handle-stop.py` - Stop hook (requirement verification)
 - `handle-session-end.py` - SessionEnd hook (cleanup)
+- `handle-teammate-idle.py` - TeammateIdle hook (team progress tracking, ADR-012)
+- `handle-task-completed.py` - TaskCompleted hook (team task quality gates, ADR-012)
 - `requirements-cli.py` - `req` command implementation
 - `ruff_check.py` - Ruff linter hook
-- `test_requirements.py` - Test suite (780+ tests)
+- `test_requirements.py` - Test suite (950+ tests)
 - `test_branch_size_calculator.py` - Branch size calculator tests
 
 **Core Library** (in `hooks/lib/`):
@@ -178,7 +192,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 15 agents, 6 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 15 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 
@@ -207,6 +221,8 @@ For testing the installed plugin:
 /requirements-framework:pre-commit [aspects]
 /requirements-framework:quality-check [parallel]
 /requirements-framework:codex-review [scope]
+/requirements-framework:deep-review          # Team-based cross-validated review (ADR-012)
+/requirements-framework:arch-review [path]   # Team-based architecture review (ADR-012)
 ```
 
 **Test skills** (natural language):
@@ -342,6 +358,39 @@ req learning rollback 3   # Undo update #3
 - **User approval**: All updates require user approval before applying
 - **Rollback capable**: Every change recorded with previous content hash
 
+## Agent Teams (ADR-012)
+
+The framework supports Claude Code Agent Teams for cross-validated reviews where agents collaborate and debate findings.
+
+### Commands
+- `/deep-review` — Team-based code review with cross-validation (falls back to `/quality-check parallel`)
+- `/arch-review` — Team-based architecture review with debate (falls back to `/plan-review`)
+
+Both require `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable.
+
+### Configuration
+```yaml
+hooks:
+  agent_teams:
+    enabled: false          # Opt-in (also requires env var)
+    keep_working_on_idle: false  # Re-engage idle teammates
+    validate_task_completion: false  # Validate task output
+    max_teammates: 4        # Token cost cap
+    fallback_to_subagents: true  # Graceful degradation
+```
+
+### When to Use Teams vs Subagents
+| Use Teams (`/deep-review`, `/arch-review`) | Use Subagents (`/quality-check`, `/plan-review`) |
+|---|---|
+| Want cross-validated findings | Standard review is sufficient |
+| Have token budget for thorough review | Need faster, cheaper review |
+| Complex changes affecting multiple areas | Simple, focused changes |
+| Architecture decisions with trade-offs | Routine commits |
+
+### Hook Events
+- `TeammateIdle` — Fires when teammate goes idle. Configurable re-engagement.
+- `TaskCompleted` — Fires when team task completes. Configurable validation.
+
 ## Message Externalization
 
 Framework messages are stored in external YAML files for customization without code changes.
@@ -442,4 +491,5 @@ $ req upgrade recommend --feature session_learning
   - ADR-008: CLAUDE.md weekly maintenance process
   - ADR-010: Cross-project feature upgrade system
   - ADR-011: Externalize messages to YAML files
+  - ADR-012: Agent Teams integration
 - `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills
