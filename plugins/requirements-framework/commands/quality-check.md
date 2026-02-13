@@ -8,6 +8,9 @@ git_hash: 8007145
 
 # Pre-PR Quality Check
 
+> **For cross-validated review with agent debate, use `/deep-review` instead.**
+> This command is a lightweight alternative that runs agents independently without cross-validation.
+
 Comprehensive code quality review before creating a pull request. This runs ALL review agents to ensure your code is ready for PR.
 
 **Mode:** "$ARGUMENTS" (use 'parallel' for faster execution)

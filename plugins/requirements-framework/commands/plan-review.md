@@ -8,6 +8,9 @@ git_hash: 88d1585
 
 # Plan Review Command
 
+> **For thorough multi-perspective review with agent cross-validation, use `/arch-review` instead.**
+> This command is a lightweight alternative that runs agents sequentially without cross-validation.
+
 Automated plan validation and commit planning workflow. This command:
 1. Validates the plan against Architecture Decision Records (auto-fixes violations)
 2. Validates TDD readiness (auto-adds testing strategy if missing)
@@ -241,11 +244,12 @@ Run this command immediately after exiting plan mode. It will:
 
 ## Integration with Requirements Framework
 
-This command is designed to work with the requirements framework:
+This command is a **lightweight alternative** to `/arch-review` (the recommended approach).
+
 - Satisfies `adr_reviewed` requirement (session scope)
 - Satisfies `tdd_planned` requirement (session scope)
 - Satisfies `solid_reviewed` requirement (session scope)
 - Satisfies `commit_plan` requirement (session scope)
-- All four requirements use `auto_resolve_skill: 'requirements-framework:plan-review'`
+- The recommended approach (`/arch-review`) uses Agent Teams for cross-validated review with 5 agents working collaboratively
 
 After running this command, Edit/Write tools will no longer be blocked by these planning requirements for the current session.
