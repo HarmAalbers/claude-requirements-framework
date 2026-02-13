@@ -178,7 +178,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 17 agents, 3 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 15 agents, 6 commands, and 5 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 

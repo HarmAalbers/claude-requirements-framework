@@ -309,7 +309,7 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 
 **Test Checklist:**
 
-1. **Commands** - Type `/requirements-framework:` and verify autocomplete shows 3 commands
+1. **Commands** - Type `/requirements-framework:` and verify autocomplete shows 6 commands
 2. **Command execution** - Run `/requirements-framework:pre-commit tools` and verify it works
 3. **Skills** - Say "Show requirements framework status" and verify skill triggers
 4. **Agents** - Check that agents are available via Task tool
@@ -484,21 +484,29 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/
 ├── .claude-plugin/
 │   └── plugin.json (v2.0.5)
-├── agents/ (17 agents)
+├── agents/ (15 agents)
 │   ├── adr-guardian.md
 │   ├── backward-compatibility-checker.md
 │   ├── code-reviewer.md
 │   ├── code-simplifier.md
 │   ├── codex-review-agent.md
 │   ├── comment-analyzer.md
+│   ├── comment-cleaner.md
+│   ├── commit-planner.md
+│   ├── import-organizer.md
+│   ├── session-analyzer.md
 │   ├── silent-failure-hunter.md
+│   ├── tdd-validator.md
 │   ├── test-analyzer.md
 │   ├── tool-validator.md
 │   └── type-design-analyzer.md
-├── commands/ (3 commands)
+├── commands/ (6 commands)
+│   ├── codex-review.md
+│   ├── commit-checks.md
+│   ├── plan-review.md
 │   ├── pre-commit.md
 │   ├── quality-check.md
-│   └── codex-review.md
+│   └── session-reflect.md
 └── skills/ (5 skills)
     ├── requirements-framework-builder/
     ├── requirements-framework-development/

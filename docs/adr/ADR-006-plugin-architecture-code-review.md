@@ -26,8 +26,8 @@ This created a dependency problem:
 The framework plugin structure now includes:
 - `/hooks/` - Python hooks and libraries (copied to ~/.claude/hooks/)
 - `/plugins/requirements-framework/` - Plugin components (installed via marketplace)
-  - `/agents/` - 17 specialized agents
-  - `/commands/` - 3 orchestrator commands
+  - `/agents/` - 15 specialized agents
+  - `/commands/` - 6 orchestrator commands
   - `/skills/` - 5 management skills
   - `/.claude-plugin/plugin.json` - Plugin manifest
 
@@ -120,29 +120,36 @@ The framework plugin structure now includes:
 ```
 plugins/requirements-framework/
 ├── .claude-plugin/
-│   └── plugin.json (v2.0.5)
-├── agents/ (11 total)
-│   ├── adr-guardian.md (enhanced with Edit tool for auto-fix)
-│   ├── codex-review-agent.md
-│   ├── commit-planner.md (NEW - creates atomic commit strategies)
+│   └── plugin.json
+├── agents/ (15 total)
+│   ├── adr-guardian.md
+│   ├── backward-compatibility-checker.md
 │   ├── code-reviewer.md
-│   ├── silent-failure-hunter.md
-│   ├── test-analyzer.md
-│   ├── type-design-analyzer.md
-│   ├── comment-analyzer.md
 │   ├── code-simplifier.md
+│   ├── codex-review-agent.md
+│   ├── comment-analyzer.md
+│   ├── comment-cleaner.md
+│   ├── commit-planner.md
+│   ├── import-organizer.md
+│   ├── session-analyzer.md
+│   ├── silent-failure-hunter.md
+│   ├── tdd-validator.md
+│   ├── test-analyzer.md
 │   ├── tool-validator.md
-│   └── backward-compatibility-checker.md
-├── commands/ (3 total)
+│   └── type-design-analyzer.md
+├── commands/ (6 total)
+│   ├── codex-review.md
+│   ├── commit-checks.md
+│   ├── plan-review.md
 │   ├── pre-commit.md
 │   ├── quality-check.md
-│   └── plan-review.md (NEW - orchestrates plan validation workflow)
+│   └── session-reflect.md
 └── skills/ (5 total)
-    ├── codex-review/
     ├── requirements-framework-builder/
     ├── requirements-framework-development/
     ├── requirements-framework-status/
-    └── requirements-framework-usage/
+    ├── requirements-framework-usage/
+    └── session-learning/
 ```
 
 ### Namespace Migration
@@ -218,7 +225,7 @@ pre_pr_review:
 This architecture is enforced by:
 1. **install.sh** - Installs framework hooks + displays marketplace instructions
 2. **marketplace.json** - Advertises plugin version for marketplace installation
-3. **plugin.json** - Declares all 17 agents + 3 commands + 5 skills
+3. **plugin.json** - Declares all 15 agents + 6 commands + 5 skills
 4. **sync-versions.sh** - Keeps version numbers consistent across all files
 5. **Auto-satisfy mapping** - Wires commands to requirements
 6. **Global config** - References framework namespace only
@@ -242,4 +249,4 @@ New agents/commands must:
 - Commit: `5148041` - feat: Add automated plan-review workflow (commit-planner agent, plan-review command)
 - Commit: `f12a597` - fix: Address Codex review findings (1:N skill mapping support)
 - Analysis: 3 parallel Opus agents reviewed design, implementation, and usage
-- Components: 11 agents, 3 commands, 5 skills
+- Components: 15 agents, 6 commands, 5 skills

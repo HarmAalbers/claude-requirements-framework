@@ -207,8 +207,8 @@ cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
 **Verify:**
 - Version is `2.0.5`
 - 5 skills listed
-- 3 commands listed
-- 17 agents listed
+- 6 commands listed
+- 15 agents listed
 
 ---
 
@@ -392,8 +392,8 @@ The Requirements Framework has two complementary components:
 **Location:** `~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/`
 **Purpose:** Provide agents, commands, and skills to satisfy requirements
 **Components:**
-- 17 agents (code review, workflow enforcement)
-- 3 commands (pre-commit, quality-check, codex-review orchestrators)
+- 15 agents (code review, workflow enforcement)
+- 6 commands (pre-commit, quality-check, codex-review, commit-checks, plan-review, session-reflect)
 - 5 skills (management and status)
 
 **Installed by:** Marketplace installation (copied to cache)

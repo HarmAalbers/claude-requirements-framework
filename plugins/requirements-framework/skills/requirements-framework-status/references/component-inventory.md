@@ -126,7 +126,7 @@ Detailed inventory of all Requirements Framework components with line counts and
 
 ## Plugin Components
 
-### Agents (17 total)
+### Agents (15 total)
 
 | Agent | Purpose |
 |-------|---------|
@@ -138,27 +138,26 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `comment-analyzer.md` | Comment quality review |
 | `comment-cleaner.md` | Remove stale/unnecessary comments |
 | `commit-planner.md` | Plan commits before making them |
-| `exception-auditor.md` | Exception handling audit |
 | `import-organizer.md` | Organize and clean imports |
+| `session-analyzer.md` | Session metrics analysis |
 | `silent-failure-hunter.md` | Find silent failures |
-| `solid-checker.md` | SOLID principles checker |
+| `tdd-validator.md` | TDD strategy validation |
 | `test-analyzer.md` | Test coverage analysis |
-| `test-pyramid-checker.md` | Test pyramid compliance |
 | `tool-validator.md` | Tool usage validation |
-| `type-checker.md` | Type coverage checker |
 | `type-design-analyzer.md` | Type system analysis |
 
-### Commands (5 total)
+### Commands (6 total)
 
 | Command | Purpose |
 |---------|---------|
 | `codex-review.md` | Codex-powered review |
-| `commit-checks.md` | Pre-commit quality checks |
+| `commit-checks.md` | Pre-commit auto-fix (comments + imports) |
 | `plan-review.md` | Review plan before implementation |
 | `pre-commit.md` | Quick pre-commit review |
 | `quality-check.md` | Comprehensive PR review |
+| `session-reflect.md` | Session learning and reflection |
 
-### Skills (4 total)
+### Skills (5 total)
 
 | Skill | Purpose |
 |-------|---------|
@@ -166,6 +165,7 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `requirements-framework-status` | Status reporting |
 | `requirements-framework-development` | Development workflow |
 | `requirements-framework-builder` | Extension guidance |
+| `session-learning` | Session learning workflow |
 
 ---
 
@@ -185,6 +185,6 @@ Detailed inventory of all Requirements Framework components with line counts and
 
 | Plugin Components | Count |
 |-------------------|-------|
-| Agents | 17 |
-| Commands | 5 |
-| Skills | 4 |
+| Agents | 15 |
+| Commands | 6 |
+| Skills | 5 |
