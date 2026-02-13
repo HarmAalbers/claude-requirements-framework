@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: "Validate plan against ADRs and TDD, then generate atomic commit strategy"
+description: "Validate plan against ADRs, TDD, and SOLID principles, then generate atomic commit strategy"
 argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 88d1585
@@ -11,8 +11,9 @@ git_hash: 88d1585
 Automated plan validation and commit planning workflow. This command:
 1. Validates the plan against Architecture Decision Records (auto-fixes violations)
 2. Validates TDD readiness (auto-adds testing strategy if missing)
-3. Generates an atomic commit strategy (appends to plan file)
-4. Auto-satisfies `adr_reviewed`, `tdd_planned`, and `commit_plan` requirements
+3. Validates SOLID principles adherence (auto-adds SOLID considerations if missing)
+4. Generates an atomic commit strategy (appends to plan file)
+5. Auto-satisfies `adr_reviewed`, `tdd_planned`, `solid_reviewed`, and `commit_plan` requirements
 
 **Arguments:** "$ARGUMENTS"
 - Optional: provide a specific plan file path (recommended when multiple plans exist)
@@ -116,9 +117,40 @@ After ADR validation passes, verify the plan includes TDD elements.
      - Output the full agent response (explains what needs to be added)
      - **STOP** - do not proceed to commit planning
 
-### Step 4: Run Commit Planner
+### Step 4: Run SOLID Reviewer — BLOCKING GATE
 
-After ADR and TDD validation pass, generate the commit strategy.
+After TDD validation passes, verify the plan follows SOLID design principles.
+
+1. Use the Task tool to launch:
+   - `subagent_type`: "requirements-framework:solid-reviewer"
+   - `prompt`: Include the following context:
+     ```
+     Review the plan file at [PLAN_FILE] for SOLID principles adherence
+     with Python focus.
+
+     IMPORTANT: You have Edit tool access. If SOLID considerations are
+     missing but the plan is clear enough, add them directly to the plan file.
+
+     Scale strictness to plan size:
+     - 1-2 files: SRP only
+     - 3-5 files: SRP + DIP
+     - 6+ files: Full SOLID check
+
+     Output APPROVED if the plan follows SOLID principles (after any auto-fixes).
+     Output BLOCKED if there are egregious violations that require restructuring.
+     ```
+
+2. Wait for agent completion
+
+3. Parse the agent output for verdict:
+   - If **APPROVED**: Continue to Step 5
+   - If **BLOCKED**:
+     - Output the full agent response (explains what needs restructuring)
+     - **STOP** - do not proceed to commit planning
+
+### Step 5: Run Commit Planner
+
+After ADR, TDD, and SOLID validation pass, generate the commit strategy.
 
 1. Use the Task tool to launch:
    - `subagent_type`: "requirements-framework:commit-planner"
@@ -136,7 +168,7 @@ After ADR and TDD validation pass, generate the commit strategy.
 
 3. Confirm commit plan was appended to the plan file
 
-### Step 5: Output Success Summary
+### Step 6: Output Success Summary
 
 After all agents complete successfully:
 
@@ -153,14 +185,19 @@ After all agents complete successfully:
 - Status: APPROVED
 - [Any auto-fixes applied (e.g., testing strategy section added)]
 
+### SOLID Validation
+- Status: APPROVED
+- [Any auto-fixes applied (e.g., SOLID considerations section added)]
+
 ### Commit Strategy
 - [Number] commits planned
 - [Brief summary from commit-planner]
 
 ### Requirements Satisfied
-All three planning requirements are now satisfied:
+All four planning requirements are now satisfied:
 - `adr_reviewed` - Architecture Decision Records validated
 - `tdd_planned` - TDD readiness verified
+- `solid_reviewed` - SOLID principles validated
 - `commit_plan` - Atomic commit strategy created
 
 You can proceed with implementation.
@@ -198,15 +235,17 @@ Run this command immediately after exiting plan mode. It will:
 1. Find your most recent plan
 2. Validate it against ADRs (auto-fixing where possible)
 3. Validate TDD readiness (auto-adding testing strategy if needed)
-4. Generate an atomic commit strategy
-5. Satisfy all three planning requirements
+4. Validate SOLID principles (auto-adding considerations if needed)
+5. Generate an atomic commit strategy
+6. Satisfy all four planning requirements
 
 ## Integration with Requirements Framework
 
 This command is designed to work with the requirements framework:
 - Satisfies `adr_reviewed` requirement (session scope)
 - Satisfies `tdd_planned` requirement (session scope)
+- Satisfies `solid_reviewed` requirement (session scope)
 - Satisfies `commit_plan` requirement (session scope)
-- All three requirements use `auto_resolve_skill: 'requirements-framework:plan-review'`
+- All four requirements use `auto_resolve_skill: 'requirements-framework:plan-review'`
 
 After running this command, Edit/Write tools will no longer be blocked by these planning requirements for the current session.
