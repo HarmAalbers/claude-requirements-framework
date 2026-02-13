@@ -1,6 +1,6 @@
 ---
 name: arch-review
-description: "Multi-perspective team-based architecture review with agent debate"
+description: "Multi-perspective team-based architecture review with agent debate and commit planning"
 argument-hint: "[plan-file-path]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: uncommitted
@@ -8,9 +8,8 @@ git_hash: uncommitted
 
 # Architecture Review — Team-Based Multi-Perspective Assessment
 
-Team-based architecture review where agents debate architectural implications of a plan.
-Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable.
-Falls back to `/plan-review` when Agent Teams are not enabled.
+Team-based architecture review where agents debate architectural implications of a plan and generate an atomic commit strategy.
+Satisfies all 4 planning requirements: `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`.
 
 **See ADR-012 for design rationale.**
 
@@ -18,18 +17,7 @@ Falls back to `/plan-review` when Agent Teams are not enabled.
 
 You MUST follow these steps in exact order. Do not skip steps or interpret - execute as written.
 
-### Step 1: Check Agent Teams Availability
-
-```bash
-echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
-```
-
-If the value is NOT "1":
-- Output: "Agent Teams not enabled. Running /plan-review instead."
-- Execute `/requirements-framework:plan-review` and **EXIT**
-- Do NOT proceed to Step 2
-
-### Step 2: Locate Plan File
+### Step 1: Locate Plan File
 
 Check `$ARGUMENTS` for an explicit path first, then auto-discover:
 
@@ -56,7 +44,7 @@ Output: "Found plan file: [PLAN_FILE]"
 
 Read the plan file content for use in teammate prompts.
 
-### Step 3: Locate Project ADRs
+### Step 2: Locate Project ADRs
 
 ```bash
 # Find ADR directory
@@ -70,12 +58,12 @@ fi
 
 If ADR_DIR found, list the ADR files for teammate context. Otherwise note "No ADR directory found."
 
-### Step 4: Create Architecture Team
+### Step 3: Create Architecture Team
 
 Use TeamCreate:
 ```
 team_name: "arch-review-{timestamp}"
-description: "Multi-perspective architecture review"
+description: "Multi-perspective architecture review with commit planning"
 ```
 
 Where `{timestamp}` is the current Unix timestamp.
@@ -86,9 +74,10 @@ Create tasks on the shared task list:
 2. **Task**: "Breaking change analysis" — assigned to backward-compatibility-checker
 3. **Task**: "Testability assessment" — assigned to tdd-validator
 4. **Task**: "SOLID principles review" — assigned to solid-reviewer
-5. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
+5. **Task**: "Atomic commit strategy" — assigned to commit-planner
+6. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
 
-### Step 5: Spawn Teammates
+### Step 4: Spawn Teammates
 
 For each review task (NOT the synthesis task), spawn a teammate:
 
@@ -116,16 +105,22 @@ For each review task (NOT the synthesis task), spawn a teammate:
 - `prompt`: Include plan file content and instruction:
   "Assess this plan for SOLID principles violations with Python focus. Scale strictness to plan size (1-2 files: SRP only, 3-5: SRP+DIP, 6+: full SOLID). Share findings via SendMessage with severity levels. Mark task complete when done."
 
+**commit-planner teammate**:
+- `subagent_type`: "requirements-framework:commit-planner"
+- `name`: "commit-planner"
+- `prompt`: Include plan file content and instruction:
+  "Analyze this plan and generate an atomic commit strategy. Break the implementation into small, focused, independently-testable commits. For each commit: title, files changed, what to test. Append the commit strategy to the plan file using the Edit tool. Share a summary via SendMessage. Mark task complete when done."
+
 Launch all teammates in a SINGLE message (parallel execution).
 
-### Step 6: Wait for Reviews
+### Step 5: Wait for Reviews
 
 Monitor task list until all review tasks complete:
 - Use TaskList periodically
 - Allow up to 120 seconds per teammate
 - If a teammate times out, note the gap and proceed
 
-### Step 7: Synthesis (Lead)
+### Step 6: Synthesis (Lead)
 
 Read all teammate findings. Perform architectural synthesis:
 
@@ -146,13 +141,13 @@ Read all teammate findings. Perform architectural synthesis:
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
 
-### Step 8: Auto-satisfy
+### Step 7: Auto-satisfy
 
 If verdict is APPROVED:
-- Run: `req satisfy adr_reviewed --session [current_session_id]`
-- Output: "adr_reviewed requirement satisfied"
+- Run: `req satisfy commit_plan adr_reviewed tdd_planned solid_reviewed --session [current_session_id]`
+- Output: "All 4 planning requirements satisfied (commit_plan, adr_reviewed, tdd_planned, solid_reviewed)"
 
-### Step 9: Cleanup
+### Step 8: Cleanup
 
 1. Send shutdown_request to all remaining teammates
 2. Wait briefly for responses
@@ -171,6 +166,7 @@ If verdict is APPROVED:
 - backward-compatibility-checker: [status]
 - tdd-validator: [status]
 - solid-reviewer: [status]
+- commit-planner: [status]
 
 ## ADR Compliance
 [Findings from adr-guardian, cross-referenced with other agents]
@@ -201,14 +197,13 @@ If verdict is APPROVED:
 /requirements-framework:arch-review path/to/plan.md    # Explicit plan file
 ```
 
-## Key Differences from /plan-review
+## Comparison with /plan-review (Lightweight Alternative)
 
-| Aspect | /plan-review | /arch-review |
-|--------|-------------|--------------|
-| Execution | Subagents (sequential) | Agent Teams (collaborative) |
-| Agents | ADR guardian + commit planner | ADR guardian + compat-checker + TDD validator + SOLID reviewer |
-| Cross-validation | None | Agents cross-reference findings |
-| Focus | ADR compliance + commit strategy | Holistic architecture assessment |
-| Cost | Lower | Higher |
-| Prerequisite | None | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
-| Fallback | N/A | `/plan-review` |
+| Aspect | /arch-review (recommended) | /plan-review (lightweight) |
+|--------|---------------------------|---------------------------|
+| Execution | Agent Teams (collaborative) | Subagents (sequential) |
+| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + commit planner | ADR guardian + commit planner |
+| Cross-validation | Agents cross-reference findings | None |
+| Focus | Holistic architecture assessment + commit strategy | ADR compliance + commit strategy |
+| Satisfies | `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | Same 4 requirements |
+| Cost | Higher (more thorough) | Lower (faster) |
