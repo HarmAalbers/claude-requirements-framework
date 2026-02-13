@@ -39,6 +39,7 @@ cp -v "$REPO_DIR/hooks/handle-task-completed.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-prompt-submit.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-subagent-start.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-tool-failure.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-pre-compact.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
@@ -59,6 +60,7 @@ chmod +x "$HOME/.claude/hooks/handle-task-completed.py"
 chmod +x "$HOME/.claude/hooks/handle-prompt-submit.py"
 chmod +x "$HOME/.claude/hooks/handle-subagent-start.py"
 chmod +x "$HOME/.claude/hooks/handle-tool-failure.py"
+chmod +x "$HOME/.claude/hooks/handle-pre-compact.py"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
@@ -395,6 +397,14 @@ REQUIRED_HOOKS = {
             "command": "~/.claude/hooks/handle-tool-failure.py",
             "statusMessage": "Recording failure metrics..."
         }]
+    }],
+    "PreCompact": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-pre-compact.py",
+            "statusMessage": "Saving requirement state..."
+        }]
     }]
 }
 
@@ -702,7 +712,7 @@ echo "✅ Installation Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📦 What was installed:"
-echo "   • 10 hook events with 12 matcher groups (PreToolUse, PostToolUse×3, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted, UserPromptSubmit, SubagentStart, PostToolUseFailure)"
+echo "   • 11 hook events with 13 matcher groups (PreToolUse, PostToolUse×3, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted, UserPromptSubmit, SubagentStart, PostToolUseFailure, PreCompact)"
 echo "   • 'req' CLI command at ~/.local/bin/req"
 echo "   • Global configuration at ~/.claude/requirements.yaml"
 echo ""
