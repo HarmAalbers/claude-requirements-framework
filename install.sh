@@ -40,6 +40,7 @@ cp -v "$REPO_DIR/hooks/handle-prompt-submit.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-subagent-start.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-tool-failure.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-pre-compact.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-permission-request.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
@@ -61,6 +62,7 @@ chmod +x "$HOME/.claude/hooks/handle-prompt-submit.py"
 chmod +x "$HOME/.claude/hooks/handle-subagent-start.py"
 chmod +x "$HOME/.claude/hooks/handle-tool-failure.py"
 chmod +x "$HOME/.claude/hooks/handle-pre-compact.py"
+chmod +x "$HOME/.claude/hooks/handle-permission-request.py"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
@@ -412,6 +414,14 @@ REQUIRED_HOOKS = {
             "type": "command",
             "command": "~/.claude/hooks/handle-pre-compact.py",
             "statusMessage": "Saving requirement state..."
+        }]
+    }],
+    "PermissionRequest": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-permission-request.py",
+            "statusMessage": "Checking command safety..."
         }]
     }]
 }

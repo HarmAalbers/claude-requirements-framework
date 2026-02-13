@@ -158,6 +158,18 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-permission-request.py",
+            "statusMessage": "Checking command safety..."
+          }
+        ]
+      }
     ]
   }
 }
