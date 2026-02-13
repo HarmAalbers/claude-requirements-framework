@@ -60,13 +60,13 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       - Edit
       - Write
       - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: commit_plan
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/requirements-framework:arch-review`
 
-      Generates atomic commit strategy after ADR and TDD validation.
+      Team-based architecture review with commit planning and cross-validation.
 
       ---
       Fallback: `req satisfy commit_plan`""",
@@ -88,11 +88,11 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       - Edit
       - Write
       - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: adr_reviewed
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/requirements-framework:arch-review`
 
       ---
       Fallback: `req satisfy adr_reviewed`""",
@@ -114,13 +114,13 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       - Edit
       - Write
       - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: tdd_planned
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/requirements-framework:arch-review`
 
-      Validates TDD readiness: test strategy and test cases per feature.
+      Team-based TDD validation with cross-reference against breaking changes.
 
       ---
       Fallback: `req satisfy tdd_planned`""",
@@ -142,13 +142,13 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       - Edit
       - Write
       - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: solid_reviewed
 
-      **Execute**: `/requirements-framework:plan-review`
+      **Execute**: `/requirements-framework:arch-review`
 
-      Validates SOLID principles adherence in the implementation plan.
+      Team-based SOLID review with cross-validation against testability and ADRs.
 
       ---
       Fallback: `req satisfy solid_reviewed`""",
@@ -195,12 +195,12 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\\\s+pr\\\\s+create"
-    auto_resolve_skill: "requirements-framework:quality-check"
-    satisfied_by_skill: 'requirements-framework:quality-check'
+    auto_resolve_skill: "requirements-framework:deep-review"
+    satisfied_by_skill: 'requirements-framework:deep-review'
     message: |
       ## Blocked: pre_pr_review
 
-      **Execute**: `/requirements-framework:quality-check`
+      **Execute**: `/requirements-framework:deep-review`
 
       ---
       Fallback: `req satisfy pre_pr_review`""",
