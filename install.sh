@@ -293,53 +293,77 @@ settings_file = os.path.expanduser("~/.claude/settings.json")
 # Required hooks configuration
 REQUIRED_HOOKS = {
     "PreToolUse": [{
-        "matcher": "*",
+        "matcher": "Edit|Write|MultiEdit|Bash|EnterPlanMode|ExitPlanMode",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/check-requirements.py"
+            "command": "~/.claude/hooks/check-requirements.py",
+            "statusMessage": "Checking requirements..."
         }]
     }],
-    "PostToolUse": [{
-        "matcher": "*",
-        "hooks": [
-            {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
-            {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
-        ]
-    }],
+    "PostToolUse": [
+        {
+            "matcher": "Skill",
+            "hooks": [{
+                "type": "command",
+                "command": "~/.claude/hooks/auto-satisfy-skills.py",
+                "statusMessage": "Processing skill completion..."
+            }]
+        },
+        {
+            "matcher": "Bash",
+            "hooks": [{
+                "type": "command",
+                "command": "~/.claude/hooks/clear-single-use.py",
+                "statusMessage": "Updating requirement state..."
+            }]
+        },
+        {
+            "matcher": "ExitPlanMode",
+            "hooks": [{
+                "type": "command",
+                "command": "~/.claude/hooks/handle-plan-exit.py",
+                "statusMessage": "Validating plan requirements..."
+            }]
+        }
+    ],
     "SessionStart": [{
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/handle-session-start.py"
+            "command": "~/.claude/hooks/handle-session-start.py",
+            "statusMessage": "Initializing requirements framework..."
         }]
     }],
     "Stop": [{
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/handle-stop.py"
+            "command": "~/.claude/hooks/handle-stop.py",
+            "statusMessage": "Verifying requirements..."
         }]
     }],
     "SessionEnd": [{
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/handle-session-end.py"
+            "command": "~/.claude/hooks/handle-session-end.py",
+            "statusMessage": "Cleaning up session..."
         }]
     }],
     "TeammateIdle": [{
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/handle-teammate-idle.py"
+            "command": "~/.claude/hooks/handle-teammate-idle.py",
+            "statusMessage": "Processing teammate idle event..."
         }]
     }],
     "TaskCompleted": [{
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": "~/.claude/hooks/handle-task-completed.py"
+            "command": "~/.claude/hooks/handle-task-completed.py",
+            "statusMessage": "Validating task completion..."
         }]
     }]
 }
@@ -357,13 +381,17 @@ try:
     # Get existing hooks or empty dict
     existing_hooks = settings.get("hooks", {})
 
-    # Merge: add our hooks if not already present or if empty
+    # Merge: add or update our hooks
     for hook_name, hook_config in REQUIRED_HOOKS.items():
         if hook_name not in existing_hooks:
             existing_hooks[hook_name] = hook_config
-        # If exists but empty, replace it
+            print(f"   Added {hook_name} hook")
         elif not existing_hooks[hook_name]:
             existing_hooks[hook_name] = hook_config
+            print(f"   Replaced empty {hook_name} hook")
+        elif existing_hooks[hook_name] != hook_config:
+            existing_hooks[hook_name] = hook_config
+            print(f"   Updated {hook_name} hook (configuration changed)")
 
     settings["hooks"] = existing_hooks
 
@@ -417,7 +445,7 @@ try:
     our_hooks = [
         "check-requirements.py", "handle-session-start.py", "handle-stop.py",
         "handle-session-end.py", "auto-satisfy-skills.py", "clear-single-use.py",
-        "handle-plan-exit.py"
+        "handle-plan-exit.py", "handle-teammate-idle.py", "handle-task-completed.py"
     ]
     has_our_hooks = False
 
@@ -553,7 +581,7 @@ fi
 # Test 4: Test PreToolUse hook responds correctly
 echo ""
 echo "4️⃣  Testing PreToolUse hook..."
-if echo '{"tool_name":"Read"}' | python3 "$HOME/.claude/hooks/check-requirements.py" > /dev/null 2>&1; then
+if echo '{"tool_name":"Edit","tool_input":{"file_path":"/tmp/test"}}' | python3 "$HOME/.claude/hooks/check-requirements.py" > /dev/null 2>&1; then
     echo "   ✅ PreToolUse hook responds correctly"
 else
     echo "   ❌ PreToolUse hook failed to respond"
@@ -643,7 +671,7 @@ echo "✅ Installation Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📦 What was installed:"
-echo "   • 7 lifecycle hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted)"
+echo "   • 7 hook events with 9 matcher groups (PreToolUse, PostToolUse×3, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted)"
 echo "   • 'req' CLI command at ~/.local/bin/req"
 echo "   • Global configuration at ~/.claude/requirements.yaml"
 echo ""
