@@ -372,7 +372,7 @@ Both require `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable.
 ```yaml
 hooks:
   agent_teams:
-    enabled: false          # Opt-in (also requires env var)
+    enabled: true           # Enabled by default (also requires env var)
     keep_working_on_idle: false  # Re-engage idle teammates
     validate_task_completion: false  # Validate task output
     max_teammates: 4        # Token cost cap

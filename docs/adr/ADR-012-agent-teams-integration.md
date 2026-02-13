@@ -40,7 +40,7 @@ Two new Claude Code hook event types support team workflows. These are registere
 - `TeammateIdle` — Fires when a teammate goes idle during a team session. The hook receives JSON with teammate name, team name, and session ID. Enables progress logging and optional re-engagement (exit code 2 sends feedback to keep the teammate working).
 - `TaskCompleted` — Fires when a team task is marked complete via TaskUpdate. The hook receives JSON with task ID, subject, team name, and session ID. Enables output quality validation before accepting task completion.
 
-Both hooks are registered but do nothing by default (config opt-in). They follow the same fail-open pattern as all existing hooks.
+Both hooks are registered and enabled by default. They follow the same fail-open pattern as all existing hooks. The env var gate (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) still controls whether team commands actually create teams.
 
 ### Feature Flag and Fallback Strategy
 
@@ -61,7 +61,7 @@ This ensures:
 ```yaml
 hooks:
   agent_teams:
-    enabled: false          # Opt-in (also requires env var)
+    enabled: true           # Enabled by default (also requires env var)
     keep_working_on_idle: false
     validate_task_completion: false
     max_teammates: 4        # Token cost cap

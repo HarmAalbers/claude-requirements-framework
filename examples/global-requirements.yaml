@@ -376,7 +376,7 @@ hooks:
 
   # Agent Teams - team-based review with cross-validation (ADR-012)
   agent_teams:
-    enabled: false          # Opt-in (also requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
+    enabled: true           # Enabled by default (also requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
     keep_working_on_idle: false  # Exit 2 on TeammateIdle to re-engage idle teammates
     validate_task_completion: false  # Validate task output on TaskCompleted
     max_teammates: 4        # Token cost cap for team-based reviews

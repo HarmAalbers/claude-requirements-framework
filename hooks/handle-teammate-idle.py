@@ -78,8 +78,8 @@ def main() -> int:
 
         # Check agent_teams config
         agent_teams_config = config.get_raw_config().get('hooks', {}).get('agent_teams', {})
-        if not agent_teams_config.get('enabled', False):
-            return 0  # Agent teams disabled
+        if not agent_teams_config.get('enabled', True):
+            return 0  # Agent teams explicitly disabled
 
         # Log the idle event
         logger.info(
