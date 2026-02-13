@@ -138,11 +138,16 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 
 **Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`
 
-### Commands (3)
+### Commands (8)
 
+- `/requirements-framework:arch-review` - Team-based architecture review (recommended for planning)
+- `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
 - `/requirements-framework:pre-commit` - Quick pre-commit review
-- `/requirements-framework:quality-check` - Comprehensive PR review
+- `/requirements-framework:quality-check` - Lightweight PR review (alternative to /deep-review)
+- `/requirements-framework:plan-review` - Lightweight plan review (alternative to /arch-review)
 - `/requirements-framework:codex-review` - Codex-powered review
+- `/requirements-framework:commit-checks` - Auto-fix code quality issues
+- `/requirements-framework:session-reflect` - Session analysis and improvements
 
 ### Skills (4)
 

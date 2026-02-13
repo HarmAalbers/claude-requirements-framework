@@ -240,7 +240,7 @@ Run `/requirements-framework:pre-commit` to review changes.
                 ],
                 'message': '''🔍 **Quality check before PR**
 
-Run `/requirements-framework:quality-check` for comprehensive review.
+Run `/requirements-framework:deep-review` for cross-validated team review.
 
 **After review**: Create PR.
 ''',

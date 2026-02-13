@@ -2,6 +2,7 @@
 
 ## Status
 Approved (2026-02-13)
+Amended (2026-02-13): Team commands promoted to primary review approach
 
 ## Context
 
@@ -12,19 +13,19 @@ This model works well for sequential pipelines and single-agent tasks. However, 
 Claude Code now supports **Agent Teams** — a coordination model where multiple Claude instances collaborate as a team. A lead coordinates work, teammates operate independently with their own context windows, and they communicate via direct messaging and a shared task list. This is fundamentally different from subagents: teammates can debate findings, corroborate or dispute each other, and produce unified verdicts.
 
 Key considerations:
-1. **Agent Teams are experimental** — gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
+1. **Agent Teams** — now the primary recommended approach (env var gate removed)
 2. **Higher token cost** — each teammate has its own context window and API calls
 3. **New hook event types** — `TeammateIdle` and `TaskCompleted` are Claude Code hook event types (registered in `settings.json` alongside `PreToolUse`, `PostToolUse`, etc.) that enable progress tracking and quality gates
 4. **Not all workflows benefit** — sequential pipelines and blocking gates don't need inter-agent debate
 
 ## Decision
 
-**Add team-based review commands alongside (not replacing) existing subagent commands.**
+**Team-based review commands are the primary recommended approach; existing subagent commands remain as lightweight alternatives.**
 
 ### New Commands
 
-- `/deep-review` — Cross-validated code review where agents debate findings before presenting a unified verdict. Falls back to `/quality-check parallel` when Agent Teams are not enabled.
-- `/arch-review` — Multi-perspective architecture review where agents debate architectural implications. Falls back to `/plan-review` when not enabled.
+- `/deep-review` — Cross-validated code review where agents debate findings before presenting a unified verdict. Primary approach for `pre_pr_review`.
+- `/arch-review` — Multi-perspective architecture review where agents debate architectural implications and generate commit strategy. Primary approach for all 4 planning requirements (`commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`).
 
 ### Execution Model
 
@@ -40,28 +41,18 @@ Two new Claude Code hook event types support team workflows. These are registere
 - `TeammateIdle` — Fires when a teammate goes idle during a team session. The hook receives JSON with teammate name, team name, and session ID. Enables progress logging and optional re-engagement (exit code 2 sends feedback to keep the teammate working).
 - `TaskCompleted` — Fires when a team task is marked complete via TaskUpdate. The hook receives JSON with task ID, subject, team name, and session ID. Enables output quality validation before accepting task completion.
 
-Both hooks are registered and enabled by default. They follow the same fail-open pattern as all existing hooks. The env var gate (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) still controls whether team commands actually create teams.
+Both hooks are registered and enabled by default. They follow the same fail-open pattern as all existing hooks.
 
-### Feature Flag and Fallback Strategy
+### Feature Gate (Removed)
 
-Every team-based command checks `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` first:
-```
-Step 1: Check Agent Teams Availability
-  - Read env var
-  - If not "1": Run equivalent subagent command and EXIT
-```
-
-This ensures:
-- Users without the flag get the existing (working) behavior
-- No breaking changes to existing workflows
-- Graceful degradation is automatic, not manual
+The env var gate (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) has been removed. Team commands now execute directly without requiring an opt-in flag. If `TeamCreate` fails at runtime (e.g., Agent Teams not available in the user's Claude Code version), the command should catch the error and fall back to the equivalent subagent command gracefully.
 
 ### Configuration
 
 ```yaml
 hooks:
   agent_teams:
-    enabled: true           # Enabled by default (also requires env var)
+    enabled: true           # Enabled by default
     keep_working_on_idle: false
     validate_task_completion: false
     max_teammates: 4        # Token cost cap
@@ -91,13 +82,9 @@ hooks:
 
 ## Prohibited
 
-**Replacing existing subagent commands with team-only versions**:
-- Existing commands work well and have lower token cost
-- Team mode is opt-in for users who want higher-quality reviews
-
-**Mandatory team mode**:
-- Feature flag must always be checked
-- Fallback to subagent equivalent is required
+**Removing existing subagent commands**:
+- `/plan-review` and `/quality-check` must remain available as lightweight alternatives
+- Users who prefer lower token cost should always have a working option
 
 **Team mode for blocking gates**:
 - Tool-validator runs deterministic linters — no value from debate
@@ -125,7 +112,7 @@ hooks:
 
 ### Neutral
 - Existing commands unchanged — no migration needed
-- Feature flag dependency means this may need updates as Agent Teams API evolves
+- May need updates as Agent Teams API evolves
 - Hook events (TeammateIdle, TaskCompleted) may gain more capabilities over time
 
 ## Alternatives Considered
@@ -134,7 +121,7 @@ hooks:
 Rejected. Mixing subagent and team execution models in a single command makes the code harder to test and document. Users would need to understand when `--team` helps vs. wastes tokens. Separate commands make the cost/quality tradeoff explicit.
 
 ### Make team mode the default when Agent Teams are available
-Rejected. Team-based reviews cost significantly more tokens. Users should opt in deliberately. The experimental nature of Agent Teams also means the API may change.
+Initially rejected due to experimental nature of Agent Teams API. **Later approved** (2026-02-13): team commands are now the primary recommended approach with subagent commands retained as lightweight alternatives. The env var gate was removed and `auto_resolve_skill` was updated to point to team commands.
 
 ### Use PostToolUse hooks instead of new event types
 Considered but not chosen. TeammateIdle and TaskCompleted are distinct lifecycle events that don't map cleanly to existing tool use patterns. Registering them as their own hook event types keeps the hook contract clean and avoids overloading PostToolUse with non-tool concerns.
@@ -148,6 +135,7 @@ Considered but not chosen. TeammateIdle and TaskCompleted are distinct lifecycle
 5. **Cross-validation severity adjustment**: Findings confirmed by 2+ agents get escalated; contradicted findings note disagreement
 6. **Teammate timeout**: Team commands should set a per-teammate response timeout (configurable, default 120s). If a teammate fails to produce findings, the lead proceeds with available findings and notes the gap in output. Partial results are better than no results.
 7. **Team cleanup resilience**: Team artifacts are cleaned up at command completion. If cleanup fails (teammate rejects shutdown, TeamDelete errors), log the failure and proceed. Stale teams do not block future operations.
+8. **Graceful TeamCreate failure**: If `TeamCreate` fails (e.g., Agent Teams not available in the user's Claude Code version), catch the error and fall back to the equivalent subagent command (`/plan-review` for `/arch-review`, `/quality-check parallel` for `/deep-review`). Log the fallback for debugging.
 
 ## Files Created/Modified
 

@@ -10,13 +10,13 @@ requirements:
     - Edit
     - Write
     - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: commit_plan
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Generates atomic commit strategy after ADR and TDD validation.
+      Team-based architecture review with commit planning and cross-validation.
     checklist:
     - Identified the changes needed
     - Determined atomic commit boundaries
@@ -30,13 +30,13 @@ requirements:
     - Edit
     - Write
     - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: adr_reviewed
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Runs adr-guardian agent to validate against Architecture Decision Records.
+      Team-based ADR review with cross-validation against breaking changes and testability.
     checklist:
     - Searched for ADRs related to this change
     - Confirmed approach aligns with existing ADRs
@@ -49,17 +49,37 @@ requirements:
     - Edit
     - Write
     - MultiEdit
-    auto_resolve_skill: "requirements-framework:plan-review"
+    auto_resolve_skill: "requirements-framework:arch-review"
     message: |
       ## Blocked: tdd_planned
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Validates TDD readiness: test strategy and test cases per feature.
+      Team-based TDD validation with cross-reference against breaking changes.
     checklist:
     - Plan has a testing strategy section
     - Each feature identifies tests to write first
     - TDD sequence is documented
+  solid_reviewed:
+    enabled: true
+    type: blocking
+    scope: session
+    description: "Ensures the plan follows SOLID principles with Python-specific patterns."
+    trigger_tools:
+    - Edit
+    - Write
+    - MultiEdit
+    auto_resolve_skill: "requirements-framework:arch-review"
+    message: |
+      ## Blocked: solid_reviewed
+
+      **Execute**: `/{auto_resolve_skill}`
+
+      Team-based SOLID review with cross-validation against testability and ADRs.
+    checklist:
+    - "Plan reviewed for Single Responsibility (no mixed concerns)"
+    - "Extension points identified where applicable (Open/Closed)"
+    - "Dependencies use abstractions not concretions (Dependency Inversion)"
   protected_branch:
     enabled: true
     type: guard
@@ -158,14 +178,14 @@ requirements:
     trigger_tools:
     - tool: Bash
       command_pattern: gh\s+pr\s+create
-    auto_resolve_skill: "requirements-framework:quality-check"
-    satisfied_by_skill: "requirements-framework:quality-check"
+    auto_resolve_skill: "requirements-framework:deep-review"
+    satisfied_by_skill: "requirements-framework:deep-review"
     message: |
       ## Blocked: pre_pr_review
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Comprehensive quality review with all 8 review agents.
+      Cross-validated team-based review with agent debate.
     checklist:
     - Code has been reviewed for bugs
     - Error handling is complete

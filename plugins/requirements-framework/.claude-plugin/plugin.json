@@ -23,6 +23,7 @@
     "./agents/comment-cleaner.md",
     "./agents/import-organizer.md",
     "./agents/tdd-validator.md",
+    "./agents/solid-reviewer.md",
     "./agents/session-analyzer.md"
   ]
 }

@@ -71,10 +71,10 @@ requirements:
     message: |
       🔍 **PR Quality Check Required**
 
-      Run `/requirements-framework:quality-check` for comprehensive review.
+      Run `/requirements-framework:deep-review` for cross-validated team review.
     auto_satisfy:
       on_skill_complete:
-        - "requirements-framework:quality-check"
+        - "requirements-framework:deep-review"
 
 # Hook configuration
 hooks:

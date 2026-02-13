@@ -3,10 +3,13 @@ name: quality-check
 description: "Comprehensive quality review before creating PR"
 argument-hint: "[parallel]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 8007145
+git_hash: 9752a61
 ---
 
 # Pre-PR Quality Check
+
+> **For cross-validated review with agent debate, use `/deep-review` instead.**
+> This command is a lightweight alternative that runs agents independently without cross-validation.
 
 Comprehensive code quality review before creating a pull request. This runs ALL review agents to ensure your code is ready for PR.
 

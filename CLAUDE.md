@@ -49,8 +49,9 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Maps: /requirements-framework:pre-commit → pre_commit_review
     → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
+    → Maps: /requirements-framework:plan-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
     → Maps: /requirements-framework:deep-review → pre_pr_review
-    → Maps: /requirements-framework:arch-review → adr_reviewed
+    → Maps: /requirements-framework:arch-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
 
 PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
@@ -192,7 +193,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 15 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 16 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 
@@ -218,11 +219,11 @@ For testing the installed plugin:
 
 **Test commands:**
 ```
-/requirements-framework:pre-commit [aspects]
-/requirements-framework:quality-check [parallel]
+/requirements-framework:deep-review          # Primary: cross-validated team review
+/requirements-framework:arch-review [path]   # Primary: team-based architecture review
+/requirements-framework:pre-commit [aspects] # Pre-commit code review
+/requirements-framework:quality-check [parallel]  # Lightweight alternative to /deep-review
 /requirements-framework:codex-review [scope]
-/requirements-framework:deep-review          # Team-based cross-validated review (ADR-012)
-/requirements-framework:arch-review [path]   # Team-based architecture review (ADR-012)
 ```
 
 **Test skills** (natural language):
@@ -234,7 +235,7 @@ For testing the installed plugin:
 - code-reviewer, tool-validator, silent-failure-hunter
 - test-analyzer, type-design-analyzer, comment-analyzer
 - code-simplifier, backward-compatibility-checker
-- adr-guardian, codex-review-agent
+- adr-guardian, codex-review-agent, solid-reviewer
 
 **For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
 
@@ -360,31 +361,33 @@ req learning rollback 3   # Undo update #3
 
 ## Agent Teams (ADR-012)
 
-The framework supports Claude Code Agent Teams for cross-validated reviews where agents collaborate and debate findings.
+The framework uses Claude Code Agent Teams as the **primary review approach**. Agents collaborate, cross-validate findings, and produce unified verdicts.
 
-### Commands
-- `/deep-review` — Team-based code review with cross-validation (falls back to `/quality-check parallel`)
-- `/arch-review` — Team-based architecture review with debate (falls back to `/plan-review`)
+### Commands (Recommended)
+- `/deep-review` — Cross-validated team-based code review with agent debate. Satisfies `pre_pr_review`.
+- `/arch-review` — Multi-perspective architecture review with commit planning. Satisfies `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`.
 
-Both require `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable.
+### Lightweight Alternatives
+- `/quality-check` — Sequential/parallel subagent review (lower cost, no cross-validation)
+- `/plan-review` — Sequential subagent plan review (lower cost, no cross-validation)
 
 ### Configuration
 ```yaml
 hooks:
   agent_teams:
-    enabled: true           # Enabled by default (also requires env var)
+    enabled: true           # Enabled by default
     keep_working_on_idle: false  # Re-engage idle teammates
     validate_task_completion: false  # Validate task output
     max_teammates: 4        # Token cost cap
     fallback_to_subagents: true  # Graceful degradation
 ```
 
-### When to Use Teams vs Subagents
-| Use Teams (`/deep-review`, `/arch-review`) | Use Subagents (`/quality-check`, `/plan-review`) |
+### When to Use Teams vs Lightweight Alternatives
+| Use Teams (`/deep-review`, `/arch-review`) | Use Lightweight (`/quality-check`, `/plan-review`) |
 |---|---|
-| Want cross-validated findings | Standard review is sufficient |
-| Have token budget for thorough review | Need faster, cheaper review |
+| Default for most reviews (recommended) | Need faster, cheaper review |
 | Complex changes affecting multiple areas | Simple, focused changes |
+| Want cross-validated findings with debate | Independent findings are sufficient |
 | Architecture decisions with trade-offs | Routine commits |
 
 ### Hook Events

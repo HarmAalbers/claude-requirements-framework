@@ -44,9 +44,9 @@ DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
-    'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned'],
+    'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
     'requirements-framework:deep-review': 'pre_pr_review',
-    'requirements-framework:arch-review': 'adr_reviewed',
+    'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
 }
 
 

@@ -130,7 +130,7 @@ requirements:
     message: |
       🔍 **PR quality check required**
 
-      Run `/requirements-framework:quality-check` before creating PR.
+      Run `/requirements-framework:deep-review` before creating PR.
 ```
 
 **Regex Pattern Tips**:
@@ -232,7 +232,10 @@ requirements:
 
 **Built-in Skill Mappings** (in `auto-satisfy-skills.py`):
 - `requirements-framework:pre-commit` → `pre_commit_review`
-- `requirements-framework:quality-check` → `pre_pr_review`
+- `requirements-framework:deep-review` → `pre_pr_review` (recommended)
+- `requirements-framework:quality-check` → `pre_pr_review` (lightweight alternative)
+- `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (recommended)
+- `requirements-framework:plan-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (lightweight alternative)
 - `requirements-framework:codex-review` → `codex_reviewer`
 
 ---
@@ -333,7 +336,7 @@ requirements:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
     auto_satisfy:
-      on_skill_complete: ["requirements-framework:quality-check"]
+      on_skill_complete: ["requirements-framework:deep-review"]
 
   branch_size_limit:
     enabled: true
