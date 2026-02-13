@@ -45,6 +45,8 @@ DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
     'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned'],
+    'requirements-framework:deep-review': 'pre_pr_review',
+    'requirements-framework:arch-review': 'adr_reviewed',
 }
 
 
@@ -144,7 +146,10 @@ def main() -> int:
         # Build skill → requirements mappings from config + defaults
         # Config mappings take precedence over defaults
         # Convert defaults to list format for consistency
-        skill_mappings = {k: [v] for k, v in DEFAULT_SKILL_MAPPINGS.items()}
+        skill_mappings = {
+            k: v if isinstance(v, list) else [v]
+            for k, v in DEFAULT_SKILL_MAPPINGS.items()
+        }
 
         # Merge config mappings (extend lists, don't replace)
         for skill, req_list in get_skill_requirement_mappings(config).items():
