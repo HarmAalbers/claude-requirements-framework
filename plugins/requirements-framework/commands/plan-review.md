@@ -120,7 +120,7 @@ After ADR validation passes, verify the plan includes TDD elements.
      - Output the full agent response (explains what needs to be added)
      - **STOP** - do not proceed to commit planning
 
-### Step 4: Run SOLID Reviewer — BLOCKING GATE
+### Step 4: Run SOLID Reviewer - BLOCKING GATE
 
 After TDD validation passes, verify the plan follows SOLID design principles.
 
