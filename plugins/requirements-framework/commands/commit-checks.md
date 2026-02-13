@@ -80,7 +80,7 @@ If HAS_PYTHON is true:
 After auto-fix agents complete, re-stage only the files from the original scope:
 
 ```bash
-xargs git add < /tmp/commit_check_scope.txt
+while IFS= read -r f; do git add "$f"; done < /tmp/commit_check_scope.txt
 ```
 
 If SKIP_AUTOFIX is true:
@@ -127,6 +127,6 @@ Scope reported. No auto-fixes applied.
 ## Tips
 
 - Run early to catch issues before they compound
-- Use `--skip-autofix` if you want to review what would be changed
+- Use `--skip-autofix` to check which files are in scope without modifying them
 - Auto-fix agents will re-stage modified files automatically
 - For deeper analysis, use `/requirements-framework:pre-commit` or `/requirements-framework:quality-check`
