@@ -36,6 +36,9 @@ cp -v "$REPO_DIR/hooks/handle-plan-exit.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/ruff_check.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-teammate-idle.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-task-completed.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-prompt-submit.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-subagent-start.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-tool-failure.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
@@ -53,6 +56,9 @@ chmod +x "$HOME/.claude/hooks/handle-plan-exit.py"
 chmod +x "$HOME/.claude/hooks/ruff_check.py"
 chmod +x "$HOME/.claude/hooks/handle-teammate-idle.py"
 chmod +x "$HOME/.claude/hooks/handle-task-completed.py"
+chmod +x "$HOME/.claude/hooks/handle-prompt-submit.py"
+chmod +x "$HOME/.claude/hooks/handle-subagent-start.py"
+chmod +x "$HOME/.claude/hooks/handle-tool-failure.py"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
@@ -365,6 +371,30 @@ REQUIRED_HOOKS = {
             "command": "~/.claude/hooks/handle-task-completed.py",
             "statusMessage": "Validating task completion..."
         }]
+    }],
+    "UserPromptSubmit": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-prompt-submit.py",
+            "statusMessage": "Checking requirement context..."
+        }]
+    }],
+    "SubagentStart": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-subagent-start.py",
+            "statusMessage": "Injecting review context..."
+        }]
+    }],
+    "PostToolUseFailure": [{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": "~/.claude/hooks/handle-tool-failure.py",
+            "statusMessage": "Recording failure metrics..."
+        }]
     }]
 }
 
@@ -523,7 +553,8 @@ try:
     with open(sys.argv[1], 'r') as f:
         settings = json.load(f)
 
-    required_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd', 'PostToolUse']
+    required_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd', 'PostToolUse',
+                       'UserPromptSubmit', 'SubagentStart', 'PostToolUseFailure']
     missing = []
     empty = []
 
@@ -671,7 +702,7 @@ echo "✅ Installation Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📦 What was installed:"
-echo "   • 7 hook events with 9 matcher groups (PreToolUse, PostToolUse×3, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted)"
+echo "   • 10 hook events with 12 matcher groups (PreToolUse, PostToolUse×3, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted, UserPromptSubmit, SubagentStart, PostToolUseFailure)"
 echo "   • 'req' CLI command at ~/.local/bin/req"
 echo "   • Global configuration at ~/.claude/requirements.yaml"
 echo ""
