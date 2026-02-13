@@ -165,6 +165,20 @@ def main() -> int:
         if skill_name not in skill_mappings:
             return 0
 
+        # Validate tool_response if available — skip auto-satisfy if skill failed
+        tool_response = input_data.get('tool_response')
+        if tool_response is not None:
+            response_str = str(tool_response).lower() if not isinstance(tool_response, str) else tool_response.lower()
+            # Check for clear failure indicators in the skill response
+            failure_indicators = ['error:', 'failed to', 'skill not found', 'unknown skill']
+            if any(indicator in response_str for indicator in failure_indicators):
+                logger.warning(
+                    "Skill appears to have failed — skipping auto-satisfy",
+                    skill=skill_name,
+                    response_preview=response_str[:200],
+                )
+                return 0
+
         req_names = skill_mappings[skill_name]
         reqs = BranchRequirements(branch, session_id, project_dir)
         satisfied_reqs = []

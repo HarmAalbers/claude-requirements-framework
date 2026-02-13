@@ -665,6 +665,28 @@ See `req init --help` for options.""")
         if parts:
             emit_hook_context("SessionStart", "\n\n".join(parts))
 
+        # 4. Write environment variables to CLAUDE_ENV_FILE if available
+        # This makes requirement context available in all subsequent Bash commands
+        env_file = os.environ.get('CLAUDE_ENV_FILE')
+        if env_file:
+            try:
+                reqs = BranchRequirements(branch, session_id, project_dir)
+                unsatisfied = []
+                for req_name in config.get_all_requirements():
+                    if config.is_requirement_enabled(req_name):
+                        scope = config.get_scope(req_name)
+                        if not reqs.is_satisfied(req_name, scope):
+                            unsatisfied.append(req_name)
+
+                with open(env_file, 'a') as f:
+                    f.write(f"REQUIREMENTS_SESSION_ID={session_id}\n")
+                    f.write(f"REQUIREMENTS_BRANCH={branch}\n")
+                    f.write(f"REQUIREMENTS_PROJECT_DIR={project_dir}\n")
+                    f.write(f"REQUIREMENTS_UNSATISFIED={','.join(unsatisfied)}\n")
+                logger.debug("Wrote environment variables to CLAUDE_ENV_FILE")
+            except Exception as e:
+                logger.warning("Failed to write CLAUDE_ENV_FILE", error=str(e))
+
         return 0
 
     except Exception as e:
