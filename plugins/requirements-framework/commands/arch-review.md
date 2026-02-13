@@ -85,7 +85,8 @@ Create tasks on the shared task list:
 1. **Task**: "ADR compliance review" — assigned to adr-guardian
 2. **Task**: "Breaking change analysis" — assigned to backward-compatibility-checker
 3. **Task**: "Testability assessment" — assigned to tdd-validator
-4. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
+4. **Task**: "SOLID principles review" — assigned to solid-reviewer
+5. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
 
 ### Step 5: Spawn Teammates
 
@@ -109,6 +110,12 @@ For each review task (NOT the synthesis task), spawn a teammate:
 - `prompt`: Include plan file content and instruction:
   "Assess the testability of this plan: Does it include test strategy? Are breaking changes covered by tests? Does the TDD sequence account for all components? Share findings via SendMessage. Mark task complete when done."
 
+**solid-reviewer teammate**:
+- `subagent_type`: "requirements-framework:solid-reviewer"
+- `name`: "solid-reviewer"
+- `prompt`: Include plan file content and instruction:
+  "Assess this plan for SOLID principles violations with Python focus. Scale strictness to plan size (1-2 files: SRP only, 3-5: SRP+DIP, 6+: full SOLID). Share findings via SendMessage with severity levels. Mark task complete when done."
+
 Launch all teammates in a SINGLE message (parallel execution).
 
 ### Step 6: Wait for Reviews
@@ -129,7 +136,12 @@ Read all teammate findings. Perform architectural synthesis:
 2. **Validate TDD coverage of breaking changes**:
    - If compat-checker identifies breaking changes AND tdd-validator finds no test plan for those changes: flag as CRITICAL gap
 
-3. **Produce unified verdict**:
+3. **Cross-reference SOLID findings**:
+   - If solid-reviewer flags DIP violation AND tdd-validator finds untestable components: escalate to CRITICAL
+   - If solid-reviewer flags SRP violation AND compat-checker finds wide blast radius: escalate to CRITICAL
+   - If adr-guardian approves but solid-reviewer raises concern: note but don't escalate (ADR takes precedence)
+
+4. **Produce unified verdict**:
    - **APPROVED**: Plan aligns with ADRs, breaking changes are acceptable and tested
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
@@ -158,6 +170,7 @@ If verdict is APPROVED:
 - adr-guardian: [status]
 - backward-compatibility-checker: [status]
 - tdd-validator: [status]
+- solid-reviewer: [status]
 
 ## ADR Compliance
 [Findings from adr-guardian, cross-referenced with other agents]
@@ -167,6 +180,9 @@ If verdict is APPROVED:
 
 ## Testability
 [Findings from tdd-validator, cross-referenced with breaking changes]
+
+## SOLID Principles
+[Findings from solid-reviewer, cross-referenced with other agents]
 
 ## Cross-Validated Findings
 - [Findings confirmed or disputed across agents]
@@ -190,7 +206,7 @@ If verdict is APPROVED:
 | Aspect | /plan-review | /arch-review |
 |--------|-------------|--------------|
 | Execution | Subagents (sequential) | Agent Teams (collaborative) |
-| Agents | ADR guardian + commit planner | ADR guardian + compat-checker + TDD validator |
+| Agents | ADR guardian + commit planner | ADR guardian + compat-checker + TDD validator + SOLID reviewer |
 | Cross-validation | None | Agents cross-reference findings |
 | Focus | ADR compliance + commit strategy | Holistic architecture assessment |
 | Cost | Lower | Higher |
