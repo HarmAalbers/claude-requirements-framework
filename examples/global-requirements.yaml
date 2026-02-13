@@ -329,6 +329,37 @@ requirements:
 #       Fallback: `req satisfy adr_plan_validation`
 
 # ============================================================================
+# ADVANCED HOOK TYPES: PROMPT AND AGENT HOOKS
+# ============================================================================
+# Claude Code supports "prompt" and "agent" hook types in addition to "command".
+# These run LLM-based verification instead of shell scripts.
+#
+# Prompt-based Stop Hook (uses Haiku for fast evaluation):
+# Add to ~/.claude/settings.json under hooks.Stop[0].hooks:
+#
+#   {
+#     "type": "prompt",
+#     "prompt": "Review the conversation. Check if tasks are complete and
+#       requirements are satisfied. Context: $ARGUMENTS",
+#     "model": "haiku",
+#     "statusMessage": "Evaluating task completion..."
+#   }
+#
+# Agent-based ADR Verification (uses subagent with file access):
+# Add to ~/.claude/settings.json under hooks.Stop[0].hooks:
+#
+#   {
+#     "type": "agent",
+#     "prompt": "Read the docs/adr/ directory and verify that the current
+#       changes comply with architectural decisions. Report any violations.
+#       Context: $ARGUMENTS",
+#     "timeout": 120,
+#     "statusMessage": "Verifying ADR compliance..."
+#   }
+#
+# These hooks are powerful but add cost (LLM calls). Enable selectively.
+
+# ============================================================================
 # PROJECT-SPECIFIC SKILL REQUIREMENTS
 # ============================================================================
 # Projects can configure their own skills to auto-satisfy requirements using

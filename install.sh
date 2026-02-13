@@ -344,11 +344,19 @@ REQUIRED_HOOKS = {
     }],
     "Stop": [{
         "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-stop.py",
-            "statusMessage": "Verifying requirements..."
-        }]
+        "hooks": [
+            {
+                "type": "command",
+                "command": "~/.claude/hooks/handle-stop.py",
+                "statusMessage": "Verifying requirements..."
+            },
+            {
+                "type": "prompt",
+                "prompt": "Review the conversation. The user has a requirements framework that tracks development workflow requirements. Check if the user's original task appears complete. If the conversation shows unfinished work, unsatisfied requirements mentioned in system reminders, or pending TODO items, respond with ok: false and explain what remains. If work appears complete, respond with ok: true. Context: $ARGUMENTS",
+                "model": "haiku",
+                "statusMessage": "Evaluating task completion..."
+            }
+        ]
     }],
     "SessionEnd": [{
         "matcher": "*",
