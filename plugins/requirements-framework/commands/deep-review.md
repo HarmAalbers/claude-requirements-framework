@@ -4,6 +4,14 @@ description: "Cross-validated team-based code review with agent debate"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: 30acd9d
+hooks:
+  SubagentStart:
+    - matcher: "*"
+      hooks:
+        - type: prompt
+          prompt: "Inject context: This review agent is part of /deep-review (cross-validated team review). Focus on thoroughness, cross-cutting concerns, and finding issues other reviewers might miss. Context: $ARGUMENTS"
+          model: haiku
+          once: true
 ---
 
 # Deep Review — Cross-Validated Team-Based Code Review

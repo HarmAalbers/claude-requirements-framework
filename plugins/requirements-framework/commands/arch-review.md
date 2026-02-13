@@ -4,6 +4,14 @@ description: "Multi-perspective team-based architecture review with agent debate
 argument-hint: "[plan-file-path]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: 21277bb
+hooks:
+  SubagentStart:
+    - matcher: "*"
+      hooks:
+        - type: prompt
+          prompt: "Inject context: This review agent is part of /arch-review (architecture review). Focus on SOLID principles, ADR compliance, and architectural patterns. Context: $ARGUMENTS"
+          model: haiku
+          once: true
 ---
 
 # Architecture Review — Team-Based Multi-Perspective Assessment

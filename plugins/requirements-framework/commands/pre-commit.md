@@ -4,6 +4,14 @@ description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 543ce80
+hooks:
+  SubagentStart:
+    - matcher: "*"
+      hooks:
+        - type: prompt
+          prompt: "Inject context: This review agent is running as part of /pre-commit. Focus on code quality, error handling, and CLAUDE.md compliance. Be concise. Context: $ARGUMENTS"
+          model: haiku
+          once: true
 ---
 
 # Pre-Commit Review
