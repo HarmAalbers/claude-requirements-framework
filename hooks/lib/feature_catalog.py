@@ -125,6 +125,34 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       ---
       Fallback: `req satisfy tdd_planned`""",
     },
+    "solid_reviewed": {
+        "name": "SOLID Review",
+        "category": CATEGORY_REQUIREMENTS,
+        "config_path": "requirements.solid_reviewed",
+        "description": "Validate plan against SOLID design principles",
+        "introduced": "2.2",
+        "default_enabled": True,
+        "example_yaml": """requirements:
+  solid_reviewed:
+    enabled: true
+    type: blocking
+    scope: session
+    description: "Ensures the plan follows SOLID principles with Python-specific patterns."
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    auto_resolve_skill: "requirements-framework:plan-review"
+    message: |
+      ## Blocked: solid_reviewed
+
+      **Execute**: `/requirements-framework:plan-review`
+
+      Validates SOLID principles adherence in the implementation plan.
+
+      ---
+      Fallback: `req satisfy solid_reviewed`""",
+    },
     "pre_commit_review": {
         "name": "Pre-Commit Review",
         "category": CATEGORY_REQUIREMENTS,
