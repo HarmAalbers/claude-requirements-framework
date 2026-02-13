@@ -276,6 +276,34 @@ requirements:
       - "AI review completed"
 
 # ============================================================================
+# AGENT TEAMS REVIEW EXAMPLES (ADR-012)
+# ============================================================================
+# Team-based review commands that use cross-validation between agents.
+# Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 environment variable.
+#
+# Example: Deep review requirement (opt-in replacement for pre_pr_review)
+#
+#   deep_review:
+#     enabled: false  # Opt-in team-based review
+#     type: blocking
+#     scope: single_use
+#     description: "Cross-validated team review before PR creation."
+#     trigger_tools:
+#       - tool: Bash
+#         command_pattern: "gh\\s+pr\\s+create"
+#     auto_resolve_skill: "requirements-framework:deep-review"
+#     satisfied_by_skill: 'requirements-framework:deep-review'
+#     message: |
+#       ## Blocked: deep_review
+#
+#       **Execute**: `/{auto_resolve_skill}`
+#
+#       Team-based cross-validated review (higher quality, higher cost).
+#
+#       ---
+#       Fallback: `req satisfy deep_review`
+
+# ============================================================================
 # PLAN MODE TRIGGER EXAMPLES
 # ============================================================================
 # Requirements can trigger on plan mode transitions (EnterPlanMode, ExitPlanMode)
@@ -345,6 +373,14 @@ hooks:
   # Stop hook - verifies requirements before session ends
   stop:
     verify_requirements: true  # Block session end if requirements unsatisfied
+
+  # Agent Teams - team-based review with cross-validation (ADR-012)
+  agent_teams:
+    enabled: true           # Enabled by default (also requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
+    keep_working_on_idle: false  # Exit 2 on TeammateIdle to re-engage idle teammates
+    validate_task_completion: false  # Validate task output on TaskCompleted
+    max_teammates: 4        # Token cost cap for team-based reviews
+    fallback_to_subagents: true  # Graceful degradation when teams unavailable
 
   # Session Learning - analyzes sessions to improve future efficiency
   session_learning:
