@@ -146,15 +146,17 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `tool-validator.md` | Tool usage validation |
 | `type-design-analyzer.md` | Type system analysis |
 
-### Commands (6 total)
+### Commands (8 total)
 
 | Command | Purpose |
 |---------|---------|
+| `arch-review.md` | Team-based architecture review (recommended for planning) |
 | `codex-review.md` | Codex-powered review |
 | `commit-checks.md` | Pre-commit auto-fix (comments + imports) |
-| `plan-review.md` | Review plan before implementation |
+| `deep-review.md` | Cross-validated team review (recommended for PR) |
+| `plan-review.md` | Lightweight plan review (alternative to /arch-review) |
 | `pre-commit.md` | Quick pre-commit review |
-| `quality-check.md` | Comprehensive PR review |
+| `quality-check.md` | Lightweight PR review (alternative to /deep-review) |
 | `session-reflect.md` | Session learning and reflection |
 
 ### Skills (5 total)
@@ -186,5 +188,5 @@ Detailed inventory of all Requirements Framework components with line counts and
 | Plugin Components | Count |
 |-------------------|-------|
 | Agents | 15 |
-| Commands | 6 |
+| Commands | 8 |
 | Skills | 5 |

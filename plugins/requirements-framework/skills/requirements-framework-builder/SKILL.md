@@ -175,7 +175,10 @@ Link skills to requirements:
 # hooks/auto-satisfy-skills.py
 DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
+    'requirements-framework:deep-review': 'pre_pr_review',
     'requirements-framework:quality-check': 'pre_pr_review',
+    'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
+    'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
     'my-plugin:my-skill': 'my_requirement',  # Add mapping
 }
 ```
