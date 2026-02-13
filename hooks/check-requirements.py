@@ -273,12 +273,22 @@ def main() -> int:
 
         # Quick skip for tools that never trigger requirements
         # (Read, Glob, Grep, etc. - read-only tools)
+        # NOTE: This set should match the PreToolUse matcher in install.sh
+        # for optimal performance. MCP tools (mcp__*) are also allowed
+        # through since they may be configured as triggers in project config.
         POTENTIALLY_TRIGGERING_TOOLS = {
             'Edit', 'Write', 'MultiEdit', 'Bash',
             'EnterPlanMode', 'ExitPlanMode'  # Plan mode transitions
         }
         if tool_name not in POTENTIALLY_TRIGGERING_TOOLS:
-            return 0
+            # Allow MCP tools through — they may be configured as triggers
+            if not tool_name.startswith('mcp__'):
+                return 0
+            # Validate MCP tool name has server and tool components (mcp__server__tool)
+            parts = tool_name.split('__')
+            if len(parts) < 3 or not parts[1] or not parts[2]:
+                logger.debug("Skipping malformed MCP tool name", tool_name=tool_name)
+                return 0
 
         # Skip plan files - plan mode needs to write plans before requirements can be satisfied
         file_path = extract_file_path(tool_input, logger)

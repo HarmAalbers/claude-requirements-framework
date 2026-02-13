@@ -329,6 +329,47 @@ requirements:
 #       Fallback: `req satisfy adr_plan_validation`
 
 # ============================================================================
+# MCP TOOL REQUIREMENT TRIGGERS
+# ============================================================================
+# Requirements can trigger on MCP tool calls using the mcp__<server>__<tool>
+# naming convention. Supports trailing glob wildcards for matching entire servers.
+#
+# NOTE: MCP tool triggers require the PreToolUse hook matcher to include
+# "mcp__.*" in settings.json. This is configured automatically by install.sh
+# and the plugin hooks.json. If you installed manually, ensure your matcher is:
+#   "matcher": "Edit|Write|MultiEdit|Bash|EnterPlanMode|ExitPlanMode|mcp__.*"
+#
+# Only trailing wildcards are supported (e.g., mcp__serena__*).
+# Patterns like mcp__*__find_symbol are NOT supported.
+#
+# Example: Require review before Serena edits code
+#
+#   serena_edit_review:
+#     enabled: false
+#     type: blocking
+#     scope: session
+#     trigger_tools:
+#       - "mcp__serena__replace_symbol_body"
+#       - "mcp__serena__insert_after_symbol"
+#       - "mcp__serena__insert_before_symbol"
+#       - "mcp__serena__rename_symbol"
+#     auto_resolve_skill: "requirements-framework:pre-commit"
+#     message: |
+#       ## Blocked: serena_edit_review
+#       Serena code edits require a review plan first.
+#       **Execute**: `/pre-commit`
+#
+# Example: Wildcard match all tools from a server
+#
+#   memory_audit:
+#     enabled: false
+#     type: blocking
+#     scope: session
+#     trigger_tools:
+#       - "mcp__memory__*"  # All memory server tools
+#     message: "Memory operations require approval."
+
+# ============================================================================
 # ADVANCED HOOK TYPES: PROMPT AND AGENT HOOKS
 # ============================================================================
 # Claude Code supports "prompt" and "agent" hook types in addition to "command".

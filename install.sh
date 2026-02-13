@@ -303,7 +303,7 @@ settings_file = os.path.expanduser("~/.claude/settings.json")
 # Required hooks configuration
 REQUIRED_HOOKS = {
     "PreToolUse": [{
-        "matcher": "Edit|Write|MultiEdit|Bash|EnterPlanMode|ExitPlanMode",
+        "matcher": "Edit|Write|MultiEdit|Bash|EnterPlanMode|ExitPlanMode|mcp__.*",
         "hooks": [{
             "type": "command",
             "command": "~/.claude/hooks/check-requirements.py",

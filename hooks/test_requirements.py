@@ -6889,6 +6889,93 @@ def test_summarize_triggers(runner: TestRunner):
                f"Got: {result}")
 
 
+def test_mcp_trigger_matching(runner: TestRunner):
+    """Test MCP tool trigger matching with glob patterns."""
+    print("\n📦 Testing MCP trigger matching...")
+
+    from config_utils import _matches_tool_name, matches_trigger
+
+    # --- _matches_tool_name tests ---
+
+    # Exact match (standard tools)
+    runner.test("Exact match: Edit == Edit",
+                _matches_tool_name('Edit', 'Edit'))
+    runner.test("Exact non-match: Edit != Write",
+                not _matches_tool_name('Edit', 'Write'))
+
+    # MCP exact match
+    runner.test("MCP exact match",
+                _matches_tool_name('mcp__serena__find_symbol', 'mcp__serena__find_symbol'))
+    runner.test("MCP exact non-match (different tool)",
+                not _matches_tool_name('mcp__serena__find_symbol', 'mcp__serena__replace_symbol_body'))
+
+    # MCP trailing wildcard
+    runner.test("MCP wildcard matches tool on same server",
+                _matches_tool_name('mcp__serena__find_symbol', 'mcp__serena__*'))
+    runner.test("MCP wildcard matches another tool on same server",
+                _matches_tool_name('mcp__serena__replace_symbol_body', 'mcp__serena__*'))
+    runner.test("MCP wildcard does not match different server",
+                not _matches_tool_name('mcp__memory__create', 'mcp__serena__*'))
+
+    # Non-MCP wildcard is not supported (treated as literal)
+    runner.test("Non-MCP wildcard treated as literal (no match)",
+                not _matches_tool_name('Edit', 'E*'))
+    runner.test("Non-MCP wildcard treated as literal (no match 2)",
+                not _matches_tool_name('Bash', 'Bas*'))
+
+    # Overly broad mcp__* still works (but logs warning)
+    runner.test("Broad mcp__* matches any MCP tool",
+                _matches_tool_name('mcp__serena__find_symbol', 'mcp__*'))
+    runner.test("Broad mcp__* matches memory server too",
+                _matches_tool_name('mcp__memory__create', 'mcp__*'))
+
+    # Type safety: None and non-string arguments
+    runner.test("None tool_name returns False",
+                not _matches_tool_name(None, 'Edit'))
+    runner.test("None trigger_name returns False",
+                not _matches_tool_name('Edit', None))
+    runner.test("Integer trigger_name returns False",
+                not _matches_tool_name('Edit', 123))
+    runner.test("Both None returns False",
+                not _matches_tool_name(None, None))
+
+    # --- matches_trigger integration tests ---
+
+    # MCP wildcard in trigger list
+    runner.test("matches_trigger: MCP wildcard matches",
+                matches_trigger('mcp__serena__replace_symbol_body', {},
+                                ['mcp__serena__*']))
+    runner.test("matches_trigger: MCP wildcard no match (wrong server)",
+                not matches_trigger('mcp__memory__create', {},
+                                    ['mcp__serena__*']))
+    runner.test("matches_trigger: MCP exact in trigger list",
+                matches_trigger('mcp__serena__find_symbol', {},
+                                ['mcp__serena__find_symbol']))
+
+    # Mixed standard and MCP triggers
+    runner.test("matches_trigger: standard tool in mixed list",
+                matches_trigger('Edit', {}, ['Edit', 'mcp__serena__*']))
+    runner.test("matches_trigger: MCP tool in mixed list",
+                matches_trigger('mcp__serena__find_symbol', {},
+                                ['Edit', 'mcp__serena__*']))
+    runner.test("matches_trigger: no match in mixed list",
+                not matches_trigger('Read', {}, ['Edit', 'mcp__serena__*']))
+
+    # Dict trigger with MCP tool (no command_pattern)
+    runner.test("matches_trigger: dict trigger with MCP tool",
+                matches_trigger('mcp__serena__replace_symbol_body', {},
+                                [{'tool': 'mcp__serena__*'}]))
+
+    # Dict trigger with MCP tool and command_pattern (should match on tool alone, warn)
+    runner.test("matches_trigger: dict trigger MCP with command_pattern matches on tool",
+                matches_trigger('mcp__serena__replace_symbol_body', {},
+                                [{'tool': 'mcp__serena__*', 'command_pattern': 'ignored'}]))
+
+    # Empty triggers
+    runner.test("matches_trigger: empty trigger list",
+                not matches_trigger('mcp__serena__find_symbol', {}, []))
+
+
 def test_get_requirement_description(runner: TestRunner):
     """Test get_requirement_description helper function."""
     print("\n📦 Testing get_requirement_description helper...")
@@ -8765,6 +8852,7 @@ def main():
 
     # Session start context injection tests
     test_summarize_triggers(runner)
+    test_mcp_trigger_matching(runner)
     test_get_requirement_description(runner)
     test_session_start_format_tiers(runner)
     test_session_start_quick_start_helpers(runner)

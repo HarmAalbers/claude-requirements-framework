@@ -16,16 +16,72 @@ from pathlib import Path
 from logger import get_logger
 
 
+def _matches_tool_name(tool_name: str, trigger_name: str) -> bool:
+    """
+    Check if a tool name matches a trigger name, supporting MCP glob patterns.
+
+    Supports:
+    - Exact match: 'Edit' matches 'Edit'
+    - MCP trailing wildcard: 'mcp__serena__*' matches 'mcp__serena__replace_symbol_body'
+    - MCP exact: 'mcp__serena__find_symbol' matches 'mcp__serena__find_symbol'
+
+    Note: Only trailing wildcards (*) are supported for MCP tools.
+    Patterns like 'mcp__*__find_symbol' or 'Edit*' are NOT supported.
+
+    Args:
+        tool_name: Actual tool name from Claude Code (e.g., 'mcp__serena__find_symbol')
+        trigger_name: Configured trigger pattern (e.g., 'mcp__serena__*')
+
+    Returns:
+        True if names match
+    """
+    # Type safety: YAML config can produce None, int, etc.
+    if not isinstance(tool_name, str) or not isinstance(trigger_name, str):
+        get_logger().warning(
+            "Non-string argument to _matches_tool_name",
+            tool_name_type=type(tool_name).__name__,
+            trigger_name_type=type(trigger_name).__name__,
+        )
+        return False
+
+    if tool_name == trigger_name:
+        return True
+
+    # Support trailing wildcard for MCP tools: 'mcp__serena__*'
+    if trigger_name.endswith('*') and trigger_name.startswith('mcp__'):
+        prefix = trigger_name[:-1]  # Remove trailing *
+        # Require server-scoped pattern (at least mcp__<server>__)
+        # to prevent overly broad 'mcp__*' matching all servers
+        if prefix == 'mcp__':
+            get_logger().warning(
+                "Overly broad MCP wildcard 'mcp__*' matches ALL MCP servers; "
+                "use server-specific pattern like 'mcp__serena__*'",
+                trigger_name=trigger_name,
+            )
+        return tool_name.startswith(prefix)
+
+    # Warn about wildcards in non-MCP patterns (will never match)
+    if '*' in trigger_name:
+        get_logger().warning(
+            "Wildcard in trigger pattern only supported for mcp__ tools; "
+            "pattern will be treated as literal and likely never match",
+            trigger_name=trigger_name,
+        )
+
+    return False
+
+
 def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
     """
     Check if a tool invocation matches any configured trigger.
 
-    Supports two trigger formats:
+    Supports three trigger formats:
     1. Simple string: 'Edit' - matches tool name exactly
-    2. Complex object: {tool: 'Bash', command_pattern: 'git\\s+commit'} - matches tool + command regex
+    2. MCP pattern: 'mcp__serena__*' - matches MCP tools with glob wildcard
+    3. Complex object: {tool: 'Bash', command_pattern: 'git\\s+commit'} - matches tool + command regex
 
     Args:
-        tool_name: Name of the tool being invoked (e.g., 'Edit', 'Bash')
+        tool_name: Name of the tool being invoked (e.g., 'Edit', 'Bash', 'mcp__serena__find_symbol')
         tool_input: Tool input parameters (for Bash, includes 'command')
         triggers: List of triggers from config (strings or dicts)
 
@@ -36,19 +92,23 @@ def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
         # Simple trigger
         matches_trigger('Edit', {}, ['Edit', 'Write'])  # True
 
+        # MCP tool trigger
+        matches_trigger('mcp__serena__replace_symbol_body', {},
+                        ['mcp__serena__*'])  # True
+
         # Complex trigger with command pattern
         matches_trigger('Bash', {'command': 'git commit -m "test"'},
                         [{'tool': 'Bash', 'command_pattern': 'git\\s+commit'}])  # True
     """
     for trigger in triggers:
         if isinstance(trigger, str):
-            # Simple tool name match (backwards compatible)
-            if tool_name == trigger:
+            # Simple tool name match (with MCP wildcard support)
+            if _matches_tool_name(tool_name, trigger):
                 return True
         elif isinstance(trigger, dict):
             # Complex match with optional command pattern
             trigger_tool = trigger.get('tool', '')
-            if trigger_tool != tool_name:
+            if not _matches_tool_name(tool_name, trigger_tool):
                 continue
 
             # Check command pattern for Bash tool
@@ -70,6 +130,14 @@ def matches_trigger(tool_name: str, tool_input: dict, triggers: list) -> bool:
                     # Invalid regex - log and skip
                     get_logger().warning(f"⚠️ Invalid regex pattern: {pattern}")
                     continue
+            elif 'command_pattern' in trigger and tool_name != 'Bash':
+                # command_pattern only applies to Bash — warn and match on tool name alone
+                get_logger().warning(
+                    "command_pattern ignored for non-Bash tool",
+                    tool=tool_name,
+                    pattern=trigger.get('command_pattern'),
+                )
+                return True
             elif 'command_pattern' not in trigger:
                 # Tool matches, no command pattern required
                 return True
