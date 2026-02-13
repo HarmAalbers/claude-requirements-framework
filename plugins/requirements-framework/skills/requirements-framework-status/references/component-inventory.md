@@ -185,6 +185,6 @@ Detailed inventory of all Requirements Framework components with line counts and
 
 | Plugin Components | Count |
 |-------------------|-------|
-| Agents | 17 |
-| Commands | 5 |
-| Skills | 4 |
+| Agents | 15 |
+| Commands | 6 |
+| Skills | 5 |
