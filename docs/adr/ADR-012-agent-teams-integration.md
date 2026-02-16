@@ -3,6 +3,7 @@
 ## Status
 Approved (2026-02-13)
 Amended (2026-02-13): Team commands promoted to primary review approach
+Amended (2026-02-16): /pre-commit upgraded to team-based with subagent fallback
 
 ## Context
 
@@ -64,7 +65,8 @@ hooks:
 **Team-based commands as new commands, not flags on existing**:
 - `/deep-review` for cross-validated code review
 - `/arch-review` for architecture review with debate
-- Existing `/pre-commit`, `/quality-check`, `/plan-review` remain unchanged
+- `/pre-commit` upgraded to team-based (2026-02-16): uses Agent Teams when 2+ review agents enabled, falls back to subagents for single-agent runs
+- Existing `/quality-check`, `/plan-review` remain unchanged as lightweight alternatives
 
 **Hybrid execution within team commands**:
 - Blocking gates and final polish via subagents (no debate needed)

@@ -383,12 +383,13 @@ hooks:
 ```
 
 ### When to Use Teams vs Lightweight Alternatives
-| Use Teams (`/deep-review`, `/arch-review`) | Use Lightweight (`/quality-check`, `/plan-review`) |
+| Use Teams (`/deep-review`, `/arch-review`, `/pre-commit`) | Use Lightweight (`/quality-check`, `/plan-review`) |
 |---|---|
 | Default for most reviews (recommended) | Need faster, cheaper review |
 | Complex changes affecting multiple areas | Simple, focused changes |
 | Want cross-validated findings with debate | Independent findings are sufficient |
-| Architecture decisions with trade-offs | Routine commits |
+| Architecture decisions with trade-offs | Single-aspect reviews |
+| Pre-commit with 2+ review agents (default) | `/pre-commit code` (single agent, no team value) |
 
 ### Hook Events
 - `TeammateIdle` — Fires when teammate goes idle. Configurable re-engagement.
