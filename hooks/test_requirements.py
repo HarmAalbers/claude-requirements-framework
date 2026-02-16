@@ -8495,6 +8495,58 @@ def test_teammate_idle_hook(runner: TestRunner):
         runner.test("keep_working_on_idle = exit 2", result.returncode == 2)
         runner.test("Feedback message in stdout", "code-reviewer" in result.stdout)
 
+        # Test 3b: Progress log created with IDLE event
+        progress_log = Path(tmpdir) / '.git' / 'requirements' / 'team_progress.log'
+        runner.test("Progress log file created", progress_log.exists())
+        log_content = progress_log.read_text()
+        runner.test("Progress log contains IDLE event", "IDLE " in log_content)
+        runner.test("Progress log contains teammate name", "code-reviewer" in log_content)
+        runner.test("Progress log contains team name", "deep-review-123" in log_content)
+
+        # Test 3c: Multiple events append
+        config["hooks"]["agent_teams"]["keep_working_on_idle"] = False
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "test-analyzer",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Normal exit 0 still writes log", result.returncode == 0)
+        log_content = progress_log.read_text()
+        log_lines = [line for line in log_content.strip().split('\n') if line]
+        runner.test("Progress log has 2 entries after second run", len(log_lines) == 2)
+        runner.test("Second entry contains test-analyzer", "test-analyzer" in log_lines[1])
+
+        # Test 3d: Disabled config = no additional log entry
+        progress_log.unlink()  # Remove log to test clean
+        config["hooks"]["agent_teams"]["enabled"] = False
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Disabled config = no progress log", not progress_log.exists())
+
+        # Restore config for remaining tests
+        config["hooks"]["agent_teams"]["enabled"] = True
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            yaml.dump(config, f)
+
         # Test 4: Empty stdin = fail open (exit 0)
         result = subprocess.run(
             ["python3", str(hook_path)],
@@ -8607,6 +8659,33 @@ def test_task_completed_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Valid task with validation = exit 0", result.returncode == 0)
+
+        # Test 4b: Progress log created with DONE event
+        progress_log = Path(tmpdir) / '.git' / 'requirements' / 'team_progress.log'
+        runner.test("Progress log file created", progress_log.exists())
+        log_content = progress_log.read_text()
+        runner.test("Progress log contains DONE event", "DONE " in log_content)
+        runner.test("Progress log contains task ID", "#1" in log_content)
+        runner.test("Progress log contains subject", "Code quality review" in log_content)
+        runner.test("Progress log contains team name", "deep-review-123" in log_content)
+
+        # Test 4c: Long subject truncation
+        long_subject = "A" * 60
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "2",
+                "task_subject": long_subject,
+                "team_name": "deep-review-123",
+                "session_id": "test-session"
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        log_content = progress_log.read_text()
+        last_line = log_content.strip().split('\n')[-1]
+        runner.test("Long subject truncated with ...", "..." in last_line)
+        runner.test("Truncated subject is max 43 chars", long_subject[:40] + "..." in last_line)
 
         # Test 5: Empty stdin = fail open (exit 0)
         result = subprocess.run(
