@@ -377,7 +377,7 @@ hooks:
     enabled: true           # Enabled by default
     keep_working_on_idle: false  # Exit 2 on TeammateIdle to re-engage idle teammates
     validate_task_completion: false  # Validate task output on TaskCompleted
-    max_teammates: 4        # Token cost cap for team-based reviews
+    max_teammates: 5        # Token cost cap for team-based reviews
     fallback_to_subagents: true  # Graceful degradation when teams unavailable
 
   # Session Learning - analyzes sessions to improve future efficiency

@@ -378,7 +378,7 @@ hooks:
     enabled: true           # Enabled by default
     keep_working_on_idle: false  # Re-engage idle teammates
     validate_task_completion: false  # Validate task output
-    max_teammates: 4        # Token cost cap
+    max_teammates: 5        # Token cost cap
     fallback_to_subagents: true  # Graceful degradation
 ```
 
