@@ -2,25 +2,28 @@
 name: pre-commit
 description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: 543ce80
 ---
 
 # Pre-Commit Review
 
 Run focused code quality checks on unstaged/staged changes before committing.
+Uses Agent Teams for cross-validated review when 2+ review agents are enabled.
 
 **Arguments:** "$ARGUMENTS"
 
+**See ADR-012 for design rationale.**
+
 ## Default Review (no args):
 Run three essential checks:
-- **tool-validator** - Execute pyright/ruff/eslint (same as CI)
-- **code-reviewer** - CLAUDE.md compliance, bugs, code quality
-- **silent-failure-hunter** - Error handling audit
+- **tool-validator** - Execute pyright/ruff/eslint (subagent — deterministic, no debate value)
+- **code-reviewer** - CLAUDE.md compliance, bugs, code quality (teammate)
+- **silent-failure-hunter** - Error handling audit (teammate)
 
 ## Available Aspects:
-- **tools** - Execute linting/type-checking tools (tool-validator agent) ⚡ NEW
-- **compat** - Check backward compatibility (backward-compatibility-checker agent) ⚡ NEW
+- **tools** - Execute linting/type-checking tools (tool-validator agent)
+- **compat** - Check backward compatibility (backward-compatibility-checker agent)
 - **code** - General code quality (code-reviewer agent)
 - **errors** - Error handling audit (silent-failure-hunter agent)
 - **tests** - Test coverage check (test-analyzer agent)
@@ -28,7 +31,7 @@ Run three essential checks:
 - **comments** - Comment accuracy (comment-analyzer agent)
 - **simplify** - Code simplification (code-simplifier agent)
 - **all** - Run all reviews (includes tools + compat)
-- **parallel** - Run agents in parallel (faster)
+- **parallel** - Backward-compatible no-op (teams are inherently parallel)
 
 ## Deterministic Execution Workflow
 
@@ -79,10 +82,17 @@ Initialize all flags to false, then set based on arguments:
 **RUN_CODE_SIMPLIFIER**=false
 - Set to true if: $ARGUMENTS contains "simplify" OR contains "all"
 
-**PARALLEL_MODE**=false
-- Set to true if: $ARGUMENTS contains "parallel"
+Now compute derived values:
 
-### Step 3: Execute Tool Validator (if enabled) - BLOCKING GATE
+**TEAM_AGENT_COUNT** = count of true flags among: RUN_CODE_REVIEWER, RUN_SILENT_FAILURE_HUNTER, RUN_BACKWARD_COMPATIBILITY_CHECKER, RUN_TEST_ANALYZER, RUN_TYPE_DESIGN_ANALYZER, RUN_COMMENT_ANALYZER
+
+**USE_TEAM** = true if TEAM_AGENT_COUNT >= 2
+
+Note: the `parallel` argument is accepted for backward compatibility but is a no-op — teams are inherently parallel.
+
+### Step 3: Execute Tool Validator (if enabled) — BLOCKING GATE (subagent)
+
+This step uses a subagent (not a teammate) because it runs deterministic linters — no debate value.
 
 If RUN_TOOL_VALIDATOR is true:
   1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator"
@@ -90,94 +100,191 @@ If RUN_TOOL_VALIDATOR is true:
   3. Parse the output for CRITICAL severity issues
   4. If CRITICAL tool errors found (pyright errors, ruff errors, eslint errors):
      - Output the tool-validator findings immediately
-     - Return verdict: "❌ **FIX TOOL ERRORS FIRST** - Cannot proceed with AI review until objective tool checks pass"
+     - Return verdict: "**FIX TOOL ERRORS FIRST** - Cannot proceed with review until objective tool checks pass"
      - STOP - do not execute any other agents
   5. If no critical errors: Continue to next step
 
-### Step 4: Execute Selected Review Agents
+### Step 4: Determine Execution Mode
 
-Create a list of agents to run based on flags set in Step 2.
+- If USE_TEAM is true: proceed to Step 5 (team creation)
+- If USE_TEAM is false (single review agent): skip to Step 9 (subagent fallback)
 
-**Agents to launch** (only if their flag is true):
-- requirements-framework:code-reviewer
-- requirements-framework:silent-failure-hunter
-- requirements-framework:backward-compatibility-checker
-- requirements-framework:test-analyzer
-- requirements-framework:type-design-analyzer
-- requirements-framework:comment-analyzer
+### Step 5: Create Review Team
 
-**Execution mode**:
+Use TeamCreate:
+```
+team_name: "pre-commit-{timestamp}"
+description: "Cross-validated pre-commit review"
+```
 
-If PARALLEL_MODE is true:
-  - You MUST launch all selected agents in a SINGLE message with multiple Task tool calls
-  - This enables true parallel execution
-  - Wait for ALL agents to complete before proceeding
+Where `{timestamp}` is the current Unix timestamp (use `date +%s` to get it).
 
-If PARALLEL_MODE is false:
-  - Launch agents sequentially, one at a time
-  - Wait for each to complete before launching the next
-  - Order: code-reviewer → silent-failure-hunter → backward-compatibility-checker → test-analyzer → type-design-analyzer → comment-analyzer
+Create tasks on the shared task list:
 
-### Step 5: Execute Code Simplifier (if enabled) - ALWAYS LAST
+For EACH enabled review agent flag, create a task:
+- If RUN_CODE_REVIEWER: **Task**: "Code quality review" — assigned to code-reviewer
+- If RUN_SILENT_FAILURE_HUNTER: **Task**: "Error handling audit" — assigned to error-auditor
+- If RUN_BACKWARD_COMPATIBILITY_CHECKER: **Task**: "Backward compatibility check" — assigned to compat-checker
+- If RUN_TEST_ANALYZER: **Task**: "Test coverage analysis" — assigned to test-analyzer
+- If RUN_TYPE_DESIGN_ANALYZER: **Task**: "Type design review" — assigned to type-analyzer
+- If RUN_COMMENT_ANALYZER: **Task**: "Comment accuracy review" — assigned to comment-analyzer
 
-If RUN_CODE_SIMPLIFIER is true:
+Then create a synthesis task:
+- **Task**: "Cross-validate and synthesize findings" — blocked by all review tasks above, assigned to lead
+
+**Fallback**: If TeamCreate fails and `hooks.agent_teams.fallback_to_subagents` is true (default), log the error and skip to Step 9 (subagent fallback).
+
+### Step 6: Spawn Teammates
+
+Respect `hooks.agent_teams.max_teammates` config (default 5). Priority order if limit exceeded:
+1. code-reviewer (highest)
+2. silent-failure-hunter
+3. backward-compatibility-checker
+4. test-analyzer
+5. type-design-analyzer
+6. comment-analyzer (lowest)
+
+Agents that exceed the limit run as subagents in Step 9 after the team phase.
+
+For each review task within the limit, spawn a teammate via the Task tool:
+
+Each teammate gets:
+- `team_name`: the team name from Step 5
+- `subagent_type`: matching the agent (e.g., "requirements-framework:code-reviewer")
+- `name`: descriptive name (e.g., "code-reviewer", "error-auditor", "compat-checker", "test-analyzer", "type-analyzer", "comment-analyzer")
+- `prompt`: Include:
+  - The diff context: "Review the following changed files: [file list from scope]"
+  - Their review focus: specific to the agent type
+  - Instruction: "Share your key findings via SendMessage to the team lead when done. Mark your task as complete using TaskUpdate."
+  - Instruction: "Report findings with severity levels: CRITICAL, IMPORTANT, SUGGESTION"
+
+Launch ALL teammates in a SINGLE message with multiple Task tool calls (parallel execution).
+
+### Step 7: Wait for Review Tasks
+
+Monitor the task list until all review tasks (except the synthesis task) are complete:
+- Use TaskList periodically to check progress
+- Teammates will send findings via automatic message delivery
+- Allow up to 120 seconds per teammate
+
+If a teammate fails to complete within timeout:
+- Note the gap in the final report
+- Proceed with available findings (fail-open)
+
+### Step 8: Cross-Validation Phase (Lead)
+
+Read all teammate findings received via messages. Perform cross-validation:
+
+1. **Deduplicate**: Identify findings about the same code location from different agents
+2. **Corroborate**: If 2+ agents flag the same issue:
+   - Mark as "Corroborated by [agent names]"
+   - Escalate severity by one level (SUGGESTION → IMPORTANT, IMPORTANT → CRITICAL)
+3. **Dispute**: If one agent flags an issue and another explicitly contradicts it:
+   - Note the disagreement
+   - Keep the higher severity but mark as "Disputed"
+4. **Group**: Organize findings by file and severity
+
+### Step 9: Code Simplifier + Subagent Fallback
+
+**Code Simplifier** (if RUN_CODE_SIMPLIFIER is true):
   1. Use the Task tool to launch subagent_type="requirements-framework:code-simplifier"
   2. This MUST run after all other agents complete
   3. Code simplifier polishes code that has passed review
+  4. Add any simplification suggestions to the report
 
-### Step 6: Aggregate Results
+**Subagent Fallback** — this step also handles agents that did NOT run as teammates:
+- If USE_TEAM was false (single review agent): run the single enabled review agent as a subagent
+- If TeamCreate failed in Step 5: run all enabled review agents as subagents (sequential)
+- If max_teammates was exceeded in Step 6: run overflow agents as subagents here (sequential)
 
-After all agents complete, aggregate their findings:
+### Step 10: Aggregate and Verdict
 
-1. **Count by severity**:
-   - CRITICAL_COUNT = number of CRITICAL issues across all agents
-   - IMPORTANT_COUNT = number of IMPORTANT/HIGH issues across all agents
-   - SUGGESTION_COUNT = number of SUGGESTION/MEDIUM/LOW issues across all agents
+Count findings across all sources (team + subagent):
+- **CRITICAL_COUNT** = number of CRITICAL issues
+- **IMPORTANT_COUNT** = number of IMPORTANT issues
+- **SUGGESTION_COUNT** = number of SUGGESTION issues
 
-2. **Group by agent**:
-   - Preserve which agent found each issue
-   - Include file:line references
-
-3. **Format output** using the template in "Output Format" section below
-
-### Step 7: Provide Verdict
-
-Based on aggregated counts, provide ONE of these verdicts:
+Provide ONE verdict:
 
 If CRITICAL_COUNT > 0:
-  **Verdict**: ❌ **FIX ISSUES FIRST**
-  - List all critical issues
+  **Verdict**: "FIX ISSUES FIRST"
+  - List all critical issues with corroboration status
   - Do not commit until resolved
 
 Else if IMPORTANT_COUNT > 5:
-  **Verdict**: ⚠️ **REVIEW IMPORTANT ISSUES**
+  **Verdict**: "REVIEW IMPORTANT ISSUES"
   - Consider fixing before commit
   - Proceeding is possible but not recommended
 
 Else if IMPORTANT_COUNT > 0:
-  **Verdict**: ⚠️ **MINOR ISSUES FOUND**
+  **Verdict**: "MINOR ISSUES FOUND"
   - Can commit, but review recommended
   - List important issues for context
 
 Else:
-  **Verdict**: ✅ **READY TO COMMIT**
+  **Verdict**: "READY TO COMMIT"
   - Code meets quality standards
   - Safe to proceed
 
+### Step 11: Cleanup
+
+If a team was created (USE_TEAM was true and TeamCreate succeeded):
+1. Send shutdown_request to all remaining teammates via SendMessage
+2. Wait briefly for shutdown responses
+3. Use TeamDelete to clean up team resources
+4. Log and proceed on any cleanup failure — never block on cleanup errors
+
 ## Agent Selection Logic:
 
-- If no args or `tools` specified → tool-validator (runs first - objective checks)
-- If no args or `code` specified → code-reviewer
-- If no args or `errors` specified → silent-failure-hunter
-- If `compat` specified → backward-compatibility-checker
-- If `tests` specified → test-analyzer
-- If `types` specified → type-design-analyzer
-- If `comments` specified → comment-analyzer
-- If `simplify` specified → code-simplifier
-- If `all` specified → all applicable agents (including tools + compat)
-- If `parallel` specified → run selected agents in parallel
+- If no args or `tools` specified → tool-validator (always subagent, runs first as blocking gate)
+- If no args or `code` specified → code-reviewer (teammate when 2+ review agents)
+- If no args or `errors` specified → silent-failure-hunter (teammate when 2+ review agents)
+- If `compat` specified → backward-compatibility-checker (teammate when 2+ review agents)
+- If `tests` specified → test-analyzer (teammate when 2+ review agents)
+- If `types` specified → type-design-analyzer (teammate when 2+ review agents)
+- If `comments` specified → comment-analyzer (teammate when 2+ review agents)
+- If `simplify` specified → code-simplifier (always subagent, runs last)
+- If `all` specified → all applicable agents (tool-validator + code-simplifier as subagents, rest as teammates)
+- If `parallel` specified → backward-compatible no-op (teams are inherently parallel)
 
 ## Output Format:
+
+When team mode was used (USE_TEAM=true):
+
+```markdown
+# Pre-Commit Review Summary
+
+## Scope
+[Files reviewed]
+
+## Team
+- code-reviewer: [completed/timed-out]
+- silent-failure-hunter: [completed/timed-out]
+- [other teammates if applicable]
+
+## Corroborated Findings (confirmed by 2+ agents)
+- [SEVERITY] [description] — confirmed by [agent1, agent2] [file:line]
+
+## Critical Issues (X found)
+- [agent]: Issue description [file:line]
+
+## Important Issues (X found)
+- [agent]: Issue description [file:line]
+
+## Suggestions (X found)
+- [agent]: Suggestion [file:line]
+
+## Disputed Findings
+- [description] — [agent1] says X, [agent2] says Y
+
+## Code Simplification
+- [suggestions from code-simplifier, if enabled]
+
+## Recommendation
+[READY TO COMMIT / MINOR ISSUES FOUND / REVIEW IMPORTANT ISSUES / FIX ISSUES FIRST]
+```
+
+When subagent fallback was used (USE_TEAM=false or TeamCreate failed):
 
 ```markdown
 # Pre-Commit Review Summary
@@ -195,20 +302,32 @@ Else:
 - [agent]: Suggestion [file:line]
 
 ## Recommendation
-✅ READY TO COMMIT / ❌ FIX ISSUES FIRST
+[READY TO COMMIT / MINOR ISSUES FOUND / REVIEW IMPORTANT ISSUES / FIX ISSUES FIRST]
 ```
 
 ## Usage Examples:
 
 ```bash
-/requirements-framework:pre-commit                    # Default (tools + code + errors)
-/requirements-framework:pre-commit tools              # Just run linting/type-checking
-/requirements-framework:pre-commit compat             # Just check backward compatibility
-/requirements-framework:pre-commit all                # Comprehensive (all 8 agents)
-/requirements-framework:pre-commit tests types        # Specific aspects
-/requirements-framework:pre-commit tools compat code  # Custom combination
-/requirements-framework:pre-commit all parallel       # Fast comprehensive
+/requirements-framework:pre-commit                    # Default: team (code-reviewer + silent-failure-hunter) + tool-validator subagent
+/requirements-framework:pre-commit tools              # Just run linting/type-checking (subagent only)
+/requirements-framework:pre-commit code               # Single agent: subagent fallback (no team value)
+/requirements-framework:pre-commit code errors        # Team: 2 teammates cross-validate
+/requirements-framework:pre-commit compat             # Single agent: subagent fallback
+/requirements-framework:pre-commit all                # Team: up to 6 review teammates + tool-validator + code-simplifier subagents
+/requirements-framework:pre-commit all parallel       # Same as `all` (parallel is no-op with teams)
+/requirements-framework:pre-commit tests types        # Team: 2 teammates cross-validate
+/requirements-framework:pre-commit tools compat code  # Team if 2+ review agents, else subagent
 ```
+
+## Comparison with /deep-review
+
+| Aspect | /pre-commit | /deep-review |
+|--------|-------------|--------------|
+| Scope | Pre-commit changes | All branch changes |
+| Default agents | code-reviewer + silent-failure-hunter | code-reviewer + silent-failure-hunter + contextual |
+| Satisfies | `pre_commit_review` | `pre_pr_review` |
+| Cost | Lower (fewer default agents) | Higher (more agents, broader scope) |
+| Cross-validation | Yes (when 2+ review agents) | Always |
 
 ## Tips:
 
@@ -219,3 +338,4 @@ Else:
 - Use `simplify` only after code passes other reviews
 - For TDD: run `tests` first to verify test quality
 - **tools + compat together** catch most CI failures locally
+- The default (no args) now uses team cross-validation for higher-quality reviews
