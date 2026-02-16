@@ -38,6 +38,21 @@ from config import RequirementsConfig
 from git_utils import resolve_project_root
 
 
+def append_progress_log(project_dir: str, event: str, detail: str) -> None:
+    """Append a line to team_progress.log (fail-open)."""
+    try:
+        from datetime import datetime
+        from state_storage import get_state_dir
+        log_dir = get_state_dir(project_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / 'team_progress.log'
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        with open(log_path, 'a') as f:
+            f.write(f"[{timestamp}] {event}  {detail}\n")
+    except Exception:
+        pass  # Fail-open
+
+
 def main() -> int:
     """Hook entry point."""
     logger = get_logger(base_context={"hook": "TaskCompleted"})
@@ -91,6 +106,12 @@ def main() -> int:
             team=team_name,
             session=session_id,
         )
+
+        # Append to human-readable progress log
+        task_label = f"#{task_id}" if task_id else "task"
+        max_subject_len = 43
+        subject_preview = (task_subject[:max_subject_len - 3] + "...") if len(task_subject) > max_subject_len else task_subject
+        append_progress_log(project_dir, "DONE ", f"{task_label} completed: {subject_preview}  [{team_name}]")
 
         # Record in session metrics
         try:
