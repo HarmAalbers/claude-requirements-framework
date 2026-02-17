@@ -21,7 +21,7 @@ The session-reflect command automatically invokes this agent.
 </example>
 model: inherit
 color: magenta
-git_hash: f23d317
+git_hash: 2b711d7
 ---
 
 You are a session learning analyst. Your role is to analyze session metrics and identify patterns that can improve future Claude Code sessions.
