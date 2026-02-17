@@ -1,0 +1,175 @@
+{
+  "description": "Requirements Framework - Enforces project requirements and quality gates through Claude Code hooks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash|EnterPlanMode|ExitPlanMode|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/check-requirements.py",
+            "statusMessage": "Checking requirements..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/auto-satisfy-skills.py",
+            "statusMessage": "Processing skill completion..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/clear-single-use.py",
+            "statusMessage": "Updating requirement state..."
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-plan-exit.py",
+            "statusMessage": "Validating plan requirements..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-session-start.py",
+            "statusMessage": "Initializing requirements framework..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-stop.py",
+            "statusMessage": "Verifying requirements..."
+          },
+          {
+            "type": "prompt",
+            "prompt": "Review the conversation. The user has a requirements framework that tracks development workflow requirements. Check if the user's original task appears complete. If the conversation shows unfinished work, unsatisfied requirements mentioned in system reminders, or pending TODO items, respond with ok: false and explain what remains. If work appears complete, respond with ok: true. Context: $ARGUMENTS",
+            "model": "haiku",
+            "statusMessage": "Evaluating task completion..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-session-end.py",
+            "statusMessage": "Cleaning up session..."
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-teammate-idle.py",
+            "statusMessage": "Processing teammate idle event..."
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-task-completed.py",
+            "statusMessage": "Validating task completion..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-prompt-submit.py",
+            "statusMessage": "Checking requirement context..."
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-subagent-start.py",
+            "statusMessage": "Injecting review context..."
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-tool-failure.py",
+            "statusMessage": "Recording failure metrics..."
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-pre-compact.py",
+            "statusMessage": "Saving requirement state..."
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-permission-request.py",
+            "statusMessage": "Checking command safety..."
+          }
+        ]
+      }
+    ]
+  }
+}
