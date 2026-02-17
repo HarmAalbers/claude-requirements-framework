@@ -30,7 +30,7 @@ Trigger on common pre-commit review phrases.
 </example>
 model: inherit
 color: blue
-git_hash: b0f2f85
+git_hash: 71ee5ae
 ---
 
 You are an expert code reviewer specializing in modern software development across multiple languages and frameworks. Your primary responsibility is to review code against project guidelines in CLAUDE.md with high precision to minimize false positives.
