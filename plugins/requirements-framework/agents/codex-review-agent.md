@@ -123,109 +123,66 @@ codex review --base main --focus performance
 
 ### 4. Parse and Present Results
 
-**Extract findings from Codex output** and organize by severity:
-- 🔴 Critical/High severity
-- 🟡 Medium severity
-- 🟢 Low severity / Suggestions
+**Extract findings from Codex output** and classify by severity:
+- **CRITICAL**: High severity issues (security vulnerabilities, logic errors that will cause failures)
+- **IMPORTANT**: Medium severity issues (code quality concerns, potential bugs)
+- **SUGGESTION**: Low severity issues (style improvements, minor enhancements)
 
-**Output Format**:
+**Output Format:**
 
-```
-🤖 Codex AI Code Review Results
+Use this exact template (see ADR-013):
 
-📊 Summary:
-- Files reviewed: [count]
-- Total findings: [count] ([critical] critical, [high] high, [medium] medium, [low] low)
+```markdown
+# Codex AI Code Review
 
-[If critical/high findings exist:]
-🔴 High Severity ([count]):
+## Files Reviewed
+- path/to/file.py
 
-  [category] Issue description
-  File: path/to/file.py:line
+## Findings
 
-  Recommendation: [what to do]
+### CRITICAL: [Short title]
+- **Location**: `path/to/file.py:42`
+- **Description**: What Codex identified and why it matters
+- **Impact**: What breaks if not fixed
+- **Fix**: Recommended action
 
-  [Additional context if helpful]
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:87`
+- **Description**: What Codex flagged
+- **Impact**: What could go wrong
+- **Fix**: Suggested improvement
 
-[If medium findings exist:]
-🟡 Medium Severity ([count]):
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: Minor improvement identified by Codex
+- **Fix**: Optional suggestion
 
-  [category] Issue description
-  File: path/to/file.py:line
-
-  Suggestion: [what to consider]
-
-[If low findings exist:]
-🟢 Low Severity / Suggestions ([count]):
-
-  [category] Minor improvement
-  File: path/to/file.py:line
-
-[Final verdict:]
-✅ Review complete! [summary assessment]
-
-[If critical issues:]
-⚠️  Address critical issues before creating PR.
-
-[If only minor issues:]
-✅ No critical issues found. Ready to proceed!
+## Summary
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
 ```
 
-### 5. Comprehensive Error Handling
+If no findings: set all counts to 0 and verdict to APPROVED.
 
-**No Changes to Review**:
-```
-ℹ️  No changes to review
+### 5. Teammate Mode Handling
 
-No uncommitted changes or branch-specific changes found.
+When running as a teammate in `/deep-review` or `/pre-commit`:
+- If `which codex` fails (CLI not available): Output "Codex CLI not available — skipping Codex review" and EXIT immediately. Do not block the team.
+- If authentication fails: Output "Codex authentication required — skipping" and EXIT. Do not block the team.
+- Share findings via SendMessage to the team lead when running as a teammate.
+- Mark your task complete via TaskUpdate when done.
 
-**Options:**
-- Make changes and stage them: `git add <files>`
-- Review specific files: `codex review <file>`
-- Create a feature branch with changes
-```
+### 6. Error Handling
 
-**API Errors** (if codex command fails):
-```
-❌ Codex API Error
+**No Changes to Review**: Output "No changes to review" and EXIT.
 
-The Codex CLI encountered an error:
-[error message]
+**API Errors** (if codex command fails): Report the error clearly with retry instructions.
 
-**Possible causes:**
-- Rate limiting (wait a few minutes)
-- Network connectivity issues
-- API service issues
+**Rate Limit**: Report the limit and suggest waiting 5-10 minutes.
 
-**Retry**: /requirements-framework:codex-review
-```
-
-**Rate Limit**:
-```
-⏱️  Rate Limit Reached
-
-OpenAI Codex has rate limits on API calls.
-
-**Wait:** 5-10 minutes and retry
-**Check status:** codex status
-
-**Retry**: /requirements-framework:codex-review
-```
-
-**Empty/No Output** (if codex returns nothing):
-```
-✅ No Issues Found
-
-Codex reviewed your changes and found no issues!
-
-**Summary:**
-- All code looks good
-- No security vulnerabilities detected
-- No obvious bugs or problems
-- Code follows good practices
-
-Ready to create your PR!
-```
+**Empty/No Output** (codex returns nothing): Use the standard output format with all counts at 0 and verdict APPROVED.
 
 ## Important Guidelines
 
