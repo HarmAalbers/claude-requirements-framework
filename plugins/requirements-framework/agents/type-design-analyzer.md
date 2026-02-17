@@ -105,38 +105,51 @@ For each type definition identified in Step 2:
    - Is it impossible to create invalid instances?
    - Are runtime checks appropriate and comprehensive?
 
+## Step 4: Classify and Format Findings
+
+Use your internal ratings to classify each concern into standard severity levels:
+
+- **CRITICAL**: Any single dimension rated <= 3 (e.g., unenforced invariants allowing data corruption, completely exposed mutable internals, types that cannot prevent invalid state)
+- **IMPORTANT**: Any single dimension rated 4-6 (e.g., weak encapsulation, partially enforced invariants, incomplete validation at construction boundaries)
+- **SUGGESTION**: All dimensions rated >= 7 (e.g., anemic domain models that could benefit from behavior, minor improvements to type expressiveness)
+
 **Output Format:**
 
-Provide your analysis in this structure:
+Use this exact template (see ADR-013):
 
+```markdown
+# Type Design Analysis
+
+## Files Reviewed
+- path/to/file.py
+
+## Findings
+
+### CRITICAL: [Short title, e.g., "Unenforced invariants in UserAccount"]
+- **Location**: `path/to/file.py:42`
+- **Description**: What type design issue exists, which invariants are at risk, and what internal ratings triggered this severity. Include the affected type name and specific fields.
+- **Impact**: What data corruption, invalid states, or bugs this enables
+- **Fix**: Concrete improvement with code example
+
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:87`
+- **Description**: What type design concern exists and which dimension is weak
+- **Impact**: What could go wrong under certain conditions
+- **Fix**: Suggested type design improvement
+
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: What could be improved in the type design
+- **Fix**: Optional improvement to consider
+
+## Summary
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
 ```
-## Type: [TypeName]
 
-### Invariants Identified
-- [List each invariant with a brief description]
-
-### Ratings
-- **Encapsulation**: X/10
-  [Brief justification]
-
-- **Invariant Expression**: X/10
-  [Brief justification]
-
-- **Invariant Usefulness**: X/10
-  [Brief justification]
-
-- **Invariant Enforcement**: X/10
-  [Brief justification]
-
-### Strengths
-[What the type does well]
-
-### Concerns
-[Specific issues that need attention]
-
-### Recommended Improvements
-[Concrete, actionable suggestions that won't overcomplicate the codebase]
-```
+If no findings: set all counts to 0 and verdict to APPROVED.
 
 **Key Principles:**
 
