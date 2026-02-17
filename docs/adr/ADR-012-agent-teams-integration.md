@@ -4,6 +4,7 @@
 Approved (2026-02-13)
 Amended (2026-02-13): Team commands promoted to primary review approach
 Amended (2026-02-16): /pre-commit upgraded to team-based with subagent fallback
+Amended (2026-02-17): /deep-review overhaul — all agents always run, no max_teammates cap, code-simplifier as teammate
 
 ## Context
 
@@ -33,7 +34,8 @@ Key considerations:
 Team-based commands follow a hybrid approach:
 - **Blocking gates** (tool-validator) still use subagents — no benefit from debate on deterministic linter output
 - **Review phases** use Agent Teams — agents share findings via SendMessage, lead cross-validates
-- **Final polish** (code-simplifier) still uses subagents — independent final pass
+- **All review agents always run** as teammates in `/deep-review` — no conditional file-type detection, no `max_teammates` cap. This maximizes cross-validation coverage at the cost of higher token usage. The trade-off is intentional: comprehensive review quality takes priority over cost optimization in the primary review command.
+- **code-simplifier runs as a teammate** in `/deep-review` — participates in cross-validation (e.g., simplification suggestions that corroborate code-reviewer findings). Runs concurrently with other agents rather than as a sequential final pass.
 
 ### New Hook Event Types
 
@@ -56,9 +58,10 @@ hooks:
     enabled: true           # Enabled by default
     keep_working_on_idle: false
     validate_task_completion: false
-    max_teammates: 5        # Token cost cap
     fallback_to_subagents: true  # Graceful degradation
 ```
+
+Note: `max_teammates` was removed (2026-02-17). All review agents always run as teammates in `/deep-review`. The token cost trade-off is accepted for comprehensive cross-validation.
 
 ## Allowed
 
@@ -90,7 +93,8 @@ hooks:
 
 **Team mode for blocking gates**:
 - Tool-validator runs deterministic linters — no value from debate
-- Code-simplifier is a final independent pass — debate would slow it down
+
+Note: Code-simplifier was originally prohibited from team mode ("final independent pass — debate would slow it down"). This prohibition was lifted (2026-02-17) to allow code-simplifier to participate in cross-validation as a teammate in `/deep-review`.
 
 **Hook events that block by default**:
 - TeammateIdle and TaskCompleted must be no-ops when config is disabled
