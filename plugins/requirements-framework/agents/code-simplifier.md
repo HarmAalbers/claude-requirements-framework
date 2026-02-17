@@ -83,56 +83,44 @@ For each changed file, apply these refinements while PRESERVING FUNCTIONALITY:
 
 ## Step 4: Format Output
 
-### When Simplifications Made:
+Use this exact template (see ADR-013):
 
 ```markdown
-# Code Simplification Report
-
-## Files Modified
-- file1.py (3 simplifications)
-- file2.ts (1 simplification)
-
-## Changes Made
-
-### file1.py:42-56
-**Category**: Reduced nesting
-**Before**: [show original pattern]
-**After**: [show simplified pattern]
-**Rationale**: Eliminates unnecessary if-nesting, improves readability
-
-### file2.ts:89
-**Category**: Applied project standard
-**Before**: Arrow function
-**After**: function keyword (per CLAUDE.md)
-**Rationale**: Consistent with project conventions
-
-## Summary
-- Total files modified: X
-- Total simplifications: X
-- Functionality preserved: ✅ Verified via diff review
-- Standards applied: [list which CLAUDE.md rules]
-```
-
-### When No Simplifications Needed:
-
-```markdown
-# Code Simplification Report
+# Code Simplification Analysis
 
 ## Files Reviewed
-[list files]
+- path/to/file1.py
+- path/to/file2.ts
 
-## Result: NO CHANGES NEEDED
+## Findings
 
-Code is already clear and follows project standards.
+### SUGGESTION: [Short title, e.g., "Reduce nesting in validate_input"]
+- **Location**: `path/to/file.py:42`
+- **Description**: What can be simplified and why. Include before/after code snippets.
+- **Fix**: Simplified version of the code
 
-### What Was Checked
-- Project standards compliance
-- Code complexity and nesting
-- Naming clarity
-- Redundant patterns
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:89`
+- **Description**: What project standard can be applied
+- **Fix**: Code that follows the project convention
 
-The code is well-written and needs no simplification.
+## Summary
+- **CRITICAL**: 0
+- **IMPORTANT**: 0
+- **SUGGESTION**: X
+- **Verdict**: ISSUES FOUND | APPROVED
 ```
+
+If no simplifications needed: set all counts to 0 and verdict to APPROVED.
+
+**Note**: Code simplifier findings are always SUGGESTION severity — simplifications are never blocking. CRITICAL and IMPORTANT are always 0.
+
+## Teammate Mode
+
+When running as a teammate in `/deep-review`:
+- Share findings via SendMessage to the team lead
+- Mark your task complete via TaskUpdate when done
+- Your SUGGESTION findings participate in cross-validation (e.g., if code-reviewer also flags the same region, the complexity may be contributing to the bug)
 
 ## Critical Rules
 
