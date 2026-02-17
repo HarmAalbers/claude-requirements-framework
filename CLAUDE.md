@@ -31,18 +31,26 @@ The framework exists in two places that must stay synchronized:
 
 Always run `./sync.sh status` before committing to ensure both locations are in sync.
 
-### Session Lifecycle (Eight Hooks)
+### Session Lifecycle (Thirteen Hooks)
 ```
 SessionStart (handle-session-start.py)
     → Clean stale sessions
     → Update registry with current session
     → Inject full status into context
 
+UserPromptSubmit (handle-prompt-submit.py) - before Claude processes user prompt
+    → Inject compact requirement status for edit/commit prompts
+    → Track prompt count in session metrics
+
 PreToolUse (check-requirements.py) - triggered on Edit/Write/Bash/EnterPlanMode/ExitPlanMode
     → Load config (global → project → local cascade)
     → Check requirements against session/branch state
     → Allow or block with message
     → Plan mode triggers enable ADR validation at planning time
+
+PermissionRequest (handle-permission-request.py) - before permission dialog shown
+    → Auto-deny dangerous command patterns (rm -rf, force push, etc.)
+    → Log permission patterns in session metrics
 
 PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Auto-satisfy requirements when review skills complete
@@ -60,6 +68,18 @@ PostToolUse (clear-single-use.py) - after certain Bash commands
 PostToolUse (handle-plan-exit.py) - after ExitPlanMode
     → Shows requirements status proactively
     → Fires before any Edit attempts begin
+
+PostToolUseFailure (handle-tool-failure.py) - when a tool call fails
+    → Track failure patterns in session metrics
+    → Suggest running review after repeated failures (threshold: 3)
+
+SubagentStart (handle-subagent-start.py) - when a subagent is spawned
+    → Inject requirement context into review subagents
+    → Track subagent spawn events in session metrics
+
+PreCompact (handle-pre-compact.py) - before context compaction
+    → Save requirement state and session metrics before compaction
+    → Track compaction frequency in session metrics
 
 Stop (handle-stop.py) - when Claude finishes
     → Check stop_hook_active flag (prevent loops!)
@@ -91,9 +111,14 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 **Hooks** (in `hooks/`):
 - `check-requirements.py` - PreToolUse hook entry point
 - `handle-session-start.py` - SessionStart hook (context injection)
+- `handle-prompt-submit.py` - UserPromptSubmit hook (prompt context injection)
+- `handle-permission-request.py` - PermissionRequest hook (auto-deny dangerous commands)
 - `handle-plan-exit.py` - PostToolUse hook for ExitPlanMode
 - `auto-satisfy-skills.py` - PostToolUse hook for skill completion
 - `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
+- `handle-tool-failure.py` - PostToolUseFailure hook (failure pattern tracking)
+- `handle-subagent-start.py` - SubagentStart hook (review agent context injection)
+- `handle-pre-compact.py` - PreCompact hook (pre-compaction state saving)
 - `handle-stop.py` - Stop hook (requirement verification)
 - `handle-session-end.py` - SessionEnd hook (cleanup)
 - `handle-teammate-idle.py` - TeammateIdle hook (team progress tracking, ADR-012)
