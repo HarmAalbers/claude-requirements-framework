@@ -3,7 +3,7 @@ name: arch-review
 description: "Multi-perspective team-based architecture review with agent debate and commit planning"
 argument-hint: "[plan-file-path]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: 21277bb
+git_hash: f23d317
 ---
 
 # Architecture Review — Team-Based Multi-Perspective Assessment
