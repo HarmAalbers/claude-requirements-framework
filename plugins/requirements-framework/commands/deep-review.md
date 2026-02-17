@@ -29,23 +29,16 @@ fi
 
 If /tmp/deep_review_scope.txt is empty: Output "No changes to review" and **EXIT**.
 
-### Step 2: Detect File Types and Set Applicability Flags
+### Step 2: Check Codex CLI Availability
 
 ```bash
-# Check for test files
-grep -E '(test_|_test\.py|\.test\.|\.spec\.)' /tmp/deep_review_scope.txt > /tmp/has_tests.txt 2>&1
-
-# Check for type/schema changes
-grep -E '(types?\.(py|ts)|schema|interface|protocol|\.d\.ts)' /tmp/deep_review_scope.txt > /tmp/has_types.txt 2>&1
-
-# Check for schema/API changes
-grep -E '(schema|model|migration|api|endpoint)' /tmp/deep_review_scope.txt > /tmp/has_schemas.txt 2>&1
+which codex 2>/dev/null
 ```
 
-Set flags:
-- **HAS_TEST_FILES** = true if /tmp/has_tests.txt is non-empty
-- **HAS_TYPE_CHANGES** = true if /tmp/has_types.txt is non-empty
-- **HAS_SCHEMA_CHANGES** = true if /tmp/has_schemas.txt is non-empty
+Set flag:
+- **HAS_CODEX** = true if `which codex` succeeds (exit code 0)
+
+This is the ONLY conditional check. All other agents always run.
 
 ### Step 3: Run Tool Validator (BLOCKING GATE — subagent)
 
@@ -72,29 +65,46 @@ description: "Cross-validated code review"
 
 Where `{timestamp}` is the current Unix timestamp (use `date +%s` to get it).
 
-Create tasks on the shared task list:
+Create tasks on the shared task list — ALL agents always run:
 
 1. **Task**: "Code quality review" — assigned to code-reviewer
 2. **Task**: "Error handling audit" — assigned to silent-failure-hunter
-3. **Task**: "Test coverage analysis" — ONLY if HAS_TEST_FILES is true, assigned to test-analyzer
-4. **Task**: "Backward compatibility check" — ONLY if HAS_SCHEMA_CHANGES is true, assigned to backward-compatibility-checker
-5. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
+3. **Task**: "Test coverage analysis" — assigned to test-analyzer
+4. **Task**: "Backward compatibility check" — assigned to backward-compatibility-checker
+5. **Task**: "Type design analysis" — assigned to type-design-analyzer
+6. **Task**: "Comment accuracy check" — assigned to comment-analyzer
+7. **Task**: "Code simplification analysis" — assigned to code-simplifier
+8. **Task**: "Codex AI review" — assigned to codex-reviewer, ONLY if HAS_CODEX is true
+9. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
 
 ### Step 5: Spawn Teammates
 
-For each review task (NOT the synthesis task), spawn a teammate via the Task tool:
+For each review task (NOT the synthesis task), spawn a teammate via the Task tool.
 
-Each teammate gets:
-- `team_name`: the team name from Step 4
-- `subagent_type`: matching the agent (e.g., "requirements-framework:code-reviewer")
-- `name`: descriptive name (e.g., "code-reviewer", "error-auditor")
-- `prompt`: Include:
-  - The diff context: "Review the following changed files: [file list from scope]"
-  - Their review focus: specific to the agent type
-  - Instruction: "Share your key findings via SendMessage to the team lead when done. Mark your task as complete using TaskUpdate."
-  - Instruction: "Report findings with severity levels: CRITICAL, IMPORTANT, SUGGESTION"
+**Standard preamble for ALL teammate prompts** (include at the top of each prompt):
+```
+You MUST use the standard output format from ADR-013. All findings must use:
+- ### CRITICAL: [title] — for blocking issues
+- ### IMPORTANT: [title] — for significant concerns
+- ### SUGGESTION: [title] — for improvements
+Each finding must have Location, Description, Impact, and Fix fields.
+End with ## Summary containing counts and Verdict (ISSUES FOUND | APPROVED).
+Share your findings via SendMessage to the team lead when done.
+Mark your task as complete using TaskUpdate.
+```
 
-Launch all teammates in a SINGLE message with multiple Task tool calls (parallel execution).
+**Teammates to spawn** (all in a SINGLE message for parallel execution):
+
+1. `subagent_type`: "requirements-framework:code-reviewer", `name`: "code-reviewer"
+2. `subagent_type`: "requirements-framework:silent-failure-hunter", `name`: "error-auditor"
+3. `subagent_type`: "requirements-framework:test-analyzer", `name`: "test-analyzer"
+4. `subagent_type`: "requirements-framework:backward-compatibility-checker", `name`: "compat-checker"
+5. `subagent_type`: "requirements-framework:type-design-analyzer", `name`: "type-analyzer"
+6. `subagent_type`: "requirements-framework:comment-analyzer", `name`: "comment-analyzer"
+7. `subagent_type`: "requirements-framework:code-simplifier", `name`: "code-simplifier"
+8. `subagent_type`: "requirements-framework:codex-review-agent", `name`: "codex-reviewer" — ONLY if HAS_CODEX is true
+
+Each teammate prompt must include the diff context: "Review the following changed files: [file list from scope]"
 
 ### Step 6: Wait for Review Tasks
 
@@ -109,29 +119,32 @@ If a teammate fails to complete within timeout:
 
 ### Step 7: Cross-Validation Phase (Lead)
 
-Read all teammate findings received via messages. Perform cross-validation:
+Read all teammate findings received via messages. Apply these **domain-specific cross-validation rules** (see ADR-013):
 
-1. **Deduplicate**: Identify findings about the same code location from different agents
-2. **Corroborate**: If 2+ agents flag the same issue:
-   - Mark as "Corroborated by [agent names]"
-   - Escalate severity by one level (SUGGESTION → IMPORTANT, IMPORTANT → CRITICAL)
-3. **Dispute**: If one agent flags an issue and another explicitly contradicts it:
-   - Note the disagreement
-   - Keep the higher severity but mark as "Disputed"
-4. **Group**: Organize findings by file and severity
+**Location matching**: Same file within 10-line proximity = "same location".
 
-### Step 8: Code Simplifier (FINAL POLISH — subagent)
+**Cross-Validation Rules**:
 
-Use a subagent (not teammate) for the final polish:
+| Rule | Agents | Condition | Action |
+|------|--------|-----------|--------|
+| Error handling quality | code-reviewer + silent-failure-hunter | Both flag same region | Escalate to CRITICAL |
+| Error handling specialist | code-reviewer vs silent-failure-hunter | Only sfh flags | Trust specialist (keep sfh severity) |
+| Documentation drift | code-reviewer + comment-analyzer | Code change + comment issue same location | Corroborate with note |
+| Untested bugs | test-analyzer + code-reviewer | Bug + no tests for same function | Escalate both to CRITICAL |
+| Type safety breaks | type-design-analyzer + backward-compat | Weak types + breaking change | Escalate to CRITICAL |
+| Type + error paths | type-design-analyzer + silent-failure-hunter | Unenforced invariants + error path | Escalate |
+| Suppressed breaks | silent-failure-hunter + backward-compat | Breaking change + silent suppression | Escalate to CRITICAL |
+| AI corroboration | codex-review-agent + any | Same location | Corroborate with "confirmed by external AI" |
+| AI unique finding | codex-review-agent alone | Unique finding | Keep standalone with "verify manually" note |
+| Simplification validates concern | code-simplifier + code-reviewer | Simplifier targets reviewer-flagged area | Corroborate: complexity contributes to bug |
+| Simplifiable error paths | code-simplifier + silent-failure-hunter | Same region flagged | Note: simplifying may fix error handling |
 
-1. Use the Task tool to launch:
-   - `subagent_type`: "requirements-framework:code-simplifier"
-   - `prompt`: "Review the changed files for simplification opportunities."
+After applying rules:
+1. **Deduplicate**: Merge findings about the same location
+2. **Group**: Organize by file and severity (CRITICAL first)
+3. **Note corroborations**: Mark which agents confirmed each finding
 
-2. Wait for completion
-3. Add any simplification suggestions to the report
-
-### Step 9: Aggregate and Verdict
+### Step 8: Aggregate and Verdict
 
 Count findings across all sources:
 - **CRITICAL_COUNT** = number of CRITICAL issues
@@ -152,7 +165,7 @@ Else:
   **Verdict**: "READY"
   - Code meets quality standards
 
-### Step 10: Cleanup
+### Step 9: Cleanup
 
 1. Send shutdown_request to all remaining teammates via SendMessage
 2. Wait briefly for shutdown responses
@@ -169,30 +182,41 @@ Else:
 ## Team
 - code-reviewer: [status]
 - silent-failure-hunter: [status]
-- test-analyzer: [status, if applicable]
-- backward-compatibility-checker: [status, if applicable]
+- test-analyzer: [status]
+- backward-compatibility-checker: [status]
+- type-design-analyzer: [status]
+- comment-analyzer: [status]
+- code-simplifier: [status]
+- codex-review-agent: [status or "skipped (CLI not available)"]
 
-## Corroborated Findings (confirmed by 2+ agents)
-- [SEVERITY] [description] — confirmed by [agent1, agent2] [file:line]
+## Corroborated Findings (confirmed by cross-validation rules)
+### CRITICAL: [title] — [rule name]
+- **Agents**: [agent1] + [agent2]
+- **Location**: `file:line`
+- **Description**: What was found and which cross-validation rule applied
+- **Fix**: Combined recommendation
 
 ## Individual Findings
-### Critical Issues (X found)
-- [agent]: Issue description [file:line]
+### CRITICAL: [title] — [agent name]
+- **Location**: `file:line`
+- **Description**: [finding]
+- **Fix**: [recommendation]
 
-### Important Issues (X found)
-- [agent]: Issue description [file:line]
+### IMPORTANT: [title] — [agent name]
+- **Location**: `file:line`
+- **Description**: [finding]
+- **Fix**: [recommendation]
 
-### Suggestions (X found)
-- [agent]: Suggestion [file:line]
+### SUGGESTION: [title] — [agent name]
+- **Location**: `file:line`
+- **Description**: [finding]
+- **Fix**: [recommendation]
 
-## Disputed Findings
-- [description] — [agent1] says X, [agent2] says Y
-
-## Code Simplification
-- [suggestions from code-simplifier]
-
-## Verdict
-[READY / REVIEW RECOMMENDED / FIX ISSUES FIRST]
+## Summary
+- **CRITICAL**: X (Y corroborated)
+- **IMPORTANT**: X
+- **SUGGESTION**: X
+- **Verdict**: READY | REVIEW RECOMMENDED | FIX ISSUES FIRST
 ```
 
 ## Usage
@@ -206,7 +230,8 @@ Else:
 | Aspect | /deep-review (recommended) | /quality-check (lightweight) |
 |--------|---------------------------|------------------------------|
 | Execution | Agent Teams (collaborative) | Subagents (sequential/parallel) |
-| Cross-validation | Agents debate and corroborate | None (independent findings) |
+| Agents | 7-8 always-run teammates | Variable subagents |
+| Cross-validation | Domain-specific rules (ADR-013) | None (independent findings) |
 | Output | Unified verdict with corroboration | Aggregated list |
 | Satisfies | `pre_pr_review` | Same |
 | Cost | Higher (more thorough) | Lower (faster) |
