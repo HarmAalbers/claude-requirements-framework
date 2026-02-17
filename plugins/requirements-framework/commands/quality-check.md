@@ -149,10 +149,10 @@ This step is REQUIRED and MUST run after all review agents complete:
 
 After all agents complete, aggregate their findings:
 
-1. **Count by severity across all agents**:
+1. **Count by severity across all agents** (all agents use ADR-013 standard format):
    - CRITICAL_COUNT = total CRITICAL issues
-   - IMPORTANT_COUNT = total IMPORTANT/HIGH issues
-   - SUGGESTION_COUNT = total SUGGESTION/MEDIUM/LOW issues
+   - IMPORTANT_COUNT = total IMPORTANT issues
+   - SUGGESTION_COUNT = total SUGGESTION issues
 
 2. **Group by severity, then by agent**:
    - Preserve which agent found each issue

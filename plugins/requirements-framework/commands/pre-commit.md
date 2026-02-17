@@ -136,27 +136,25 @@ Then create a synthesis task:
 
 ### Step 6: Spawn Teammates
 
-Respect `hooks.agent_teams.max_teammates` config (default 5). Priority order if limit exceeded:
-1. code-reviewer (highest)
-2. silent-failure-hunter
-3. backward-compatibility-checker
-4. test-analyzer
-5. type-design-analyzer
-6. comment-analyzer (lowest)
+For each review task, spawn a teammate via the Task tool.
 
-Agents that exceed the limit run as subagents in Step 9 after the team phase.
-
-For each review task within the limit, spawn a teammate via the Task tool:
+**Standard preamble for ALL teammate prompts** (include at the top of each prompt):
+```
+You MUST use the standard output format from ADR-013. All findings must use:
+- ### CRITICAL: [title] — for blocking issues
+- ### IMPORTANT: [title] — for significant concerns
+- ### SUGGESTION: [title] — for improvements
+Each finding must have Location, Description, Impact, and Fix fields.
+End with ## Summary containing counts and Verdict (ISSUES FOUND | APPROVED).
+Share your findings via SendMessage to the team lead when done.
+Mark your task as complete using TaskUpdate.
+```
 
 Each teammate gets:
 - `team_name`: the team name from Step 5
 - `subagent_type`: matching the agent (e.g., "requirements-framework:code-reviewer")
 - `name`: descriptive name (e.g., "code-reviewer", "error-auditor", "compat-checker", "test-analyzer", "type-analyzer", "comment-analyzer")
-- `prompt`: Include:
-  - The diff context: "Review the following changed files: [file list from scope]"
-  - Their review focus: specific to the agent type
-  - Instruction: "Share your key findings via SendMessage to the team lead when done. Mark your task as complete using TaskUpdate."
-  - Instruction: "Report findings with severity levels: CRITICAL, IMPORTANT, SUGGESTION"
+- `prompt`: Standard preamble + diff context + review focus
 
 Launch ALL teammates in a SINGLE message with multiple Task tool calls (parallel execution).
 
@@ -173,16 +171,25 @@ If a teammate fails to complete within timeout:
 
 ### Step 8: Cross-Validation Phase (Lead)
 
-Read all teammate findings received via messages. Perform cross-validation:
+Read all teammate findings received via messages. Apply **domain-specific cross-validation rules** (subset of ADR-013, based on active agents):
 
-1. **Deduplicate**: Identify findings about the same code location from different agents
-2. **Corroborate**: If 2+ agents flag the same issue:
-   - Mark as "Corroborated by [agent names]"
-   - Escalate severity by one level (SUGGESTION → IMPORTANT, IMPORTANT → CRITICAL)
-3. **Dispute**: If one agent flags an issue and another explicitly contradicts it:
-   - Note the disagreement
-   - Keep the higher severity but mark as "Disputed"
-4. **Group**: Organize findings by file and severity
+**Location matching**: Same file within 10-line proximity = "same location".
+
+**Apply these rules only when BOTH referenced agents are active teammates**:
+
+| Rule | Agents | Condition | Action |
+|------|--------|-----------|--------|
+| Error handling quality | code-reviewer + silent-failure-hunter | Both flag same region | Escalate to CRITICAL |
+| Error handling specialist | code-reviewer vs silent-failure-hunter | Only sfh flags | Trust specialist (keep sfh severity) |
+| Documentation drift | code-reviewer + comment-analyzer | Code change + comment issue same location | Corroborate with note |
+| Untested bugs | test-analyzer + code-reviewer | Bug + no tests for same function | Escalate both to CRITICAL |
+| Type safety breaks | type-design-analyzer + backward-compat | Weak types + breaking change | Escalate to CRITICAL |
+| Suppressed breaks | silent-failure-hunter + backward-compat | Breaking change + silent suppression | Escalate to CRITICAL |
+
+After applying rules:
+1. **Deduplicate**: Merge findings about the same location
+2. **Group**: Organize by file and severity (CRITICAL first)
+3. **Note corroborations**: Mark which agents confirmed each finding
 
 ### Step 9: Code Simplifier + Subagent Fallback
 
@@ -192,10 +199,9 @@ Read all teammate findings received via messages. Perform cross-validation:
   3. Code simplifier polishes code that has passed review
   4. Add any simplification suggestions to the report
 
-**Subagent Fallback** — this step also handles agents that did NOT run as teammates:
+**Subagent Fallback** — handles cases where team mode was not used:
 - If USE_TEAM was false (single review agent): run the single enabled review agent as a subagent
 - If TeamCreate failed in Step 5: run all enabled review agents as subagents (sequential)
-- If max_teammates was exceeded in Step 6: run overflow agents as subagents here (sequential)
 
 ### Step 10: Aggregate and Verdict
 
