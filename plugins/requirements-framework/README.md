@@ -7,8 +7,8 @@ Comprehensive workflow enforcement and code review automation for Claude Code.
 This plugin provides workflow enforcement, code review agents, and management tools that integrate seamlessly with the Requirements Framework hooks.
 
 **Key Features**:
-- ✨ **17 specialized review agents** - From tool validation to backward compatibility checking
-- 🎯 **2 orchestrator commands** - Fast pre-commit and thorough pre-PR workflows
+- ✨ **16 specialized review agents** - From tool validation to backward compatibility checking
+- 🎯 **8 orchestrator commands** - From pre-commit to architecture review workflows
 - 📋 **5 management skills** - Status reporting, usage help, and framework development
 - 🔗 **Hook integration** - Auto-satisfies requirements when commands complete
 - 🧪 **TDD-first** - 447 passing tests ensure reliability
@@ -349,7 +349,7 @@ cd ~/Tools/claude-requirements-framework
 ```bash
 # Check installed version
 /plugin list
-# Should show: requirements-framework@2.0.5
+# Should show: requirements-framework@2.1.0
 
 # Test commands
 /requirements-framework:pre-commit tools
@@ -483,8 +483,8 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ```
 ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/
 ├── .claude-plugin/
-│   └── plugin.json (v2.0.5)
-├── agents/ (15 agents)
+│   └── plugin.json (v2.1.0)
+├── agents/ (16 agents)
 │   ├── adr-guardian.md
 │   ├── backward-compatibility-checker.md
 │   ├── code-reviewer.md
@@ -500,7 +500,7 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 │   ├── test-analyzer.md
 │   ├── tool-validator.md
 │   └── type-design-analyzer.md
-├── commands/ (6 commands)
+├── commands/ (8 commands)
 │   ├── codex-review.md
 │   ├── commit-checks.md
 │   ├── plan-review.md
@@ -691,9 +691,9 @@ For issues, questions, or enhancements:
 
 ## Version History
 
-- **v2.0.5** (2025-01-19)
+- **v2.1.0** (2025-01-19)
   - Current stable release
-  - 17 agents, 3 commands, 5 skills
+  - 16 agents, 8 commands, 5 skills
   - **Plugin installation via marketplace** (replaces symlink method)
   - Added `sync-versions.sh` for version consistency
   - Fixed relative path issues in plugin.json
@@ -702,5 +702,5 @@ For issues, questions, or enhancements:
   - Integration with requirements framework hooks
 
 - **v2.0.4** (2024-12-30)
-  - 17 agents, 3 commands, 4 skills
+  - 17 agents, 3 commands, 4 skills (pre-refactor counts)
   - Plugin installation via install.sh symlink (deprecated)
