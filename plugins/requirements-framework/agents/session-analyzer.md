@@ -20,7 +20,7 @@ The session-reflect command automatically invokes this agent.
 </commentary>
 </example>
 model: inherit
-color: purple
+color: magenta
 git_hash: f23d317
 ---
 

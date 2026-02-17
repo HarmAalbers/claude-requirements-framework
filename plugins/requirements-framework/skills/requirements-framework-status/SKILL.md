@@ -10,7 +10,7 @@ Provides comprehensive project context and current state of the **Claude Code Re
 
 ## Current Implementation Status
 
-**Version**: 2.0.4
+**Version**: 2.1.0
 **Status**: ✅ Production Ready & Feature Complete
 **Repository**: https://github.com/HarmAalbers/claude-requirements-framework
 
@@ -26,9 +26,9 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | **Library Modules** | 17 |
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
-| **Plugin Agents** | 17 |
-| **Plugin Commands** | 5 |
-| **Plugin Skills** | 4 |
+| **Plugin Agents** | 16 |
+| **Plugin Commands** | 8 |
+| **Plugin Skills** | 5 |
 
 **→ Full component inventory**: See `references/component-inventory.md`
 
@@ -132,11 +132,13 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 
 ## Plugin Components
 
-### Agents (10)
+### Agents (16)
 
-**Workflow**: `adr-guardian`, `codex-review-agent`
+**Workflow**: `adr-guardian`, `codex-review-agent`, `commit-planner`, `solid-reviewer`, `tdd-validator`
 
 **Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`
+
+**Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`
 
 ### Commands (8)
 
@@ -149,12 +151,13 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 - `/requirements-framework:commit-checks` - Auto-fix code quality issues
 - `/requirements-framework:session-reflect` - Session analysis and improvements
 
-### Skills (4)
+### Skills (5)
 
 - `requirements-framework-usage` - Usage help
 - `requirements-framework-status` - This skill
 - `requirements-framework-development` - Dev workflow
 - `requirements-framework-builder` - Extension guidance
+- `session-learning` - Session analysis and improvement
 
 ---
 
