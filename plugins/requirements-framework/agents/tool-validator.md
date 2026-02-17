@@ -120,167 +120,57 @@ fi
 
 ### Step 4: Format Report
 
-Use this exact template:
+Use this exact template (see ADR-013):
 
 ````markdown
 # Tool Validation Results
 
-## Scope
-**Staged Files**: X Python, Y TypeScript
-**Tools Run**: Pyright, Ruff, ESLint, TSC
+## Files Reviewed
+- path/to/file.py
+- path/to/component.tsx
 
----
+## Findings
 
-## Python Tools
+### CRITICAL: [Tool] error in [file] — [short description]
+- **Location**: `path/to/file.py:123`
+- **Description**: Tool error message and what it means. Include the code snippet if helpful.
+- **Impact**: Will fail CI, block PR merge
+- **Fix**: Specific fix with code example. Note if auto-fixable (e.g., `ruff check --fix`).
 
-### Pyright Type Checking
-**Status**: ✅ 0 errors | ❌ X errors, Y warnings
-**Files Checked**: [list of files]
+### IMPORTANT: [Tool] warning in [file]
+- **Location**: `path/to/file.py:45`
+- **Description**: Tool warning message
+- **Impact**: May indicate a code quality issue
+- **Fix**: Suggested improvement
 
-#### Errors (CRITICAL - Must Fix)
-1. **file.py:123** - Expected type arguments for generic class "dict"
-   ```
-   Line 123: def helper(data: dict):
-                              ^^^^
-   ```
-   **Fix**: `def helper(data: dict[str, Any]):`
-   **Command**: Add `from typing import Any` to imports
-
-2. [More errors...]
-
-#### Warnings (MEDIUM - Should Review)
-1. **file.py:45** - Type of parameter "x" is unknown
-   - **Note**: This is in legacy code, not introduced by your changes
-   - **Advisory**: Consider adding type annotation when touching this file
-
-### Ruff Linting
-**Status**: ✅ All checks passed | ❌ X violations
-
-#### Violations (CRITICAL)
-1. **F841** - test_example.py:34 - Local variable `response` is assigned to but never used
-   ```
-   Line 34: response = await client.get(url)
-   ```
-   **Fix**: Remove assignment or use variable
-   **Auto-fixable**: Yes - run `ruff check --fix`
-
----
-
-## TypeScript Tools
-
-### TypeScript Compiler
-**Status**: ✅ 0 errors | ❌ X errors
-[Similar structure]
-
-### ESLint
-**Status**: ✅ 0 errors | ❌ X errors
-[Similar structure]
-
----
+### SUGGESTION: [Tool] advisory in [file]
+- **Location**: `path/to/file.py:89`
+- **Description**: Minor tool note
+- **Fix**: Optional improvement
 
 ## Summary
-
-**Total Issues by Severity**:
-- 🔴 CRITICAL (errors): X - **Must fix before commit**
-- 🟡 MEDIUM (warnings): Y - Should review
-- 🟢 LOW (info): Z - Advisory
-
-**Files with Issues**: [list]
-**Auto-Fixable**: [count] issues can be auto-fixed
-
----
-
-## Verdict
-
-✅ **READY TO COMMIT** - No critical errors found
-
-OR
-
-❌ **FIX ERRORS BEFORE COMMITTING**
-
-### Required Actions
-- [ ] Fix X pyright errors in [files]
-- [ ] Fix Y ruff violations in [files]
-
-### Quick Fix Commands
-```bash
-# Add missing type imports
-# In test_file.py
-from typing import Any
-
-# Update signatures
-def method(data: dict[str, Any]):  # Add type annotation
-
-# Auto-fix ruff issues
-uv run ruff check --fix backend/tests/
-
-# Re-stage and verify
-git add backend/tests/
-/requirements-framework:pre-commit tools  # Run this agent again
-```
-
-### Then Commit
-```bash
-git commit -m "fix: add type annotations for pyright compliance"
-```
-
----
-
-## Why These Errors Matter
-
-**Pyright errors**: Will fail CI type checking, block PR merge
-**Ruff errors**: Code quality issues, may hide bugs
-**ESLint errors**: Frontend type safety, runtime errors possible
-
-**Zero Surprises**: Fix these locally = CI will pass ✅
-
----
-
-## Legend
-
-- 🔴 CRITICAL: Must fix (will fail CI)
-- 🟡 MEDIUM: Should fix (warnings)
-- 🟢 LOW: Nice to have (suggestions)
-- ✅ Auto-fixable: Tool can fix automatically
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
 ````
+
+**Severity Mapping from Tool Output**:
+- Tool **errors** (pyright errors, ruff violations, eslint errors) → **CRITICAL**
+- Tool **warnings** (pyright warnings, eslint warnings) → **IMPORTANT**
+- Tool **info/notes** (advisory messages) → **SUGGESTION**
+
+If no findings: set all counts to 0 and verdict to APPROVED.
+
+**When CRITICAL errors found**: Include quick fix commands at the end of your output to help the developer resolve issues quickly.
 
 ## Error Handling
 
-### If Tool Not Available
-```markdown
-⚠️  **Tool Not Found**: pyright
+**Tool Not Available**: Skip the tool, note it in output as "SKIP (not installed)", continue with other tools. Do not block on missing optional tools.
 
-The tool is not installed or not in PATH.
+**Tool Crashes**: Report as a CRITICAL finding — unexpected tool failure should be investigated before committing.
 
-**Install**:
-```bash
-cd backend && uv add --dev pyright
-```
-
-**Status**: SKIP (not blocking - tool optional)
-```
-
-### If Tool Crashes
-```markdown
-❌ **Tool Crashed**: pyright
-
-**Error**: [stderr output]
-
-**Status**: BLOCK - Unexpected tool failure, investigate before committing
-```
-
-### If No Staged Files
-```markdown
-# Tool Validation Results
-
-**Staged Files**: 0 Python, 0 TypeScript
-**Status**: ✅ Nothing to validate
-
----
-
-## Verdict
-✅ **READY TO COMMIT** - No files to check
-```
+**No Staged Files**: Output standard template with all counts at 0 and verdict APPROVED.
 
 ## Performance Notes
 
