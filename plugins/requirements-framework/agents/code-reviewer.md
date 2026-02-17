@@ -113,72 +113,58 @@ For each file in the diff, check for:
 - Missing edge case coverage
 - Over-mocking that hides integration issues
 
-## Step 4: Confidence Scoring
+## Step 4: Classify Findings
 
-Rate each potential issue from 0-100:
+Classify each finding into one of three severity levels:
 
-- **0-25**: Likely false positive or pre-existing issue
-- **26-50**: Minor nitpick not explicitly in CLAUDE.md
-- **51-75**: Valid but low-impact issue
-- **76-89**: Important issue requiring attention
-- **90-100**: Critical bug or explicit CLAUDE.md violation
+- **CRITICAL**: Explicit CLAUDE.md violation, security vulnerability, or bug that will cause runtime failures. High confidence (would bet on it).
+- **IMPORTANT**: Significant code quality issue, missing error handling, or TDD anti-pattern that should be fixed. Confident but not certain.
+- **SUGGESTION**: Minor improvement to code clarity, style, or maintainability. Worth noting but not blocking.
 
-**Reporting Threshold**: Only report issues with confidence ≥ 80
+**Only report findings you are confident about. Quality over quantity — false positives harm credibility.**
 
 ## Step 5: Format Output
 
-### When Issues Found (confidence ≥ 80):
+Use this exact template (see ADR-013):
 
 ```markdown
-# Code Review Summary
+# Code Review
 
 ## Files Reviewed
-[list all files from diff]
+- path/to/file1.py
+- path/to/file2.py
 
-## Critical Issues (confidence 90-100)
+## Findings
 
-### [Issue #1 Title] - Confidence: [score]/100
-**File**: path/to/file.py:123
-**Violation**: [Specific CLAUDE.md rule OR bug type]
-**Issue**: [Clear description]
-**Fix**: [Concrete suggestion]
+### CRITICAL: [Short title]
+- **Location**: `path/to/file.py:42`
+- **Description**: What is wrong and why it matters
+- **Impact**: What breaks if not fixed
+- **Fix**: Concrete suggestion
 
-[Repeat for each critical issue]
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:87`
+- **Description**: What is wrong
+- **Impact**: What could go wrong
+- **Fix**: Concrete suggestion
 
-## Important Issues (confidence 80-89)
-
-[Same format as critical]
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: What could be improved
+- **Fix**: Optional suggestion
 
 ## Summary
-- Critical issues: [count] (MUST fix before commit)
-- Important issues: [count] (Should fix before commit)
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
 ```
 
-### When No Issues Found:
-
-```markdown
-# Code Review Summary
-
-## Files Reviewed
-[list files]
-
-## Result: APPROVED ✅
-
-No issues with confidence ≥ 80 found. Code meets project standards.
-
-### What Was Checked
-- Project guidelines (CLAUDE.md) compliance
-- Bug detection (logic, null handling, security)
-- Code quality (duplication, error handling)
-- TDD practices (test coverage)
-
-### Positive Observations
-[Optional: note any particularly well-written code or patterns]
-```
+If no findings: set all counts to 0 and verdict to APPROVED.
 
 ## Critical Rules
 
-- **Be precise**: Only report high-confidence issues (≥ 80)
+- **Be precise**: Only report findings you are confident about
 - **Be specific**: Cite exact CLAUDE.md rules or bug types
 - **Be actionable**: Provide concrete fix suggestions
 - **Be thorough**: Check all review responsibilities

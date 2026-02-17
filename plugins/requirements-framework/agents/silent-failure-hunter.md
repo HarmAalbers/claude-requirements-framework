@@ -124,15 +124,10 @@ Apply the standards identified in Step 1:
 
 ## Your Output Format
 
-For each issue you find, provide:
-
-1. **Location**: File path and line number(s)
-2. **Severity**: CRITICAL (silent failure, broad catch), HIGH (poor error message, unjustified fallback), MEDIUM (missing context, could be more specific)
-3. **Issue Description**: What's wrong and why it's problematic
-4. **Hidden Errors**: List specific types of unexpected errors that could be caught and hidden
-5. **User Impact**: How this affects the user experience and debugging
-6. **Recommendation**: Specific code changes needed to fix the issue
-7. **Example**: Show what the corrected code should look like
+Use the standardized finding format (see ADR-013). Map severity as follows:
+- **CRITICAL**: Silent failures, empty catch blocks, broad catches hiding errors, security-relevant errors suppressed
+- **IMPORTANT**: Inadequate logging, generic error messages, fallbacks masking problems
+- **SUGGESTION**: Missing context in logging, error messages that could be more specific
 
 ## Your Tone
 
@@ -182,9 +177,9 @@ Focus on:
 - Fallback logic or default values
 - API calls with error handling
 
-## Step 3: Apply Severity-Based Filtering
+## Step 3: Classify Findings
 
-Rate each issue by severity:
+Classify each finding using the three standard severity levels:
 
 **CRITICAL** (always report):
 - Silent failures (errors caught but not logged/handled)
@@ -192,72 +187,53 @@ Rate each issue by severity:
 - Errors that hide data corruption
 - Security-relevant errors suppressed
 
-**HIGH** (always report):
+**IMPORTANT** (always report):
 - Inadequate logging (missing context)
 - Generic error messages users can't act on
 - Fallbacks that mask real problems
 
-**MEDIUM** (report if < 5 total across all severities):
+**SUGGESTION** (always report):
 - Could add more context to logging
 - Error messages could be more specific
 - Optional improvements to error handling
 
 ## Step 4: Format Output
 
-### When Issues Found:
+Use this exact template (see ADR-013):
 
 ```markdown
 # Error Handling Audit
 
-## Files Audited
-[list files with error handling code]
+## Files Reviewed
+- path/to/file1.py
+- path/to/file2.py
 
-## CRITICAL Issues (must fix)
+## Findings
 
-### [Issue #1 Title]
-**File**: path/to/file.py:123
-**Severity**: CRITICAL
-**Issue**: [What's wrong]
-**Impact**: [What could go wrong]
-**Fix**: [How to fix it]
+### CRITICAL: [Short title]
+- **Location**: `path/to/file.py:42`
+- **Description**: What is wrong, why it's a silent failure, and what errors could be hidden
+- **Impact**: How this affects debugging and user experience
+- **Fix**: Specific code changes needed
 
-[Repeat for each critical issue]
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:87`
+- **Description**: What is wrong
+- **Impact**: What could go wrong
+- **Fix**: Concrete suggestion
 
-## HIGH Priority Issues
-
-[Same format]
-
-## MEDIUM Priority Issues (if < 5 total)
-
-[Same format]
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: What could be improved
+- **Fix**: Optional suggestion
 
 ## Summary
-- Critical: [count] - MUST fix before commit
-- High: [count] - Should fix before commit
-- Medium: [count] - Optional improvements
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
 ```
 
-### When No Issues Found:
-
-```markdown
-# Error Handling Audit
-
-## Files Audited
-[list files]
-
-## Result: PASSED ✅
-
-All error handling follows best practices. No silent failures detected.
-
-### What Was Checked
-- Error logging completeness
-- Catch block specificity
-- User-facing error clarity
-- Fallback behavior appropriateness
-- Error propagation patterns
-
-### Positive Observations
-[Optional: note particularly good error handling]
-```
+If no findings: set all counts to 0 and verdict to APPROVED.
 
 Remember: Every silent failure you catch prevents hours of debugging frustration. Be thorough, be skeptical, and never let an error slip through unnoticed.
