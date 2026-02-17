@@ -155,22 +155,23 @@ git diff --cached --name-only | grep -E 'alembic/versions/.*\.py$|migrations/.*\
 
 ### Step 3: Categorize Impact
 
-**CRITICAL Breaking Changes**:
+**CRITICAL**:
 - Required field removed from response
 - Field renamed (old name no longer works)
 - Type changed (str → datetime, parsing will fail)
 - Range constraints tightened (data outside new range invalid)
 - Enum values removed (code using old value breaks)
+- Schema change without database migration
 
-**MEDIUM Breaking Changes**:
+**IMPORTANT**:
 - Optional field removed (may cause KeyError if not checked)
 - Range constraints relaxed (old validation logic may be too strict)
 - Field added as required (old data can't be parsed without it)
 
-**LOW Non-Breaking Changes**:
-- Optional field added
-- Documentation updates
-- Internal refactoring (no public API impact)
+**SUGGESTION**:
+- Optional field added (non-breaking, note for awareness)
+- Documentation updates needed
+- Internal refactoring with no public API impact
 
 ### Step 4: Assess Test Impact
 
@@ -213,165 +214,42 @@ For each impacted file found:
 
 ## Output Format
 
-Use this exact structure:
+Use this exact template (see ADR-013):
 
-````markdown
+```markdown
 # Backward Compatibility Analysis
 
-## Scope
-**Staged Files**: X files
-**Schema Changes Detected**: Y changes
-**Impacted Files Found**: Z files
+## Files Reviewed
+- path/to/model.py
+- path/to/schema.ts
 
----
+## Findings
 
-## Breaking Changes Detected
+### CRITICAL: [Short title, e.g., "Field rename: priority → score"]
+- **Location**: `path/to/file.py:87`
+- **Description**: What changed, why it's breaking, what code depends on the old schema. Include before/after code snippets.
+- **Impact**: Which tests will fail, which API clients break, what data becomes invalid. Include specific file:line references for impacted code.
+- **Fix**: Migration strategy with checklist. Include bash commands for finding remaining references.
 
-### 1. Field Rename: `priority` → `score`
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:42`
+- **Description**: What changed and potential impact
+- **Impact**: What could break under certain conditions
+- **Fix**: Recommended migration approach
 
-**Location**: `backend/core/autowork_state.py:87`
-**Severity**: 🔴 CRITICAL (breaks existing code)
-
-**Change Details**:
-```python
-# Before
-priority: int = Field(ge=1, le=5, description="Priority level")
-
-# After
-score: int = Field(ge=0, le=100, description="Priority score (0-100)")
-```
-
-**Breaking**: Yes - field name AND range changed
-- Old range: 1-5 (priority levels)
-- New range: 0-100 (continuous score)
-- Semantics: Lower number was higher priority, now higher score = higher priority
-
-**Impact Analysis**:
-
-**Tests Affected** (3 files, 12 references):
-- `tests/integration/api/test_autowork_api.py:62` - Mock data uses `priority` field
-  ```python
-  "priority": 1,  # ← Field no longer exists in schema
-  ```
-
-- `tests/integration/api/test_autowork_api.py:399-401` - Assertions expect priority 1-3
-  ```python
-  assert "1" in data["by_priority"]  # ← Will fail: keys are now "85", "75", "50"
-  assert "2" in data["by_priority"]
-  assert "3" in data["by_priority"]
-  ```
-
-- `backend/api/v2/autowork/queue.py:291` - Aggregation by old field (FIXED in staged changes ✓)
-
-**Mock Data Affected**:
-- `tests/integration/api/test_autowork_api.py:mock_queue_data` fixture
-  - 4 tasks with `priority` field
-  - Need conversion: priority 1 → score 90, priority 2 → score 75, priority 3 → score 50
-
-**Will Cause Test Failures**:
-```bash
-FAILED test_autowork_api.py::test_get_queue_stats_with_data
-  AssertionError: assert '1' in {'85': 2, '75': 1, '50': 1}
-```
-
-**Migration Required**:
-- [ ] Update `mock_queue_data()` fixture (line 50-100)
-- [ ] Change `priority: 1` → `score: 90` (high priority)
-- [ ] Change `priority: 2` → `score: 75` (medium priority)
-- [ ] Change `priority: 3` → `score: 50` (low priority)
-- [ ] Update test assertions (line 399-401) to expect score values
-- [ ] Change `"1" in by_priority` → `"85" in by_priority` or `"90" in by_priority`
-
-**Migration Complexity**: Medium (3 files, clear mapping)
-
----
-
-### 2. Field Rename: `created_at` → `created`
-
-**Location**: `backend/tests/integration/api/test_autowork_api.py:mock_queue_data`
-**Severity**: 🔴 CRITICAL
-
-**Change Details**:
-- Old: `"created_at": "2025-11-21T10:00:00Z"`
-- New: `"created": "2025-11-21T10:00:00Z"`
-
-**Impact**: Mock data uses old field name, won't be recognized by new schema
-
-**Fix Required**:
-- [ ] Rename `created_at` → `created` in all mock tasks
-
----
-
-## Non-Breaking Changes
-
-### 3. Field Added: `labels` (optional)
-
-**Location**: `backend/core/autowork_state.py:84`
-**Severity**: 🟢 LOW (non-breaking)
-
-**Change**: Added `labels: list[str] = Field(default_factory=list)`
-
-**Impact**: None - field is optional with default
-- Old data without `labels` will parse correctly (default to empty list)
-- Old tests don't need updates
-
----
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: Non-breaking change worth noting
+- **Fix**: Optional action if desired
 
 ## Summary
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
+```
 
-**Breaking Changes**: 2
-**Non-Breaking Changes**: 1
-**Files Requiring Updates**: 1 file (test_autowork_api.py)
-**Test Failures Expected**: 1 test
-
----
-
-## Migration Checklist
-
-### Critical (Must Do Before Commit)
-- [ ] Update `mock_queue_data()` in test_autowork_api.py:50-100
-  - [ ] Change `priority` → `score` with value mapping
-  - [ ] Change `created_at` → `created`
-  - [ ] Add `labels` field to each task
-  - [ ] Remove old fields: `description`, `completed_at`, `failed_at`, `error`
-  - [ ] Add `metadata` field for auxiliary data
-
-- [ ] Update test assertions in test_autowork_api.py:399-401
-  - [ ] Change priority values 1-3 → score values 50-90
-  - [ ] Update `by_priority` key expectations
-
-### Recommended (Should Do)
-- [ ] Run affected tests to verify fixes:
-  ```bash
-  uv run pytest tests/integration/api/test_autowork_api.py::test_get_queue_stats_with_data -v
-  ```
-
-- [ ] Check for other files using old schema:
-  ```bash
-  grep -r "priority.*Field" backend/ tests/
-  grep -r "created_at" backend/ tests/ | grep -v alembic
-  ```
-
-### Optional (Nice to Have)
-- [ ] Document breaking change in CHANGELOG.md
-- [ ] Add migration guide if this is a public API
-- [ ] Consider versioning: `/api/v2/` → `/api/v3/` if major breaking change
-
----
-
-## Verdict
-
-❌ **BREAKING CHANGES DETECTED - FIX BEFORE COMMIT**
-
-**Why This Matters**:
-- CI will fail with test assertion errors
-- 1 test file needs updates
-- Clear migration path available (simple find/replace)
-
-**Estimated Fix Time**: 10 minutes
-
-**After Fixing**: Re-run this agent to verify compatibility issues resolved
-````
+If no findings: set all counts to 0 and verdict to APPROVED.
 
 ## Detection Logic Pseudocode
 
@@ -419,7 +297,7 @@ for model in changed_models:
 
 ## Communication Style
 
-- **Clear severity indicators**: Use 🔴 🟡 🟢 emojis
+- **Clear severity indicators**: Use CRITICAL, IMPORTANT, SUGGESTION labels
 - **Actionable checklists**: Each item can be done independently
 - **Specific line numbers**: Every finding has file:line
 - **Code examples**: Show before/after for clarity
@@ -433,5 +311,5 @@ Agent completes successfully when:
 2. ✅ Codebase searched for each changed field/type
 3. ✅ Impact assessed (will tests fail? will API break?)
 4. ✅ Migration checklist provided
-5. ✅ Verdict: PROCEED or FIX COMPATIBILITY ISSUES
+5. ✅ Verdict: ISSUES FOUND or APPROVED
 6. ✅ Estimated fix time provided

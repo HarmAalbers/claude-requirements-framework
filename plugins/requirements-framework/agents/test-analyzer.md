@@ -48,20 +48,18 @@ If both files are empty: Output "No changes to analyze" and EXIT
 Compare source changes to test changes:
 
 **If /tmp/source_changes.txt has content AND /tmp/test_changes.txt is empty**:
-  This is a **CRITICAL gap (rating 9-10)**:
+  This is a **CRITICAL** finding:
   - New or modified code without corresponding tests
   - High risk of undetected regressions
   - Violates TDD practices
 
-  Report this immediately:
+  Include this as a CRITICAL finding in your output:
   ```markdown
-  ## CRITICAL: No Tests for Code Changes
-
-  **Severity**: CRITICAL (rating: 9/10)
-  **Files Changed**: [list from source_changes.txt]
-  **Issue**: Code modified without test coverage
-  **Impact**: Regressions will not be detected before deployment
-  **Fix**: Add tests for the changed functionality before committing
+  ### CRITICAL: No tests for code changes
+  - **Location**: [list files from source_changes.txt]
+  - **Description**: Code modified without test coverage
+  - **Impact**: Regressions will not be detected before deployment
+  - **Fix**: Add tests for the changed functionality before committing
   ```
 
 ## Step 3: Analyze Test Coverage Quality
@@ -98,35 +96,52 @@ Check for TDD anti-patterns:
 - Tests that would pass even if the feature was broken
 - Over-mocking that hides integration issues
 
-## Step 6: Rate and Prioritize Findings
+## Step 6: Classify and Format Findings
 
-For each test gap or quality issue, rate criticality from 1-10:
+Classify each finding into standard severity levels:
 
-**10**: Absolutely essential - production-breaking bug likely without this test
-**8-9**: Critical - significant regression risk, data integrity issues
-**6-7**: Important - user-facing bugs possible, should be tested
-**4-5**: Improvements - edge cases that may rarely occur
-**1-3**: Optional - academic completeness, unlikely scenarios
-
-**Reporting Threshold**: Always report 7-10, report 4-6 if < 5 total issues
-
-**Rating Guidelines:**
-- 9-10: Critical functionality that could cause data loss, security issues, or system failures
-- 7-8: Important business logic that could cause user-facing errors
-- 5-6: Edge cases that could cause confusion or minor issues
-- 3-4: Nice-to-have coverage for completeness
-- 1-2: Minor improvements that are optional
+- **CRITICAL**: No tests for code changes, or tests that would pass even if the feature was broken. Production-breaking regressions likely.
+- **IMPORTANT**: Missing edge case coverage for critical paths, tests that mirror implementation too closely, important business logic untested.
+- **SUGGESTION**: Additional test coverage that would improve confidence but isn't blocking. Nice-to-have edge cases.
 
 **Output Format:**
 
-Structure your analysis as:
+Use this exact template (see ADR-013):
 
-1. **Summary**: Brief overview of test coverage quality
-2. **Critical Gaps** (if any): Tests rated 8-10 that must be added
-3. **Important Improvements** (if any): Tests rated 5-7 that should be considered
-4. **Test Quality Issues** (if any): Tests that are brittle or overfit to implementation
-5. **TDD Compliance**: Assessment of whether TDD practices were followed
-6. **Positive Observations**: What's well-tested and follows best practices
+```markdown
+# Test Coverage Analysis
+
+## Files Reviewed
+- path/to/source.py
+- path/to/test_source.py
+
+## Findings
+
+### CRITICAL: [Short title]
+- **Location**: `path/to/file.py:42`
+- **Description**: What test coverage is missing and why it matters
+- **Impact**: What regressions could go undetected
+- **Fix**: Specific test to add
+
+### IMPORTANT: [Short title]
+- **Location**: `path/to/file.py:87`
+- **Description**: What could be better tested
+- **Impact**: What could go wrong
+- **Fix**: Suggested test improvement
+
+### SUGGESTION: [Short title]
+- **Location**: `path/to/file.py:123`
+- **Description**: What additional coverage would help
+- **Fix**: Optional test to consider
+
+## Summary
+- **CRITICAL**: X
+- **IMPORTANT**: Y
+- **SUGGESTION**: Z
+- **Verdict**: ISSUES FOUND | APPROVED
+```
+
+If no findings: set all counts to 0 and verdict to APPROVED.
 
 **Important Considerations:**
 
