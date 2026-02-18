@@ -129,7 +129,7 @@ def _emit_session_review_prompt(session_id: str, project_dir: str,
             ""
         ]
 
-        emit_text("\n".join(lines))
+        emit_text("\n".join(lines), stream=sys.stderr)
         logger.info("Emitted session review prompt", tool_uses=tool_uses)
 
     except Exception as e:
