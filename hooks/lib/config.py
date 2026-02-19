@@ -742,6 +742,11 @@ class RequirementsConfig:
         "session_start": {
             "inject_context": True,
             "injection_mode": "auto",  # auto | compact | standard | rich
+            "carry_over": {
+                "enabled": True,
+                "window_seconds": 300,
+                "scopes": ["session"],
+            },
         },
         "stop": {
             "verify_requirements": True,
