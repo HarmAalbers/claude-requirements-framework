@@ -657,6 +657,38 @@ See `req init --help` for options.""")
         if inject_context:
             try:
                 reqs = BranchRequirements(branch, session_id, project_dir)
+
+                # Carry over session-scoped requirements from recent sessions
+                # (plan-then-execute workflow: /clear creates new session ID)
+                if source in ('startup', 'clear'):
+                    try:
+                        carry_cfg = config.get_hook_config(
+                            'session_start', 'carry_over', {}
+                        )
+                        if carry_cfg.get('enabled', True):
+                            guard_names = {
+                                name for name in config.requirements.get_all_requirements()
+                                if config.requirements.get_requirement_type(name) == 'guard'
+                            }
+                            carried = reqs.carry_over_from_recent_session(
+                                window_seconds=carry_cfg.get('window_seconds', 300),
+                                scopes=carry_cfg.get('scopes', ['session']),
+                                guard_names=guard_names,
+                            )
+                            if carried:
+                                names = ', '.join(f'`{n}`' for n in carried)
+                                parts.append(
+                                    f"Carried over {len(carried)} requirement(s) "
+                                    f"from previous session: {names}"
+                                )
+                                logger.info(
+                                    "Carried over requirements",
+                                    count=len(carried),
+                                    requirements=list(carried.keys()),
+                                )
+                    except Exception as e:
+                        logger.warning("Carry-over failed (fail-open)", error=str(e))
+
                 status = format_adaptive_status(reqs, config, session_id, branch, source)
                 parts.append(status)
             except Exception as e:
