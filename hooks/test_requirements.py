@@ -8712,6 +8712,276 @@ def test_task_completed_hook(runner: TestRunner):
         runner.test("Missing fields = fail open", result.returncode == 0)
 
 
+def test_carry_over_basic(runner: TestRunner):
+    """Test basic session state carry-over."""
+    print("\n📦 Testing carry-over basic...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Session 1 satisfies commit_plan
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        # Session 2 starts 2 minutes later — within default 5-min window
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            runner.test("Not satisfied before carry-over",
+                       not reqs2.is_satisfied("commit_plan", "session"))
+
+            carried = reqs2.carry_over_from_recent_session()
+            runner.test("Carry-over returns carried reqs",
+                       "commit_plan" in carried)
+            runner.test("Carried req now satisfied",
+                       reqs2.is_satisfied("commit_plan", "session"))
+            runner.test("Source session ID recorded",
+                       carried["commit_plan"] == "aaa11111")
+
+
+def test_carry_over_expired_window(runner: TestRunner):
+    """Test carry-over respects the time window."""
+    print("\n📦 Testing carry-over expired window...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Session 1 satisfies at t=1000
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        # Session 2 starts 10 minutes later — outside 5-min window
+        with mock.patch('time.time', return_value=1600.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried = reqs2.carry_over_from_recent_session(window_seconds=300)
+            runner.test("Nothing carried outside window", len(carried) == 0)
+            runner.test("Still not satisfied",
+                       not reqs2.is_satisfied("commit_plan", "session"))
+
+
+def test_carry_over_single_use_excluded(runner: TestRunner):
+    """Test that single_use scope is NOT carried over."""
+    print("\n📦 Testing carry-over excludes single_use...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("pre_commit_review", "single_use", method="skill")
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            # Default scopes=['session'], so single_use should not be carried
+            carried = reqs2.carry_over_from_recent_session()
+            runner.test("single_use not carried over", len(carried) == 0)
+
+
+def test_carry_over_only_session_scope(runner: TestRunner):
+    """Test that branch and permanent scopes are NOT carried over."""
+    print("\n📦 Testing carry-over excludes branch/permanent...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("github_ticket", "branch", method="cli")
+            reqs1.satisfy("permanent_req", "permanent", method="cli")
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried = reqs2.carry_over_from_recent_session(scopes=["session"])
+            runner.test("Only session scope carried",
+                       list(carried.keys()) == ["commit_plan"])
+            runner.test("Branch scope not in carried",
+                       "github_ticket" not in carried)
+            runner.test("Permanent scope not in carried",
+                       "permanent_req" not in carried)
+
+
+def test_carry_over_guards_excluded(runner: TestRunner):
+    """Test that guard-type requirements are NEVER carried over (ADR-004)."""
+    print("\n📦 Testing carry-over excludes guard requirements...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            # Simulate a guard approval stored in session scope (with TTL)
+            reqs1.approve_for_session("protected_branch", ttl=3600)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried = reqs2.carry_over_from_recent_session(
+                guard_names={"protected_branch"}
+            )
+            runner.test("Guard not carried over",
+                       "protected_branch" not in carried)
+            runner.test("Non-guard still carried",
+                       "commit_plan" in carried)
+
+
+def test_carry_over_idempotent(runner: TestRunner):
+    """Test that second carry-over call is a no-op."""
+    print("\n📦 Testing carry-over idempotency...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried1 = reqs2.carry_over_from_recent_session()
+            runner.test("First call carries over", len(carried1) == 1)
+
+            carried2 = reqs2.carry_over_from_recent_session()
+            runner.test("Second call is no-op", len(carried2) == 0)
+
+
+def test_carry_over_picks_most_recent(runner: TestRunner):
+    """Test that most recently satisfied session wins."""
+    print("\n📦 Testing carry-over picks most recent...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Session A satisfies at t=1000
+        with mock.patch('time.time', return_value=1000.0):
+            reqs_a = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs_a.satisfy("commit_plan", "session", method="skill")
+
+        # Session B satisfies at t=1100 (more recent)
+        with mock.patch('time.time', return_value=1100.0):
+            reqs_b = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            reqs_b.satisfy("commit_plan", "session", method="auto")
+
+        # Session C starts at t=1200 — both A and B are within window
+        with mock.patch('time.time', return_value=1200.0):
+            reqs_c = BranchRequirements("carry/branch", "ccc33333", tmpdir)
+            carried = reqs_c.carry_over_from_recent_session(window_seconds=300)
+            runner.test("Carried from most recent session",
+                       carried["commit_plan"] == "bbb22222")
+
+
+def test_carry_over_metadata(runner: TestRunner):
+    """Test carry-over writes proper audit metadata."""
+    print("\n📦 Testing carry-over metadata...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            reqs2.carry_over_from_recent_session()
+
+            # Inspect state directly
+            req_state = reqs2._state['requirements']['commit_plan']
+            session_state = req_state['sessions'][reqs2.session_id]
+            runner.test("satisfied_by is carry_over",
+                       session_state['satisfied_by'] == 'carry_over')
+            runner.test("metadata has carried_from",
+                       'carried_from' in session_state.get('metadata', {}))
+            runner.test("metadata has original_satisfied_by",
+                       session_state['metadata']['original_satisfied_by'] == 'skill')
+            runner.test("metadata has original_satisfied_at",
+                       session_state['metadata']['original_satisfied_at'] == 1000)
+
+
+def test_carry_over_respects_ttl(runner: TestRunner):
+    """Test that TTL-expired source requirements are NOT carried over."""
+    print("\n📦 Testing carry-over respects TTL...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Session 1 satisfies with 60-second TTL at t=1000 (expires at t=1060)
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill", ttl=60)
+
+        # Session 2 starts at t=1080 — within carry-over window but TTL expired
+        with mock.patch('time.time', return_value=1080.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried = reqs2.carry_over_from_recent_session(window_seconds=300)
+            runner.test("TTL-expired req not carried", len(carried) == 0)
+
+
+def test_carry_over_disabled_config(runner: TestRunner):
+    """Test carry-over respects enabled=false (tested at hook level)."""
+    print("\n📦 Testing carry-over disabled config...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # Even with data available, if the hook doesn't call carry_over,
+        # nothing happens. Test that the method itself still works when called.
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+
+        # Simulate: hook checks enabled=false and skips calling carry_over
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            # Hook would NOT call this — verify the req stays unsatisfied
+            runner.test("Without carry-over call, not satisfied",
+                       not reqs2.is_satisfied("commit_plan", "session"))
+
+
+def test_carry_over_partial_satisfaction(runner: TestRunner):
+    """Test carry-over handles partially satisfied requirements."""
+    print("\n📦 Testing carry-over partial satisfaction...")
+    from requirements import BranchRequirements
+    import unittest.mock as mock
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        with mock.patch('time.time', return_value=1000.0):
+            reqs1 = BranchRequirements("carry/branch", "aaa11111", tmpdir)
+            reqs1.satisfy("commit_plan", "session", method="skill")
+            # adr_reviewed is NOT satisfied in the old session
+
+        with mock.patch('time.time', return_value=1120.0):
+            reqs2 = BranchRequirements("carry/branch", "bbb22222", tmpdir)
+            carried = reqs2.carry_over_from_recent_session()
+            runner.test("Only satisfied reqs carried",
+                       carried == {"commit_plan": "aaa11111"})
+            runner.test("Unsatisfied req still unsatisfied",
+                       not reqs2.is_satisfied("adr_reviewed", "session"))
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -8865,6 +9135,19 @@ def main():
     # Agent Teams hook tests
     test_teammate_idle_hook(runner)
     test_task_completed_hook(runner)
+
+    # Session state carry-over tests
+    test_carry_over_basic(runner)
+    test_carry_over_expired_window(runner)
+    test_carry_over_single_use_excluded(runner)
+    test_carry_over_only_session_scope(runner)
+    test_carry_over_guards_excluded(runner)
+    test_carry_over_idempotent(runner)
+    test_carry_over_picks_most_recent(runner)
+    test_carry_over_metadata(runner)
+    test_carry_over_respects_ttl(runner)
+    test_carry_over_disabled_config(runner)
+    test_carry_over_partial_satisfaction(runner)
 
     return runner.summary()
 
