@@ -606,6 +606,101 @@ class BranchRequirements:
 
         return count
 
+    def carry_over_from_recent_session(
+        self,
+        window_seconds: int = 300,
+        scopes: Optional[list] = None,
+        guard_names: Optional[set] = None,
+    ) -> dict:
+        """
+        Copy recently satisfied requirements from a previous session to the current one.
+
+        Scans the state file for session-scoped requirements satisfied within the
+        time window and copies them to the current session with audit metadata.
+        Used during SessionStart to preserve planning-phase satisfaction across
+        the plan-then-execute workflow boundary.
+
+        Args:
+            window_seconds: Maximum age in seconds for carry-over (default 300 = 5 min)
+            scopes: Which scopes to carry over (default: ['session'] only)
+            guard_names: Requirement names with guard type to exclude from carry-over
+
+        Returns:
+            Dict of {req_name: source_session_id} for requirements that were carried over
+        """
+        if scopes is None:
+            scopes = ['session']
+        if guard_names is None:
+            guard_names = set()
+
+        now = time.time()
+        cutoff = now - window_seconds
+        carried = {}
+
+        for req_name, req_state in self._state['requirements'].items():
+            # Skip guard-type requirements (ADR-004: approvals expire with session)
+            if req_name in guard_names:
+                continue
+
+            # Only carry over matching scopes
+            scope = req_state.get('scope')
+            if scope not in scopes:
+                continue
+
+            sessions = req_state.get('sessions', {})
+
+            # Skip if current session already has satisfaction
+            current = sessions.get(self.session_id, {})
+            if current.get('satisfied', False):
+                continue
+
+            # Find most recently satisfied session within the time window
+            best_session_id = None
+            best_satisfied_at = 0
+
+            for sid, session_state in sessions.items():
+                if sid == self.session_id:
+                    continue
+                if not session_state.get('satisfied', False):
+                    continue
+                satisfied_at = session_state.get('satisfied_at', 0)
+                if satisfied_at < cutoff:
+                    continue
+                # Respect TTL: skip if the source entry itself has expired
+                expires_at = session_state.get('expires_at')
+                if expires_at is not None and now > expires_at:
+                    continue
+                if satisfied_at > best_satisfied_at:
+                    best_satisfied_at = satisfied_at
+                    best_session_id = sid
+
+            if best_session_id is None:
+                continue
+
+            # Copy satisfaction to current session
+            source = sessions[best_session_id]
+            if self.session_id not in sessions:
+                sessions[self.session_id] = {}
+
+            sessions[self.session_id] = {
+                'satisfied': True,
+                'satisfied_at': int(now),
+                'satisfied_by': 'carry_over',
+                'expires_at': source.get('expires_at'),
+                'metadata': {
+                    'carried_from': best_session_id,
+                    'original_satisfied_at': source.get('satisfied_at'),
+                    'original_satisfied_by': source.get('satisfied_by'),
+                    'carry_over_window': window_seconds,
+                },
+            }
+            carried[req_name] = best_session_id
+
+        if carried:
+            self._save()
+
+        return carried
+
 
 if __name__ == "__main__":
     import tempfile
