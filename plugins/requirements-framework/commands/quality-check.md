@@ -15,7 +15,7 @@ Comprehensive code quality review before creating a pull request. This runs ALL 
 
 **Mode:** "$ARGUMENTS" (use 'parallel' for faster execution)
 
-## This runs ALL 8 agents:
+## This runs ALL 9 agents:
 
 1. **tool-validator** ⚡ NEW - Execute pyright/ruff/eslint (catches CI errors)
 2. **backward-compatibility-checker** ⚡ NEW - Detects breaking schema changes
@@ -24,7 +24,8 @@ Comprehensive code quality review before creating a pull request. This runs ALL 
 5. **test-analyzer** - Test coverage quality and completeness
 6. **type-design-analyzer** - Type invariants and encapsulation (if types changed)
 7. **comment-analyzer** - Comment accuracy and documentation (if comments changed)
-8. **code-simplifier** - Final polish for clarity and maintainability
+8. **frontend-reviewer** - React/frontend best practices and a11y (if frontend files changed)
+9. **code-simplifier** - Final polish for clarity and maintainability
 
 ## Deterministic Execution Workflow
 
@@ -59,6 +60,9 @@ git diff --cached --unified=0 | grep -E '^[+].*#|^[+].*//|^[+].*"""' > /tmp/has_
 
 # Check for schema/model changes (Pydantic, database models)
 git diff --cached | grep -E '(BaseModel|Field\(|Column\(|Table\(|alembic)' > /tmp/has_schemas.txt 2>&1
+
+# Check for frontend files
+grep -E '\.(tsx|jsx|css|scss)$' /tmp/pr_review_scope.txt > /tmp/has_frontend.txt 2>&1 || true
 ```
 
 Set applicability flags based on detection results:
@@ -66,6 +70,7 @@ Set applicability flags based on detection results:
 - **HAS_TYPE_CHANGES** = true if /tmp/has_types.txt is not empty
 - **HAS_COMMENT_CHANGES** = true if /tmp/has_comments.txt is not empty
 - **HAS_SCHEMA_CHANGES** = true if /tmp/has_schemas.txt is not empty
+- **HAS_FRONTEND_FILES** = true if /tmp/has_frontend.txt is not empty
 
 ### Step 3: Parse Execution Mode
 
@@ -124,6 +129,7 @@ Build a list of agents to run based on flags:
 - If HAS_TEST_FILES is true: requirements-framework:test-analyzer
 - If HAS_TYPE_CHANGES is true: requirements-framework:type-design-analyzer
 - If HAS_COMMENT_CHANGES is true: requirements-framework:comment-analyzer
+- If HAS_FRONTEND_FILES is true: requirements-framework:frontend-reviewer
 
 **Execution mode**:
 
@@ -201,6 +207,7 @@ Else:
 | test-analyzer | HAS_TEST_FILES | Conditional |
 | type-design-analyzer | HAS_TYPE_CHANGES | Conditional |
 | comment-analyzer | HAS_COMMENT_CHANGES | Conditional |
+| frontend-reviewer | HAS_FRONTEND_FILES | Conditional |
 | code-simplifier | Always runs LAST | REQUIRED |
 
 ## Output Format:
@@ -249,14 +256,14 @@ This command is the final gate before creating a PR:
 3. Write implementation ✓
 4. `/requirements-framework:pre-commit tools code errors` - Check implementation + tools ✓
 5. Refactor ✓
-6. **`/requirements-framework:quality-check`** ← You are here (runs ALL 8 agents)
+6. **`/requirements-framework:quality-check`** ← You are here (runs ALL 9 agents)
 7. Create PR
 
 **Agent Execution Order**:
 1. tool-validator (objective - pyright/ruff)
 2. backward-compatibility-checker (schema changes)
 3. code-reviewer, silent-failure-hunter, test-analyzer (parallel)
-4. type-design-analyzer, comment-analyzer (parallel if applicable)
+4. type-design-analyzer, comment-analyzer, frontend-reviewer (parallel if applicable)
 5. code-simplifier (final polish)
 
 ## Tips:
