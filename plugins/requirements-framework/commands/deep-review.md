@@ -29,7 +29,7 @@ fi
 
 If /tmp/deep_review_scope.txt is empty: Output "No changes to review" and **EXIT**.
 
-### Step 2: Check Codex CLI Availability
+### Step 2: Check Conditional Agent Availability
 
 ```bash
 which codex 2>/dev/null
@@ -38,7 +38,12 @@ which codex 2>/dev/null
 Set flag:
 - **HAS_CODEX** = true if `which codex` succeeds (exit code 0)
 
-This is the ONLY conditional check. All other agents always run.
+```bash
+grep -qE '\.(tsx|jsx|css|scss)$' /tmp/deep_review_scope.txt 2>/dev/null
+```
+
+Set flag:
+- **HAS_FRONTEND** = true if the grep succeeds (frontend files found in scope)
 
 ### Step 3: Run Tool Validator (BLOCKING GATE — subagent)
 
@@ -65,7 +70,7 @@ description: "Cross-validated code review"
 
 Where `{timestamp}` is the current Unix timestamp (use `date +%s` to get it).
 
-Create tasks on the shared task list — ALL agents always run:
+Create tasks on the shared task list — core agents always run, conditional agents run when applicable:
 
 1. **Task**: "Code quality review" — assigned to code-reviewer
 2. **Task**: "Error handling audit" — assigned to silent-failure-hunter
@@ -75,7 +80,8 @@ Create tasks on the shared task list — ALL agents always run:
 6. **Task**: "Comment accuracy check" — assigned to comment-analyzer
 7. **Task**: "Code simplification analysis" — assigned to code-simplifier
 8. **Task**: "Codex AI review" — assigned to codex-reviewer, ONLY if HAS_CODEX is true
-9. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
+9. **Task**: "Frontend best practices review" — assigned to frontend-reviewer, ONLY if HAS_FRONTEND is true
+10. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
 
 ### Step 5: Spawn Teammates
 
@@ -103,6 +109,7 @@ Mark your task as complete using TaskUpdate.
 6. `subagent_type`: "requirements-framework:comment-analyzer", `name`: "comment-analyzer"
 7. `subagent_type`: "requirements-framework:code-simplifier", `name`: "code-simplifier"
 8. `subagent_type`: "requirements-framework:codex-review-agent", `name`: "codex-reviewer" — ONLY if HAS_CODEX is true
+9. `subagent_type`: "requirements-framework:frontend-reviewer", `name`: "frontend-reviewer" — ONLY if HAS_FRONTEND is true
 
 Each teammate prompt must include the diff context: "Review the following changed files: [file list from scope]"
 
@@ -138,6 +145,11 @@ Read all teammate findings received via messages. Apply these **domain-specific 
 | AI unique finding | codex-review-agent alone | Unique finding | Keep standalone with "verify manually" note |
 | Simplification validates concern | code-simplifier + code-reviewer | Simplifier targets reviewer-flagged area | Corroborate: complexity contributes to bug |
 | Simplifiable error paths | code-simplifier + silent-failure-hunter | Same region flagged | Note: simplifying may fix error handling |
+| Untested components | frontend-reviewer + test-analyzer | Component issue + no component tests | Escalate both to CRITICAL |
+| Frontend + error handling | frontend-reviewer + silent-failure-hunter | a11y/error boundary gap in same region | Escalate to CRITICAL |
+| Frontend + code quality | frontend-reviewer + code-reviewer | Both flag same component region | Corroborate with note |
+| Frontend + types | frontend-reviewer + type-design-analyzer | Props type issue + component issue | Corroborate |
+| Frontend + breaking changes | frontend-reviewer + backward-compat | Breaking prop change + component | Escalate to CRITICAL |
 
 After applying rules:
 1. **Deduplicate**: Merge findings about the same location
@@ -188,6 +200,7 @@ Else:
 - comment-analyzer: [status]
 - code-simplifier: [status]
 - codex-review-agent: [status or "skipped (CLI not available)"]
+- frontend-reviewer: [status or "skipped (no frontend files)"]
 
 ## Corroborated Findings (confirmed by cross-validation rules)
 ### CRITICAL: [title] — [rule name]
@@ -230,7 +243,7 @@ Else:
 | Aspect | /deep-review (recommended) | /quality-check (lightweight) |
 |--------|---------------------------|------------------------------|
 | Execution | Agent Teams (collaborative) | Subagents (sequential/parallel) |
-| Agents | 7-8 always-run teammates | Variable subagents |
+| Agents | 7-9 teammates (conditional on file types) | Variable subagents |
 | Cross-validation | Domain-specific rules (ADR-013) | None (independent findings) |
 | Output | Unified verdict with corroboration | Aggregated list |
 | Satisfies | `pre_pr_review` | Same |
