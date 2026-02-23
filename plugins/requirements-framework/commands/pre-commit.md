@@ -29,8 +29,9 @@ Run three essential checks:
 - **tests** - Test coverage check (test-analyzer agent)
 - **types** - Type design analysis (type-design-analyzer agent)
 - **comments** - Comment accuracy (comment-analyzer agent)
+- **frontend** - React/frontend best practices (frontend-reviewer agent)
 - **simplify** - Code simplification (code-simplifier agent)
-- **all** - Run all reviews (includes tools + compat)
+- **all** - Run all reviews (includes tools + compat + frontend)
 - **parallel** - Backward-compatible no-op (teams are inherently parallel)
 
 ## Deterministic Execution Workflow
@@ -79,12 +80,15 @@ Initialize all flags to false, then set based on arguments:
 **RUN_COMMENT_ANALYZER**=false
 - Set to true if: $ARGUMENTS contains "comments" OR contains "all"
 
+**RUN_FRONTEND_REVIEWER**=false
+- Set to true if: $ARGUMENTS contains "frontend" OR contains "all"
+
 **RUN_CODE_SIMPLIFIER**=false
 - Set to true if: $ARGUMENTS contains "simplify" OR contains "all"
 
 Now compute derived values:
 
-**TEAM_AGENT_COUNT** = count of true flags among: RUN_CODE_REVIEWER, RUN_SILENT_FAILURE_HUNTER, RUN_BACKWARD_COMPATIBILITY_CHECKER, RUN_TEST_ANALYZER, RUN_TYPE_DESIGN_ANALYZER, RUN_COMMENT_ANALYZER
+**TEAM_AGENT_COUNT** = count of true flags among: RUN_CODE_REVIEWER, RUN_SILENT_FAILURE_HUNTER, RUN_BACKWARD_COMPATIBILITY_CHECKER, RUN_TEST_ANALYZER, RUN_TYPE_DESIGN_ANALYZER, RUN_COMMENT_ANALYZER, RUN_FRONTEND_REVIEWER
 
 **USE_TEAM** = true if TEAM_AGENT_COUNT >= 2
 
@@ -128,6 +132,7 @@ For EACH enabled review agent flag, create a task:
 - If RUN_TEST_ANALYZER: **Task**: "Test coverage analysis" — assigned to test-analyzer
 - If RUN_TYPE_DESIGN_ANALYZER: **Task**: "Type design review" — assigned to type-analyzer
 - If RUN_COMMENT_ANALYZER: **Task**: "Comment accuracy review" — assigned to comment-analyzer
+- If RUN_FRONTEND_REVIEWER: **Task**: "Frontend best practices review" — assigned to frontend-reviewer
 
 Then create a synthesis task:
 - **Task**: "Cross-validate and synthesize findings" — blocked by all review tasks above, assigned to lead
@@ -153,7 +158,7 @@ Mark your task as complete using TaskUpdate.
 Each teammate gets:
 - `team_name`: the team name from Step 5
 - `subagent_type`: matching the agent (e.g., "requirements-framework:code-reviewer")
-- `name`: descriptive name (e.g., "code-reviewer", "error-auditor", "compat-checker", "test-analyzer", "type-analyzer", "comment-analyzer")
+- `name`: descriptive name (e.g., "code-reviewer", "error-auditor", "compat-checker", "test-analyzer", "type-analyzer", "comment-analyzer", "frontend-reviewer")
 - `prompt`: Standard preamble + diff context + review focus
 
 Launch ALL teammates in a SINGLE message with multiple Task tool calls (parallel execution).
@@ -185,6 +190,11 @@ Read all teammate findings received via messages. Apply **domain-specific cross-
 | Untested bugs | test-analyzer + code-reviewer | Bug + no tests for same function | Escalate both to CRITICAL |
 | Type safety breaks | type-design-analyzer + backward-compat | Weak types + breaking change | Escalate to CRITICAL |
 | Suppressed breaks | silent-failure-hunter + backward-compat | Breaking change + silent suppression | Escalate to CRITICAL |
+| Untested components | frontend-reviewer + test-analyzer | Component issue + no component tests | Escalate both to CRITICAL |
+| Frontend + error handling | frontend-reviewer + silent-failure-hunter | a11y/error boundary gap in same region | Escalate to CRITICAL |
+| Frontend + code quality | frontend-reviewer + code-reviewer | Both flag same component region | Corroborate with note |
+| Frontend + types | frontend-reviewer + type-design-analyzer | Props type issue + component issue | Corroborate |
+| Frontend + breaking changes | frontend-reviewer + backward-compat | Breaking prop change + component | Escalate to CRITICAL |
 
 After applying rules:
 1. **Deduplicate**: Merge findings about the same location
@@ -249,6 +259,7 @@ If a team was created (USE_TEAM was true and TeamCreate succeeded):
 - If `tests` specified → test-analyzer (teammate when 2+ review agents)
 - If `types` specified → type-design-analyzer (teammate when 2+ review agents)
 - If `comments` specified → comment-analyzer (teammate when 2+ review agents)
+- If `frontend` specified → frontend-reviewer (teammate when 2+ review agents)
 - If `simplify` specified → code-simplifier (always subagent, runs last)
 - If `all` specified → all applicable agents (tool-validator + code-simplifier as subagents, rest as teammates)
 - If `parallel` specified → backward-compatible no-op (teams are inherently parallel)
@@ -322,6 +333,8 @@ When subagent fallback was used (USE_TEAM=false or TeamCreate failed):
 /requirements-framework:pre-commit all                # Team: up to 6 review teammates + tool-validator + code-simplifier subagents
 /requirements-framework:pre-commit all parallel       # Same as `all` (parallel is no-op with teams)
 /requirements-framework:pre-commit tests types        # Team: 2 teammates cross-validate
+/requirements-framework:pre-commit frontend             # Single agent: subagent fallback
+/requirements-framework:pre-commit frontend code errors # Team: 3 teammates cross-validate
 /requirements-framework:pre-commit tools compat code  # Team if 2+ review agents, else subagent
 ```
 
