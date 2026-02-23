@@ -48,6 +48,7 @@ REVIEW_AGENTS = {
     'requirements-framework:codex-review-agent',
     'requirements-framework:solid-reviewer',
     'requirements-framework:commit-planner',
+    'requirements-framework:frontend-reviewer',
 }
 
 
