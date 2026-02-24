@@ -101,7 +101,7 @@ update_file_hash() {
     local file="$1"
     local hash="$2"
 
-    python3 - "$file" "$hash" <<'PYTHON_SCRIPT'
+    python3 - "$file" "$hash" <<'PYTHON_SCRIPT_HASH'
 import re
 import sys
 
@@ -164,7 +164,46 @@ if __name__ == '__main__':
 
     success = update_git_hash(file_path, new_hash)
     sys.exit(0 if success else 1)
-PYTHON_SCRIPT
+PYTHON_SCRIPT_HASH
+}
+
+# Function: Sync marketplace.json version from plugin.json
+# Args: $1 = "dry-run" to skip writing, empty to write
+sync_marketplace_version() {
+    local dry_run="${1:-}"
+    local plugin_json="plugins/requirements-framework/.claude-plugin/plugin.json"
+    local marketplace_json=".claude-plugin/marketplace.json"
+
+    if [ ! -f "$plugin_json" ] || [ ! -f "$marketplace_json" ]; then
+        return 1
+    fi
+
+    python3 - "$plugin_json" "$marketplace_json" "$dry_run" <<'PYTHON_SCRIPT_SYNC'
+import json
+import sys
+
+plugin_path = sys.argv[1]
+marketplace_path = sys.argv[2]
+dry_run = sys.argv[3] == "dry-run" if len(sys.argv) > 3 else False
+
+with open(plugin_path, 'r') as f:
+    plugin_version = json.load(f)["version"]
+
+with open(marketplace_path, 'r') as f:
+    marketplace = json.load(f)
+
+marketplace_version = marketplace["plugins"][0]["version"]
+
+if marketplace_version == plugin_version:
+    print(f"MATCH:{plugin_version}")
+else:
+    if not dry_run:
+        marketplace["plugins"][0]["version"] = plugin_version
+        with open(marketplace_path, 'w') as f:
+            json.dump(marketplace, f, indent=2)
+            f.write('\n')
+    print(f"UPDATED:{marketplace_version}:{plugin_version}")
+PYTHON_SCRIPT_SYNC
 }
 
 # Main execution
@@ -246,6 +285,35 @@ main() {
             fi
         fi
     done
+
+    # Sync marketplace.json version with plugin.json
+    echo ""
+    echo "Marketplace version sync:"
+    local sync_result
+    if [ "$CHECK_MODE" = true ] || [ "$VERIFY_MODE" = true ]; then
+        sync_result=$(sync_marketplace_version "dry-run" 2>&1) || true
+    else
+        sync_result=$(sync_marketplace_version 2>&1) || true
+    fi
+
+    if [[ "$sync_result" == MATCH:* ]]; then
+        local ver="${sync_result#MATCH:}"
+        echo -e "${GREEN}✓${NC} marketplace.json matches plugin.json ($ver)"
+    elif [[ "$sync_result" == UPDATED:*:* ]]; then
+        local old_ver="${sync_result#UPDATED:}"
+        old_ver="${old_ver%%:*}"
+        local new_ver="${sync_result##*:}"
+        if [ "$CHECK_MODE" = true ]; then
+            echo -e "${YELLOW}→${NC} marketplace.json would update: $old_ver → $new_ver"
+        elif [ "$VERIFY_MODE" = true ]; then
+            echo -e "${RED}✗${NC} marketplace.json version mismatch: $old_ver (expected $new_ver)"
+            ((errors++))
+        else
+            echo -e "${GREEN}✓${NC} marketplace.json updated: $old_ver → $new_ver"
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC} Could not sync marketplace version"
+    fi
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
