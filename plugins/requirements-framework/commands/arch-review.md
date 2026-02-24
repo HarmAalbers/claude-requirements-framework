@@ -58,6 +58,15 @@ fi
 
 If ADR_DIR found, list the ADR files for teammate context. Otherwise note "No ADR directory found."
 
+### Step 2.5: Check Conditional Agent Availability
+
+```bash
+which codex 2>/dev/null
+```
+
+Set flag:
+- **HAS_CODEX** = true if `which codex` succeeds (exit code 0)
+
 ### Step 3: Create Architecture Team
 
 Use TeamCreate:
@@ -76,7 +85,8 @@ Create tasks on the shared task list:
 4. **Task**: "SOLID principles review" — assigned to solid-reviewer
 5. **Task**: "Preparatory refactoring analysis" — assigned to refactor-advisor
 6. **Task**: "Atomic commit strategy" — assigned to commit-planner
-7. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
+7. **Task**: "Codex architecture analysis" — assigned to codex-arch-reviewer, ONLY if HAS_CODEX is true
+8. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
 
 ### Step 4: Spawn Teammates
 
@@ -118,6 +128,12 @@ For each review task (NOT the synthesis task), spawn a teammate:
 - `prompt`: Include plan file content and instruction:
   "Analyze this plan and generate an atomic commit strategy. Break the implementation into small, focused, independently-testable commits. For each commit: title, files changed, what to test. Append the commit strategy to the plan file using the Edit tool. Share a summary via SendMessage. Mark task complete when done."
 
+**codex-arch-reviewer teammate** (ONLY if HAS_CODEX is true):
+- `subagent_type`: "requirements-framework:codex-arch-reviewer"
+- `name`: "codex-arch-reviewer"
+- `prompt`: Include plan file path and instruction:
+  "Analyze the architecture of the code changes on this branch using OpenAI Codex CLI. The plan file is at [PLAN_FILE_PATH]. Focus on coupling/cohesion, module dependencies, API surface design, scalability, and separation of concerns. Share findings via SendMessage with severity levels. Mark task complete when done."
+
 Launch all teammates in a SINGLE message (parallel execution).
 
 ### Step 5: Wait for Reviews
@@ -149,7 +165,13 @@ Read all teammate findings. Perform architectural synthesis:
    - If compat-checker identifies breaking change addressable via preparatory refactoring: note opportunity — "Prep refactoring can ease migration"
    - If refactor-advisor suggests prep commits: note that commit-planner should sequence them before feature commits
 
-5. **Produce unified verdict**:
+5. **Cross-reference Codex architecture findings** (only if codex-arch-reviewer participated):
+   - If codex-arch-reviewer flags coupling issue AND solid-reviewer flags DIP violation in same region: escalate to CRITICAL — "External AI confirms design principle violation"
+   - If codex-arch-reviewer flags module dependency concern AND compat-checker identifies breaking change in same module: escalate to CRITICAL — "Dependency concern amplified by breaking change"
+   - If codex-arch-reviewer identifies issue AND no other agent flagged the same region: keep as standalone with "verify manually — external AI unique finding" note
+   - If codex-arch-reviewer flags separation of concerns AND refactor-advisor suggests restructuring for same code: corroborate — "AI and refactoring analysis agree on structural issue"
+
+6. **Produce unified verdict**:
    - **APPROVED**: Plan aligns with ADRs, breaking changes are acceptable and tested
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
@@ -181,6 +203,7 @@ If verdict is APPROVED:
 - solid-reviewer: [status]
 - refactor-advisor: [status]
 - commit-planner: [status]
+- codex-arch-reviewer: [status or "skipped (CLI not available)"]
 
 ## ADR Compliance
 [Findings from adr-guardian, cross-referenced with other agents]
@@ -196,6 +219,9 @@ If verdict is APPROVED:
 
 ## Preparatory Refactoring
 [Findings from refactor-advisor, cross-referenced with SOLID/TDD/compat findings]
+
+## Codex Architecture Analysis
+[Findings from codex-arch-reviewer, cross-referenced with other agents, or "skipped (CLI not available)"]
 
 ## Cross-Validated Findings
 - [Findings confirmed or disputed across agents]
@@ -219,7 +245,7 @@ If verdict is APPROVED:
 | Aspect | /arch-review (recommended) | /plan-review (lightweight) |
 |--------|---------------------------|---------------------------|
 | Execution | Agent Teams (collaborative) | Subagents (sequential) |
-| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + refactor-advisor + commit planner | ADR guardian + commit planner |
+| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + refactor-advisor + commit planner + codex-arch-reviewer (conditional) | ADR guardian + commit planner |
 | Cross-validation | Agents cross-reference findings | None |
 | Focus | Holistic architecture assessment + commit strategy | ADR compliance + commit strategy |
 | Satisfies | `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | Same 4 requirements |
