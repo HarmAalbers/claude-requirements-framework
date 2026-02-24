@@ -3,7 +3,7 @@ name: quality-check
 description: "Comprehensive quality review before creating PR"
 argument-hint: "[parallel]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 71ee5ae
+git_hash: 3f13d85
 ---
 
 # Pre-PR Quality Check

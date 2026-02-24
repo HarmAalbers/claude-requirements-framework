@@ -25,7 +25,7 @@ TDD validation is a blocking gate in the plan-review workflow.
 model: inherit
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
-git_hash: 71ee5ae
+git_hash: 5cc8a8b
 ---
 
 You are the TDD Validator, responsible for ensuring all implementation plans include proper Test-Driven Development elements before coding begins. You have BLOCKING authority - plans should not proceed to implementation without TDD readiness.

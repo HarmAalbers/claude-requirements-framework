@@ -22,7 +22,7 @@ description: |
   </example>
 model: inherit
 color: blue
-git_hash: uncommitted
+git_hash: 8d0f9dc
 ---
 
 # Codex Architecture Review Agent

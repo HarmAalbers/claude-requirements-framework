@@ -21,7 +21,7 @@ Tool-validator provides deterministic results matching CI tools.
 </example>
 model: inherit
 color: blue
-git_hash: 71ee5ae
+git_hash: 5cc8a8b
 ---
 
 # Tool Validator Agent

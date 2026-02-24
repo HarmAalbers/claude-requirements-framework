@@ -21,7 +21,7 @@ Import-organizer auto-fixes by editing files directly.
 </example>
 model: haiku
 color: yellow
-git_hash: 71ee5ae
+git_hash: 5cc8a8b
 allowed-tools: ["Read", "Edit", "Glob", "Grep", "Bash"]
 ---
 
