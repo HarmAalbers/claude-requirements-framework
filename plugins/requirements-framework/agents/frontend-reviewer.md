@@ -130,6 +130,10 @@ Review ALL changed frontend files against these categories. Only report findings
 24. **Error boundaries**: Complex component subtrees (data fetching, third-party integrations, dynamic content) should be wrapped in Error Boundaries
 25. **No unsafe HTML injection**: `dangerouslySetInnerHTML` must not be used without sanitization (DOMPurify or equivalent). If found without sanitization, always flag as CRITICAL.
 
+### Testing
+
+26. **No obsolete data-cy attributes**: `data-cy` is a deprecated Cypress-specific test selector. Use `data-testid` instead, which is the modern framework-agnostic standard supported by Testing Library, Playwright, and others. Flag any new or modified `data-cy` attributes.
+
 ## Step 4: Apply Project Checklist
 
 If a project-specific checklist was found in Step 2:
@@ -204,6 +208,6 @@ If no findings: set all counts to 0 and verdict to APPROVED.
 - **Be precise**: Only report findings you are confident about
 - **Be React-specific**: Cite specific React patterns, hooks rules, or a11y standards (WCAG)
 - **Be actionable**: Provide concrete fix suggestions with React-idiomatic code
-- **Be thorough**: Check all 25 built-in items plus any project checklist items
+- **Be thorough**: Check all 26 built-in items plus any project checklist items
 - **Filter aggressively**: Quality over quantity — false positives harm credibility
 - **Scope strictly**: Only review frontend files identified in Step 1 — ignore backend code
