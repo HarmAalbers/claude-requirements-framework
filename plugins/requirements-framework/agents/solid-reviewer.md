@@ -25,7 +25,7 @@ SOLID validation is a blocking gate in the plan-review workflow.
 model: inherit
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
-git_hash: 5cc8a8b
+git_hash: b1a192d
 ---
 
 You are the SOLID Principles Reviewer, responsible for ensuring implementation plans adhere to SOLID design principles before coding begins. You have BLOCKING authority — plans with egregious SOLID violations should not proceed to implementation.

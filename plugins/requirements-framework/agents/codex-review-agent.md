@@ -21,7 +21,7 @@ Codex provides a different perspective from Claude's review.
 </example>
 model: inherit
 color: blue
-git_hash: 5cc8a8b
+git_hash: b1a192d
 ---
 
 # Codex Code Review Agent

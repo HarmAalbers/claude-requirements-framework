@@ -21,7 +21,7 @@ Use for database schema evolution analysis.
 </example>
 model: inherit
 color: blue
-git_hash: 5cc8a8b
+git_hash: b1a192d
 ---
 
 # Backward Compatibility Checker Agent
