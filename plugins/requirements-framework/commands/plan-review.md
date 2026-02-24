@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: "Validate plan against ADRs, TDD, and SOLID principles, then generate atomic commit strategy"
+description: "Validate plan against ADRs, TDD, and SOLID principles, identify preparatory refactoring, then generate atomic commit strategy"
 argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 71ee5ae
@@ -15,8 +15,9 @@ Automated plan validation and commit planning workflow. This command:
 1. Validates the plan against Architecture Decision Records (auto-fixes violations)
 2. Validates TDD readiness (auto-adds testing strategy if missing)
 3. Validates SOLID principles adherence (auto-adds SOLID considerations if missing)
-4. Generates an atomic commit strategy (appends to plan file)
-5. Auto-satisfies `adr_reviewed`, `tdd_planned`, `solid_reviewed`, and `commit_plan` requirements
+4. Identifies preparatory refactoring opportunities (auto-adds refactoring section if needed)
+5. Generates an atomic commit strategy (appends to plan file)
+6. Auto-satisfies `adr_reviewed`, `tdd_planned`, `solid_reviewed`, and `commit_plan` requirements
 
 **Arguments:** "$ARGUMENTS"
 - Optional: provide a specific plan file path (recommended when multiple plans exist)
@@ -146,14 +147,45 @@ After TDD validation passes, verify the plan follows SOLID design principles.
 2. Wait for agent completion
 
 3. Parse the agent output for verdict:
-   - If **APPROVED**: Continue to Step 5
+   - If **APPROVED**: Continue to Step 5 (Refactor Advisor)
    - If **BLOCKED**:
      - Output the full agent response (explains what needs restructuring)
+     - **STOP** - do not proceed
+
+### Step 5: Run Refactor Advisor - SEMI-BLOCKING
+
+After SOLID validation passes, identify preparatory refactoring opportunities in the existing codebase.
+
+1. Use the Task tool to launch:
+   - `subagent_type`: "requirements-framework:refactor-advisor"
+   - `prompt`: Include the following context:
+     ```
+     Analyze the plan file at [PLAN_FILE] and the existing codebase to identify
+     preparatory refactoring opportunities.
+
+     IMPORTANT: You have Edit tool access. Add a "## Preparatory Refactoring"
+     section to the plan file with your recommendations.
+
+     Focus on structural improvements to existing code that would make the planned
+     change easier to implement. Scale analysis to plan size.
+
+     Output APPROVED if no prep work needed.
+     Output REFACTORING RECOMMENDED with specific suggestions if opportunities found.
+     Output BLOCKED only in extreme cases (massive duplication, breaking 5+ callers).
+     ```
+
+2. Wait for agent completion
+
+3. Parse the agent output for verdict:
+   - If **APPROVED**: Continue to Step 6
+   - If **REFACTORING RECOMMENDED**: Continue to Step 6 — recommendations are documented in the plan
+   - If **BLOCKED**:
+     - Output the full agent response (explains what prep work is critical)
      - **STOP** - do not proceed to commit planning
 
-### Step 5: Run Commit Planner
+### Step 6: Run Commit Planner
 
-After ADR, TDD, and SOLID validation pass, generate the commit strategy.
+After ADR, TDD, SOLID validation, and refactoring analysis, generate the commit strategy.
 
 1. Use the Task tool to launch:
    - `subagent_type`: "requirements-framework:commit-planner"
@@ -171,7 +203,7 @@ After ADR, TDD, and SOLID validation pass, generate the commit strategy.
 
 3. Confirm commit plan was appended to the plan file
 
-### Step 6: Output Success Summary
+### Step 7: Output Success Summary
 
 After all agents complete successfully:
 
@@ -191,6 +223,11 @@ After all agents complete successfully:
 ### SOLID Validation
 - Status: APPROVED
 - [Any auto-fixes applied (e.g., SOLID considerations section added)]
+
+### Preparatory Refactoring
+- Status: [APPROVED / REFACTORING RECOMMENDED]
+- [Number of refactorings suggested, or "No prep work needed"]
+- [Brief summary of key recommendations if any]
 
 ### Commit Strategy
 - [Number] commits planned
@@ -239,8 +276,9 @@ Run this command immediately after exiting plan mode. It will:
 2. Validate it against ADRs (auto-fixing where possible)
 3. Validate TDD readiness (auto-adding testing strategy if needed)
 4. Validate SOLID principles (auto-adding considerations if needed)
-5. Generate an atomic commit strategy
-6. Satisfy all four planning requirements
+5. Identify preparatory refactoring opportunities (auto-adding section if needed)
+6. Generate an atomic commit strategy
+7. Satisfy all four planning requirements
 
 ## Integration with Requirements Framework
 
@@ -250,6 +288,6 @@ This command is a **lightweight alternative** to `/arch-review` (the recommended
 - Satisfies `tdd_planned` requirement (session scope)
 - Satisfies `solid_reviewed` requirement (session scope)
 - Satisfies `commit_plan` requirement (session scope)
-- The recommended approach (`/arch-review`) uses Agent Teams for cross-validated review with 5 agents working collaboratively
+- The recommended approach (`/arch-review`) uses Agent Teams for cross-validated review with 6 agents working collaboratively
 
 After running this command, Edit/Write tools will no longer be blocked by these planning requirements for the current session.
