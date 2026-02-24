@@ -74,8 +74,9 @@ Create tasks on the shared task list:
 2. **Task**: "Breaking change analysis" — assigned to backward-compatibility-checker
 3. **Task**: "Testability assessment" — assigned to tdd-validator
 4. **Task**: "SOLID principles review" — assigned to solid-reviewer
-5. **Task**: "Atomic commit strategy" — assigned to commit-planner
-6. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
+5. **Task**: "Preparatory refactoring analysis" — assigned to refactor-advisor
+6. **Task**: "Atomic commit strategy" — assigned to commit-planner
+7. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
 
 ### Step 4: Spawn Teammates
 
@@ -104,6 +105,12 @@ For each review task (NOT the synthesis task), spawn a teammate:
 - `name`: "solid-reviewer"
 - `prompt`: Include plan file content and instruction:
   "Assess this plan for SOLID principles violations with Python focus. Scale strictness to plan size (1-2 files: SRP only, 3-5: SRP+DIP, 6+: full SOLID). Share findings via SendMessage with severity levels. Mark task complete when done."
+
+**refactor-advisor teammate**:
+- `subagent_type`: "requirements-framework:refactor-advisor"
+- `name`: "refactor-advisor"
+- `prompt`: Include plan file content and instruction:
+  "Analyze this plan and the existing codebase to identify preparatory refactoring opportunities — structural improvements to existing code that would make the planned change easier to implement. Add a '## Preparatory Refactoring' section to the plan file using the Edit tool. Share findings via SendMessage with severity levels. Mark task complete when done."
 
 **commit-planner teammate**:
 - `subagent_type`: "requirements-framework:commit-planner"
@@ -136,7 +143,13 @@ Read all teammate findings. Perform architectural synthesis:
    - If solid-reviewer flags SRP violation AND compat-checker finds wide blast radius: escalate to CRITICAL
    - If adr-guardian approves but solid-reviewer raises concern: note but don't escalate (ADR takes precedence)
 
-4. **Produce unified verdict**:
+4. **Cross-reference refactoring findings**:
+   - If solid-reviewer flags violation in same region as refactor-advisor suggestion: corroborate — "SOLID issue confirms refactoring need"
+   - If tdd-validator finds test gap in code targeted for refactoring: escalate refactoring priority — "Harden Before Depending applies"
+   - If compat-checker identifies breaking change addressable via preparatory refactoring: note opportunity — "Prep refactoring can ease migration"
+   - If refactor-advisor suggests prep commits: note that commit-planner should sequence them before feature commits
+
+5. **Produce unified verdict**:
    - **APPROVED**: Plan aligns with ADRs, breaking changes are acceptable and tested
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
@@ -166,6 +179,7 @@ If verdict is APPROVED:
 - backward-compatibility-checker: [status]
 - tdd-validator: [status]
 - solid-reviewer: [status]
+- refactor-advisor: [status]
 - commit-planner: [status]
 
 ## ADR Compliance
@@ -179,6 +193,9 @@ If verdict is APPROVED:
 
 ## SOLID Principles
 [Findings from solid-reviewer, cross-referenced with other agents]
+
+## Preparatory Refactoring
+[Findings from refactor-advisor, cross-referenced with SOLID/TDD/compat findings]
 
 ## Cross-Validated Findings
 - [Findings confirmed or disputed across agents]
@@ -202,7 +219,7 @@ If verdict is APPROVED:
 | Aspect | /arch-review (recommended) | /plan-review (lightweight) |
 |--------|---------------------------|---------------------------|
 | Execution | Agent Teams (collaborative) | Subagents (sequential) |
-| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + commit planner | ADR guardian + commit planner |
+| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + refactor-advisor + commit planner | ADR guardian + commit planner |
 | Cross-validation | Agents cross-reference findings | None |
 | Focus | Holistic architecture assessment + commit strategy | ADR compliance + commit strategy |
 | Satisfies | `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | Same 4 requirements |
