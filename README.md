@@ -43,7 +43,7 @@ After running `install.sh`, install the plugin via Claude Code's marketplace sys
 ```bash
 # In Claude Code session:
 /plugin marketplace add ~/Tools/claude-requirements-framework
-/plugin install requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework
 ```
 
 ### Verify Plugin Installation

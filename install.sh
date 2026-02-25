@@ -268,7 +268,7 @@ display_marketplace_instructions() {
     echo "   1. In Claude Code session, run:"
     echo "      /plugin marketplace add $REPO_DIR"
     echo "   2. Then install the plugin:"
-    echo "      /plugin install requirements-framework@requirements-framework-local"
+    echo "      /plugin install requirements-framework@requirements-framework"
     echo "   3. Verify:"
     echo "      /requirements-framework:pre-commit"
     echo ""
@@ -576,7 +576,7 @@ echo "6️⃣  Checking plugin marketplace..."
 if [ -f "$REPO_DIR/.claude-plugin/marketplace.json" ]; then
     marketplace_version=$(python3 -c "import json; print(json.load(open('$REPO_DIR/.claude-plugin/marketplace.json'))['plugins'][0]['version'])" 2>/dev/null || echo "unknown")
     echo "   ✅ Local marketplace available (v$marketplace_version)"
-    echo "   ℹ️  Install plugin via: /plugin install requirements-framework@requirements-framework-local"
+    echo "   ℹ️  Install plugin via: /plugin install requirements-framework@requirements-framework"
 else
     echo "   ⚠️  Marketplace manifest not found"
 fi

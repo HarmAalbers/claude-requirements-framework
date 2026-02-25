@@ -237,9 +237,9 @@ For testing the installed plugin:
 
 ```bash
 # Reinstall to get latest version
-/plugin uninstall requirements-framework@requirements-framework-local
-/plugin marketplace update requirements-framework-local
-/plugin install requirements-framework@requirements-framework-local
+/plugin uninstall requirements-framework@requirements-framework
+/plugin marketplace update requirements-framework
+/plugin install requirements-framework@requirements-framework
 ```
 
 **Test commands:**

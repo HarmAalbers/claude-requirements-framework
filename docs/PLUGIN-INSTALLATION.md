@@ -24,7 +24,7 @@ The Requirements Framework plugin extends Claude Code with workflow automation a
 - **2 orchestrator commands** - `/requirements-framework:pre-commit`, `/requirements-framework:quality-check`
 - **5 management skills** - Status reporting, usage help, framework building, development workflow, Codex review
 
-**Installation Location:** `~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/`
+**Installation Location:** `~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/`
 **Plugin Version:** 2.0.5
 **Component Details:** See [Plugin Components](../README.md#plugin-components) in main README
 
@@ -86,7 +86,7 @@ cd ~/Tools/claude-requirements-framework
 **Step 3:** Install the plugin from marketplace
 
 ```
-/plugin install requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework
 ```
 
 **Step 4:** Verify installation
@@ -103,8 +103,8 @@ cd ~/Tools/claude-requirements-framework
 
 **To update:**
 ```
-/plugin uninstall requirements-framework@requirements-framework-local
-/plugin install requirements-framework@requirements-framework-local
+/plugin uninstall requirements-framework@requirements-framework
+/plugin install requirements-framework@requirements-framework
 ```
 
 ### Method 3: Manual Symlink (Deprecated)
@@ -139,16 +139,16 @@ After installation, verify the plugin loaded successfully:
 
 **Expected output:**
 ```
-requirements-framework@2.0.5 (requirements-framework-local)
+requirements-framework@2.0.5 (requirements-framework)
 ```
 
 **Verify via filesystem:**
 ```bash
 # Check cache directory exists
-ls ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
+ls ~/.claude/plugins/cache/requirements-framework/requirements-framework/
 
 # Check plugin manifest
-cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json | head -5
+cat ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json | head -5
 ```
 
 ### Step 2: Test Commands
@@ -189,7 +189,7 @@ You: "Show requirements framework status"
 ### Step 4: Check Plugin Manifest
 
 ```bash
-cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json
+cat ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json
 ```
 
 **Expected fields:**
@@ -224,10 +224,10 @@ cat ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
 /plugin list
 
 # Check cache directory
-ls ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/
+ls ~/.claude/plugins/cache/requirements-framework/requirements-framework/
 
 # Check if manifest exists
-test -f ~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/.claude-plugin/plugin.json && echo "Manifest found" || echo "Missing"
+test -f ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json && echo "Manifest found" || echo "Missing"
 ```
 
 **Solutions:**
@@ -235,21 +235,21 @@ test -f ~/.claude/plugins/cache/requirements-framework-local/requirements-framew
 1. **Plugin not installed** → Install via marketplace:
    ```bash
    /plugin marketplace add ~/Tools/claude-requirements-framework
-   /plugin install requirements-framework@requirements-framework-local
+   /plugin install requirements-framework@requirements-framework
    ```
 2. **Old version cached** → Reinstall:
    ```bash
-   /plugin uninstall requirements-framework@requirements-framework-local
-   /plugin marketplace update requirements-framework-local
-   /plugin install requirements-framework@requirements-framework-local
+   /plugin uninstall requirements-framework@requirements-framework
+   /plugin marketplace update requirements-framework
+   /plugin install requirements-framework@requirements-framework
    ```
 3. **Manifest missing** → Update repo and reinstall:
    ```bash
    cd ~/Tools/claude-requirements-framework
    git pull
-   /plugin marketplace update requirements-framework-local
-   /plugin uninstall requirements-framework@requirements-framework-local
-   /plugin install requirements-framework@requirements-framework-local
+   /plugin marketplace update requirements-framework
+   /plugin uninstall requirements-framework@requirements-framework
+   /plugin install requirements-framework@requirements-framework
    ```
 4. **Plugin not loading** → Restart Claude Code session
 
@@ -288,8 +288,8 @@ ls -la ~/.claude/plugins/
 sudo chown -R $(whoami) ~/.claude/
 
 # Reinstall
-/plugin uninstall requirements-framework@requirements-framework-local
-/plugin install requirements-framework@requirements-framework-local
+/plugin uninstall requirements-framework@requirements-framework
+/plugin install requirements-framework@requirements-framework
 ```
 
 ### Commands Work But Skills Don't
@@ -332,9 +332,9 @@ git pull
 ./sync-versions.sh --verify
 
 # Update marketplace and reinstall
-/plugin marketplace update requirements-framework-local
-/plugin uninstall requirements-framework@requirements-framework-local
-/plugin install requirements-framework@requirements-framework-local
+/plugin marketplace update requirements-framework
+/plugin uninstall requirements-framework@requirements-framework
+/plugin install requirements-framework@requirements-framework
 
 # Verify version
 /plugin list
@@ -389,7 +389,7 @@ The Requirements Framework has two complementary components:
 
 ### Plugin (Workflow Automation Tools)
 
-**Location:** `~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/`
+**Location:** `~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/`
 **Purpose:** Provide agents, commands, and skills to satisfy requirements
 **Components:**
 - 15 agents (code review, workflow enforcement)
@@ -511,9 +511,9 @@ vim plugins/requirements-framework/skills/requirements-framework-status/skill.md
 **Production (Marketplace installation):**
 - Changes require reinstall via marketplace commands:
   ```bash
-  /plugin marketplace update requirements-framework-local
-  /plugin uninstall requirements-framework@requirements-framework-local
-  /plugin install requirements-framework@requirements-framework-local
+  /plugin marketplace update requirements-framework
+  /plugin uninstall requirements-framework@requirements-framework
+  /plugin install requirements-framework@requirements-framework
   ```
 
 **Hooks:** Always require sync (copied to `~/.claude/hooks/`)

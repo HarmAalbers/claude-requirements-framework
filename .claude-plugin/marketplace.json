@@ -1,9 +1,9 @@
 {
-  "name": "requirements-framework-local",
+  "name": "requirements-framework",
   "owner": {
     "name": "harm"
   },
-  "description": "Local marketplace for requirements framework plugin development",
+  "description": "Claude Code Requirements Framework - Workflow enforcement and code review",
   "plugins": [{
     "name": "requirements-framework",
     "version": "2.4.0",

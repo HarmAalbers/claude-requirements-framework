@@ -336,12 +336,12 @@ cd ~/Tools/claude-requirements-framework
 /plugin marketplace add ~/Tools/claude-requirements-framework
 
 # 3. Install the plugin
-/plugin install requirements-framework@requirements-framework-local
+/plugin install requirements-framework@requirements-framework
 ```
 
 **What happens:**
 1. Hooks copied to `~/.claude/hooks/`
-2. Plugin installed to cache: `~/.claude/plugins/cache/requirements-framework-local/`
+2. Plugin installed to cache: `~/.claude/plugins/cache/requirements-framework/`
 3. Verification checks run
 4. Component count displayed
 
@@ -360,9 +360,9 @@ cd ~/Tools/claude-requirements-framework
 
 **To update the plugin:**
 ```bash
-/plugin uninstall requirements-framework@requirements-framework-local
-/plugin marketplace update requirements-framework-local
-/plugin install requirements-framework@requirements-framework-local
+/plugin uninstall requirements-framework@requirements-framework
+/plugin marketplace update requirements-framework
+/plugin install requirements-framework@requirements-framework
 ```
 
 For detailed installation, troubleshooting, and verification steps:
@@ -481,7 +481,7 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ### Plugin Structure
 
 ```
-~/.claude/plugins/cache/requirements-framework-local/requirements-framework/2.0.5/
+~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/
 ├── .claude-plugin/
 │   └── plugin.json (v2.1.0)
 ├── agents/ (16 agents)
