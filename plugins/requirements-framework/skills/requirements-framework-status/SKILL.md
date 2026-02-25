@@ -27,8 +27,8 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
 | **Plugin Agents** | 16 |
-| **Plugin Commands** | 8 |
-| **Plugin Skills** | 5 |
+| **Plugin Commands** | 11 |
+| **Plugin Skills** | 19 |
 
 **→ Full component inventory**: See `references/component-inventory.md`
 
@@ -140,7 +140,7 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 
 **Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`
 
-### Commands (8)
+### Commands (11)
 
 - `/requirements-framework:arch-review` - Team-based architecture review (recommended for planning)
 - `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
@@ -150,14 +150,34 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 - `/requirements-framework:codex-review` - Codex-powered review
 - `/requirements-framework:commit-checks` - Auto-fix code quality issues
 - `/requirements-framework:session-reflect` - Session analysis and improvements
+- `/requirements-framework:brainstorm` - Design-first development
+- `/requirements-framework:write-plan` - Create implementation plan
+- `/requirements-framework:execute-plan` - Execute plan with checkpoints
 
-### Skills (5)
+### Skills (19)
 
+**Framework Skills (5):**
 - `requirements-framework-usage` - Usage help
 - `requirements-framework-status` - This skill
 - `requirements-framework-development` - Dev workflow
 - `requirements-framework-builder` - Extension guidance
 - `session-learning` - Session analysis and improvement
+
+**Process Skills (14):**
+- `using-requirements-framework` - Bootstrap skill (session start injection)
+- `brainstorming` - Design-first exploration
+- `writing-plans` - Implementation plan creation
+- `executing-plans` - Plan execution with checkpoints
+- `test-driven-development` - RED-GREEN-REFACTOR enforcement
+- `systematic-debugging` - Root-cause investigation
+- `verification-before-completion` - Evidence-based completion
+- `subagent-driven-development` - Parallel task execution
+- `finishing-a-development-branch` - Branch completion options
+- `using-git-worktrees` - Isolated workspaces
+- `dispatching-parallel-agents` - Concurrent problem solving
+- `receiving-code-review` - Technical feedback evaluation
+- `requesting-code-review` - Review agent dispatch
+- `writing-skills` - TDD-for-documentation meta-skill
 
 ---
 
