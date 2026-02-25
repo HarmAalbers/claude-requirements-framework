@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "requirements-framework",
-      "version": "2.4.2",
+      "version": "2.5.0",
       "description": "Claude Code Requirements Framework - Workflow enforcement and code review",
       "source": "./plugins/requirements-framework"
     }

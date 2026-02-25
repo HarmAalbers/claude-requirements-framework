@@ -1,5 +1,0 @@
-- After edits in repo: run `./sync.sh deploy` to update `~/.claude/hooks/`; after hotfix in deployed, run `./sync.sh pull`.
-- Always check `./sync.sh status` before committing to ensure repo and deployed are in sync.
-- Run tests: `python3 hooks/test_requirements.py` (and `python3 hooks/test_branch_size_calculator.py` if relevant).
-- If plugin components changed, run `./update-plugin-versions.sh` to refresh `git_hash` fields.
-- Run `ruff check` or `python3 hooks/ruff_check.py` before finalizing changes.
