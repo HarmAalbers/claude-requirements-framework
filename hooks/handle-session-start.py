@@ -694,6 +694,47 @@ See `req init --help` for options.""")
             except Exception as e:
                 logger.error("Failed to format status", error=str(e))
 
+        # 4. Add process skill bootstrap (using-requirements-framework)
+        # This injects a concise directive so Claude checks for applicable
+        # skills on every prompt, mirroring the superpowers bootstrap pattern.
+        bootstrap_text = (
+            "You have superpowers.\n\n"
+            "**Below is the full content of your 'superpowers:using-superpowers' "
+            "skill - your introduction to using skills. For all other skills, "
+            "use the 'Skill' tool:**\n"
+        )
+        try:
+            # Read the using-requirements-framework skill content
+            skill_path = Path(__file__).parent.parent / (
+                'plugins/requirements-framework/skills/'
+                'using-requirements-framework/SKILL.md'
+            )
+            if not skill_path.exists():
+                # Try alternate location (deployed plugin)
+                import glob
+                candidates = glob.glob(
+                    str(Path.home() / '.claude/plugins/cache/'
+                        '*/requirements-framework/*/skills/'
+                        'using-requirements-framework/SKILL.md')
+                )
+                if candidates:
+                    skill_path = Path(candidates[0])
+
+            if skill_path.exists():
+                skill_content = skill_path.read_text()
+                # Strip YAML frontmatter
+                if skill_content.startswith('---'):
+                    end = skill_content.find('---', 3)
+                    if end != -1:
+                        skill_content = skill_content[end + 3:].strip()
+                parts.append(bootstrap_text + "\n---\n" + skill_content)
+                logger.debug("Bootstrap skill injected",
+                             path=str(skill_path))
+            else:
+                logger.debug("Bootstrap skill not found, skipping injection")
+        except Exception as e:
+            logger.debug("Failed to inject bootstrap skill", error=str(e))
+
         if parts:
             emit_hook_context("SessionStart", "\n\n".join(parts))
 

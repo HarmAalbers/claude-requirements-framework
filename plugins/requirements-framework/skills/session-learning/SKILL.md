@@ -154,6 +154,18 @@ Use git to restore:
 git checkout -- .serena/memories/filename.md
 ```
 
+## Process Skill Recommendations
+
+The session analyzer may recommend process skills based on session patterns:
+
+| Session Pattern | Recommended Skill |
+|----------------|-------------------|
+| High test failures | `systematic-debugging` |
+| Code before tests | `test-driven-development` |
+| Multiple plan revisions | `brainstorming` |
+| Incomplete verification | `verification-before-completion` |
+| Sequential independent tasks | `dispatching-parallel-agents` |
+
 ## Related Commands
 
 | Command | Description |

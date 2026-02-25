@@ -256,6 +256,22 @@ Output a structured analysis report:
 - **0.5-0.7**: Possible pattern, needs more sessions to confirm
 - **<0.5**: Weak signal, note for future tracking
 
+## Step 6: Process Skill Recommendations
+
+Based on session patterns, recommend process skills for future sessions:
+
+| Session Pattern | Recommended Skill | Evidence Threshold |
+|----------------|-------------------|--------------------|
+| High test failures (>3 in session) | `requirements-framework:systematic-debugging` | 3+ test failures |
+| Code edits before test creation | `requirements-framework:test-driven-development` | Edit/Write before test file |
+| Multiple plan changes or revisions | `requirements-framework:brainstorming` | 2+ plan file edits |
+| Completion claims without test runs | `requirements-framework:verification-before-completion` | Stop without recent test |
+| Sequential independent task execution | `requirements-framework:dispatching-parallel-agents` | 3+ independent Task calls |
+| No branch created before edits | `requirements-framework:using-git-worktrees` | Edit on main/master |
+| Reviewer feedback ignored or blindly accepted | `requirements-framework:receiving-code-review` | Review + immediate edit without verification |
+
+Include these recommendations in the output report under a "Process Skill Recommendations" section.
+
 ## Critical Rules
 
 1. **Evidence-based**: Every recommendation must cite specific metrics data

@@ -206,13 +206,43 @@ Skills can automatically satisfy requirements:
 5. single_use clears → Next commit requires review again
 ```
 
-**Built-in mappings**:
+**Built-in mappings (review skills)**:
 - `requirements-framework:pre-commit` → `pre_commit_review`
 - `requirements-framework:deep-review` → `pre_pr_review` (recommended)
 - `requirements-framework:quality-check` → `pre_pr_review` (lightweight alternative)
 - `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (recommended)
 - `requirements-framework:plan-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (lightweight alternative)
 - `requirements-framework:codex-review` → `codex_reviewer`
+
+**Built-in mappings (process skills)**:
+- `requirements-framework:brainstorming` → `design_approved`
+- `requirements-framework:writing-plans` → `plan_written`, `commit_plan`
+- `requirements-framework:test-driven-development` → `tdd_planned`
+- `requirements-framework:systematic-debugging` → `debugging_systematic`
+- `requirements-framework:verification-before-completion` → `verification_evidence`
+- `requirements-framework:requesting-code-review` → `pre_commit_review`
+
+### Process Skills (Development Lifecycle)
+
+The framework includes process skills that guide the full development lifecycle:
+
+| Skill | Purpose |
+|-------|---------|
+| `brainstorming` | Design-first development (explore → design → approve) |
+| `writing-plans` | Create bite-sized implementation plans |
+| `executing-plans` | Execute plans with batch checkpoints |
+| `test-driven-development` | RED-GREEN-REFACTOR cycle enforcement |
+| `systematic-debugging` | 4-phase root-cause investigation |
+| `verification-before-completion` | Fresh evidence before claiming done |
+| `subagent-driven-development` | Parallel task execution with review |
+| `finishing-a-development-branch` | Branch completion and merge options |
+| `using-git-worktrees` | Isolated workspace creation |
+| `dispatching-parallel-agents` | Concurrent problem solving |
+| `receiving-code-review` | Technical evaluation of feedback |
+| `requesting-code-review` | Dispatching review agents |
+| `writing-skills` | TDD-for-documentation (meta-skill) |
+
+Use `/brainstorm`, `/write-plan`, `/execute-plan` commands to invoke process skills directly.
 
 ### Single-Use Scope
 
