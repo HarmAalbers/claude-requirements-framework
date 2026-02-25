@@ -713,13 +713,13 @@ See `req init --help` for options.""")
                 if not skill_path.exists():
                     # Try alternate location (deployed plugin)
                     import glob
-                    candidates = glob.glob(
+                    candidates = sorted(glob.glob(
                         str(Path.home() / '.claude/plugins/cache/'
                             '*/requirements-framework/*/skills/'
                             'using-requirements-framework/SKILL.md')
-                    )
+                    ))
                     if candidates:
-                        skill_path = Path(candidates[0])
+                        skill_path = Path(candidates[-1])  # Pick latest
 
                 if skill_path.exists():
                     skill_content = skill_path.read_text()
