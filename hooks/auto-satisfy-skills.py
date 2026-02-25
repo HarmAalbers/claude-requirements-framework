@@ -196,17 +196,18 @@ def main() -> int:
             # Record requirement satisfaction in metrics
             metrics.record_requirement_satisfied(req_name, f'skill:{skill_name}')
 
-        # Record skill usage in metrics
-        metrics.record_skill_use(skill_name)
-        metrics.save()
-
-        # Output success message (visible to user)
+        # Output success message (visible to user) before metrics save
+        # so a metrics.save() failure doesn't suppress the log
         if satisfied_reqs:
             logger.info(
                 "Auto-satisfied requirements from skill",
                 requirements=satisfied_reqs,
                 skill=skill_name,
             )
+
+        # Record skill usage in metrics
+        metrics.record_skill_use(skill_name)
+        metrics.save()
 
     except Exception as e:
         # Fail silently - don't block on auto-satisfy errors
