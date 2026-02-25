@@ -9058,12 +9058,10 @@ def test_new_requirement_definitions(runner: TestRunner):
     from config import RequirementsConfig
 
     # Read the example config to check new requirement definitions exist
-    # Try repo location first, then relative to test file
-    example_path = Path.home() / 'Tools' / 'claude-requirements-framework' / 'examples' / 'global-requirements.yaml'
+    # Try relative to test file first (portable), then hardcoded repo fallback
+    example_path = Path(__file__).parent.parent / 'examples' / 'global-requirements.yaml'
     if not example_path.exists():
-        example_path = Path(__file__).parent.parent / 'examples' / 'global-requirements.yaml'
-    if not example_path.exists():
-        example_path = Path(__file__).parent / '..' / 'examples' / 'global-requirements.yaml'
+        example_path = Path.home() / 'Tools' / 'claude-requirements-framework' / 'examples' / 'global-requirements.yaml'
 
     if example_path.exists():
         import yaml
