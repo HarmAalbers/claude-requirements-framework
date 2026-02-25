@@ -19,7 +19,6 @@ Context: After refactoring error handling.
 user: "I've updated the error handling in the auth module"
 assistant: "Let me use the silent-failure-hunter agent to ensure no silent failures were introduced."
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

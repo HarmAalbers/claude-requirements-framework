@@ -19,7 +19,6 @@ Context: Reviewing documentation.
 user: "check documentation"
 assistant: "I'll use the comment-analyzer agent to review the documentation."
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

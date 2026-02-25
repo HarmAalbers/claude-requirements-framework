@@ -19,7 +19,6 @@ assistant: "I'll use the codex-review-agent to get an independent AI review from
 Codex provides a different perspective from Claude's review.
 </commentary>
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

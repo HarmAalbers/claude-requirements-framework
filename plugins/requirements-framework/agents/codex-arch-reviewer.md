@@ -20,7 +20,6 @@ description: |
   Can be used standalone for architecture-focused Codex review.
   </commentary>
   </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

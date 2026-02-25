@@ -22,7 +22,6 @@ TDD validation is a blocking gate in the plan-review workflow.
 </commentary>
 </example>
 
-model: inherit
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
 git_hash: b1a192d

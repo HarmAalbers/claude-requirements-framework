@@ -28,7 +28,6 @@ description: |
   Use for accessibility-focused reviews.
   </commentary>
   </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

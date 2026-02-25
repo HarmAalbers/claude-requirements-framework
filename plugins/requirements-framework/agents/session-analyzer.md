@@ -19,7 +19,6 @@ assistant: "Running session analyzer to review your session data..."
 The session-reflect command automatically invokes this agent.
 </commentary>
 </example>
-model: inherit
 color: magenta
 git_hash: b1a192d
 ---

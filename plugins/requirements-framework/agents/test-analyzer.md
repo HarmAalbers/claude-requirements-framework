@@ -19,7 +19,6 @@ Context: TDD workflow check.
 user: "check test coverage"
 assistant: "I'll use the test-analyzer agent to review test coverage quality."
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

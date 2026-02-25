@@ -19,7 +19,6 @@ assistant: "I'll use the backward-compatibility-checker agent to analyze your sc
 Use for database schema evolution analysis.
 </commentary>
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

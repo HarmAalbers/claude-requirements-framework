@@ -19,7 +19,6 @@ Context: Checking type invariants.
 user: "check type invariants"
 assistant: "I'll use the type-design-analyzer agent to evaluate the type invariants."
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

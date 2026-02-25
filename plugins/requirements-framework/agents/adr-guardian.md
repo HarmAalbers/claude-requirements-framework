@@ -39,7 +39,6 @@ assistant: "Before we write any code, I need to use the adr-guardian agent to va
 The adr-guardian agent acts as a gate before code writing begins to ensure ADR compliance.
 </commentary>
 </example>
-model: inherit
 color: blue
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
 git_hash: b1a192d

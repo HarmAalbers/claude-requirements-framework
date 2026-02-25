@@ -19,7 +19,6 @@ assistant: "I'll use the tool-validator agent to run the same tools CI uses and 
 Tool-validator provides deterministic results matching CI tools.
 </commentary>
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

@@ -28,7 +28,6 @@ assistant: "I'll use the code-reviewer agent to ensure all code meets our standa
 Trigger on common pre-commit review phrases.
 </commentary>
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

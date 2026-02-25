@@ -22,7 +22,6 @@ Commit planning before implementation helps maintain clean git history and enabl
 </commentary>
 </example>
 
-model: inherit
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
 git_hash: b1a192d

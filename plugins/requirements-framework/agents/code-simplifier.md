@@ -18,7 +18,6 @@ assistant: "Let me use the code-simplifier agent to improve clarity."
 Context: After implementing a feature.
 assistant: "Now let me use the code-simplifier agent to refine this implementation for better clarity."
 </example>
-model: inherit
 color: blue
 git_hash: b1a192d
 ---

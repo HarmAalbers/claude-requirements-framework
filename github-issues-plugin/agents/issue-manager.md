@@ -47,7 +47,6 @@ Custom field updates require project item editing via gh or GraphQL, which the a
 </commentary>
 </example>
 
-model: inherit
 color: cyan
 tools: ["Bash", "Read", "Write", "Grep", "Glob"]
 git_hash: b1a192d

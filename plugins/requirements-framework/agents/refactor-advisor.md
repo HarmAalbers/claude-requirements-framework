@@ -32,7 +32,6 @@ description: |
   </commentary>
   </example>
 
-model: inherit
 color: yellow
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
 git_hash: b1a192d
