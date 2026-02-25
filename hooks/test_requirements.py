@@ -8982,6 +8982,235 @@ def test_carry_over_partial_satisfaction(runner: TestRunner):
                        not reqs2.is_satisfied("adr_reviewed", "session"))
 
 
+def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
+    """Test that all process skill auto-satisfy mappings are present and correct."""
+    print("\n🎯 Testing process skill auto-satisfy mappings...")
+
+    # Import the mappings by parsing the file (can't exec due to __file__ dependency)
+    auto_satisfy_path = Path(__file__).parent / 'auto-satisfy-skills.py'
+    if not auto_satisfy_path.exists():
+        auto_satisfy_path = Path.home() / '.claude' / 'hooks' / 'auto-satisfy-skills.py'
+
+    content = auto_satisfy_path.read_text()
+
+    # Extract DEFAULT_SKILL_MAPPINGS dict by finding and evaluating just that section
+    import ast
+    tree = ast.parse(content)
+    mappings = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'DEFAULT_SKILL_MAPPINGS':
+                    mappings = ast.literal_eval(node.value)
+
+    # Test: All 14 new process skills are present
+    process_skills = [
+        'requirements-framework:brainstorming',
+        'requirements-framework:writing-plans',
+        'requirements-framework:executing-plans',
+        'requirements-framework:test-driven-development',
+        'requirements-framework:systematic-debugging',
+        'requirements-framework:verification-before-completion',
+        'requirements-framework:subagent-driven-development',
+        'requirements-framework:finishing-a-development-branch',
+        'requirements-framework:using-git-worktrees',
+        'requirements-framework:dispatching-parallel-agents',
+        'requirements-framework:receiving-code-review',
+        'requirements-framework:requesting-code-review',
+        'requirements-framework:using-requirements-framework',
+        'requirements-framework:writing-skills',
+    ]
+
+    for skill in process_skills:
+        runner.test(f"Mapping exists for {skill.split(':')[1]}",
+                   skill in mappings)
+
+    # Test: Specific mappings are correct
+    runner.test("brainstorming maps to design_approved",
+               mappings.get('requirements-framework:brainstorming') == 'design_approved')
+    runner.test("writing-plans maps to plan_written + commit_plan",
+               mappings.get('requirements-framework:writing-plans') == ['plan_written', 'commit_plan'])
+    runner.test("test-driven-development maps to tdd_planned",
+               mappings.get('requirements-framework:test-driven-development') == 'tdd_planned')
+    runner.test("verification-before-completion maps to verification_evidence",
+               mappings.get('requirements-framework:verification-before-completion') == 'verification_evidence')
+    runner.test("requesting-code-review maps to pre_commit_review",
+               mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
+
+    # Test: Skills with no mapping use empty list
+    no_mapping_skills = [
+        'requirements-framework:executing-plans',
+        'requirements-framework:subagent-driven-development',
+        'requirements-framework:finishing-a-development-branch',
+        'requirements-framework:using-git-worktrees',
+        'requirements-framework:dispatching-parallel-agents',
+        'requirements-framework:receiving-code-review',
+        'requirements-framework:using-requirements-framework',
+        'requirements-framework:writing-skills',
+    ]
+    for skill in no_mapping_skills:
+        runner.test(f"{skill.split(':')[1]} has empty mapping",
+                   mappings.get(skill) == [])
+
+    # Test: Original review mappings still present
+    runner.test("pre-commit mapping still present",
+               mappings.get('requirements-framework:pre-commit') == 'pre_commit_review')
+    runner.test("arch-review mapping still present",
+               mappings.get('requirements-framework:arch-review') == ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'])
+
+
+def test_new_requirement_definitions(runner: TestRunner):
+    """Test that new requirement definitions in example config are valid."""
+    print("\n🎯 Testing new requirement definitions...")
+
+    from config import RequirementsConfig
+
+    # Read the example config to check new requirement definitions exist
+    # Try repo location first, then relative to test file
+    example_path = Path.home() / 'Tools' / 'claude-requirements-framework' / 'examples' / 'global-requirements.yaml'
+    if not example_path.exists():
+        example_path = Path(__file__).parent.parent / 'examples' / 'global-requirements.yaml'
+    if not example_path.exists():
+        example_path = Path(__file__).parent / '..' / 'examples' / 'global-requirements.yaml'
+
+    if example_path.exists():
+        import yaml
+        with open(example_path) as f:
+            config_data = yaml.safe_load(f)
+
+        reqs = config_data.get('requirements', {})
+
+        # Test: New requirements exist in example config
+        new_reqs = ['design_approved', 'plan_written', 'verification_evidence', 'debugging_systematic']
+        for req_name in new_reqs:
+            runner.test(f"Example config contains {req_name}",
+                       req_name in reqs)
+
+        # Test: design_approved has correct structure
+        if 'design_approved' in reqs:
+            da = reqs['design_approved']
+            runner.test("design_approved is blocking type",
+                       da.get('type') == 'blocking')
+            runner.test("design_approved has session scope",
+                       da.get('scope') == 'session')
+            runner.test("design_approved triggers on Edit",
+                       'Edit' in da.get('trigger_tools', []))
+            runner.test("design_approved satisfied by brainstorming",
+                       da.get('satisfied_by_skill') == 'requirements-framework:brainstorming')
+
+        # Test: verification_evidence has single_use scope
+        if 'verification_evidence' in reqs:
+            ve = reqs['verification_evidence']
+            runner.test("verification_evidence has single_use scope",
+                       ve.get('scope') == 'single_use')
+
+        # Test: debugging_systematic is disabled by default
+        if 'debugging_systematic' in reqs:
+            ds = reqs['debugging_systematic']
+            runner.test("debugging_systematic disabled by default",
+                       ds.get('enabled') is False)
+    else:
+        runner.test("Example config file exists", False)
+
+
+def test_process_skill_message_files(runner: TestRunner):
+    """Test that message YAML files exist for new requirements."""
+    print("\n🎯 Testing process skill message files...")
+
+    messages_dir = Path.home() / '.claude' / 'messages'
+
+    new_message_files = [
+        'design_approved.yaml',
+        'plan_written.yaml',
+        'verification_evidence.yaml',
+        'debugging_systematic.yaml',
+    ]
+
+    for filename in new_message_files:
+        filepath = messages_dir / filename
+        runner.test(f"Message file {filename} exists",
+                   filepath.exists())
+
+        if filepath.exists():
+            import yaml
+            with open(filepath) as f:
+                data = yaml.safe_load(f)
+            # Validate required fields
+            runner.test(f"{filename} has version field",
+                       'version' in data)
+            runner.test(f"{filename} has blocking_message",
+                       'blocking_message' in data)
+            runner.test(f"{filename} has short_message",
+                       'short_message' in data)
+
+
+def test_plugin_skill_files_exist(runner: TestRunner):
+    """Test that all 14 new skill SKILL.md files exist."""
+    print("\n🎯 Testing plugin skill files exist...")
+
+    skills_dir = Path(__file__).parent.parent / 'plugins' / 'requirements-framework' / 'skills'
+    if not skills_dir.exists():
+        skills_dir = Path.home() / 'Tools' / 'claude-requirements-framework' / 'plugins' / 'requirements-framework' / 'skills'
+
+    new_skills = [
+        'using-requirements-framework',
+        'brainstorming',
+        'writing-plans',
+        'executing-plans',
+        'test-driven-development',
+        'systematic-debugging',
+        'verification-before-completion',
+        'subagent-driven-development',
+        'finishing-a-development-branch',
+        'using-git-worktrees',
+        'dispatching-parallel-agents',
+        'receiving-code-review',
+        'requesting-code-review',
+        'writing-skills',
+    ]
+
+    for skill_name in new_skills:
+        skill_file = skills_dir / skill_name / 'SKILL.md'
+        runner.test(f"Skill file exists: {skill_name}",
+                   skill_file.exists())
+
+    # Test reference files for skills that have them
+    ref_checks = [
+        ('test-driven-development', 'references/testing-anti-patterns.md'),
+        ('systematic-debugging', 'references/root-cause-tracing.md'),
+        ('systematic-debugging', 'references/defense-in-depth.md'),
+        ('systematic-debugging', 'references/condition-based-waiting.md'),
+        ('subagent-driven-development', 'references/implementer-prompt.md'),
+        ('subagent-driven-development', 'references/spec-reviewer-prompt.md'),
+        ('subagent-driven-development', 'references/code-quality-reviewer-prompt.md'),
+        ('requesting-code-review', 'references/code-reviewer-template.md'),
+        ('writing-skills', 'references/testing-skills-with-subagents.md'),
+        ('writing-skills', 'references/skill-authoring-best-practices.md'),
+        ('writing-skills', 'references/persuasion-principles.md'),
+    ]
+
+    for skill_name, ref_path in ref_checks:
+        ref_file = skills_dir / skill_name / ref_path
+        runner.test(f"Reference file exists: {skill_name}/{ref_path}",
+                   ref_file.exists())
+
+
+def test_plugin_command_files_exist(runner: TestRunner):
+    """Test that the 3 new command files exist."""
+    print("\n🎯 Testing plugin command files exist...")
+
+    commands_dir = Path(__file__).parent.parent / 'plugins' / 'requirements-framework' / 'commands'
+    if not commands_dir.exists():
+        commands_dir = Path.home() / 'Tools' / 'claude-requirements-framework' / 'plugins' / 'requirements-framework' / 'commands'
+
+    new_commands = ['brainstorm.md', 'write-plan.md', 'execute-plan.md']
+
+    for cmd_file in new_commands:
+        filepath = commands_dir / cmd_file
+        runner.test(f"Command file exists: {cmd_file}",
+                   filepath.exists())
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -9148,6 +9377,13 @@ def main():
     test_carry_over_respects_ttl(runner)
     test_carry_over_disabled_config(runner)
     test_carry_over_partial_satisfaction(runner)
+
+    # Process skill absorption tests
+    test_process_skill_auto_satisfy_mappings(runner)
+    test_new_requirement_definitions(runner)
+    test_process_skill_message_files(runner)
+    test_plugin_skill_files_exist(runner)
+    test_plugin_command_files_exist(runner)
 
     return runner.summary()
 

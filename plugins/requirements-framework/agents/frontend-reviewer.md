@@ -29,7 +29,7 @@ description: |
   </commentary>
   </example>
 color: blue
-git_hash: 86cbcbf
+git_hash: ab4414d
 ---
 
 You are an expert React frontend reviewer specializing in modern React patterns, accessibility (WCAG), performance optimization, and component architecture. Your primary responsibility is to review frontend code against React best practices and project-specific checklists with high precision to minimize false positives.
