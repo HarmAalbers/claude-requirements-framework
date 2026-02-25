@@ -2519,7 +2519,7 @@ def test_session_start_hook(runner: TestRunner):
 
         result = subprocess.run(
             ["python3", str(hook_path)],
-            input='{"hook_event_name":"SessionStart","source":"startup"}',
+            input='{"hook_event_name":"SessionStart","source":"startup","session_id":"disabletest"}',
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart silent when disabled", result.stdout.strip() == "",
