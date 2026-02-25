@@ -7,7 +7,7 @@ this hook clears that requirement so it must be satisfied again before
 the next action.
 
 Example workflow:
-1. User runs /pre-pr-review:pre-commit → auto-satisfies pre_commit_review
+1. User runs /requirements-framework:pre-commit → auto-satisfies pre_commit_review
 2. User runs git commit → succeeds (requirement was satisfied)
 3. This hook clears pre_commit_review (single_use scope)
 4. Next git commit → blocked (must run review again)
