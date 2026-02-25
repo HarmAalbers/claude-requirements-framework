@@ -40,7 +40,7 @@ from hook_utils import extract_skill_name
 # Default skill to requirement mapping (for backwards compatibility)
 # Maps skill names to the requirement they satisfy
 # Uses requirements-framework: namespace per ADR-006
-DEFAULT_SKILL_MAPPINGS = {
+DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     # Review commands
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:quality-check': 'pre_pr_review',
@@ -66,7 +66,7 @@ DEFAULT_SKILL_MAPPINGS = {
 }
 
 
-def get_skill_requirement_mappings(config: RequirementsConfig) -> dict:
+def get_skill_requirement_mappings(config: RequirementsConfig) -> dict[str, list[str]]:
     """
     Build skill → requirements mapping from configuration.
 
