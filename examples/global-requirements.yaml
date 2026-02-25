@@ -301,6 +301,126 @@ requirements:
       - "Codex CLI installed (npm install -g @openai/codex)"
       - "AI review completed"
 
+  # ============================================================================
+  # PROCESS SKILLS REQUIREMENTS (opt-in)
+  # ============================================================================
+  # These requirements enforce the design-first development workflow.
+  # Disabled by default - enable per project for full workflow enforcement.
+
+  # Design Approval Requirement
+  # Ensures a design has been brainstormed and approved before implementation
+  design_approved:
+    enabled: false  # Opt-in: enable for design-first enforcement
+    type: blocking
+    scope: session
+    description: "Ensures a design has been brainstormed and approved before implementation."
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    auto_resolve_skill: "requirements-framework:brainstorming"
+    satisfied_by_skill: 'requirements-framework:brainstorming'
+    message: |
+      ## Blocked: design_approved
+
+      **Execute**: `/brainstorm`
+
+      Explore requirements, propose approaches, and get design approval before writing code.
+
+      **Why this matters**: Unexamined assumptions in "simple" tasks cause the most wasted work.
+      Even a short design (a few sentences) forces you to think before coding.
+
+      ---
+      Fallback: `req satisfy design_approved`
+    checklist:
+      - "Explored project context and constraints"
+      - "Asked clarifying questions"
+      - "Proposed 2-3 approaches with trade-offs"
+      - "Design approved by user"
+
+  # Plan Written Requirement
+  # Ensures a detailed implementation plan exists before coding
+  plan_written:
+    enabled: false  # Opt-in: enable for plan-first enforcement
+    type: blocking
+    scope: session
+    description: "Ensures a detailed implementation plan exists before coding."
+    trigger_tools:
+      - Edit
+      - Write
+      - MultiEdit
+    auto_resolve_skill: "requirements-framework:writing-plans"
+    satisfied_by_skill: 'requirements-framework:writing-plans'
+    message: |
+      ## Blocked: plan_written
+
+      **Execute**: `/write-plan`
+
+      Create a bite-sized implementation plan with exact file paths, test commands, and commit points.
+
+      **Why this matters**: Plans with 2-5 minute steps prevent scope creep and ensure
+      every change is tested and committed incrementally.
+
+      ---
+      Fallback: `req satisfy plan_written`
+    checklist:
+      - "Plan has bite-sized steps (2-5 minutes each)"
+      - "Exact file paths and commands included"
+      - "TDD cycle documented per task"
+      - "Commit points identified"
+
+  # Verification Evidence Requirement
+  # Ensures fresh verification evidence exists before claiming completion
+  verification_evidence:
+    enabled: false  # Opt-in: enable for verification discipline
+    type: blocking
+    scope: single_use
+    description: "Ensures fresh verification evidence before claiming work is complete."
+    trigger_tools: []  # Only checked at Stop via handle-stop.py
+    auto_resolve_skill: "requirements-framework:verification-before-completion"
+    satisfied_by_skill: 'requirements-framework:verification-before-completion'
+    message: |
+      ## Blocked: verification_evidence
+
+      Run verification commands and confirm output before claiming completion.
+
+      **Why this matters**: "Should work now" is not evidence. Run the command,
+      read the output, then claim the result.
+
+      ---
+      Fallback: `req satisfy verification_evidence`
+    checklist:
+      - "Identified verification commands for all claims"
+      - "Ran commands fresh (not from cache/memory)"
+      - "Read full output and confirmed results"
+
+  # Systematic Debugging Requirement
+  # Ensures root cause investigation before applying fixes
+  debugging_systematic:
+    enabled: false  # Opt-in: for projects that want debugging discipline
+    type: blocking
+    scope: single_use
+    description: "Ensures root cause investigation before applying fixes."
+    trigger_tools:
+      - Edit
+      - Write
+    satisfied_by_skill: 'requirements-framework:systematic-debugging'
+    message: |
+      ## Blocked: debugging_systematic
+
+      Invoke the `requirements-framework:systematic-debugging` skill first.
+
+      **Why this matters**: Random fixes waste time and create new bugs.
+      Find the root cause first, then fix it.
+
+      ---
+      Fallback: `req satisfy debugging_systematic`
+    checklist:
+      - "Read error messages completely"
+      - "Reproduced issue consistently"
+      - "Traced root cause (not just symptoms)"
+      - "Formed and tested hypothesis"
+
 # ============================================================================
 # PLAN MODE TRIGGER EXAMPLES
 # ============================================================================

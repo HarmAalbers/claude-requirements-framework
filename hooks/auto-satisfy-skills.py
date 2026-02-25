@@ -41,12 +41,28 @@ from hook_utils import extract_skill_name
 # Maps skill names to the requirement they satisfy
 # Uses requirements-framework: namespace per ADR-006
 DEFAULT_SKILL_MAPPINGS = {
+    # Review commands
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
     'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
     'requirements-framework:deep-review': 'pre_pr_review',
     'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
+    # Process skills
+    'requirements-framework:brainstorming': 'design_approved',
+    'requirements-framework:writing-plans': ['plan_written', 'commit_plan'],
+    'requirements-framework:executing-plans': [],
+    'requirements-framework:test-driven-development': 'tdd_planned',
+    'requirements-framework:systematic-debugging': 'debugging_systematic',
+    'requirements-framework:verification-before-completion': 'verification_evidence',
+    'requirements-framework:subagent-driven-development': [],
+    'requirements-framework:finishing-a-development-branch': [],
+    'requirements-framework:using-git-worktrees': [],
+    'requirements-framework:dispatching-parallel-agents': [],
+    'requirements-framework:receiving-code-review': [],
+    'requirements-framework:requesting-code-review': 'pre_commit_review',
+    'requirements-framework:using-requirements-framework': [],
+    'requirements-framework:writing-skills': [],
 }
 
 
