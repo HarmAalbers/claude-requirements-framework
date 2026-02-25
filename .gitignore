@@ -56,5 +56,8 @@ sessions.json
 # State files
 .git/requirements/
 
+# Serena MCP
+.serena/
+
 # Logs
 *.log

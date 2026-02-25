@@ -1,9 +1,0 @@
-- Install: `./install.sh`.
-- Sync: `./sync.sh status`, `./sync.sh deploy`, `./sync.sh pull`, `./sync.sh diff`.
-- Tests: `python3 hooks/test_requirements.py`, `python3 hooks/test_branch_size_calculator.py`; deployed: `python3 ~/.claude/hooks/test_requirements.py`.
-- Lint: `ruff check` (configured by `ruff.toml`), or `python3 hooks/ruff_check.py` to lint modified Python files.
-- Plugin test: `claude --plugin-dir ~/.claude/plugins/requirements-framework`.
-- Update plugin git_hash: `./update-plugin-versions.sh` (or `--check` / `--verify`).
-- CLI examples: `req status`, `req init`, `req config`, `req satisfy`, `req clear`, `req doctor --repo <path>`.
-- Useful shell utilities (Darwin/zsh): `git status`, `git diff`, `git add`, `git commit`, `rg --files`, `rg <pattern>`, `find . -name <glob>`, `ls`.
-- **Framework internals**: When working on framework code (hooks, strategies, agents), read `framework_internals_index` memory first for navigation to detailed technical documentation.
