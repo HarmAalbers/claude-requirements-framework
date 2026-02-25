@@ -221,7 +221,7 @@ def _log_error(message: str) -> None:
     try:
         get_logger(base_context={"hook": "AutoSatisfySkills"}).error(message)
     except Exception:
-        pass
+        sys.stderr.write(f"auto-satisfy-skills: logging failed: {message[:200]}\n")
 
 
 if __name__ == '__main__':
