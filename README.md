@@ -38,8 +38,15 @@ The installer will:
 
 ### Install Plugin via Marketplace
 
-After running `install.sh`, install the plugin via Claude Code's marketplace system:
+**Option A: GitHub Marketplace (for users)**
+```bash
+# In Claude Code session:
+/plugin marketplace add https://github.com/HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
 
+**Option B: Local Marketplace (for developers)**
+After running `install.sh`, register the local clone:
 ```bash
 # In Claude Code session:
 /plugin marketplace add ~/Tools/claude-requirements-framework

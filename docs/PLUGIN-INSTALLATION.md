@@ -65,9 +65,28 @@ Type: /requirements-framework:
 # Should show: pre-commit, quality-check, codex-review
 ```
 
-### Method 2: Marketplace Installation (Recommended for Persistent Use)
+### Method 2: GitHub Marketplace (Recommended for Users)
 
-**Official method** for permanent plugin installation:
+**For users who want to install the plugin without cloning the repo:**
+
+```
+# In Claude Code session:
+/plugin marketplace add https://github.com/HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+**To update:**
+```
+/plugin marketplace update requirements-framework
+/plugin uninstall requirements-framework@requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+**Note:** This method installs the plugin only. For hooks (workflow enforcement), clone the repo and run `./install.sh`.
+
+### Method 3: Local Marketplace (Recommended for Developers)
+
+**For developers who have cloned the repo:**
 
 **Step 1:** Run install.sh to set up hooks and local marketplace
 
@@ -107,9 +126,9 @@ cd ~/Tools/claude-requirements-framework
 /plugin install requirements-framework@requirements-framework
 ```
 
-### Method 3: Manual Symlink (Deprecated)
+### Method 4: Manual Symlink (Deprecated)
 
-> **⚠️ DEPRECATED:** This method is no longer recommended. Use Method 2 (Marketplace) for persistent installation or Method 1 (CLI Flag) for development.
+> **⚠️ DEPRECATED:** This method is no longer recommended. Use Method 2 (GitHub Marketplace) for persistent installation or Method 1 (CLI Flag) for development.
 
 **Note:** Symlink installation has been deprecated in v2.0.5 because it conflicts with marketplace installation and causes version tracking issues.
 

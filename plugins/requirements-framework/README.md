@@ -323,9 +323,19 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 
 ## Installation
 
-### Recommended Installation (Marketplace)
+### GitHub Marketplace (Recommended for Users)
 
-The plugin is installed via Claude Code's marketplace system:
+Install directly from GitHub without cloning:
+
+```bash
+# In Claude Code session:
+/plugin marketplace add https://github.com/HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+### Local Marketplace (Recommended for Developers)
+
+For developers who have cloned the repo:
 
 ```bash
 # 1. Run install.sh to set up hooks and local marketplace
