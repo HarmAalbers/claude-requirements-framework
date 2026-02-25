@@ -1,0 +1,101 @@
+name: Auto-Publish Plugin
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: publish
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Detect manual version bump
+        id: version_check
+        run: |
+          PLUGIN_JSON="plugins/requirements-framework/.claude-plugin/plugin.json"
+
+          # Get version at HEAD
+          HEAD_VERSION=$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON'))['version'])")
+
+          # Get version at previous commit (before this push)
+          BEFORE_SHA="${{ github.event.before }}"
+          if [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            PREV_VERSION=$(git show "${BEFORE_SHA}:${PLUGIN_JSON}" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "$HEAD_VERSION")
+          else
+            PREV_VERSION="$HEAD_VERSION"
+          fi
+
+          echo "head_version=$HEAD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prev_version=$PREV_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$HEAD_VERSION" != "$PREV_VERSION" ]; then
+            echo "manually_bumped=true" >> "$GITHUB_OUTPUT"
+            echo "Version manually bumped: $PREV_VERSION → $HEAD_VERSION"
+          else
+            echo "manually_bumped=false" >> "$GITHUB_OUTPUT"
+            echo "No manual bump detected (version: $HEAD_VERSION)"
+          fi
+
+      - name: Auto-bump patch version
+        if: steps.version_check.outputs.manually_bumped == 'false'
+        run: |
+          PLUGIN_JSON="plugins/requirements-framework/.claude-plugin/plugin.json"
+
+          python3 - "$PLUGIN_JSON" <<'BUMP_SCRIPT'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, 'r') as f:
+              data = json.load(f)
+
+          version = data['version']
+          major, minor, patch = version.split('.')
+          new_version = f"{major}.{minor}.{int(patch) + 1}"
+          data['version'] = new_version
+
+          with open(path, 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+
+          print(f"Bumped version: {version} → {new_version}")
+          BUMP_SCRIPT
+
+      - name: Sync marketplace version and update git hashes
+        run: |
+          chmod +x ./update-plugin-versions.sh
+          ./update-plugin-versions.sh
+
+      - name: Commit and push version updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: auto-bump plugin version [skip ci]"
+            git push
+          fi
