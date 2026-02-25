@@ -158,9 +158,8 @@ Creating a worktree naturally creates a feature branch, which satisfies the `pro
 ## Integration
 
 **Called by:**
-- `requirements-framework:brainstorming` — When design is approved and implementation follows
+- `requirements-framework:executing-plans` — Before executing tasks in an isolated workspace
 - `requirements-framework:subagent-driven-development` — Before executing any tasks
-- `requirements-framework:executing-plans` — Before executing any tasks
 
 **Pairs with:**
 - `requirements-framework:finishing-a-development-branch` — Cleans up worktree after work complete
