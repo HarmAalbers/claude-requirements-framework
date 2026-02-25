@@ -20,7 +20,7 @@ The session-reflect command automatically invokes this agent.
 </commentary>
 </example>
 color: magenta
-git_hash: b1a192d
+git_hash: 86cbcbf
 ---
 
 You are a session learning analyst. Your role is to analyze session metrics and identify patterns that can improve future Claude Code sessions.
