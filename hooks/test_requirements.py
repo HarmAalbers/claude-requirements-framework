@@ -9003,25 +9003,17 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                 if isinstance(target, ast.Name) and target.id == 'DEFAULT_SKILL_MAPPINGS':
                     mappings = ast.literal_eval(node.value)
 
-    # Test: All 14 new process skills are present
-    process_skills = [
+    # Test: All 6 process skills with auto-satisfy mappings are present
+    process_skills_with_mappings = [
         'requirements-framework:brainstorming',
         'requirements-framework:writing-plans',
-        'requirements-framework:executing-plans',
         'requirements-framework:test-driven-development',
         'requirements-framework:systematic-debugging',
         'requirements-framework:verification-before-completion',
-        'requirements-framework:subagent-driven-development',
-        'requirements-framework:finishing-a-development-branch',
-        'requirements-framework:using-git-worktrees',
-        'requirements-framework:dispatching-parallel-agents',
-        'requirements-framework:receiving-code-review',
         'requirements-framework:requesting-code-review',
-        'requirements-framework:using-requirements-framework',
-        'requirements-framework:writing-skills',
     ]
 
-    for skill in process_skills:
+    for skill in process_skills_with_mappings:
         runner.test(f"Mapping exists for {skill.split(':')[1]}",
                    skill in mappings)
 
@@ -9037,7 +9029,7 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     runner.test("requesting-code-review maps to pre_commit_review",
                mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
 
-    # Test: Skills with no mapping use empty list
+    # Test: Skills with no mapping are NOT in the dict (removed as dead entries)
     no_mapping_skills = [
         'requirements-framework:executing-plans',
         'requirements-framework:subagent-driven-development',
@@ -9049,8 +9041,8 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
         'requirements-framework:writing-skills',
     ]
     for skill in no_mapping_skills:
-        runner.test(f"{skill.split(':')[1]} has empty mapping",
-                   mappings.get(skill) == [])
+        runner.test(f"{skill.split(':')[1]} not in mappings (no auto-satisfy)",
+                   skill not in mappings)
 
     # Test: Original review mappings still present
     runner.test("pre-commit mapping still present",

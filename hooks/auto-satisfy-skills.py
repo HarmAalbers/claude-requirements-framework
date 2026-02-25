@@ -48,21 +48,17 @@ DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     'requirements-framework:plan-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
     'requirements-framework:deep-review': 'pre_pr_review',
     'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
-    # Process skills
+    # Process skills (auto-satisfy a requirement when the skill completes)
     'requirements-framework:brainstorming': 'design_approved',
     'requirements-framework:writing-plans': ['plan_written', 'commit_plan'],
-    'requirements-framework:executing-plans': [],
     'requirements-framework:test-driven-development': 'tdd_planned',
     'requirements-framework:systematic-debugging': 'debugging_systematic',
     'requirements-framework:verification-before-completion': 'verification_evidence',
-    'requirements-framework:subagent-driven-development': [],
-    'requirements-framework:finishing-a-development-branch': [],
-    'requirements-framework:using-git-worktrees': [],
-    'requirements-framework:dispatching-parallel-agents': [],
-    'requirements-framework:receiving-code-review': [],
     'requirements-framework:requesting-code-review': 'pre_commit_review',
-    'requirements-framework:using-requirements-framework': [],
-    'requirements-framework:writing-skills': [],
+    # Process skills with no auto-satisfy mapping (guidance-only):
+    # executing-plans, subagent-driven-development, finishing-a-development-branch,
+    # using-git-worktrees, dispatching-parallel-agents, receiving-code-review,
+    # using-requirements-framework, writing-skills
 }
 
 
