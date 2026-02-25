@@ -256,32 +256,32 @@ main() {
             local current_hash=$(get_current_hash_from_file "$file")
             if [ "$current_hash" = "$expected_hash" ]; then
                 echo -e "${GREEN}✓${NC} $file (current: $expected_hash)"
-                ((unchanged++))
+                ((unchanged++)) || true
             else
                 echo -e "${YELLOW}→${NC} $file (would update: $current_hash → $expected_hash)"
-                ((updated++))
+                ((updated++)) || true
             fi
         elif [ "$VERIFY_MODE" = true ]; then
             # Verify mode: Check if hash matches current value
             local current_hash=$(get_current_hash_from_file "$file")
             if [ -z "$current_hash" ]; then
                 echo -e "${RED}✗${NC} $file (missing git_hash field)"
-                ((errors++))
+                ((errors++)) || true
             elif [ "$current_hash" = "$expected_hash" ]; then
                 echo -e "${GREEN}✓${NC} $file (current: $expected_hash)"
-                ((unchanged++))
+                ((unchanged++)) || true
             else
                 echo -e "${RED}✗${NC} $file (expected: $expected_hash, found: $current_hash)"
-                ((errors++))
+                ((errors++)) || true
             fi
         else
             # Update mode: Actually modify files
             if update_file_hash "$file" "$expected_hash"; then
                 echo -e "${GREEN}✓${NC} Updated $file → git_hash: $expected_hash"
-                ((updated++))
+                ((updated++)) || true
             else
                 echo -e "${RED}✗${NC} Failed to update $file"
-                ((errors++))
+                ((errors++)) || true
             fi
         fi
     done
