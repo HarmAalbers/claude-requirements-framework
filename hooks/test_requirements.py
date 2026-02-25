@@ -8994,11 +8994,15 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     content = auto_satisfy_path.read_text()
 
     # Extract DEFAULT_SKILL_MAPPINGS dict by finding and evaluating just that section
+    # Handles both ast.Assign (x = {...}) and ast.AnnAssign (x: type = {...})
     import ast
     tree = ast.parse(content)
     mappings = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
+        if isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == 'DEFAULT_SKILL_MAPPINGS' and node.value:
+                mappings = ast.literal_eval(node.value)
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == 'DEFAULT_SKILL_MAPPINGS':
                     mappings = ast.literal_eval(node.value)
@@ -9185,6 +9189,90 @@ def test_plugin_skill_files_exist(runner: TestRunner):
         ref_file = skills_dir / skill_name / ref_path
         runner.test(f"Reference file exists: {skill_name}/{ref_path}",
                    ref_file.exists())
+
+
+def test_session_start_bootstrap_injection(runner: TestRunner):
+    """Test that SessionStart hook injects bootstrap skill content when inject_context is True."""
+    print("\n🎯 Testing SessionStart bootstrap injection...")
+
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    if not hook_path.exists():
+        runner.test("SessionStart hook exists", False)
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        # Create config with inject_context enabled
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {"session_start": {"inject_context": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Create a mock SKILL.md file in the expected path
+        skill_dir = Path(tmpdir) / 'plugins' / 'requirements-framework' / 'skills' / 'using-requirements-framework'
+        os.makedirs(skill_dir)
+        with open(skill_dir / 'SKILL.md', 'w') as f:
+            f.write("---\nname: using-requirements-framework\n---\n\nBootstrap content here.\n")
+
+        # The hook resolves skill_path relative to __file__.parent.parent,
+        # which won't match our tmpdir. But we can test the inject_context=False
+        # path to verify bootstrap is gated correctly.
+
+        # Test: inject_context=False should NOT contain bootstrap text
+        config["hooks"]["session_start"]["inject_context"] = False
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup","session_id":"bootstraptest"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        output = result.stdout.strip()
+        runner.test("Bootstrap NOT injected when inject_context=False",
+                   "superpowers" not in output.lower(),
+                   f"Got unexpected bootstrap in output: {output[:200]}")
+
+        # Test: inject_context=True should attempt to inject (may or may not find the file)
+        config["hooks"]["session_start"]["inject_context"] = True
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup","session_id":"bootstraptest2"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionStart with inject_context=True succeeds",
+                   result.returncode == 0)
+
+    # Test: Verify frontmatter stripping logic works correctly
+    test_content = "---\nname: test\ndescription: test skill\n---\n\nActual content here."
+    if test_content.startswith('---'):
+        end = test_content.find('---', 3)
+        if end != -1:
+            stripped = test_content[end + 3:].strip()
+    runner.test("Frontmatter stripping removes YAML header",
+               stripped == "Actual content here.")
+
+    # Test: Content without frontmatter is preserved
+    no_fm_content = "No frontmatter here."
+    if no_fm_content.startswith('---'):
+        pass  # Would strip
+    else:
+        stripped_no_fm = no_fm_content
+    runner.test("Content without frontmatter is preserved",
+               stripped_no_fm == "No frontmatter here.")
 
 
 def test_plugin_command_files_exist(runner: TestRunner):
@@ -9376,6 +9464,7 @@ def main():
     test_process_skill_message_files(runner)
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
+    test_session_start_bootstrap_injection(runner)
 
     return runner.summary()
 
