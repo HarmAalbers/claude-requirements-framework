@@ -699,7 +699,8 @@ See `req init --help` for options.""")
         # skills on every prompt, mirroring the superpowers bootstrap pattern.
         bootstrap_text = (
             "You have superpowers.\n\n"
-            "**Below is the full content of your 'superpowers:using-superpowers' "
+            "**Below is the full content of your "
+            "'requirements-framework:using-requirements-framework' "
             "skill - your introduction to using skills. For all other skills, "
             "use the 'Skill' tool:**\n"
         )
