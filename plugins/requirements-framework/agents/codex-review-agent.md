@@ -20,7 +20,7 @@ Codex provides a different perspective from Claude's review.
 </commentary>
 </example>
 color: blue
-git_hash: ab4414d
+git_hash: d433164
 ---
 
 # Codex Code Review Agent
