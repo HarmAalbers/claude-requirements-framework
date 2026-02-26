@@ -1,0 +1,22 @@
+version: "1.0"
+
+blocking_message: |
+  ## Blocked: Verification Evidence Required
+
+  Run verification commands and confirm output before claiming completion.
+
+  **Why this matters**: "Should work now" is not evidence.
+  Run the command, read the output, then claim the result.
+
+  ---
+  Fallback: `req satisfy verification_evidence --session {session_id}`
+
+short_message: "Requirement `verification_evidence` not satisfied (waiting...)"
+
+success_message: "Verification evidence confirmed"
+
+header: "Verification"
+
+action_label: "Run verification commands"
+
+fallback_text: "req satisfy verification_evidence"

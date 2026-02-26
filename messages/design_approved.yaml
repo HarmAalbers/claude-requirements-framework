@@ -1,0 +1,24 @@
+version: "1.0"
+
+blocking_message: |
+  ## Blocked: Design Approval Required
+
+  **Execute**: `/brainstorm`
+
+  Explore requirements, propose approaches, and get design approval before writing code.
+
+  **Why this matters**: Unexamined assumptions in "simple" tasks cause the most wasted work.
+  Even a short design forces you to think before coding.
+
+  ---
+  Fallback: `req satisfy design_approved --session {session_id}`
+
+short_message: "Requirement `design_approved` not satisfied (waiting...)"
+
+success_message: "Design brainstormed and approved"
+
+header: "Design Approval"
+
+action_label: "Run `/brainstorm`"
+
+fallback_text: "req satisfy design_approved"

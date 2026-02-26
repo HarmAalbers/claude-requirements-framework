@@ -9100,11 +9100,11 @@ def test_new_requirement_definitions(runner: TestRunner):
             runner.test("verification_evidence has single_use scope",
                        ve.get('scope') == 'single_use')
 
-        # Test: debugging_systematic is disabled by default
+        # Test: debugging_systematic is enabled by default
         if 'debugging_systematic' in reqs:
             ds = reqs['debugging_systematic']
-            runner.test("debugging_systematic disabled by default",
-                       ds.get('enabled') is False)
+            runner.test("debugging_systematic enabled by default",
+                       ds.get('enabled') is True)
     else:
         runner.test("Example config file exists", False)
 
@@ -9113,7 +9113,10 @@ def test_process_skill_message_files(runner: TestRunner):
     """Test that message YAML files exist for new requirements."""
     print("\n🎯 Testing process skill message files...")
 
-    messages_dir = Path.home() / '.claude' / 'messages'
+    # Try repo location first (portable for CI), then deployed location
+    messages_dir = Path(__file__).parent.parent / 'messages'
+    if not messages_dir.exists():
+        messages_dir = Path.home() / '.claude' / 'messages'
 
     new_message_files = [
         'design_approved.yaml',

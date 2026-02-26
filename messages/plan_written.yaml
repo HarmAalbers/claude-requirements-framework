@@ -1,0 +1,24 @@
+version: "1.0"
+
+blocking_message: |
+  ## Blocked: Implementation Plan Required
+
+  **Execute**: `/write-plan`
+
+  Create a bite-sized implementation plan with exact file paths, test commands, and commit points.
+
+  **Why this matters**: Plans with 2-5 minute steps prevent scope creep and ensure
+  every change is tested and committed incrementally.
+
+  ---
+  Fallback: `req satisfy plan_written --session {session_id}`
+
+short_message: "Requirement `plan_written` not satisfied (waiting...)"
+
+success_message: "Implementation plan written"
+
+header: "Implementation Plan"
+
+action_label: "Run `/write-plan`"
+
+fallback_text: "req satisfy plan_written"
