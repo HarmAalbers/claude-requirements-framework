@@ -302,15 +302,14 @@ requirements:
       - "AI review completed"
 
   # ============================================================================
-  # PROCESS SKILLS REQUIREMENTS (opt-in)
+  # PROCESS SKILLS REQUIREMENTS
   # ============================================================================
   # These requirements enforce the design-first development workflow.
-  # Disabled by default - enable per project for full workflow enforcement.
 
   # Design Approval Requirement
   # Ensures a design has been brainstormed and approved before implementation
   design_approved:
-    enabled: false  # Opt-in: enable for design-first enforcement
+    enabled: true
     type: blocking
     scope: session
     description: "Ensures a design has been brainstormed and approved before implementation."
@@ -341,7 +340,7 @@ requirements:
   # Plan Written Requirement
   # Ensures a detailed implementation plan exists before coding
   plan_written:
-    enabled: false  # Opt-in: enable for plan-first enforcement
+    enabled: true
     type: blocking
     scope: session
     description: "Ensures a detailed implementation plan exists before coding."
@@ -372,7 +371,7 @@ requirements:
   # Verification Evidence Requirement
   # Ensures fresh verification evidence exists before claiming completion
   verification_evidence:
-    enabled: false  # Opt-in: enable for verification discipline
+    enabled: true
     type: blocking
     scope: single_use
     description: "Ensures fresh verification evidence before claiming work is complete."
@@ -397,7 +396,7 @@ requirements:
   # Systematic Debugging Requirement
   # Ensures root cause investigation before applying fixes
   debugging_systematic:
-    enabled: false  # Opt-in: for projects that want debugging discipline
+    enabled: true
     type: blocking
     scope: single_use
     description: "Ensures root cause investigation before applying fixes."

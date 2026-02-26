@@ -1,0 +1,22 @@
+version: "1.0"
+
+blocking_message: |
+  ## Blocked: Systematic Debugging Required
+
+  Invoke the `requirements-framework:systematic-debugging` skill first.
+
+  **Why this matters**: Random fixes waste time and create new bugs.
+  Find the root cause first, then fix it.
+
+  ---
+  Fallback: `req satisfy debugging_systematic --session {session_id}`
+
+short_message: "Requirement `debugging_systematic` not satisfied (waiting...)"
+
+success_message: "Root cause investigated systematically"
+
+header: "Systematic Debugging"
+
+action_label: "Use systematic-debugging skill"
+
+fallback_text: "req satisfy debugging_systematic"
