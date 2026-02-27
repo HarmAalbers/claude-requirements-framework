@@ -2,20 +2,25 @@
 
 Detailed inventory of all Requirements Framework components with line counts and purposes.
 
-## Hooks (9 total)
+## Hooks (15 total)
 
-| Hook File | Type | Purpose | Lines |
-|-----------|------|---------|-------|
-| `check-requirements.py` | PreToolUse | Blocks Edit/Write if requirements unsatisfied | 374 |
-| `handle-session-start.py` | SessionStart | Injects context, shows status on session start | 183 |
-| `handle-stop.py` | Stop | Verifies requirements before Claude stops | 155 |
-| `handle-session-end.py` | SessionEnd | Cleanup stale sessions | 123 |
-| `handle-plan-exit.py` | PostToolUse (ExitPlanMode) | Shows status after planning phase | 139 |
-| `auto-satisfy-skills.py` | PostToolUse (Skill) | Auto-satisfy requirements when skills complete | 137 |
-| `clear-single-use.py` | PostToolUse (Bash) | Clear single_use requirements after action | 136 |
-| `ruff_check.py` | PreToolUse | Python linting integration | 182 |
-
-**Total Hook Lines**: ~1,429
+| Hook File | Type | Purpose |
+|-----------|------|---------|
+| `check-requirements.py` | PreToolUse | Blocks Edit/Write if requirements unsatisfied |
+| `handle-session-start.py` | SessionStart | Injects context, shows status on session start |
+| `handle-prompt-submit.py` | UserPromptSubmit | Prompt context injection and metrics tracking |
+| `handle-permission-request.py` | PermissionRequest | Auto-deny dangerous command patterns |
+| `handle-plan-exit.py` | PostToolUse (ExitPlanMode) | Shows status after planning phase |
+| `auto-satisfy-skills.py` | PostToolUse (Skill) | Auto-satisfy requirements when skills complete |
+| `clear-single-use.py` | PostToolUse (Bash) | Clear single_use requirements after action |
+| `handle-tool-failure.py` | PostToolUseFailure | Track failure patterns in session metrics |
+| `handle-subagent-start.py` | SubagentStart | Inject requirement context into review subagents |
+| `handle-pre-compact.py` | PreCompact | Save requirement state before compaction |
+| `handle-stop.py` | Stop | Verifies requirements before Claude stops |
+| `handle-session-end.py` | SessionEnd | Cleanup stale sessions |
+| `handle-teammate-idle.py` | TeammateIdle | Team progress tracking (disabled by default) |
+| `handle-task-completed.py` | TaskCompleted | Team task quality gates (disabled by default) |
+| `ruff_check.py` | PreToolUse | Python linting integration |
 
 ---
 
@@ -106,7 +111,7 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `test_requirements.py` | Comprehensive test suite | 3,792 |
 | `test_branch_size_calculator.py` | Branch size calculator tests | 312 |
 
-**Total Tests**: 544 tests (100% pass rate)
+**Total Tests**: 1079 tests (100% pass rate)
 
 **Test Categories** (16+):
 - Session management (77 tests)
@@ -126,7 +131,7 @@ Detailed inventory of all Requirements Framework components with line counts and
 
 ## Plugin Components
 
-### Agents (15 total)
+### Agents (19 total)
 
 | Agent | Purpose |
 |-------|---------|
@@ -134,32 +139,41 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `backward-compatibility-checker.md` | Breaking change detection |
 | `code-reviewer.md` | General code review |
 | `code-simplifier.md` | Complexity reduction |
+| `codex-arch-reviewer.md` | Codex architecture review |
 | `codex-review-agent.md` | OpenAI Codex integration |
 | `comment-analyzer.md` | Comment quality review |
 | `comment-cleaner.md` | Remove stale/unnecessary comments |
 | `commit-planner.md` | Plan commits before making them |
+| `frontend-reviewer.md` | React/frontend best practices review |
 | `import-organizer.md` | Organize and clean imports |
+| `refactor-advisor.md` | Preparatory refactoring identification |
 | `session-analyzer.md` | Session metrics analysis |
 | `silent-failure-hunter.md` | Find silent failures |
+| `solid-reviewer.md` | SOLID principles validation |
 | `tdd-validator.md` | TDD strategy validation |
 | `test-analyzer.md` | Test coverage analysis |
 | `tool-validator.md` | Tool usage validation |
 | `type-design-analyzer.md` | Type system analysis |
 
-### Commands (8 total)
+### Commands (11 total)
 
 | Command | Purpose |
 |---------|---------|
 | `arch-review.md` | Team-based architecture review (recommended for planning) |
+| `brainstorm.md` | Design-first development |
 | `codex-review.md` | Codex-powered review |
 | `commit-checks.md` | Pre-commit auto-fix (comments + imports) |
 | `deep-review.md` | Cross-validated team review (recommended for PR) |
+| `execute-plan.md` | Execute plan with checkpoints |
 | `plan-review.md` | Lightweight plan review (alternative to /arch-review) |
 | `pre-commit.md` | Quick pre-commit review |
 | `quality-check.md` | Lightweight PR review (alternative to /deep-review) |
 | `session-reflect.md` | Session learning and reflection |
+| `write-plan.md` | Create implementation plan |
 
-### Skills (5 total)
+### Skills (19 total)
+
+**Framework Skills (5):**
 
 | Skill | Purpose |
 |-------|---------|
@@ -169,24 +183,43 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `requirements-framework-builder` | Extension guidance |
 | `session-learning` | Session learning workflow |
 
+**Process Skills (14):**
+
+| Skill | Purpose |
+|-------|---------|
+| `using-requirements-framework` | Bootstrap skill (session start injection) |
+| `brainstorming` | Design-first exploration |
+| `writing-plans` | Implementation plan creation |
+| `executing-plans` | Plan execution with checkpoints |
+| `test-driven-development` | RED-GREEN-REFACTOR enforcement |
+| `systematic-debugging` | Root-cause investigation |
+| `verification-before-completion` | Evidence-based completion |
+| `subagent-driven-development` | Parallel task execution |
+| `finishing-a-development-branch` | Branch completion options |
+| `using-git-worktrees` | Isolated workspaces |
+| `dispatching-parallel-agents` | Concurrent problem solving |
+| `receiving-code-review` | Technical feedback evaluation |
+| `requesting-code-review` | Review agent dispatch |
+| `writing-skills` | TDD-for-documentation meta-skill |
+
 ---
 
 ## Summary
 
-| Category | Count | Lines |
-|----------|-------|-------|
-| Hooks | 9 | ~1,429 |
-| Core Libraries | 5 | ~2,101 |
-| Strategy Libraries | 6 | ~915 |
-| Utility Libraries | 8 | ~1,430 |
-| Interactive Libraries | 3 | ~830 |
-| CLI Tool | 1 | ~1,839 |
-| Test Suite | 2 | ~4,104 |
-| **Total Production Code** | - | **~8,544** |
-| **Total with Tests** | - | **~12,648** |
+| Category | Count |
+|----------|-------|
+| Hooks | 15 |
+| Core Libraries | 5 |
+| Strategy Libraries | 6 |
+| Utility Libraries | 11 |
+| Session Learning Libraries | 2 |
+| Message Libraries | 2 |
+| Interactive Libraries | 3 |
+| CLI Tool | 1 |
+| Test Suite | 1079 tests |
 
 | Plugin Components | Count |
 |-------------------|-------|
-| Agents | 15 |
-| Commands | 8 |
-| Skills | 5 |
+| Agents | 19 |
+| Commands | 11 |
+| Skills | 19 |

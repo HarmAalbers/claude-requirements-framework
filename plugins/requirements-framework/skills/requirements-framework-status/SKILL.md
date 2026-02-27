@@ -10,7 +10,7 @@ Provides comprehensive project context and current state of the **Claude Code Re
 
 ## Current Implementation Status
 
-**Version**: 2.1.0
+**Version**: 2.5.0
 **Status**: ✅ Production Ready & Feature Complete
 **Repository**: https://github.com/HarmAalbers/claude-requirements-framework
 
@@ -21,12 +21,12 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | Metric | Value |
 |--------|-------|
 | **Production Code** | ~8,500 lines |
-| **Test Suite** | 544 tests (100% pass) |
-| **Hooks** | 9 active |
-| **Library Modules** | 17 |
+| **Test Suite** | 1079 tests (100% pass) |
+| **Hooks** | 15 active |
+| **Library Modules** | 32 |
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
-| **Plugin Agents** | 16 |
+| **Plugin Agents** | 19 |
 | **Plugin Commands** | 11 |
 | **Plugin Skills** | 19 |
 
@@ -58,26 +58,37 @@ Provides comprehensive project context and current state of the **Claude Code Re
 
 ## Core Components
 
-### Hooks (9 total)
+### Hooks (15 total)
 
 | Hook | Type | Purpose |
 |------|------|---------|
 | `check-requirements.py` | PreToolUse | Blocks Edit/Write if unsatisfied |
 | `handle-session-start.py` | SessionStart | Context injection, status display |
-| `handle-stop.py` | Stop | Verify requirements before stopping |
-| `handle-session-end.py` | SessionEnd | Cleanup sessions |
+| `handle-prompt-submit.py` | UserPromptSubmit | Prompt context injection |
+| `handle-permission-request.py` | PermissionRequest | Auto-deny dangerous commands |
 | `handle-plan-exit.py` | PostToolUse | Show status after planning |
 | `auto-satisfy-skills.py` | PostToolUse | Auto-satisfy on skill completion |
 | `clear-single-use.py` | PostToolUse | Clear single_use after action |
+| `handle-tool-failure.py` | PostToolUseFailure | Failure pattern tracking |
+| `handle-subagent-start.py` | SubagentStart | Review agent context injection |
+| `handle-pre-compact.py` | PreCompact | Pre-compaction state saving |
+| `handle-stop.py` | Stop | Verify requirements before stopping |
+| `handle-session-end.py` | SessionEnd | Cleanup sessions |
+| `handle-teammate-idle.py` | TeammateIdle | Team progress tracking |
+| `handle-task-completed.py` | TaskCompleted | Team task quality gates |
 | `ruff_check.py` | PreToolUse | Python linting |
 
-### Libraries (17 modules)
+### Libraries (32 modules)
 
 **Core**: `requirements.py`, `config.py`, `state_storage.py`, `session.py`, `registry_client.py`
 
-**Strategies**: `strategy_registry.py`, `base_strategy.py`, `blocking_strategy.py`, `dynamic_strategy.py`, `guard_strategy.py`
+**Strategies**: `strategy_registry.py`, `base_strategy.py`, `blocking_strategy.py`, `dynamic_strategy.py`, `guard_strategy.py`, `strategy_utils.py`
 
-**Utilities**: `branch_size_calculator.py`, `calculation_cache.py`, `message_dedup_cache.py`, `git_utils.py`, `colors.py`, `logger.py`
+**Utilities**: `branch_size_calculator.py`, `calculation_cache.py`, `calculator_interface.py`, `message_dedup_cache.py`, `git_utils.py`, `config_utils.py`, `colors.py`, `logger.py`, `feature_selector.py`, `init_presets.py`, `interactive.py`
+
+**Session Learning**: `session_metrics.py`, `learning_updates.py`
+
+**Messages**: `messages.py`, `message_validator.py`
 
 ### CLI Commands (11)
 
@@ -108,7 +119,9 @@ Local (.claude/requirements.local.yaml)
 ### Session Lifecycle
 
 ```
-SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
+SessionStart → UserPromptSubmit → PreToolUse → PermissionRequest →
+PostToolUse → PostToolUseFailure → SubagentStart → PreCompact →
+Stop → SessionEnd → TeammateIdle → TaskCompleted
 ```
 
 **→ Full architecture details**: See `references/architecture-overview.md`
@@ -132,11 +145,11 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 
 ## Plugin Components
 
-### Agents (16)
+### Agents (19)
 
-**Workflow**: `adr-guardian`, `codex-review-agent`, `commit-planner`, `solid-reviewer`, `tdd-validator`
+**Workflow**: `adr-guardian`, `codex-review-agent`, `codex-arch-reviewer`, `commit-planner`, `solid-reviewer`, `tdd-validator`
 
-**Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`
+**Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`, `refactor-advisor`
 
 **Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`
 
@@ -193,12 +206,17 @@ SessionStart → PreToolUse → PostToolUse → Stop → SessionEnd
 | ADR-006 | Plugin-based architecture |
 | ADR-007 | Deterministic command orchestrators |
 | ADR-008 | CLAUDE.md weekly maintenance |
+| ADR-009 | Agent auto-fix plan validation |
+| ADR-010 | Cross-project feature upgrade |
+| ADR-011 | Externalize messages to YAML |
+| ADR-012 | Agent Teams integration |
+| ADR-013 | Standardized agent output format |
 
 ---
 
 ## Production Readiness
 
-- ✅ 544 tests, 100% pass rate
+- ✅ 1079 tests, 100% pass rate
 - ✅ TDD methodology throughout
 - ✅ Fail-open design (errors don't block)
 - ✅ Session management & cleanup
