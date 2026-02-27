@@ -134,7 +134,7 @@ git add . && git commit -m "feat: TDD feature" && git push
 ```bash
 python3 ~/.claude/hooks/test_requirements.py
 
-# Expected: 544/544 tests passed ✓
+# Expected: 1079/1079 tests passed ✓
 ```
 
 ### Run Specific Tests
@@ -267,13 +267,21 @@ ls -la ~/.claude/hooks/check-requirements.py
 ```
 check-requirements.py
 handle-session-start.py
-handle-stop.py
-handle-session-end.py
+handle-prompt-submit.py
+handle-permission-request.py
 handle-plan-exit.py
 auto-satisfy-skills.py
 clear-single-use.py
+handle-tool-failure.py
+handle-subagent-start.py
+handle-pre-compact.py
+handle-stop.py
+handle-session-end.py
+handle-teammate-idle.py
+handle-task-completed.py
 requirements-cli.py
 test_requirements.py
+test_branch_size_calculator.py
 ruff_check.py
 ```
 
