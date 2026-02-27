@@ -20,7 +20,7 @@ Tool-validator provides deterministic results matching CI tools.
 </commentary>
 </example>
 color: blue
-git_hash: d433164
+git_hash: fd3589d
 ---
 
 # Tool Validator Agent
