@@ -54,7 +54,7 @@ PermissionRequest (handle-permission-request.py) - before permission dialog show
 
 PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Auto-satisfy requirements when review skills complete
-    → Maps: /requirements-framework:pre-commit → pre_commit_review
+    → Maps: /requirements-framework:pre-commit → pre_commit_review (deprecated, kept for backward compat)
     → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
     → Maps: /requirements-framework:plan-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
@@ -63,7 +63,7 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
 
 PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
-    → Example: Clears pre_commit_review after git commit
+    → Example: Clears single_use requirements after trigger commands
 
 PostToolUse (handle-plan-exit.py) - after ExitPlanMode
     → Shows requirements status proactively

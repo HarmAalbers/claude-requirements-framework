@@ -224,10 +224,13 @@ requirements:
       ---
       Override: `req approve branch_size_limit`
 
-  # Pre-Commit Review Requirement
-  # Ensures code is reviewed before every commit
+  # DEPRECATED: pre_commit_review is deprecated since v2.6.
+  # The /pre-commit command remains available for voluntary use.
+  # Use /deep-review or /arch-review for enforced review workflows instead.
   pre_commit_review:
-    enabled: true
+    enabled: false
+    deprecated: true
+    deprecated_message: "pre_commit_review is deprecated. Use /pre-commit voluntarily or /deep-review for enforced pre-PR review."
     type: blocking
     scope: single_use  # Must re-satisfy before EACH commit
     description: "Code review before each commit - resets after commit completes."

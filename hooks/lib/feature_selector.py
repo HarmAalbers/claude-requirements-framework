@@ -44,11 +44,12 @@ FEATURES = {
         'type': 'dynamic',
     },
     'pre_commit_review': {
-        'name': 'Pre-Commit Review',
-        'description': 'Review before every commit',
+        'name': 'Pre-Commit Review (deprecated)',
+        'description': 'Review before every commit (use /pre-commit voluntarily instead)',
         'category': 'code_quality',
         'type': 'blocking',
         'scope': 'single_use',
+        'deprecated': True,
     },
     'pre_pr_review': {
         'name': 'Pre-PR Review',
@@ -86,8 +87,8 @@ class FeatureSelector:
             options.append(option_str)
             option_to_key[option_str] = key
 
-        # Default selections: commit_plan, adr_reviewed, pre_commit_review
-        default_keys = ['commit_plan', 'adr_reviewed', 'pre_commit_review']
+        # Default selections: commit_plan, adr_reviewed
+        default_keys = ['commit_plan', 'adr_reviewed']
         defaults = [
             f"{FEATURES[k]['name']} - {FEATURES[k]['description']}"
             for k in default_keys

@@ -55,8 +55,8 @@ requirements:
       block: 400
     ...
   pre_commit_review:
-    enabled: true
-    scope: single_use
+    enabled: false  # Deprecated since v2.6
+    deprecated: true
     ...
   pre_pr_review:
     enabled: true
@@ -434,7 +434,7 @@ The `advanced` preset is designed to be an **educational tool**. When you run it
 1. **Blocking requirements** (commit_plan, adr_reviewed)
 2. **Guard requirements** (protected_branch) - prevents operations
 3. **Dynamic requirements** (branch_size_limit) - auto-calculated with thresholds
-4. **Single-use requirements** (pre_commit_review, pre_pr_review) - re-satisfy each time
+4. **Single-use requirements** (pre_pr_review, codex_reviewer) - re-satisfy each time
 5. **Branch-scoped requirements** (github_ticket, disabled) - once per branch
 6. **Tool-specific triggers** with command patterns (git commit, gh pr create)
 7. **Hooks configuration** (stop hook verification)

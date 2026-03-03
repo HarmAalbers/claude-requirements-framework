@@ -456,7 +456,7 @@ The Requirements Framework has two complementary components:
 
 | Plugin Command | Satisfies Requirement |
 |----------------|----------------------|
-| `/requirements-framework:pre-commit` | `pre_commit_review` |
+| `/requirements-framework:pre-commit` | `pre_commit_review` (deprecated) |
 | `/requirements-framework:quality-check` | `pre_pr_review` |
 
 **See:** `~/.claude/hooks/auto-satisfy-skills.py` for mapping logic
@@ -562,10 +562,8 @@ To use plugin commands as requirement satisfaction mechanisms:
 **~/.claude/requirements.yaml:**
 ```yaml
 requirements:
-  pre_commit_review:
-    scope: single_use
-    message: "Run /requirements-framework:pre-commit before committing"
-
+  # NOTE: pre_commit_review is deprecated since v2.6.
+  # Use /pre-commit voluntarily or /deep-review for enforced review.
   pre_pr_review:
     scope: single_use
     message: "Run /requirements-framework:quality-check before creating PR"

@@ -75,7 +75,7 @@ Use Task tool with `requirements-framework:code-reviewer` type, fill template at
 
 ## Requirements Integration
 
-When this skill completes, it auto-satisfies the `pre_commit_review` requirement. This means git commit will no longer be blocked.
+When this skill completes, it auto-satisfies the `pre_commit_review` requirement (deprecated since v2.6, disabled by default). The `/pre-commit` command remains available for voluntary use.
 
 ## Red Flags
 

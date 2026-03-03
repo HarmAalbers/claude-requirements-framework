@@ -344,7 +344,7 @@ When subagent fallback was used (USE_TEAM=false or TeamCreate failed):
 |--------|-------------|--------------|
 | Scope | Pre-commit changes | All branch changes |
 | Default agents | code-reviewer + silent-failure-hunter | code-reviewer + silent-failure-hunter + contextual |
-| Satisfies | `pre_commit_review` | `pre_pr_review` |
+| Satisfies | `pre_commit_review` (deprecated) | `pre_pr_review` |
 | Cost | Lower (fewer default agents) | Higher (more agents, broader scope) |
 | Cross-validation | Yes (when 2+ review agents) | Always |
 

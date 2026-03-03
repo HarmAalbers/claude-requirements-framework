@@ -54,9 +54,10 @@ requirements:
       - "Reviewed decision context"
       - "Confirmed approach aligns with ADRs"
 
-  # Pre-commit Review - Code quality before each commit
+  # Pre-commit Review - DEPRECATED since v2.6 (use /pre-commit voluntarily)
   pre_commit_review:
-    enabled: true
+    enabled: false  # Deprecated
+    deprecated: true
     type: blocking
     scope: single_use
     trigger_tools:
