@@ -112,7 +112,7 @@ Fast pre-commit review with smart agent selection.
 /requirements-framework:pre-commit tests types  # Specific aspects
 ```
 
-**Integration:** Auto-satisfies `pre_commit_review` requirement when complete
+**Integration:** Auto-satisfies `pre_commit_review` requirement when complete (requirement deprecated since v2.6, command remains available for voluntary use)
 
 **Workflow:**
 ```
@@ -120,7 +120,7 @@ Tool Validator (blocking gate)
       ↓ (if passes)
 Selected AI Agents (parallel or sequential)
       ↓
-Review Complete → auto-satisfy-skills.py → pre_commit_review satisfied
+Review Complete → auto-satisfy-skills.py → pre_commit_review satisfied (if enabled)
 ```
 
 #### /requirements-framework:quality-check [parallel]
@@ -407,13 +407,8 @@ See [Configuration System](../../README.md#configuration-system) for details.
 **Example ~/.claude/requirements.yaml:**
 ```yaml
 requirements:
-  pre_commit_review:
-    scope: single_use
-    message: "Run /requirements-framework:pre-commit before committing"
-    trigger_tools:
-      - tool: Write
-      - tool: Edit
-
+  # NOTE: pre_commit_review is deprecated since v2.6.
+  # Use /pre-commit voluntarily or /deep-review for enforced review.
   pre_pr_review:
     scope: single_use
     message: "Run /requirements-framework:quality-check before creating PR"
@@ -437,7 +432,7 @@ The plugin integrates via `auto-satisfy-skills.py` (PostToolUse hook):
 
 | Command | Satisfies | Scope |
 |---------|-----------|-------|
-| `/requirements-framework:pre-commit` | `pre_commit_review` | `single_use` |
+| `/requirements-framework:pre-commit` | `pre_commit_review` (deprecated) | `single_use` |
 | `/requirements-framework:quality-check` | `pre_pr_review` | `single_use` |
 | `/requirements-framework:codex-review` | `codex_reviewer` | `single_use` |
 
@@ -643,13 +638,13 @@ gh pr create
 # Try to edit file
 vim src/critical.ts
 
-# Blocked: "pre_commit_review not satisfied"
+# Blocked: "pre_pr_review not satisfied"
 
 # Satisfy requirement
-/requirements-framework:pre-commit
+/requirements-framework:deep-review
 
 # Now unblocked
-vim src/critical.ts  # Works!
+gh pr create  # Works!
 ```
 
 ## Limitations

@@ -150,8 +150,13 @@ requirements:
       3. Override: `req approve single_session_per_project`
     checklist:
       - "Confirmed no other active sessions on this project"
+  # DEPRECATED: pre_commit_review is deprecated since v2.6.
+  # The /pre-commit command remains available for voluntary use.
+  # Use /deep-review or /arch-review for enforced review workflows instead.
   pre_commit_review:
-    enabled: true
+    enabled: false
+    deprecated: true
+    deprecated_message: "pre_commit_review is deprecated. Use /pre-commit voluntarily or /deep-review for enforced pre-PR review."
     type: blocking
     scope: single_use
     description: "Code review before each commit - resets after commit completes."

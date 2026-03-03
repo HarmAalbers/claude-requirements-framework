@@ -157,12 +157,17 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
         "name": "Pre-Commit Review",
         "category": CATEGORY_REQUIREMENTS,
         "config_path": "requirements.pre_commit_review",
-        "description": "Code review before each commit",
+        "description": "Code review before each commit (deprecated - use /pre-commit voluntarily)",
         "introduced": "1.0",
-        "default_enabled": True,
+        "deprecated": True,
+        "deprecated_message": "Deprecated since v2.6. Use /pre-commit voluntarily or /deep-review for enforced pre-PR review.",
+        "default_enabled": False,
         "example_yaml": """requirements:
+  # DEPRECATED: Use /pre-commit voluntarily instead.
   pre_commit_review:
-    enabled: true
+    enabled: false
+    deprecated: true
+    deprecated_message: "pre_commit_review is deprecated. Use /pre-commit voluntarily or /deep-review for enforced pre-PR review."
     type: blocking
     scope: single_use
     description: "Code review before each commit."

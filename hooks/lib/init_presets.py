@@ -211,8 +211,12 @@ Consider splitting into smaller PRs for easier review.
 ''',
             },
 
+            # DEPRECATED: pre_commit_review is deprecated since v2.6.
+            # The /pre-commit command remains available for voluntary use.
             'pre_commit_review': {
-                'enabled': True,
+                'enabled': False,
+                'deprecated': True,
+                'deprecated_message': 'pre_commit_review is deprecated. Use /pre-commit voluntarily or /deep-review for enforced pre-PR review.',
                 'type': 'blocking',
                 'scope': 'single_use',
                 'trigger_tools': [

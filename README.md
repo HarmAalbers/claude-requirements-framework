@@ -100,7 +100,7 @@ Choose from context-aware presets optimized for your setup:
 - **`advanced`** - All features (recommended for global config)
   - 7 requirements showcasing every capability
   - Dynamic checks (branch_size_limit with calculator)
-  - Single-use requirements (pre_commit_review, pre_pr_review)
+  - Single-use requirements (pre_pr_review, codex_reviewer)
   - Guard requirements (protected_branch)
   - Perfect for discovering what the framework can do
 
@@ -122,7 +122,7 @@ Choose from context-aware presets optimized for your setup:
 
 **2. Custom Selection**
 Interactive checkbox to pick specific features:
-- Choose from: commit_plan, adr_reviewed, protected_branch, branch_size_limit, pre_commit_review, pre_pr_review
+- Choose from: commit_plan, adr_reviewed, protected_branch, branch_size_limit, pre_pr_review, codex_reviewer
 - Perfect for power users who know exactly what they want
 
 **3. Manual Setup**
@@ -309,26 +309,20 @@ requirements:
     approval_ttl: 3600  # 1 hour approval via `req approve`
 ```
 
-### pre_commit_review (Single-Use Scope)
+### pre_commit_review (Deprecated)
 
-Requires code review before every commit.
+> **Deprecated since v2.6.** The `/pre-commit` command remains available for voluntary use.
+> Use `/deep-review` or `/arch-review` for enforced review workflows instead.
 
-**Scope**: single_use - Must re-satisfy before EACH commit
+Previously required code review before every commit. Now disabled by default.
 
 ```yaml
 requirements:
+  # DEPRECATED: Use /pre-commit voluntarily instead.
   pre_commit_review:
-    enabled: true
-    type: blocking
-    scope: single_use
-    trigger_tools:
-      - tool: Bash
-        command_pattern: "git\\s+(commit|cherry-pick|revert|merge)"
-    message: |
-      Run `/requirements-framework:pre-commit` to review your code
+    enabled: false
+    deprecated: true
 ```
-
-**Auto-satisfied** when you run `/requirements-framework:pre-commit`
 
 ### pre_pr_review (Single-Use Scope)
 
@@ -440,7 +434,7 @@ The requirements framework includes a comprehensive plugin with specialized agen
 Fast pre-commit review with smart agent selection:
 - **Default** (no args): tool-validator + code-reviewer + silent-failure-hunter
 - **Arguments**: `tools`, `code`, `errors`, `compat`, `tests`, `types`, `comments`, `simplify`, `all`, `parallel`
-- **Integrated with**: `pre_commit_review` requirement (auto-satisfies on completion)
+- **Integrated with**: `pre_commit_review` requirement (auto-satisfies on completion, requirement deprecated)
 - **Execution**: Deterministic workflow with blocking gates (tool errors stop AI review)
 
 Examples:

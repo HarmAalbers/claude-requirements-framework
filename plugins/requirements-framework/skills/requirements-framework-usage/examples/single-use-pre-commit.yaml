@@ -1,7 +1,10 @@
 # Example: Single-Use Pre-commit Review
 #
-# Configuration for requiring code review before EVERY commit.
-# The single_use scope ensures the requirement resets after each commit.
+# DEPRECATED: pre_commit_review is deprecated since v2.6.
+# The /pre-commit command remains available for voluntary use.
+# Use /deep-review or /arch-review for enforced review workflows instead.
+#
+# This example is kept for reference only. The requirement is disabled by default.
 
 version: "1.0"
 enabled: true
@@ -9,7 +12,8 @@ inherit: true
 
 requirements:
   pre_commit_review:
-    enabled: true
+    enabled: false  # Deprecated since v2.6
+    deprecated: true
     type: blocking
     scope: single_use     # KEY: Resets after each commit
     trigger_tools:
