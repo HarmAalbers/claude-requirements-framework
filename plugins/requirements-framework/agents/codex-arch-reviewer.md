@@ -21,7 +21,7 @@ description: |
   </commentary>
   </example>
 color: blue
-git_hash: 86f0426
+git_hash: cc67e99
 ---
 
 # Codex Architecture Review Agent

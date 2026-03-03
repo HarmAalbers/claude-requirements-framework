@@ -3,7 +3,7 @@ name: deep-review
 description: "Cross-validated team-based code review with agent debate"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: 86f0426
+git_hash: cc67e99
 ---
 
 # Deep Review — Cross-Validated Team-Based Code Review
