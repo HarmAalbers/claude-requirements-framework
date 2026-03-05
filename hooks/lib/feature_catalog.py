@@ -392,6 +392,17 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
   stop:
     verify_requirements: true""",
     },
+    "brainstorm_on_enter": {
+        "name": "Brainstorm on Plan Enter",
+        "category": CATEGORY_HOOKS,
+        "config_path": "hooks.plan_enter",
+        "description": "Auto-invoke brainstorming skill when entering plan mode",
+        "introduced": "2.6",
+        "default_enabled": True,
+        "example_yaml": """hooks:
+  plan_enter:
+    brainstorm_on_enter: true""",
+    },
 }
 
 

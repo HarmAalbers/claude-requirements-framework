@@ -33,6 +33,7 @@ cp -v "$REPO_DIR/hooks/handle-session-end.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/auto-satisfy-skills.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/clear-single-use.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-plan-exit.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-plan-enter.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/ruff_check.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-teammate-idle.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-task-completed.py" "$HOME/.claude/hooks/"
@@ -50,6 +51,7 @@ chmod +x "$HOME/.claude/hooks/handle-session-end.py"
 chmod +x "$HOME/.claude/hooks/auto-satisfy-skills.py"
 chmod +x "$HOME/.claude/hooks/clear-single-use.py"
 chmod +x "$HOME/.claude/hooks/handle-plan-exit.py"
+chmod +x "$HOME/.claude/hooks/handle-plan-enter.py"
 chmod +x "$HOME/.claude/hooks/ruff_check.py"
 chmod +x "$HOME/.claude/hooks/handle-teammate-idle.py"
 chmod +x "$HOME/.claude/hooks/handle-task-completed.py"
@@ -309,7 +311,8 @@ REQUIRED_HOOKS = {
         "hooks": [
             {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
             {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"}
+            {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"},
+            {"type": "command", "command": "~/.claude/hooks/handle-plan-enter.py"}
         ]
     }],
     "SessionStart": [{

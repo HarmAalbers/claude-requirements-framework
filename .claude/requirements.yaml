@@ -225,4 +225,6 @@ hooks:
     min_tool_uses: 5
   stop:
     verify_requirements: true
+  plan_enter:
+    brainstorm_on_enter: true
 inherit: true

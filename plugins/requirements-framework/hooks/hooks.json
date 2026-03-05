@@ -43,6 +43,16 @@
             "statusMessage": "Validating plan requirements..."
           }
         ]
+      },
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/handle-plan-enter.py",
+            "statusMessage": "Checking brainstorm requirements..."
+          }
+        ]
       }
     ],
     "SessionStart": [
