@@ -9294,6 +9294,151 @@ def test_plugin_command_files_exist(runner: TestRunner):
                    filepath.exists())
 
 
+def test_plan_enter_hook(runner: TestRunner):
+    """Test handle-plan-enter.py PostToolUse hook behavior."""
+    print("\n📦 Testing PlanEnter hook...")
+
+    hook_path = Path(__file__).parent / "handle-plan-enter.py"
+
+    if not hook_path.exists():
+        runner.test("PlanEnter hook exists", False, "Hook file not implemented yet")
+        return
+
+    def run_hook(input_data, cwd, env=None):
+        return subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps(input_data),
+            cwd=cwd, capture_output=True, text=True,
+            env={**os.environ, **(env or {})}
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo with feature branch
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        base_input = {
+            "tool_name": "EnterPlanMode",
+            "tool_input": {},
+            "tool_result": {},
+            "session_id": "planenter-test"
+        }
+
+        # Test 1: Injects brainstorm directive with config (no design_approved requirement)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = run_hook(base_input, tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Injects brainstorm directive",
+                   "Brainstorm Before Planning" in ctx and "/brainstorming" in ctx,
+                   f"Got: {result.stdout[:300]}")
+        runner.test("Injects directive exit 0", result.returncode == 0)
+
+        # Test 2: Fires without design_approved requirement configured
+        config_no_design = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_no_design, f)
+
+        result = run_hook(base_input, tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Fires without design_approved requirement",
+                   "Brainstorm Before Planning" in ctx,
+                   f"Got: {result.stdout[:300]}")
+
+        # Test 3: Skips non-EnterPlanMode tool
+        non_enter_input = {**base_input, "tool_name": "ExitPlanMode"}
+        result = run_hook(non_enter_input, tmpdir)
+        runner.test("Skips non-EnterPlanMode tool",
+                   result.returncode == 0 and result.stdout.strip() == "",
+                   f"Got output: {result.stdout[:200]}")
+
+        # Test 4: Skips when design_approved is satisfied
+        config_with_design = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session", "type": "blocking", "message": "Design!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_with_design, f)
+
+        # Satisfy design_approved via BranchRequirements
+        from requirements import BranchRequirements
+        reqs = BranchRequirements("feature/test", "planenter-test", tmpdir)
+        reqs.satisfy("design_approved", "session")
+
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips when design_approved satisfied",
+                   result.stdout.strip() == "",
+                   f"Expected empty output, got: {result.stdout[:200]}")
+
+        # Test 5: Skips when config disabled
+        config_disabled = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "plan_enter": {"brainstorm_on_enter": False}
+            },
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_disabled, f)
+
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips when brainstorm_on_enter disabled",
+                   result.returncode == 0 and result.stdout.strip() == "",
+                   f"Got output: {result.stdout[:200]}")
+
+        # Test 6: Skips when framework disabled
+        config_fw_disabled = {
+            "version": "1.0",
+            "enabled": False,
+            "inherit": False,
+            "requirements": {}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_fw_disabled, f)
+
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips when framework disabled",
+                   result.returncode == 0 and result.stdout.strip() == "",
+                   f"Got output: {result.stdout[:200]}")
+
+        # Test 7: Fails open on error (bad JSON stdin)
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input="not valid json",
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Fails open on bad JSON", result.returncode == 0)
+
+    # Test 8: Config default value
+    from config import RequirementsConfig
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg = RequirementsConfig(tmpdir)
+        val = cfg.get_hook_config('plan_enter', 'brainstorm_on_enter')
+        runner.test("Hook default brainstorm_on_enter is True", val is True,
+                   f"Got: {val}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -9468,6 +9613,9 @@ def main():
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
     test_session_start_bootstrap_injection(runner)
+
+    # Plan enter hook tests
+    test_plan_enter_hook(runner)
 
     return runner.summary()
 
