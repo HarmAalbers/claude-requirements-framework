@@ -755,6 +755,9 @@ class RequirementsConfig:
         "session_end": {
             "clear_session_state": False,
         },
+        "plan_enter": {
+            "brainstorm_on_enter": True,
+        },
     }
 
     def __init__(
