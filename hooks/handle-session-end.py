@@ -29,7 +29,7 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from session import remove_session_from_registry, normalize_session_id
+from session import remove_session_from_registry, normalize_session_id, get_registry_path
 from logger import get_logger
 from hook_utils import early_hook_setup
 
@@ -78,7 +78,7 @@ def main() -> int:
         session_started_at = None
         try:
             from registry_client import RegistryClient
-            reg_client = RegistryClient(session.get_registry_path())
+            reg_client = RegistryClient(get_registry_path())
             reg_data = reg_client.read()
             session_entry = reg_data.get("sessions", {}).get(session_id, {})
             session_started_at = session_entry.get("started_at")

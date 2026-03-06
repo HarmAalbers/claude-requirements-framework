@@ -86,16 +86,9 @@ def _handle_git_commit(tracker, project_dir: str, branch: str, logger) -> None:
                 lines_removed = int(m.group(3) or 0)
                 break
 
-    # Get current commit count
-    entry = tracker.get_entry(project_dir, branch)
-    current_count = 0
-    if entry:
-        current_count = entry.get("git_metrics", {}).get("commit_count", 0)
-
-    tracker.update_git_metrics(
+    tracker.record_commit(
         project_dir, branch,
-        commit_count=current_count + 1,
-        last_commit_hash=commit_hash,
+        commit_hash=commit_hash,
         files_changed=files_changed,
         lines_added=lines_added,
         lines_removed=lines_removed,
@@ -184,9 +177,14 @@ def main() -> int:
             tool_result = input_data.get('tool_result', {})
             _handle_pr_create(tracker, project_dir, branch, tool_result, logger)
 
-    except Exception:
+    except Exception as e:
         # Fail silently - never block on tracking errors
-        pass
+        try:
+            get_logger(base_context={"hook": "GitEvents"}).error(
+                "Unhandled error in GitEvents hook", error=str(e)
+            )
+        except Exception:
+            pass
 
     return 0
 

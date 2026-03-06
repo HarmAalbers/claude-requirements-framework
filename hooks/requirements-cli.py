@@ -3622,6 +3622,11 @@ def _cmd_wip_clean(args) -> int:
     from wip_tracker import WipTracker
 
     tracker = WipTracker()
+
+    # Collect done entries before cleaning (for --delete-branches)
+    delete_branches = getattr(args, 'delete_branches', False)
+    done_entries = tracker.list_entries(status="done") if delete_branches else []
+
     count = tracker.clean_done()
 
     if count == 0:
@@ -3629,9 +3634,8 @@ def _cmd_wip_clean(args) -> int:
     else:
         out(success(f"Removed {count} done entries."))
 
-    # Optionally delete local branches
-    if getattr(args, 'delete_branches', False):
-        done_entries = tracker.list_entries(status="done")
+    # Optionally delete local branches (collected before clean)
+    if delete_branches:
         for entry in done_entries:
             branch = entry.get("branch", "")
             proj = entry.get("project_dir", "")
