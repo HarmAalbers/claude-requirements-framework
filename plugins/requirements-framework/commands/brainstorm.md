@@ -3,7 +3,7 @@ name: brainstorm
 description: "Design-first development: explore requirements before implementation"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: cc67e99
+git_hash: a409d60
 ---
 
 Invoke the `requirements-framework:brainstorming` skill and follow it exactly as presented to you.
