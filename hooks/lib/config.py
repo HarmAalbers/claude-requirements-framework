@@ -758,6 +758,13 @@ class RequirementsConfig:
         "plan_enter": {
             "brainstorm_on_enter": True,
         },
+        "wip_tracking": {
+            "enabled": False,
+            "prompt_on_stop": True,
+            "inject_on_start": True,
+            "auto_detect_merged": True,
+            "exclude_branches": ["main", "master", "develop"],
+        },
     }
 
     def __init__(
