@@ -3451,6 +3451,226 @@ def _cmd_messages_list(args) -> int:
     return 0
 
 
+def _format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    remaining_min = minutes % 60
+    if remaining_min:
+        return f"{hours}h {remaining_min}m"
+    return f"{hours}h"
+
+
+def cmd_wip(args) -> int:
+    """
+    Manage WIP project tracking.
+
+    Subcommands:
+        list    - Show WIP dashboard
+        status  - Show current branch details
+        set     - Set branch status
+        clean   - Remove done entries
+        summary - Set/update summary
+    """
+    subcommand = args.wip_command or 'list'
+
+    if subcommand == 'list':
+        return _cmd_wip_list(args)
+    elif subcommand == 'status':
+        return _cmd_wip_status(args)
+    elif subcommand == 'set':
+        return _cmd_wip_set(args)
+    elif subcommand == 'clean':
+        return _cmd_wip_clean(args)
+    elif subcommand == 'summary':
+        return _cmd_wip_summary(args)
+    else:
+        out(error(f"Unknown subcommand: {subcommand}"), file=sys.stderr)
+        return 1
+
+
+def _cmd_wip_list(args) -> int:
+    """Show WIP dashboard across all projects."""
+    from wip_tracker import WipTracker
+
+    tracker = WipTracker()
+    status_filter = getattr(args, 'status', None)
+    project_filter = getattr(args, 'project', None)
+    entries = tracker.list_entries(status=status_filter, project=project_filter)
+
+    # Filter out 'done' by default unless --all flag
+    show_all = getattr(args, 'all', False)
+    if not show_all:
+        entries = [e for e in entries if e.get("status") != "done"]
+
+    if not entries:
+        out(info("No WIP branches tracked."))
+        out(hint("WIP entries are created automatically when wip_tracking is enabled."))
+        return 0
+
+    out(header("WIP Projects Dashboard"))
+    out(dim("─" * 80))
+
+    # Table header
+    out(f"  {'Project':<18} {'Branch':<22} {'Status':<8} {'Summary':<24} {'Commits':<8} {'Time'}")
+    out(f"  {'─'*17} {'─'*21} {'─'*7} {'─'*23} {'─'*7} {'─'*6}")
+
+    status_counts: dict[str, int] = {}
+    for e in entries:
+        proj_name = Path(e["project_dir"]).name[:17]
+        branch = e.get("branch", "?")[:21]
+        status = e.get("status", "?").upper()
+        summary = e.get("summary", "")[:23]
+        commits = e.get("git_metrics", {}).get("commit_count", 0)
+        total_time = e.get("total_time_seconds", 0)
+
+        status_counts[status] = status_counts.get(status, 0) + 1
+        out(f"  {proj_name:<18} {branch:<22} {status:<8} {summary:<24} {commits:<8} {_format_duration(total_time)}")
+
+    out(dim("─" * 80))
+    parts = [f"{c} {s}" for s, c in sorted(status_counts.items())]
+    out(f"{len(entries)} branch(es) tracked ({', '.join(parts)})")
+    return 0
+
+
+def _cmd_wip_status(args) -> int:
+    """Show details for current branch."""
+    from wip_tracker import WipTracker
+
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("Not in a git repository"), file=sys.stderr)
+        return 1
+
+    branch = get_current_branch(project_dir)
+    if not branch:
+        out(error("Cannot determine current branch"), file=sys.stderr)
+        return 1
+
+    tracker = WipTracker()
+    entry = tracker.get_entry(project_dir, branch)
+
+    if not entry:
+        out(info(f"No WIP entry for branch '{branch}'."))
+        return 0
+
+    out(header(f"WIP: {branch}"))
+    out()
+    out(f"  Status:     {bold(entry.get('status', '?').upper())}")
+    out(f"  Summary:    {entry.get('summary', '(none)')}")
+    out(f"  Project:    {entry.get('project_dir', '?')}")
+
+    issue = entry.get("github_issue", "")
+    if issue:
+        out(f"  Issue:      {issue}")
+
+    plan = entry.get("plan_path", "")
+    if plan:
+        out(f"  Plan:       {plan}")
+
+    out()
+    metrics = entry.get("git_metrics", {})
+    out(f"  Commits:    {metrics.get('commit_count', 0)}")
+    out(f"  Files:      {metrics.get('files_changed', 0)}")
+    out(f"  Added:      +{metrics.get('lines_added', 0)}")
+    out(f"  Removed:    -{metrics.get('lines_removed', 0)}")
+    out(f"  Pushed:     {'Yes' if metrics.get('pushed') else 'No'}")
+    pr = metrics.get("pr_url")
+    if pr:
+        out(f"  PR:         {pr}")
+
+    out()
+    total_time = entry.get("total_time_seconds", 0)
+    out(f"  Total Time: {_format_duration(total_time)}")
+    sessions = entry.get("session_history", [])
+    out(f"  Sessions:   {len(sessions)}")
+
+    return 0
+
+
+def _cmd_wip_set(args) -> int:
+    """Set WIP status for current branch."""
+    from wip_tracker import WipTracker, VALID_STATUSES
+
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("Not in a git repository"), file=sys.stderr)
+        return 1
+
+    branch = get_current_branch(project_dir)
+    if not branch:
+        out(error("Cannot determine current branch"), file=sys.stderr)
+        return 1
+
+    new_status = args.status
+    if new_status not in VALID_STATUSES:
+        out(error(f"Invalid status '{new_status}'. Must be one of: {', '.join(sorted(VALID_STATUSES))}"), file=sys.stderr)
+        return 1
+
+    tracker = WipTracker()
+    tracker.set_status(project_dir, branch, new_status)
+    out(success(f"Set '{branch}' status to {new_status.upper()}"))
+    return 0
+
+
+def _cmd_wip_clean(args) -> int:
+    """Remove done entries."""
+    from wip_tracker import WipTracker
+
+    tracker = WipTracker()
+    count = tracker.clean_done()
+
+    if count == 0:
+        out(info("No done entries to clean."))
+    else:
+        out(success(f"Removed {count} done entries."))
+
+    # Optionally delete local branches
+    if getattr(args, 'delete_branches', False):
+        done_entries = tracker.list_entries(status="done")
+        for entry in done_entries:
+            branch = entry.get("branch", "")
+            proj = entry.get("project_dir", "")
+            if branch and proj:
+                from git_utils import run_git
+                exit_code, _, stderr = run_git(f"git branch -d {branch}", cwd=proj)
+                if exit_code == 0:
+                    out(success(f"  Deleted branch: {branch}"))
+                else:
+                    out(warning(f"  Could not delete {branch}: {stderr}"))
+
+    return 0
+
+
+def _cmd_wip_summary(args) -> int:
+    """Set/update summary for current branch."""
+    from wip_tracker import WipTracker
+
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("Not in a git repository"), file=sys.stderr)
+        return 1
+
+    branch = get_current_branch(project_dir)
+    if not branch:
+        out(error("Cannot determine current branch"), file=sys.stderr)
+        return 1
+
+    text = " ".join(args.text)
+    if not text:
+        out(error("Please provide summary text"), file=sys.stderr)
+        return 1
+
+    tracker = WipTracker()
+    tracker.upsert_entry(project_dir, branch, {"summary": text})
+    out(success(f"Updated summary for '{branch}'"))
+    return 0
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -3624,6 +3844,34 @@ Environment Variables:
     upgrade_apply.add_argument('--dry-run', action='store_true', help='Show what would be added without writing')
     upgrade_apply.add_argument('--yes', '-y', action='store_true', help='Skip confirmation prompt')
 
+    # wip
+    wip_parser = subparsers.add_parser('wip', help='Manage WIP project tracking')
+    wip_subparsers = wip_parser.add_subparsers(dest='wip_command', help='WIP subcommand')
+
+    # wip list
+    wip_list = wip_subparsers.add_parser('list', help='Show WIP dashboard')
+    wip_list.add_argument('--status', '-s', choices=['wip', 'done', 'paused', 'todo'],
+                          help='Filter by status')
+    wip_list.add_argument('--project', '-p', help='Filter by project directory')
+    wip_list.add_argument('--all', '-a', action='store_true', help='Include done entries')
+
+    # wip status
+    wip_subparsers.add_parser('status', help='Show current branch details')
+
+    # wip set
+    wip_set = wip_subparsers.add_parser('set', help='Set branch status')
+    wip_set.add_argument('status', choices=['wip', 'done', 'paused', 'todo'],
+                         help='New status')
+
+    # wip clean
+    wip_clean = wip_subparsers.add_parser('clean', help='Remove done entries')
+    wip_clean.add_argument('--delete-branches', action='store_true',
+                           help='Also delete local git branches')
+
+    # wip summary
+    wip_summary = wip_subparsers.add_parser('summary', help='Set/update summary')
+    wip_summary.add_argument('text', nargs='+', help='Summary text')
+
     # messages
     messages_parser = subparsers.add_parser('messages', help='Manage externalized message files')
     messages_subparsers = messages_parser.add_subparsers(dest='messages_command', help='Messages subcommand')
@@ -3659,6 +3907,7 @@ Environment Variables:
         'learning': cmd_learning,
         'upgrade': cmd_upgrade,
         'messages': cmd_messages,
+        'wip': cmd_wip,
     }
 
     return commands[args.command](args)
