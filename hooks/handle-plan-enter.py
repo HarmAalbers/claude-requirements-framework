@@ -51,6 +51,7 @@ def main() -> int:
     """Hook entry point."""
     # Parse stdin input
     input_data = {}
+    stdin_content = ""
     try:
         stdin_content = sys.stdin.read()
         if stdin_content:
