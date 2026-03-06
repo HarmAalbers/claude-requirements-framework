@@ -171,6 +171,42 @@ def main() -> int:
         emit_hook_context("PostToolUse", "\n".join(lines))
 
         logger.info("Plan exit - showed requirements", requirements=req_names)
+
+        # WIP tracking: auto-create/update entry from plan context (silent)
+        try:
+            wip_enabled = config.get_hook_config('wip_tracking', 'enabled', False)
+            exclude_branches = config.get_hook_config(
+                'wip_tracking', 'exclude_branches',
+                ['main', 'master', 'develop']
+            )
+            if wip_enabled and branch not in exclude_branches:
+                import re
+                from wip_tracker import WipTracker
+
+                tracker = WipTracker()
+                updates = {"status": "wip"}
+
+                # Auto-generate summary from plan path if available
+                plan_path = input_data.get('tool_result', {}).get('plan_path', '')
+                if plan_path:
+                    updates["plan_path"] = plan_path
+                    # Extract readable name from filename
+                    name = Path(plan_path).stem
+                    # Strip UUID prefixes (common in plan files)
+                    name = re.sub(r'^[a-f0-9]{8}-[a-f0-9-]+_?', '', name)
+                    if name:
+                        updates["summary"] = name.replace('-', ' ').replace('_', ' ')[:80]
+
+                # Detect github issue from branch name patterns
+                m = re.search(r'(?:feature|fix|issue|bug)[/-](\d+)', branch)
+                if m:
+                    updates["github_issue"] = f"#{m.group(1)}"
+
+                tracker.upsert_entry(project_dir, branch, updates)
+                logger.debug("WIP entry created/updated from plan exit")
+        except Exception as e:
+            logger.debug("WIP tracking in plan-exit failed (fail-open)", error=str(e))
+
         return 0
 
     except Exception as e:
