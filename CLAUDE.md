@@ -65,6 +65,10 @@ PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
     → Example: Clears single_use requirements after trigger commands
 
+PostToolUse (handle-plan-enter.py) - after EnterPlanMode
+    → Auto-invoke brainstorming skill if design_approved not satisfied
+    → Configurable via hooks.plan_enter.brainstorm_on_enter (default: true)
+
 PostToolUse (handle-plan-exit.py) - after ExitPlanMode
     → Shows requirements status proactively
     → Fires before any Edit attempts begin
@@ -113,6 +117,7 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 - `handle-session-start.py` - SessionStart hook (context injection)
 - `handle-prompt-submit.py` - UserPromptSubmit hook (prompt context injection)
 - `handle-permission-request.py` - PermissionRequest hook (auto-deny dangerous commands)
+- `handle-plan-enter.py` - PostToolUse hook for EnterPlanMode (brainstorm auto-invoke)
 - `handle-plan-exit.py` - PostToolUse hook for ExitPlanMode
 - `auto-satisfy-skills.py` - PostToolUse hook for skill completion
 - `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
