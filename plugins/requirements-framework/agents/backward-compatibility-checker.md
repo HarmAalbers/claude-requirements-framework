@@ -20,7 +20,7 @@ Use for database schema evolution analysis.
 </commentary>
 </example>
 color: blue
-git_hash: a409d60
+git_hash: 33b3f9b
 ---
 
 # Backward Compatibility Checker Agent
