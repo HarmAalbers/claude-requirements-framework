@@ -643,7 +643,50 @@ See `req init --help` for options.""")
             # Fail silently - this is opportunistic
             logger.debug("Failed to register project", error=str(e))
 
-        # 2c. Check for other sessions and warn if single_session guard is enabled
+        # 2c. WIP tracking: register session and detect merged branches
+        wip_summary = None
+        try:
+            wip_enabled = config.get_hook_config('wip_tracking', 'enabled', False)
+            wip_inject = config.get_hook_config('wip_tracking', 'inject_on_start', True)
+            exclude_branches = config.get_hook_config(
+                'wip_tracking', 'exclude_branches',
+                ['main', 'master', 'develop']
+            )
+
+            if wip_enabled and branch not in exclude_branches:
+                from wip_tracker import WipTracker
+                tracker = WipTracker()
+                tracker.add_session(project_dir, branch, session_id)
+
+                # Auto-detect merged branches
+                merged = []
+                if config.get_hook_config('wip_tracking', 'auto_detect_merged', True):
+                    merged = tracker.check_merged_branches(project_dir)
+
+                # Build WIP summary for context injection
+                if wip_inject:
+                    entries = tracker.list_entries()
+                    # Filter out done entries for the summary
+                    active = [e for e in entries if e.get("status") != "done"]
+                    if active:
+                        lines = ["### WIP Branches", "| Branch | Status | Summary | Commits |",
+                                 "|--------|--------|---------|---------|"]
+                        for e in active[:10]:  # Cap at 10 entries
+                            proj_name = Path(e["project_dir"]).name
+                            b = e.get("branch", "?")
+                            s = e.get("status", "?").upper()
+                            summary = e.get("summary", "")[:40]
+                            commits = e.get("git_metrics", {}).get("commit_count", 0)
+                            lines.append(f"| {proj_name}/{b} | {s} | {summary} | {commits} |")
+                        if merged:
+                            lines.append(f"\n{len(merged)} branch(es) merged since last session (auto-marked DONE)")
+                        wip_summary = "\n".join(lines)
+
+                logger.debug("WIP tracking initialized", entries=len(active) if wip_inject and 'active' in dir() else 0)
+        except Exception as e:
+            logger.debug("WIP tracking failed (fail-open)", error=str(e))
+
+        # 2d. Check for other sessions and warn if single_session guard is enabled
         other_sessions_warning = check_other_sessions_warning(
             config, project_dir, session_id, logger
         )
@@ -652,6 +695,8 @@ See `req init --help` for options.""")
         inject_context = config.get_hook_config('session_start', 'inject_context', True)
 
         parts = []
+        if wip_summary:
+            parts.append(wip_summary)
         if other_sessions_warning:
             parts.append(other_sessions_warning)
         if inject_context:
