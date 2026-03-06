@@ -280,6 +280,50 @@ def main() -> int:
         else:
             logger.debug("All requirements satisfied - allowing stop")
 
+            # Check if we should prompt for WIP status update
+            try:
+                wip_enabled = config.get_hook_config('wip_tracking', 'enabled', False)
+                wip_prompt = config.get_hook_config('wip_tracking', 'prompt_on_stop', True)
+                exclude_branches = config.get_hook_config(
+                    'wip_tracking', 'exclude_branches',
+                    ['main', 'master', 'develop']
+                )
+
+                if wip_enabled and wip_prompt and branch not in exclude_branches:
+                    from wip_tracker import WipTracker
+                    tracker = WipTracker()
+                    entry = tracker.get_entry(project_dir, branch)
+
+                    if entry and entry.get("status") not in ("done",):
+                        metrics = entry.get("git_metrics", {})
+                        commits = metrics.get("commit_count", 0)
+                        pushed = metrics.get("pushed", False)
+                        pr_url = metrics.get("pr_url")
+
+                        details = f"{commits} commit(s)"
+                        if pushed:
+                            details += ", pushed"
+                        if pr_url:
+                            details += f", PR: {pr_url}"
+
+                        wip_lines = [
+                            "## WIP Status Update", "",
+                            f"Branch `{branch}` has {details}.", "",
+                            "Set branch status before finishing:",
+                            "- `req wip set wip` — Still in progress",
+                            "- `req wip set done` — Feature complete",
+                            "- `req wip set paused` — Pausing work",
+                            "- `req wip set todo` — Has remaining tasks",
+                        ]
+                        emit_json({
+                            "decision": "block",
+                            "reason": "\n".join(wip_lines)
+                        })
+                        logger.info("Blocked stop for WIP status prompt")
+                        return 0
+            except Exception as e:
+                logger.debug("WIP stop prompt failed (fail-open)", error=str(e))
+
             # Check if we should prompt for session review
             if _should_prompt_session_review(config, session_id, project_dir, branch, logger):
                 _emit_session_review_prompt(session_id, project_dir, branch, logger)
