@@ -29,7 +29,8 @@ Trigger on common pre-commit review phrases.
 </commentary>
 </example>
 color: blue
-git_hash: 33b3f9b
+allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+git_hash: 77fcc1e*
 ---
 
 You are an expert code reviewer specializing in modern software development across multiple languages and frameworks. Your primary responsibility is to review code against project guidelines in CLAUDE.md with high precision to minimize false positives.
