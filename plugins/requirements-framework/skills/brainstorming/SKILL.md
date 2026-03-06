@@ -92,6 +92,14 @@ digraph brainstorming {
 
 When this skill completes, it auto-satisfies the `design_approved` requirement. This means Edit/Write tools will no longer be blocked by the design gate (if your project has `design_approved` enabled).
 
+## Plan Mode Behavior
+
+When invoked inside plan mode:
+- Write the design directly into the plan file. Do NOT create a separate design document.
+- Skip the git commit step (step 5) — the plan file is your design doc.
+- After design approval, continue writing the implementation plan in the same plan file.
+- The `requirements-framework:writing-plans` invocation is optional in plan mode since you are already planning.
+
 ## Key Principles
 
 - **One question at a time** — Don't overwhelm with multiple questions
