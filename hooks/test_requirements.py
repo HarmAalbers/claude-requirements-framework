@@ -9439,6 +9439,140 @@ def test_plan_enter_hook(runner: TestRunner):
                    f"Got: {val}")
 
 
+def test_wip_tracker_module(runner: TestRunner):
+    """Test WIP tracker core library."""
+    print("\n📦 Testing WIP tracker module...")
+    from wip_tracker import WipTracker, VALID_STATUSES, _new_entry
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        wip_path = Path(tmpdir) / "wip_projects.json"
+        tracker = WipTracker(wip_path=wip_path)
+
+        project = "/tmp/test-project"
+        branch = "feature/auth"
+
+        # Test 1: _make_key creates composite key
+        key = tracker._make_key(project, branch)
+        runner.test("_make_key creates composite key",
+                   key == f"{project}::{branch}",
+                   f"Got: {key}")
+
+        # Test 2: get_entry returns None for missing entry
+        entry = tracker.get_entry(project, branch)
+        runner.test("get_entry returns None for missing", entry is None)
+
+        # Test 3: upsert_entry creates new entry
+        result = tracker.upsert_entry(project, branch, {"summary": "OAuth2 flow"})
+        runner.test("upsert_entry returns True", result is True)
+        entry = tracker.get_entry(project, branch)
+        runner.test("upsert_entry creates entry",
+                   entry is not None and entry["summary"] == "OAuth2 flow",
+                   f"Got: {entry}")
+
+        # Test 4: upsert_entry updates existing entry
+        tracker.upsert_entry(project, branch, {"summary": "Updated OAuth2"})
+        entry = tracker.get_entry(project, branch)
+        runner.test("upsert_entry updates existing",
+                   entry["summary"] == "Updated OAuth2")
+
+        # Test 5: add_session registers session
+        tracker.add_session(project, branch, "session-1")
+        entry = tracker.get_entry(project, branch)
+        runner.test("add_session sets session_id",
+                   entry["session_id"] == "session-1")
+        runner.test("add_session adds to history",
+                   "session-1" in entry["session_history"])
+
+        # Test 6: add_session is idempotent for same session
+        tracker.add_session(project, branch, "session-1")
+        entry = tracker.get_entry(project, branch)
+        runner.test("add_session idempotent",
+                   entry["session_history"].count("session-1") == 1)
+
+        # Test 7: add_session appends new sessions
+        tracker.add_session(project, branch, "session-2")
+        entry = tracker.get_entry(project, branch)
+        runner.test("add_session appends new session",
+                   len(entry["session_history"]) == 2 and entry["session_id"] == "session-2")
+
+        # Test 8: set_status validates status
+        result = tracker.set_status(project, branch, "invalid")
+        runner.test("set_status rejects invalid status", result is False)
+
+        # Test 9: set_status updates valid status
+        tracker.set_status(project, branch, "paused")
+        entry = tracker.get_entry(project, branch)
+        runner.test("set_status updates to paused",
+                   entry["status"] == "paused")
+
+        # Test 10: VALID_STATUSES contains expected values
+        runner.test("VALID_STATUSES has 4 statuses",
+                   VALID_STATUSES == {"wip", "done", "paused", "todo"})
+
+        # Test 11: update_git_metrics sets metrics
+        tracker.update_git_metrics(project, branch, commit_count=5, pushed=True)
+        entry = tracker.get_entry(project, branch)
+        runner.test("update_git_metrics sets fields",
+                   entry["git_metrics"]["commit_count"] == 5 and
+                   entry["git_metrics"]["pushed"] is True)
+
+        # Test 12: update_git_metrics returns True for missing entry
+        result = tracker.update_git_metrics("/nonexistent", "main", commit_count=1)
+        runner.test("update_git_metrics returns True for missing entry",
+                   result is True,
+                   f"Got: {result}")
+
+        # Test 13: increment_time adds time
+        tracker.increment_time(project, branch, 3600)
+        entry = tracker.get_entry(project, branch)
+        runner.test("increment_time adds seconds",
+                   entry["total_time_seconds"] == 3600)
+        tracker.increment_time(project, branch, 1800)
+        entry = tracker.get_entry(project, branch)
+        runner.test("increment_time accumulates",
+                   entry["total_time_seconds"] == 5400)
+
+        # Test 14: list_entries returns all entries
+        tracker.upsert_entry("/tmp/other", "fix/bug", {"status": "wip", "summary": "Bug fix"})
+        all_entries = tracker.list_entries()
+        runner.test("list_entries returns all",
+                   len(all_entries) == 2)
+
+        # Test 15: list_entries filters by status
+        wip_entries = tracker.list_entries(status="wip")
+        runner.test("list_entries filters by status",
+                   len(wip_entries) == 1 and wip_entries[0]["branch"] == "fix/bug")
+
+        # Test 16: list_entries filters by project
+        project_entries = tracker.list_entries(project=project)
+        runner.test("list_entries filters by project",
+                   len(project_entries) == 1 and project_entries[0]["branch"] == branch)
+
+        # Test 17: clean_done removes done entries
+        tracker.set_status(project, branch, "done")
+        count = tracker.clean_done()
+        runner.test("clean_done removes done entries", count == 1)
+        entry = tracker.get_entry(project, branch)
+        runner.test("clean_done entry is gone", entry is None)
+        remaining = tracker.list_entries()
+        runner.test("clean_done preserves non-done", len(remaining) == 1)
+
+        # Test 18: _new_entry has correct structure
+        new = _new_entry("/test", "branch")
+        runner.test("_new_entry has required fields",
+                   all(k in new for k in ["project_dir", "branch", "status",
+                                           "summary", "git_metrics", "total_time_seconds"]))
+        runner.test("_new_entry default status is wip",
+                   new["status"] == "wip")
+
+        # Test 19: add_session creates entry if not exists
+        tracker2 = WipTracker(wip_path=Path(tmpdir) / "wip2.json")
+        tracker2.add_session("/new/project", "feature/new", "sess-1")
+        entry = tracker2.get_entry("/new/project", "feature/new")
+        runner.test("add_session creates entry if missing",
+                   entry is not None and entry["session_id"] == "sess-1")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -9616,6 +9750,9 @@ def main():
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
+
+    # WIP tracker module tests
+    test_wip_tracker_module(runner)
 
     return runner.summary()
 
