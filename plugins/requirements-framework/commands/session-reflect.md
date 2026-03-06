@@ -3,7 +3,7 @@ name: session-reflect
 description: "Review current session and suggest improvements for future sessions"
 argument-hint: "[scope]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: 8398198
+git_hash: 84d982c
 ---
 
 # Session Learning Reflection
