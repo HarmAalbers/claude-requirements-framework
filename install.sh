@@ -37,6 +37,7 @@ cp -v "$REPO_DIR/hooks/handle-plan-enter.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/ruff_check.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-teammate-idle.py" "$HOME/.claude/hooks/"
 cp -v "$REPO_DIR/hooks/handle-task-completed.py" "$HOME/.claude/hooks/"
+cp -v "$REPO_DIR/hooks/handle-git-events.py" "$HOME/.claude/hooks/"
 
 # Copy library files
 echo "📚 Copying library files to ~/.claude/hooks/lib/..."
@@ -55,6 +56,7 @@ chmod +x "$HOME/.claude/hooks/handle-plan-enter.py"
 chmod +x "$HOME/.claude/hooks/ruff_check.py"
 chmod +x "$HOME/.claude/hooks/handle-teammate-idle.py"
 chmod +x "$HOME/.claude/hooks/handle-task-completed.py"
+chmod +x "$HOME/.claude/hooks/handle-git-events.py"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
@@ -312,7 +314,8 @@ REQUIRED_HOOKS = {
             {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
             {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
             {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-plan-enter.py"}
+            {"type": "command", "command": "~/.claude/hooks/handle-plan-enter.py"},
+            {"type": "command", "command": "~/.claude/hooks/handle-git-events.py"}
         ]
     }],
     "SessionStart": [{
