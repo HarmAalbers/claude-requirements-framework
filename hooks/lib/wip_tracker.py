@@ -190,6 +190,38 @@ class WipTracker:
 
         return self._client.update(_update)
 
+    def record_commit(self, project_dir: str, branch: str,
+                      commit_hash: str, files_changed: int = 0,
+                      lines_added: int = 0, lines_removed: int = 0) -> bool:
+        """
+        Atomically increment commit count and update git metrics.
+
+        Args:
+            commit_hash: Latest commit hash
+            files_changed: Number of files changed
+            lines_added: Lines added
+            lines_removed: Lines removed
+
+        Returns:
+            True if successful, False on error.
+        """
+        key = self._make_key(project_dir, branch)
+
+        def _update(registry: dict) -> Optional[dict]:
+            entries = registry.get("entries", {})
+            if key not in entries:
+                return None
+            metrics = entries[key].setdefault("git_metrics", {})
+            metrics["commit_count"] = metrics.get("commit_count", 0) + 1
+            metrics["last_commit_hash"] = commit_hash
+            metrics["files_changed"] = files_changed
+            metrics["lines_added"] = lines_added
+            metrics["lines_removed"] = lines_removed
+            entries[key]["updated_at"] = time.time()
+            return registry
+
+        return self._client.update(_update)
+
     def increment_time(self, project_dir: str, branch: str, seconds: float) -> bool:
         """
         Add elapsed time to a WIP entry.
@@ -236,33 +268,31 @@ class WipTracker:
 
         merged = set()
         for line in stdout.splitlines():
-            branch = line.strip().lstrip("* ")
+            branch = line.strip().removeprefix("* ")
             if branch and branch not in ("main", "master", "develop"):
                 merged.add(branch)
 
         if not merged:
             return []
 
-        # Check WIP entries and mark merged ones as done
-        registry = self._client.read()
-        entries = registry.get("entries", {})
-        updated = False
+        # Atomically mark merged WIP entries as done
+        def _update(registry: dict) -> Optional[dict]:
+            entries = registry.get("entries", {})
+            changed = False
+            for key, entry in entries.items():
+                if (
+                    entry.get("project_dir") == project_dir
+                    and entry.get("branch") in merged
+                    and entry.get("status") != "done"
+                ):
+                    entry["status"] = "done"
+                    entry["updated_at"] = time.time()
+                    marked.append(entry["branch"])
+                    changed = True
+                    logger.info("Auto-marked merged branch as done", branch=entry["branch"])
+            return registry if changed else None
 
-        for key, entry in entries.items():
-            if (
-                entry.get("project_dir") == project_dir
-                and entry.get("branch") in merged
-                and entry.get("status") != "done"
-            ):
-                entry["status"] = "done"
-                entry["updated_at"] = time.time()
-                marked.append(entry["branch"])
-                updated = True
-                logger.info("Auto-marked merged branch as done", branch=entry["branch"])
-
-        if updated:
-            self._client.write(registry)
-
+        self._client.update(_update)
         return marked
 
     def list_entries(

@@ -9572,6 +9572,110 @@ def test_wip_tracker_module(runner: TestRunner):
         runner.test("add_session creates entry if missing",
                    entry is not None and entry["session_id"] == "sess-1")
 
+        # Test 20: record_commit atomically increments
+        tracker3 = WipTracker(wip_path=Path(tmpdir) / "wip3.json")
+        tracker3.upsert_entry("/proj", "feat/x", {"status": "wip"})
+        tracker3.record_commit("/proj", "feat/x", commit_hash="abc123",
+                               files_changed=3, lines_added=10, lines_removed=2)
+        entry = tracker3.get_entry("/proj", "feat/x")
+        runner.test("record_commit increments count",
+                   entry["git_metrics"]["commit_count"] == 1)
+        runner.test("record_commit sets hash",
+                   entry["git_metrics"]["last_commit_hash"] == "abc123")
+        tracker3.record_commit("/proj", "feat/x", commit_hash="def456")
+        entry = tracker3.get_entry("/proj", "feat/x")
+        runner.test("record_commit increments atomically",
+                   entry["git_metrics"]["commit_count"] == 2)
+
+        # Test 21: record_commit returns True for missing entry
+        result = tracker3.record_commit("/nonexistent", "b", commit_hash="x")
+        runner.test("record_commit returns True for missing", result is True)
+
+
+def test_handle_git_events(runner: TestRunner):
+    """Test handle-git-events.py PostToolUse hook behavior."""
+    print("\n📦 Testing GitEvents hook...")
+
+    hook_path = Path(__file__).parent / "handle-git-events.py"
+
+    if not hook_path.exists():
+        runner.test("GitEvents hook exists", False, "Hook file not found")
+        return
+
+    def run_hook(input_data, cwd, env=None):
+        return subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps(input_data),
+            cwd=cwd, capture_output=True, text=True,
+            env={**os.environ, **(env or {})}
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Initialize git repo with feature branch
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        base_input = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m 'test'"},
+            "tool_result": {"stdout": "", "stderr": ""},
+            "session_id": "gitevents-test"
+        }
+
+        # Test 1: Skips non-Bash tool
+        non_bash_input = {**base_input, "tool_name": "Edit"}
+        result = run_hook(non_bash_input, tmpdir)
+        runner.test("Skips non-Bash tool", result.returncode == 0)
+
+        # Test 2: Skips when no config exists (WIP not enabled)
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips when WIP not enabled",
+                   result.returncode == 0 and result.stdout.strip() == "")
+
+        # Test 3: Skips empty command
+        empty_cmd_input = {**base_input, "tool_input": {}}
+        result = run_hook(empty_cmd_input, tmpdir)
+        runner.test("Skips empty command", result.returncode == 0)
+
+        # Test 4: Skips excluded branches
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {},
+            "hooks": {"wip_tracking": {"enabled": True}}
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips excluded branches (main)",
+                   result.returncode == 0 and result.stdout.strip() == "")
+
+        # Test 5: Handles git push command pattern
+        subprocess.run(["git", "checkout", "feature/test"], cwd=tmpdir, capture_output=True)
+        push_input = {**base_input, "tool_input": {"command": "git push -u origin feature/test"}}
+        result = run_hook(push_input, tmpdir)
+        runner.test("Handles git push without error", result.returncode == 0)
+
+        # Test 6: Handles gh pr create command pattern
+        pr_input = {
+            **base_input,
+            "tool_input": {"command": "gh pr create --title 'test'"},
+            "tool_result": {"stdout": "https://github.com/user/repo/pull/42\n"}
+        }
+        result = run_hook(pr_input, tmpdir)
+        runner.test("Handles gh pr create without error", result.returncode == 0)
+
+        # Test 7: Handles malformed JSON gracefully
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input="not json",
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Handles malformed JSON", result.returncode == 0)
+
 
 def main():
     """Run all tests."""
@@ -9753,6 +9857,9 @@ def main():
 
     # WIP tracker module tests
     test_wip_tracker_module(runner)
+
+    # Git events hook tests
+    test_handle_git_events(runner)
 
     return runner.summary()
 
