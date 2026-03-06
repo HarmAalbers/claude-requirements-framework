@@ -403,6 +403,24 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
   plan_enter:
     brainstorm_on_enter: true""",
     },
+    "wip_tracking": {
+        "name": "WIP Project Tracking",
+        "category": CATEGORY_HOOKS,
+        "config_path": "hooks.wip_tracking",
+        "description": "Track work-in-progress branches across projects",
+        "introduced": "2.7",
+        "default_enabled": False,
+        "example_yaml": """hooks:
+  wip_tracking:
+    enabled: true
+    prompt_on_stop: true
+    inject_on_start: true
+    auto_detect_merged: true
+    exclude_branches:
+      - main
+      - master
+      - develop""",
+    },
 }
 
 
