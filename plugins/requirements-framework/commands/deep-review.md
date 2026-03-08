@@ -81,7 +81,10 @@ Create tasks on the shared task list — core agents always run, conditional age
 7. **Task**: "Code simplification analysis" — assigned to code-simplifier
 8. **Task**: "Codex AI review" — assigned to codex-reviewer, ONLY if HAS_CODEX is true
 9. **Task**: "Frontend best practices review" — assigned to frontend-reviewer, ONLY if HAS_FRONTEND is true
-10. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
+10. **Task**: "Tenant isolation audit" — assigned to tenant-isolation-auditor
+11. **Task**: "Application security audit" — assigned to appsec-auditor
+12. **Task**: "Compliance audit (GDPR/AVG/NOvA)" — assigned to compliance-auditor
+13. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
 
 ### Step 5: Spawn Teammates
 
@@ -110,6 +113,9 @@ Mark your task as complete using TaskUpdate.
 7. `subagent_type`: "requirements-framework:code-simplifier", `name`: "code-simplifier"
 8. `subagent_type`: "requirements-framework:codex-review-agent", `name`: "codex-reviewer" — ONLY if HAS_CODEX is true
 9. `subagent_type`: "requirements-framework:frontend-reviewer", `name`: "frontend-reviewer" — ONLY if HAS_FRONTEND is true
+10. `subagent_type`: "requirements-framework:tenant-isolation-auditor", `name`: "tenant-auditor"
+11. `subagent_type`: "requirements-framework:appsec-auditor", `name`: "appsec-auditor"
+12. `subagent_type`: "requirements-framework:compliance-auditor", `name`: "compliance-auditor"
 
 Each teammate prompt must include the diff context: "Review the following changed files: [file list from scope]"
 
@@ -150,6 +156,16 @@ Read all teammate findings received via messages. Apply these **domain-specific 
 | Frontend + code quality | frontend-reviewer + code-reviewer | Both flag same component region | Corroborate with note |
 | Frontend + types | frontend-reviewer + type-design-analyzer | Props type issue + component issue | Corroborate |
 | Frontend + breaking changes | frontend-reviewer + backward-compat | Breaking prop change + component | Escalate to CRITICAL |
+| Security + code quality | appsec-auditor + code-reviewer | Same region flagged | Escalate to CRITICAL |
+| Tenant + error handling | tenant-isolation-auditor + silent-failure-hunter | Tenant boundary + silent failure | Escalate to CRITICAL |
+| Security + tenant isolation | appsec-auditor + tenant-isolation-auditor | Auth bypass + tenant boundary | Escalate to CRITICAL |
+| Compliance + security | compliance-auditor + appsec-auditor | PII exposure + security vuln | Escalate to CRITICAL |
+| Compliance + error handling | compliance-auditor + silent-failure-hunter | Audit gap + silent failure | Escalate to CRITICAL |
+| Compliance + code quality | compliance-auditor + code-reviewer | Same region flagged | Corroborate with note |
+| Tenant + types | tenant-isolation-auditor + type-design-analyzer | Weak tenant type + isolation issue | Escalate to CRITICAL |
+| Security AI corroboration | appsec-auditor + codex-review-agent | Same location | Corroborate with "confirmed by external AI" |
+| Untested security | appsec-auditor + test-analyzer | Security-critical code + no tests | Escalate to CRITICAL |
+| Untested tenant isolation | tenant-isolation-auditor + test-analyzer | Tenant boundary + no tests | Escalate to CRITICAL |
 
 After applying rules:
 1. **Deduplicate**: Merge findings about the same location
@@ -201,6 +217,9 @@ Else:
 - code-simplifier: [status]
 - codex-review-agent: [status or "skipped (CLI not available)"]
 - frontend-reviewer: [status or "skipped (no frontend files)"]
+- tenant-isolation-auditor: [status]
+- appsec-auditor: [status]
+- compliance-auditor: [status]
 
 ## Corroborated Findings (confirmed by cross-validation rules)
 ### CRITICAL: [title] — [rule name]
@@ -243,7 +262,7 @@ Else:
 | Aspect | /deep-review (recommended) | /quality-check (lightweight) |
 |--------|---------------------------|------------------------------|
 | Execution | Agent Teams (collaborative) | Subagents (sequential/parallel) |
-| Agents | 7-9 teammates (conditional on file types) | Variable subagents |
+| Agents | 10-12 teammates (conditional on file types) | Variable subagents |
 | Cross-validation | Domain-specific rules (ADR-013) | None (independent findings) |
 | Output | Unified verdict with corroboration | Aggregated list |
 | Satisfies | `pre_pr_review` | Same |
