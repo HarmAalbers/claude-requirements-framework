@@ -223,7 +223,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 16 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 19 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 
@@ -266,6 +266,7 @@ For testing the installed plugin:
 - test-analyzer, type-design-analyzer, comment-analyzer
 - code-simplifier, backward-compatibility-checker
 - adr-guardian, codex-review-agent, solid-reviewer
+- tenant-isolation-auditor, appsec-auditor, compliance-auditor
 
 **For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
 
