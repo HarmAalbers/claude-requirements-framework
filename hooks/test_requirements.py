@@ -9873,6 +9873,239 @@ def test_obsidian_client(runner: TestRunner):
                     client.prepend("x", "y") is False)
 
 
+def test_obsidian_session_logger(runner: TestRunner):
+    """Test ObsidianSessionLogger lifecycle orchestrator."""
+    print("\n📦 Testing Obsidian session logger...")
+    from unittest.mock import patch, MagicMock, call
+    from obsidian import ObsidianSessionLogger
+
+    # Helper: create a mock config
+    def make_config(enabled=True, vault=None, folder="Claude/Sessions",
+                    index="Claude/Sessions Log", timeout=5):
+        config = MagicMock()
+        config_map = {
+            ('obsidian', 'enabled', False): enabled,
+            ('obsidian', 'vault', None): vault,
+            ('obsidian', 'timeout', 5): timeout,
+            ('obsidian', 'session_folder', 'Claude/Sessions'): folder,
+            ('obsidian', 'index_note', 'Claude/Sessions Log'): index,
+        }
+        def get_hook_config(section, key, default=None):
+            return config_map.get((section, key, default), default)
+        config.get_hook_config = get_hook_config
+        return config
+
+    # Test 1: disabled config short-circuits
+    config = make_config(enabled=False)
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("disabled config sets enabled=False",
+                logger_obj.enabled is False)
+
+    # Test 2: enabled config initializes correctly
+    config = make_config(enabled=True, vault="TestVault")
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("enabled config sets enabled=True",
+                logger_obj.enabled is True)
+    runner.test("vault passed to client",
+                logger_obj.client.vault == "TestVault")
+    runner.test("folder from config",
+                logger_obj.folder == "Claude/Sessions")
+    runner.test("index_note from config",
+                logger_obj.index_note == "Claude/Sessions Log")
+
+    # Test 3: _note_name format
+    config = make_config()
+    logger_obj = ObsidianSessionLogger(config)
+    name = logger_obj._note_name("abc12345", "/Users/harm/Tools/my-project")
+    runner.test("_note_name contains project name",
+                "my-project" in name, f"Got: {name}")
+    runner.test("_note_name contains session_id",
+                "abc12345" in name, f"Got: {name}")
+    runner.test("_note_name starts with date",
+                name[0:4].isdigit() and name[4] == "-",
+                f"Got: {name}")
+
+    # Test 4: on_session_start when disabled does nothing
+    config = make_config(enabled=False)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'create_note') as mock_create:
+        logger_obj.on_session_start("abc123", "/tmp/project", "main")
+        runner.test("on_session_start skips when disabled",
+                    mock_create.called is False)
+
+    # Test 5: on_session_start creates note and sets properties
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create, \
+         patch.object(logger_obj.client, 'set_properties', return_value=True) as mock_props, \
+         patch.object(logger_obj.client, 'read', return_value="existing") as mock_read, \
+         patch.object(logger_obj.client, 'prepend', return_value=True) as mock_prepend:
+        logger_obj.on_session_start("abc123", "/tmp/project", "feat/auth")
+        runner.test("on_session_start calls create_note",
+                    mock_create.called)
+        runner.test("on_session_start sets properties",
+                    mock_props.called)
+        # Check properties include key fields
+        props_kwargs = mock_props.call_args[1]
+        runner.test("properties include status=active",
+                    props_kwargs.get("status") == "active",
+                    f"Got: {props_kwargs}")
+        runner.test("properties include session_id",
+                    props_kwargs.get("session_id") == "abc123")
+        runner.test("properties include branch",
+                    props_kwargs.get("branch") == "feat/auth")
+        runner.test("on_session_start prepends to index",
+                    mock_prepend.called)
+
+    # Test 6: on_session_start skips if create fails
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'create_note', return_value=False) as mock_create, \
+         patch.object(logger_obj.client, 'set_properties') as mock_props:
+        logger_obj.on_session_start("abc123", "/tmp/project", "main")
+        runner.test("on_session_start skips props if create fails",
+                    mock_props.called is False)
+
+    # Test 7: on_update when disabled does nothing
+    config = make_config(enabled=False)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'append') as mock_append:
+        logger_obj.on_update("abc123", "/tmp/project", "commit", "test commit")
+        runner.test("on_update skips when disabled",
+                    mock_append.called is False)
+
+    # Test 8: on_update appends timeline entry for commit
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'append', return_value=True) as mock_append:
+        logger_obj.on_update("abc123", "/tmp/project", "commit", "feat: add auth")
+        runner.test("on_update appends for commit", mock_append.called)
+        content = mock_append.call_args[0][1]
+        runner.test("on_update commit entry contains detail",
+                    "feat: add auth" in content, f"Got: {content}")
+
+    # Test 9: on_update appends timeline entry for requirement
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'append', return_value=True) as mock_append:
+        logger_obj.on_update("abc123", "/tmp/project", "requirement",
+                            "Satisfied `commit_plan` via /arch-review")
+        runner.test("on_update appends for requirement", mock_append.called)
+        content = mock_append.call_args[0][1]
+        runner.test("on_update requirement entry contains detail",
+                    "commit_plan" in content, f"Got: {content}")
+
+    # Test 10: on_session_end when disabled does nothing
+    config = make_config(enabled=False)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'set_properties') as mock_props:
+        logger_obj.on_session_end("abc123", "/tmp/project", {})
+        runner.test("on_session_end skips when disabled",
+                    mock_props.called is False)
+
+    # Test 11: on_session_end updates properties with metrics
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    summary = {
+        'duration_seconds': 2700,  # 45 minutes
+        'tool_uses': 42,
+        'requirements_satisfied': 4,
+    }
+    with patch.object(logger_obj.client, 'set_properties', return_value=True) as mock_props, \
+         patch.object(logger_obj.client, 'append', return_value=True) as mock_append:
+        logger_obj.on_session_end("abc123", "/tmp/project", summary)
+        runner.test("on_session_end sets properties", mock_props.called)
+        props_kwargs = mock_props.call_args[1]
+        runner.test("on_session_end sets status=complete",
+                    props_kwargs.get("status") == "complete",
+                    f"Got: {props_kwargs}")
+        runner.test("on_session_end sets duration_minutes=45",
+                    props_kwargs.get("duration_minutes") == 45,
+                    f"Got: {props_kwargs.get('duration_minutes')}")
+        runner.test("on_session_end sets tools_used",
+                    props_kwargs.get("tools_used") == 42)
+        runner.test("on_session_end appends end timeline entry",
+                    mock_append.called)
+
+    # Test 12: on_session_end handles zero duration
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'set_properties', return_value=True), \
+         patch.object(logger_obj.client, 'append', return_value=True):
+        logger_obj.on_session_end("abc123", "/tmp/project", {'duration_seconds': 0})
+        # Should not crash — duration_minutes should be at least 1
+        props = logger_obj.client.set_properties.call_args[1]
+        runner.test("on_session_end handles zero duration (min 1m)",
+                    props.get("duration_minutes") == 1)
+
+    # Test 13: on_session_end handles None duration
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'set_properties', return_value=True), \
+         patch.object(logger_obj.client, 'append', return_value=True):
+        logger_obj.on_session_end("abc123", "/tmp/project", {})
+        props = logger_obj.client.set_properties.call_args[1]
+        runner.test("on_session_end handles None duration",
+                    props.get("duration_minutes") == 1)
+
+    # Test 14: _ensure_index_note creates when missing
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'read', return_value=None) as mock_read, \
+         patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create:
+        logger_obj._ensure_index_note()
+        runner.test("_ensure_index_note creates when missing",
+                    mock_create.called)
+        name = mock_create.call_args[0][0]
+        runner.test("_ensure_index_note uses correct name",
+                    name == "Sessions Log", f"Got: {name}")
+
+    # Test 15: _ensure_index_note skips when exists
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'read', return_value="existing content"), \
+         patch.object(logger_obj.client, 'create_note') as mock_create:
+        logger_obj._ensure_index_note()
+        runner.test("_ensure_index_note skips when exists",
+                    mock_create.called is False)
+
+    # Test 16: _build_ledger_row format
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    row = logger_obj._build_ledger_row(
+        date="2026-03-19", project="my-proj", branch="feat/auth",
+        duration="45m", commits="3", files="12", status="✅",
+        link="2026-03-19 my-proj abc123"
+    )
+    runner.test("_build_ledger_row contains date",
+                "2026-03-19" in row, f"Got: {row}")
+    runner.test("_build_ledger_row contains project",
+                "my-proj" in row)
+    runner.test("_build_ledger_row contains wikilink",
+                "[[2026-03-19 my-proj abc123]]" in row)
+
+    # Test 17: _build_ledger_row truncates long branch names
+    row = logger_obj._build_ledger_row(
+        date="2026-03-19", project="p", branch="feat/very-long-branch-name-here",
+        duration="-", commits="0", files="0", status="⏳",
+        link="note"
+    )
+    runner.test("_build_ledger_row truncates long branch",
+                "..." in row, f"Got: {row}")
+
+    # Test 18: custom vault passed through config
+    config = make_config(enabled=True, vault="WorkVault")
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("custom vault from config",
+                logger_obj.client.vault == "WorkVault")
+
+    # Test 19: custom folder from config
+    config = make_config(enabled=True, folder="Notes/Claude")
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("custom folder from config",
+                logger_obj.folder == "Notes/Claude")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -10059,6 +10292,7 @@ def main():
 
     # Obsidian CLI integration tests
     test_obsidian_client(runner)
+    test_obsidian_session_logger(runner)
 
     return runner.summary()
 
