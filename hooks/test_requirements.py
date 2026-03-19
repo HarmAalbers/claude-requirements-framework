@@ -9677,6 +9677,202 @@ def test_handle_git_events(runner: TestRunner):
         runner.test("Handles malformed JSON", result.returncode == 0)
 
 
+def test_obsidian_client(runner: TestRunner):
+    """Test ObsidianClient CLI wrapper."""
+    print("\n📦 Testing Obsidian client module...")
+    from unittest.mock import patch, MagicMock
+    from obsidian import ObsidianClient
+
+    # Test 1: is_available returns True when obsidian in PATH
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        client = ObsidianClient()
+        runner.test("is_available returns True when in PATH",
+                    client.is_available() is True)
+
+    # Test 2: is_available returns False when not in PATH
+    with patch("obsidian.shutil.which", return_value=None):
+        client = ObsidianClient()
+        runner.test("is_available returns False when not in PATH",
+                    client.is_available() is False)
+
+    # Test 3: is_available caches result
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian") as mock_which:
+        client = ObsidianClient()
+        client.is_available()
+        client.is_available()
+        runner.test("is_available caches result",
+                    mock_which.call_count == 1)
+
+    # Test 4: _run returns None when not available
+    with patch("obsidian.shutil.which", return_value=None):
+        client = ObsidianClient()
+        result = client._run("version")
+        runner.test("_run returns None when not available", result is None)
+
+    # Test 5: _run calls subprocess with correct args
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            client = ObsidianClient()
+            result = client._run("version")
+            runner.test("_run calls subprocess correctly",
+                        result is not None and mock_run.called)
+            cmd = mock_run.call_args[0][0]
+            runner.test("_run passes correct command",
+                        cmd == ["obsidian", "version"],
+                        f"Got: {cmd}")
+
+    # Test 6: _run adds vault parameter when configured
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            client = ObsidianClient(vault="MyVault")
+            client._run("version")
+            cmd = mock_run.call_args[0][0]
+            runner.test("_run adds vault parameter",
+                        'vault="MyVault"' in cmd,
+                        f"Got: {cmd}")
+
+    # Test 7: _run returns None on non-zero exit code
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+            client = ObsidianClient()
+            result = client._run("bad-command")
+            runner.test("_run returns None on non-zero exit", result is None)
+
+    # Test 8: _run handles FileNotFoundError
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run", side_effect=FileNotFoundError):
+            client = ObsidianClient()
+            result = client._run("version")
+            runner.test("_run handles FileNotFoundError", result is None)
+            runner.test("_run sets _available to False on FileNotFoundError",
+                        client._available is False)
+
+    # Test 9: _run handles TimeoutExpired
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(cmd="obsidian", timeout=5)):
+            client = ObsidianClient()
+            result = client._run("version")
+            runner.test("_run handles TimeoutExpired", result is None)
+
+    # Test 10: _run handles generic exceptions
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run", side_effect=OSError("test error")):
+            client = ObsidianClient()
+            result = client._run("version")
+            runner.test("_run handles generic exceptions", result is None)
+
+    # Test 11: create_note calls _run with correct args
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            result = client.create_note("My Note", "Claude/Sessions")
+            runner.test("create_note returns True on success", result is True)
+            cmd = mock_run.call_args[0][0]
+            runner.test("create_note passes name and path",
+                        'name="My Note"' in cmd and "path=Claude/Sessions/" in cmd,
+                        f"Got: {cmd}")
+
+    # Test 12: create_note with content
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            client.create_note("Note", "Folder", content="# Hello")
+            cmd = mock_run.call_args[0][0]
+            runner.test("create_note includes content arg",
+                        'content="# Hello"' in cmd,
+                        f"Got: {cmd}")
+
+    # Test 13: append calls _run correctly
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            result = client.append("My Note", "new text")
+            runner.test("append returns True on success", result is True)
+
+    # Test 14: read returns content
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="# Hello\nWorld", stderr="")
+            client = ObsidianClient()
+            content = client.read("My Note")
+            runner.test("read returns note content",
+                        content == "# Hello\nWorld",
+                        f"Got: {content}")
+
+    # Test 15: read returns None on failure
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
+            client = ObsidianClient()
+            content = client.read("Missing Note")
+            runner.test("read returns None on failure", content is None)
+
+    # Test 16: set_properties sets multiple properties
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            result = client.set_properties("Note", status="active", duration=30)
+            runner.test("set_properties returns True on success", result is True)
+            runner.test("set_properties calls once per property",
+                        mock_run.call_count == 2,
+                        f"Called {mock_run.call_count} times")
+
+    # Test 17: set_properties returns False if any property fails
+    call_count = 0
+    def side_effect_alternating(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        return MagicMock(returncode=1, stdout="", stderr="error")
+
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run", side_effect=side_effect_alternating):
+            call_count = 0
+            client = ObsidianClient()
+            result = client.set_properties("Note", good="yes", bad="no")
+            runner.test("set_properties returns False on partial failure",
+                        result is False)
+
+    # Test 18: prepend calls _run correctly
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            result = client.prepend("My Note", "top text")
+            runner.test("prepend returns True on success", result is True)
+
+    # Test 19: custom timeout is passed to subprocess
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient(timeout=10)
+            client._run("version")
+            runner.test("custom timeout passed to subprocess",
+                        mock_run.call_args[1]["timeout"] == 10,
+                        f"Got: {mock_run.call_args[1].get('timeout')}")
+
+    # Test 20: all methods return False/None when not available
+    with patch("obsidian.shutil.which", return_value=None):
+        client = ObsidianClient()
+        runner.test("create_note returns False when unavailable",
+                    client.create_note("x", "y") is False)
+        runner.test("append returns False when unavailable",
+                    client.append("x", "y") is False)
+        runner.test("read returns None when unavailable",
+                    client.read("x") is None)
+        runner.test("prepend returns False when unavailable",
+                    client.prepend("x", "y") is False)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -9860,6 +10056,9 @@ def main():
 
     # Git events hook tests
     test_handle_git_events(runner)
+
+    # Obsidian CLI integration tests
+    test_obsidian_client(runner)
 
     return runner.summary()
 
