@@ -765,6 +765,15 @@ class RequirementsConfig:
             "auto_detect_merged": True,
             "exclude_branches": ["main", "master", "develop"],
         },
+        "obsidian": {
+            "enabled": False,
+            "vault": None,
+            "session_folder": "Claude/Sessions",
+            "index_note": "Claude/Sessions Log",
+            "update_on_commit": True,
+            "update_on_requirement": True,
+            "timeout": 5,
+        },
     }
 
     def __init__(

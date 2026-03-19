@@ -390,6 +390,38 @@ req learning rollback 3   # Undo update #3
 - **User approval**: All updates require user approval before applying
 - **Rollback capable**: Every change recorded with previous content hash
 
+## Obsidian CLI Integration
+
+The framework can log session data to Obsidian via the [Obsidian CLI](https://help.obsidian.md/cli) (requires Obsidian v1.12.4+ with CLI enabled).
+
+### Enable
+
+```yaml
+# In requirements.yaml (global or project)
+hooks:
+  obsidian:
+    enabled: true
+    vault: "MyVault"              # Optional, defaults to active vault
+    session_folder: "Claude/Sessions"  # Folder for detail notes
+    index_note: "Claude/Sessions Log"  # Ledger note name
+    update_on_commit: true        # Log git commits to timeline
+    update_on_requirement: true   # Log requirement satisfactions
+    timeout: 5                    # CLI call timeout (seconds)
+```
+
+### What Gets Logged
+
+- **SessionStart**: Creates a detail note with YAML frontmatter (project, branch, status, tags) + adds row to ledger
+- **Git commits**: Appends timeline entry to detail note
+- **Requirement satisfaction**: Appends timeline entry to detail note
+- **SessionEnd**: Finalizes detail note with metrics (duration, tool uses, commits) + updates ledger row
+
+### Architecture
+
+- `hooks/lib/obsidian.py` — `ObsidianClient` (CLI wrapper) + `ObsidianSessionLogger` (lifecycle orchestrator)
+- Integrates into: `handle-session-start.py`, `handle-session-end.py`, `auto-satisfy-skills.py`, `clear-single-use.py`
+- **Fail-open**: Obsidian errors never block Claude Code. If Obsidian isn't running, logging is silently skipped.
+
 ## Agent Teams (ADR-012)
 
 The framework uses Claude Code Agent Teams as the **primary review approach**. Agents collaborate, cross-validate findings, and produce unified verdicts.
