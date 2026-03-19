@@ -127,6 +127,21 @@ def main() -> int:
         except Exception as e:
             logger.debug("WIP time tracking failed (fail-open)", error=str(e))
 
+        # 4. Obsidian session logging: finalize session note
+        try:
+            obsidian_enabled = config and config.get_hook_config('obsidian', 'enabled', False)
+            if obsidian_enabled:
+                from obsidian import ObsidianSessionLogger
+                from session_metrics import SessionMetrics
+
+                obs_logger = ObsidianSessionLogger(config)
+                metrics = SessionMetrics(session_id, project_dir, branch)
+                summary = metrics.get_summary()
+                obs_logger.on_session_end(session_id, project_dir, summary)
+                logger.debug("Obsidian session note finalized")
+        except Exception as e:
+            logger.debug("Obsidian finalization failed (fail-open)", error=str(e))
+
         return 0
 
     except Exception as e:

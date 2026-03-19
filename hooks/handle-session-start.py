@@ -686,6 +686,17 @@ See `req init --help` for options.""")
         except Exception as e:
             logger.debug("WIP tracking failed (fail-open)", error=str(e))
 
+        # 2e. Obsidian session logging: create session note
+        try:
+            obsidian_enabled = config.get_hook_config('obsidian', 'enabled', False)
+            if obsidian_enabled:
+                from obsidian import ObsidianSessionLogger
+                obs_logger = ObsidianSessionLogger(config)
+                obs_logger.on_session_start(session_id, project_dir, branch)
+                logger.debug("Obsidian session note created")
+        except Exception as e:
+            logger.debug("Obsidian logging failed (fail-open)", error=str(e))
+
         # 2d. Check for other sessions and warn if single_session guard is enabled
         other_sessions_warning = check_other_sessions_warning(
             config, project_dir, session_id, logger
