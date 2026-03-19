@@ -209,6 +209,21 @@ def main() -> int:
         metrics.record_skill_use(skill_name)
         metrics.save()
 
+        # Obsidian: log requirement satisfaction events
+        if satisfied_reqs:
+            try:
+                if config.get_hook_config('obsidian', 'enabled', False) and \
+                   config.get_hook_config('obsidian', 'update_on_requirement', True):
+                    from obsidian import ObsidianSessionLogger
+                    obs_logger = ObsidianSessionLogger(config)
+                    for req_name in satisfied_reqs:
+                        obs_logger.on_update(
+                            session_id, project_dir, "requirement",
+                            f"Satisfied `{req_name}` via /{skill_name}"
+                        )
+            except Exception:
+                pass  # fail-open
+
     except Exception as e:
         # Fail silently - don't block on auto-satisfy errors
         import traceback

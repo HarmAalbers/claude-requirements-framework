@@ -122,6 +122,24 @@ def main() -> int:
                         requirement=req_name,
                     )
 
+        # Obsidian: log git commit events
+        try:
+            command = tool_input.get('command', '')
+            is_commit = 'git commit' in command and 'git commit --amend' not in command
+            if is_commit and config.get_hook_config('obsidian', 'enabled', False) and \
+               config.get_hook_config('obsidian', 'update_on_commit', True):
+                from obsidian import ObsidianSessionLogger
+                obs_logger = ObsidianSessionLogger(config)
+                # Extract a short summary from the command
+                commit_summary = command.strip()
+                if len(commit_summary) > 80:
+                    commit_summary = commit_summary[:77] + "..."
+                obs_logger.on_update(
+                    session_id, project_dir, "commit", f"Commit: `{commit_summary}`"
+                )
+        except Exception:
+            pass  # fail-open
+
     except Exception as e:
         # Fail silently - don't block on clear errors
         import traceback
