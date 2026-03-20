@@ -9730,7 +9730,7 @@ def test_obsidian_client(runner: TestRunner):
             client._run("version")
             cmd = mock_run.call_args[0][0]
             runner.test("_run adds vault parameter",
-                        'vault="MyVault"' in cmd,
+                        'vault=MyVault' in cmd,
                         f"Got: {cmd}")
 
     # Test 7: _run returns None on non-zero exit code
@@ -9774,7 +9774,7 @@ def test_obsidian_client(runner: TestRunner):
             runner.test("create_note returns True on success", result is True)
             cmd = mock_run.call_args[0][0]
             runner.test("create_note passes name and path",
-                        'name="My Note"' in cmd and "path=Claude/Sessions/" in cmd,
+                        'name=My Note' in cmd and "path=Claude/Sessions/" in cmd,
                         f"Got: {cmd}")
 
     # Test 12: create_note with content
@@ -9785,7 +9785,7 @@ def test_obsidian_client(runner: TestRunner):
             client.create_note("Note", "Folder", content="# Hello")
             cmd = mock_run.call_args[0][0]
             runner.test("create_note includes content arg",
-                        'content="# Hello"' in cmd,
+                        'content=# Hello' in cmd,
                         f"Got: {cmd}")
 
     # Test 13: append calls _run correctly

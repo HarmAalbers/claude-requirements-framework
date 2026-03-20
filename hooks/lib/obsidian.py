@@ -44,9 +44,9 @@ class ObsidianClient:
         Returns:
             True on success, False on failure.
         """
-        args = ["create", f'name="{name}"', f"path={path}/"]
+        args = ["create", f'name={name}', f"path={path}/"]
         if content:
-            args.append(f'content="{content}"')
+            args.append(f'content={content}')
         result = self._run(*args)
         return result is not None
 
@@ -60,7 +60,7 @@ class ObsidianClient:
         Returns:
             True on success, False on failure.
         """
-        result = self._run("append", f'file="{file}"', f'content="{content}"')
+        result = self._run("append", f'file={file}', f'content={content}')
         return result is not None
 
     def prepend(self, file, content):
@@ -73,7 +73,7 @@ class ObsidianClient:
         Returns:
             True on success, False on failure.
         """
-        result = self._run("prepend", f'file="{file}"', f'content="{content}"')
+        result = self._run("prepend", f'file={file}', f'content={content}')
         return result is not None
 
     def read(self, file):
@@ -85,7 +85,7 @@ class ObsidianClient:
         Returns:
             Note content as string, or None on failure.
         """
-        result = self._run("read", f'file="{file}"')
+        result = self._run("read", f'file={file}')
         if result is not None:
             return result.stdout.strip()
         return None
@@ -104,7 +104,7 @@ class ObsidianClient:
         success = True
         for key, value in props.items():
             result = self._run(
-                "properties:set", f'file="{file}"', f"{key}={value}"
+                "properties:set", f'file={file}', f"{key}={value}"
             )
             if result is None:
                 logger.debug(
@@ -131,7 +131,7 @@ class ObsidianClient:
         cmd.extend(args)
 
         if self.vault:
-            cmd.append(f'vault="{self.vault}"')
+            cmd.append(f'vault={self.vault}')
 
         try:
             result = subprocess.run(
@@ -237,7 +237,7 @@ class ObsidianSessionLogger:
             f"**Branch**: `{branch}`\\n"
             f"**Started**: {now.strftime('%Y-%m-%d %H:%M')}\\n\\n"
             f"## Timeline\\n\\n"
-            f"- \\U0001f7e2 **{time_str}** \\u2014 Session started\\n\\n"
+            f"- \U0001f7e2 **{time_str}** \u2014 Session started\\n\\n"
             f"## Git Activity\\n\\n"
             f"_No commits yet_\\n\\n"
             f"## Requirements\\n\\n"
@@ -279,7 +279,7 @@ class ObsidianSessionLogger:
             duration="-",
             commits="0",
             files="0",
-            status="\\u23f3",
+            status="\u23f3",
             link=note_name,
         )
         self.client.prepend(self.index_note, ledger_row)
@@ -302,13 +302,13 @@ class ObsidianSessionLogger:
         time_str = datetime.now().strftime("%H:%M")
 
         if event_type == "commit":
-            icon = "\\U0001f4dd"
+            icon = "\U0001f4dd"
         elif event_type == "requirement":
-            icon = "\\u2705"
+            icon = "\u2705"
         else:
-            icon = "\\u2022"
+            icon = "\u2022"
 
-        entry = f"- {icon} **{time_str}** \\u2014 {detail}\\n"
+        entry = f"- {icon} **{time_str}** \u2014 {detail}\\n"
         self.client.append(note_name, entry)
 
     def on_session_end(self, session_id, project_dir, metrics_summary):
@@ -344,7 +344,7 @@ class ObsidianSessionLogger:
         time_str = now.strftime("%H:%M")
         self.client.append(
             note_name,
-            f"- \\U0001f534 **{time_str}** \\u2014 Session ended ({duration_minutes}m)\\n"
+            f"- \U0001f534 **{time_str}** \u2014 Session ended ({duration_minutes}m)\\n"
         )
 
         logger.debug("Obsidian session note finalized", note=note_name)
