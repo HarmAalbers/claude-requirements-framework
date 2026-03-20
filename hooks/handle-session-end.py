@@ -137,8 +137,8 @@ def main() -> int:
                 obs_logger = ObsidianSessionLogger(config)
                 metrics = SessionMetrics(session_id, project_dir, branch)
                 summary = metrics.get_summary()
-                obs_logger.on_session_end(session_id, project_dir, summary)
-                logger.debug("Obsidian session note finalized")
+                obs_logger.finalize_in_background(session_id, project_dir, summary)
+                logger.debug("Obsidian finalization spawned in background")
         except Exception as e:
             logger.debug("Obsidian finalization failed (fail-open)", error=str(e))
 

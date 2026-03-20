@@ -10105,6 +10105,98 @@ def test_obsidian_session_logger(runner: TestRunner):
     runner.test("custom folder from config",
                 logger_obj.folder == "Notes/Claude")
 
+    # --- finalize_in_background tests ---
+    import subprocess as _subprocess
+
+    # Test 20: finalize_in_background skips when disabled
+    config = make_config(enabled=False)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch('obsidian.subprocess.Popen') as mock_popen:
+        logger_obj.finalize_in_background("abc123", "/tmp/project", {})
+        runner.test("finalize_in_background skips when disabled",
+                    mock_popen.called is False)
+
+    # Test 21: finalize_in_background spawns subprocess with correct args
+    config = make_config(enabled=True, vault="TestVault")
+    logger_obj = ObsidianSessionLogger(config)
+    summary = {
+        'duration_seconds': 2700,
+        'tool_uses': 42,
+        'requirements_satisfied': 4,
+    }
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.pid = 12345
+    mock_devnull = MagicMock()
+    with patch('obsidian.subprocess.Popen', return_value=mock_proc) as mock_popen, \
+         patch('builtins.open', return_value=mock_devnull):
+        logger_obj.finalize_in_background("abc123", "/tmp/project", summary)
+        runner.test("finalize_in_background calls Popen",
+                    mock_popen.called)
+
+        # Verify start_new_session=True for detachment
+        popen_kwargs = mock_popen.call_args[1]
+        runner.test("finalize_in_background sets start_new_session=True",
+                    popen_kwargs.get('start_new_session') is True,
+                    f"Got: {popen_kwargs}")
+
+        # Verify stdin=PIPE
+        runner.test("finalize_in_background sets stdin=PIPE",
+                    popen_kwargs.get('stdin') == _subprocess.PIPE,
+                    f"Got: {popen_kwargs.get('stdin')}")
+
+        # Verify JSON data written to stdin
+        runner.test("finalize_in_background writes to stdin",
+                    mock_proc.stdin.write.called)
+        written_bytes = mock_proc.stdin.write.call_args[0][0]
+        import json as _json
+        payload = _json.loads(written_bytes.decode())
+        runner.test("finalize payload contains note_name",
+                    "note_name" in payload and "abc123" in payload['note_name'],
+                    f"Got: {payload.get('note_name')}")
+        runner.test("finalize payload contains vault",
+                    payload.get('vault') == "TestVault")
+        runner.test("finalize payload duration_minutes=45",
+                    payload.get('duration_minutes') == 45,
+                    f"Got: {payload.get('duration_minutes')}")
+        runner.test("finalize payload tools_used=42",
+                    payload.get('tools_used') == 42)
+
+        # Verify stdin is closed (fire-and-forget)
+        runner.test("finalize_in_background closes stdin",
+                    mock_proc.stdin.close.called)
+
+        # Verify we do NOT call proc.wait() (fire-and-forget)
+        runner.test("finalize_in_background does NOT wait on proc",
+                    mock_proc.wait.called is False)
+
+    # Test 22: finalize_in_background is fail-open on spawn error
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    with patch('obsidian.subprocess.Popen', side_effect=OSError("spawn failed")), \
+         patch('builtins.open', return_value=mock_devnull):
+        # Should not raise
+        logger_obj.finalize_in_background("abc123", "/tmp/project", {})
+        runner.test("finalize_in_background is fail-open on error", True)
+
+    # Test 23: finalize_in_background uses sys.executable
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.pid = 99
+    with patch('obsidian.subprocess.Popen', return_value=mock_proc) as mock_popen, \
+         patch('builtins.open', return_value=mock_devnull):
+        logger_obj.finalize_in_background("abc123", "/tmp/project", {})
+        popen_args = mock_popen.call_args[0][0]
+        import sys as _sys
+        runner.test("finalize_in_background uses sys.executable",
+                    popen_args[0] == _sys.executable,
+                    f"Got: {popen_args[0]}")
+        runner.test("finalize_in_background passes -c flag",
+                    popen_args[1] == '-c',
+                    f"Got: {popen_args[1]}")
+
 
 def main():
     """Run all tests."""

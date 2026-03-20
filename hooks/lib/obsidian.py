@@ -8,8 +8,12 @@ Requires Obsidian desktop app to be running with CLI enabled.
 All operations are fail-open — errors are logged but never block execution.
 """
 
+import json
+import os
 import subprocess
 import shutil
+import sys
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from logger import get_logger
@@ -348,6 +352,88 @@ class ObsidianSessionLogger:
         )
 
         logger.debug("Obsidian session note finalized", note=note_name)
+
+    def finalize_in_background(self, session_id, project_dir, metrics_summary):
+        """Spawn a detached background process to finalize the session note.
+
+        Collects all data needed for finalization, serializes it as JSON,
+        and spawns a subprocess that performs the Obsidian CLI calls after
+        this hook returns. This avoids the SessionEnd hook being killed
+        by Claude Code's exit grace period.
+
+        Args:
+            session_id: Short session ID
+            project_dir: Full project path
+            metrics_summary: Dict from SessionMetrics.get_summary()
+        """
+        if not self.enabled:
+            return
+
+        logger = get_logger()
+        note_name = self._note_name(session_id, project_dir)
+        now = datetime.now()
+
+        # Calculate duration
+        duration_seconds = metrics_summary.get('duration_seconds') or 0
+        duration_minutes = max(1, duration_seconds // 60)
+
+        # Build the payload with everything the background process needs
+        payload = {
+            'note_name': note_name,
+            'vault': self.client.vault,
+            'timeout': self.client.timeout,
+            'status': 'complete',
+            'ended': now.strftime("%Y-%m-%dT%H:%M:%S"),
+            'duration_minutes': duration_minutes,
+            'tools_used': metrics_summary.get('tool_uses', 0),
+            'requirements_satisfied': metrics_summary.get('requirements_satisfied', 0),
+            'time_str': now.strftime("%H:%M"),
+        }
+
+        # Inline script that imports ObsidianClient and does the finalization
+        lib_dir = str(Path(__file__).parent)
+        script = textwrap.dedent(f"""\
+            import json, sys
+            sys.path.insert(0, {lib_dir!r})
+            from obsidian import ObsidianClient
+
+            data = json.loads(sys.stdin.read())
+            client = ObsidianClient(vault=data.get('vault'), timeout=data.get('timeout', 5))
+
+            client.set_properties(
+                data['note_name'],
+                status=data['status'],
+                ended=data['ended'],
+                duration_minutes=data['duration_minutes'],
+                tools_used=data['tools_used'],
+                requirements_satisfied=data['requirements_satisfied'],
+            )
+
+            entry = "- \\U0001f534 **" + data['time_str'] + "** \\u2014 Session ended (" + str(data['duration_minutes']) + "m)\\\\n"
+            client.append(data['note_name'], entry)
+        """)
+
+        try:
+            devnull = open(os.devnull, 'w')
+            proc = subprocess.Popen(
+                [sys.executable, '-c', script],
+                stdin=subprocess.PIPE,
+                stdout=devnull,
+                stderr=devnull,
+                start_new_session=True,
+            )
+            proc.stdin.write(json.dumps(payload).encode())
+            proc.stdin.close()
+            # Do NOT wait — fire and forget
+            logger.debug(
+                "Obsidian finalization spawned in background",
+                note=note_name, pid=proc.pid,
+            )
+        except Exception as e:
+            logger.debug(
+                "Failed to spawn Obsidian background finalization (fail-open)",
+                error=str(e),
+            )
 
     def _ensure_index_note(self):
         """Create the index/ledger note if it doesn't exist."""
