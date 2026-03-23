@@ -21,7 +21,7 @@ assistant: "I'll use the test-analyzer agent to review test coverage quality."
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: c725011
+git_hash: f6369fe
 ---
 
 You are an expert test coverage analyst specializing in code review. Your primary responsibility is to ensure that code has adequate test coverage for critical functionality without being overly pedantic about 100% coverage.
