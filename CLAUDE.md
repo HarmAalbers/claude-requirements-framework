@@ -392,7 +392,7 @@ req learning rollback 3   # Undo update #3
 
 ## Obsidian CLI Integration
 
-The framework can log session data to Obsidian via the [Obsidian CLI](https://help.obsidian.md/cli) (requires Obsidian v1.12.4+ with CLI enabled).
+The framework can log session data to Obsidian via the [Obsidian CLI](https://help.obsidian.md/cli) (requires Obsidian v1.12.4+ with CLI enabled and [Dataview](https://github.com/blacksmithgu/obsidian-dataview) plugin for auto-updating ledger).
 
 ### Enable
 
@@ -404,6 +404,7 @@ hooks:
     vault: "MyVault"              # Optional, defaults to active vault
     session_folder: "Claude/Sessions"  # Folder for detail notes
     index_note: "Claude/Sessions Log"  # Ledger note name
+    ledger_format: "dataview"     # "dataview" (default) or "table" (legacy)
     update_on_commit: true        # Log git commits to timeline
     update_on_requirement: true   # Log requirement satisfactions
     timeout: 5                    # CLI call timeout (seconds)
@@ -411,14 +412,24 @@ hooks:
 
 ### What Gets Logged
 
-- **SessionStart**: Creates a detail note with YAML frontmatter (project, branch, status, tags) + adds row to ledger
+- **SessionStart**: Creates a detail note with YAML frontmatter (project, branch, status, tags, aliases, cssclasses) + ensures Dataview index note exists
 - **Git commits**: Appends timeline entry to detail note
 - **Requirement satisfaction**: Appends timeline entry to detail note
-- **SessionEnd**: Finalizes detail note with metrics (duration, tool uses, commits) + updates ledger row
+- **SessionEnd**: Finalizes detail note with metrics (duration, tool uses, commits) — Dataview ledger auto-updates from frontmatter
+
+### Dataview Ledger (Default)
+
+The index note contains a Dataview TABLE query that auto-renders session data from frontmatter. No manual writes needed — the ledger always reflects current state. Status (✅/⏳), duration, and commit counts update automatically when frontmatter changes.
+
+Existing legacy table notes are auto-migrated: backed up as "(legacy)" and replaced with the Dataview version. Set `ledger_format: "table"` to keep the old behavior.
+
+### Batch Property Setting
+
+Properties are set atomically via `obsidian eval` using Obsidian's JS API (`app.fileManager.processFrontMatter`). This reduces ~15 CLI calls per session to ~3. Falls back to individual `property:set` calls if eval is unavailable.
 
 ### Architecture
 
-- `hooks/lib/obsidian.py` — `ObsidianClient` (CLI wrapper) + `ObsidianSessionLogger` (lifecycle orchestrator)
+- `hooks/lib/obsidian.py` — `ObsidianClient` (CLI wrapper with batch eval) + `ObsidianSessionLogger` (lifecycle orchestrator)
 - Integrates into: `handle-session-start.py`, `handle-session-end.py`, `auto-satisfy-skills.py`, `clear-single-use.py`
 - **Fail-open**: Obsidian errors never block Claude Code. If Obsidian isn't running, logging is silently skipped.
 
