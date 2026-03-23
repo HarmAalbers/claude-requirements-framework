@@ -9765,6 +9765,30 @@ def test_obsidian_client(runner: TestRunner):
             result = client._run("version")
             runner.test("_run handles generic exceptions", result is None)
 
+    # Test 10b: _run returns None when CLI returns error on stdout with exit code 0
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout='Error: File "Claude/Sessions Log" not found.',
+                stderr="",
+            )
+            client = ObsidianClient()
+            result = client._run("read", 'file=Claude/Sessions Log')
+            runner.test("_run returns None on error-on-stdout", result is None)
+
+    # Test 10c: _run allows normal stdout content (not starting with Error:)
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="# My Note\nSome content",
+                stderr="",
+            )
+            client = ObsidianClient()
+            result = client._run("read", 'file=My Note')
+            runner.test("_run allows normal stdout content", result is not None)
+
     # Test 11: create_note calls _run with correct args
     with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
         with patch("obsidian.subprocess.run") as mock_run:
