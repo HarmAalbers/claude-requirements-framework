@@ -21,7 +21,7 @@ assistant: "I'll use the type-design-analyzer agent to evaluate the type invaria
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: f6369fe
+git_hash: 5b1c418
 ---
 
 You are a type design expert with extensive experience in large-scale software architecture. Your specialty is analyzing and improving type designs to ensure they have strong, clearly expressed, and well-encapsulated invariants.
