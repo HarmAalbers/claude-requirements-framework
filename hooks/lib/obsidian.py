@@ -152,6 +152,14 @@ class ObsidianClient:
                     stderr=result.stderr[:200] if result.stderr else "",
                 )
                 return None
+            # Obsidian CLI sometimes returns exit code 0 with error on stdout
+            if result.stdout and result.stdout.strip().startswith("Error:"):
+                logger.debug(
+                    "Obsidian CLI returned error on stdout",
+                    args=str(args),
+                    stdout=result.stdout.strip()[:200],
+                )
+                return None
             return result
         except FileNotFoundError:
             logger.debug("Obsidian CLI not found in PATH")
@@ -437,6 +445,7 @@ class ObsidianSessionLogger:
 
     def _ensure_index_note(self):
         """Create the index/ledger note if it doesn't exist."""
+        logger = get_logger()
         content = self.client.read(self.index_note)
         if content is None:
             header = (
@@ -450,7 +459,9 @@ class ObsidianSessionLogger:
                 folder, name = parts
             else:
                 folder, name = "", parts[0]
-            self.client.create_note(name, folder, header)
+            created = self.client.create_note(name, folder, header)
+            if not created:
+                logger.debug("Failed to create index note", note=self.index_note)
 
     def _build_ledger_row(self, date, project, branch, duration,
                           commits, files, status, link):
