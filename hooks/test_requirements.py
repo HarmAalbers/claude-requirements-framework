@@ -9838,32 +9838,80 @@ def test_obsidian_client(runner: TestRunner):
             content = client.read("Missing Note")
             runner.test("read returns None on failure", content is None)
 
-    # Test 16: set_properties sets multiple properties
+    # Test 16: set_properties tries batch first (via eval)
     with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
         with patch("obsidian.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             client = ObsidianClient()
             result = client.set_properties("Note", status="active", duration=30)
             runner.test("set_properties returns True on success", result is True)
-            runner.test("set_properties calls once per property",
-                        mock_run.call_count == 2,
+            # Batch mode: single eval call instead of one per property
+            runner.test("set_properties uses batch eval (single call)",
+                        mock_run.call_count == 1,
                         f"Called {mock_run.call_count} times")
+            cmd = mock_run.call_args[0][0]
+            runner.test("set_properties batch uses eval command",
+                        "eval" in cmd,
+                        f"Got: {cmd}")
 
-    # Test 17: set_properties returns False if any property fails
-    call_count = 0
-    def side_effect_alternating(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return MagicMock(returncode=0, stdout="", stderr="")
-        return MagicMock(returncode=1, stdout="", stderr="error")
-
+    # Test 16b: set_properties_batch generates correct JS code
     with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
-        with patch("obsidian.subprocess.run", side_effect=side_effect_alternating):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            client.set_properties_batch("Note", status="active", count=5)
+            cmd = mock_run.call_args[0][0]
+            code_arg = [a for a in cmd if a.startswith("code=")][0]
+            runner.test("batch JS contains processFrontMatter",
+                        "processFrontMatter" in code_arg,
+                        f"Got: {code_arg[:100]}")
+            runner.test("batch JS contains property assignments",
+                        'fm["status"]' in code_arg and 'fm["count"]' in code_arg,
+                        f"Got: {code_arg[:200]}")
+
+    # Test 16c: set_properties_batch with lists (tags, aliases)
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            client = ObsidianClient()
+            client.set_properties_batch("Note",
+                                        tags=["claude-session", "project/foo"],
+                                        aliases=["abc123"])
+            cmd = mock_run.call_args[0][0]
+            code_arg = [a for a in cmd if a.startswith("code=")][0]
+            runner.test("batch JS handles list values",
+                        "claude-session" in code_arg and "project/foo" in code_arg,
+                        f"Got: {code_arg[:200]}")
+
+    # Test 17: set_properties falls back to individual on batch failure
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        call_count = 0
+        def side_effect_batch_fail(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call is batch eval — fail it
+                return MagicMock(returncode=1, stdout="", stderr="eval error")
+            # Subsequent calls are individual property:set — succeed
+            return MagicMock(returncode=0, stdout="", stderr="")
+        with patch("obsidian.subprocess.run", side_effect=side_effect_batch_fail):
             call_count = 0
             client = ObsidianClient()
             result = client.set_properties("Note", good="yes", bad="no")
-            runner.test("set_properties returns False on partial failure",
+            runner.test("set_properties falls back to individual on batch fail",
+                        result is True)
+            # 1 batch attempt + 2 individual calls = 3
+            runner.test("set_properties fallback makes correct number of calls",
+                        call_count == 3,
+                        f"Called {call_count} times")
+
+    # Test 17b: set_properties returns False if both batch and individual fail
+    with patch("obsidian.shutil.which", return_value="/usr/local/bin/obsidian"):
+        with patch("obsidian.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+            client = ObsidianClient()
+            result = client.set_properties("Note", prop="val")
+            runner.test("set_properties returns False when both paths fail",
                         result is False)
 
     # Test 18: prepend calls _run correctly
@@ -9905,7 +9953,8 @@ def test_obsidian_session_logger(runner: TestRunner):
 
     # Helper: create a mock config
     def make_config(enabled=True, vault=None, folder="Claude/Sessions",
-                    index="Claude/Sessions Log", timeout=5):
+                    index="Claude/Sessions Log", timeout=5,
+                    ledger_format="dataview"):
         config = MagicMock()
         config_map = {
             ('obsidian', 'enabled', False): enabled,
@@ -9913,6 +9962,7 @@ def test_obsidian_session_logger(runner: TestRunner):
             ('obsidian', 'timeout', 5): timeout,
             ('obsidian', 'session_folder', 'Claude/Sessions'): folder,
             ('obsidian', 'index_note', 'Claude/Sessions Log'): index,
+            ('obsidian', 'ledger_format', 'dataview'): ledger_format,
         }
         def get_hook_config(section, key, default=None):
             return config_map.get((section, key, default), default)
@@ -9957,12 +10007,12 @@ def test_obsidian_session_logger(runner: TestRunner):
         runner.test("on_session_start skips when disabled",
                     mock_create.called is False)
 
-    # Test 5: on_session_start creates note and sets properties
+    # Test 5: on_session_start creates note and sets properties (Dataview mode)
     config = make_config(enabled=True)
     logger_obj = ObsidianSessionLogger(config)
     with patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create, \
          patch.object(logger_obj.client, 'set_properties', return_value=True) as mock_props, \
-         patch.object(logger_obj.client, 'read', return_value="existing") as mock_read, \
+         patch.object(logger_obj.client, 'read', return_value=None) as mock_read, \
          patch.object(logger_obj.client, 'prepend', return_value=True) as mock_prepend:
         logger_obj.on_session_start("abc123", "/tmp/project", "feat/auth")
         runner.test("on_session_start calls create_note",
@@ -9978,7 +10028,28 @@ def test_obsidian_session_logger(runner: TestRunner):
                     props_kwargs.get("session_id") == "abc123")
         runner.test("properties include branch",
                     props_kwargs.get("branch") == "feat/auth")
-        runner.test("on_session_start prepends to index",
+        runner.test("on_session_start does NOT prepend in Dataview mode",
+                    mock_prepend.called is False)
+        # Check enriched frontmatter
+        runner.test("properties include tags",
+                    props_kwargs.get("tags") == ["claude-session", "project/project"],
+                    f"Got tags: {props_kwargs.get('tags')}")
+        runner.test("properties include aliases",
+                    props_kwargs.get("aliases") == ["abc123"],
+                    f"Got aliases: {props_kwargs.get('aliases')}")
+        runner.test("properties include cssclasses",
+                    props_kwargs.get("cssclasses") == ["claude-session"],
+                    f"Got cssclasses: {props_kwargs.get('cssclasses')}")
+
+    # Test 5b: on_session_start prepends ledger row in legacy table mode
+    config = make_config(enabled=True, ledger_format="table")
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'create_note', return_value=True), \
+         patch.object(logger_obj.client, 'set_properties', return_value=True), \
+         patch.object(logger_obj.client, 'read', return_value="existing"), \
+         patch.object(logger_obj.client, 'prepend', return_value=True) as mock_prepend:
+        logger_obj.on_session_start("abc123", "/tmp/project", "feat/auth")
+        runner.test("on_session_start prepends in legacy table mode",
                     mock_prepend.called)
 
     # Test 6: on_session_start skips if create fails
@@ -10072,7 +10143,7 @@ def test_obsidian_session_logger(runner: TestRunner):
         runner.test("on_session_end handles None duration",
                     props.get("duration_minutes") == 1)
 
-    # Test 14: _ensure_index_note creates when missing
+    # Test 14: _ensure_index_note creates Dataview note when missing
     config = make_config(enabled=True)
     logger_obj = ObsidianSessionLogger(config)
     with patch.object(logger_obj.client, 'read', return_value=None) as mock_read, \
@@ -10083,15 +10154,49 @@ def test_obsidian_session_logger(runner: TestRunner):
         name = mock_create.call_args[0][0]
         runner.test("_ensure_index_note uses correct name",
                     name == "Sessions Log", f"Got: {name}")
+        content = mock_create.call_args[0][2]
+        runner.test("_ensure_index_note creates Dataview content",
+                    "dataview" in content,
+                    f"Got: {content[:100]}")
 
-    # Test 15: _ensure_index_note skips when exists
+    # Test 14b: _ensure_index_note creates legacy table in table mode
+    config = make_config(enabled=True, ledger_format="table")
+    logger_obj = ObsidianSessionLogger(config)
+    with patch.object(logger_obj.client, 'read', return_value=None), \
+         patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create:
+        logger_obj._ensure_index_note()
+        content = mock_create.call_args[0][2]
+        runner.test("_ensure_index_note creates table header in table mode",
+                    "| Date |" in content,
+                    f"Got: {content[:100]}")
+
+    # Test 15: _ensure_index_note skips when Dataview note already exists
     config = make_config(enabled=True)
     logger_obj = ObsidianSessionLogger(config)
-    with patch.object(logger_obj.client, 'read', return_value="existing content"), \
+    with patch.object(logger_obj.client, 'read', return_value="```dataview\nTABLE..."), \
          patch.object(logger_obj.client, 'create_note') as mock_create:
         logger_obj._ensure_index_note()
-        runner.test("_ensure_index_note skips when exists",
+        runner.test("_ensure_index_note skips when Dataview note exists",
                     mock_create.called is False)
+
+    # Test 15b: _ensure_index_note migrates legacy table to Dataview
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    legacy_content = "# Sessions Log\n| Date | Project | Branch |\n|------|---------|--------|\n| 2026-03-19 | proj | main |"
+    with patch.object(logger_obj.client, 'read', return_value=legacy_content), \
+         patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create, \
+         patch.object(logger_obj.client, '_run', return_value=MagicMock()) as mock_run:
+        logger_obj._ensure_index_note()
+        # Should create backup note
+        runner.test("_ensure_index_note creates backup on migration",
+                    mock_create.called)
+        backup_name = mock_create.call_args[0][0]
+        runner.test("_ensure_index_note backup name has (legacy) suffix",
+                    "(legacy)" in backup_name,
+                    f"Got: {backup_name}")
+        # Should overwrite with Dataview content
+        runner.test("_ensure_index_note overwrites with Dataview",
+                    mock_run.called)
 
     # Test 16: _build_ledger_row format
     config = make_config(enabled=True)
@@ -10128,6 +10233,29 @@ def test_obsidian_session_logger(runner: TestRunner):
     logger_obj = ObsidianSessionLogger(config)
     runner.test("custom folder from config",
                 logger_obj.folder == "Notes/Claude")
+
+    # Test 19b: ledger_format from config
+    config = make_config(enabled=True, ledger_format="table")
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("ledger_format from config",
+                logger_obj.ledger_format == "table")
+
+    # Test 19c: ledger_format defaults to dataview
+    config = make_config(enabled=True)
+    logger_obj = ObsidianSessionLogger(config)
+    runner.test("ledger_format defaults to dataview",
+                logger_obj.ledger_format == "dataview")
+
+    # Test 19d: _escape_js handles quotes and backslashes
+    from obsidian import _escape_js
+    runner.test("_escape_js escapes double quotes",
+                _escape_js('say "hello"') == 'say \\"hello\\"')
+    runner.test("_escape_js escapes backslashes",
+                _escape_js("path\\to") == "path\\\\to")
+    runner.test("_escape_js escapes single quotes",
+                _escape_js("it's") == "it\\'s")
+    runner.test("_escape_js escapes newlines",
+                _escape_js("line1\nline2") == "line1\\nline2")
 
     # --- finalize_in_background tests ---
     import subprocess as _subprocess
