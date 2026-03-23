@@ -6,6 +6,9 @@ to Obsidian notes.
 
 Requires Obsidian desktop app to be running with CLI enabled.
 All operations are fail-open — errors are logged but never block execution.
+
+Requires Dataview plugin for auto-updating session ledger (default).
+Legacy markdown table format available via ledger_format: "table".
 """
 
 import json
@@ -17,6 +20,28 @@ import textwrap
 from datetime import datetime
 from pathlib import Path
 from logger import get_logger
+
+
+# Dataview query for the auto-updating session ledger.
+# Renders a live table from session note frontmatter — no manual writes needed.
+DATAVIEW_LEDGER_QUERY = (
+    "# Claude Sessions Log\\n\\n"
+    "```dataview\\n"
+    "TABLE WITHOUT ID\\n"
+    "  file.link as \\\"Session\\\",\\n"
+    "  dateformat(started, \\\"yyyy-MM-dd HH:mm\\\") as \\\"Started\\\",\\n"
+    "  project as \\\"Project\\\",\\n"
+    "  branch as \\\"Branch\\\",\\n"
+    "  duration_minutes + \\\"m\\\" as \\\"Duration\\\",\\n"
+    "  commits as \\\"Commits\\\",\\n"
+    "  files_changed as \\\"Files\\\",\\n"
+    "  choice(status = \\\"complete\\\", \\\"\\u2705\\\", \\\"\\u23f3\\\") as \\\"Status\\\"\\n"
+    "FROM #claude-session\\n"
+    "WHERE type = \\\"claude-session\\\"\\n"
+    "SORT started DESC\\n"
+    "LIMIT 50\\n"
+    "```"
+)
 
 
 class ObsidianClient:
@@ -96,6 +121,57 @@ class ObsidianClient:
 
     def set_properties(self, file, **props):
         """Set YAML frontmatter properties on a note.
+
+        Tries batch setting via eval first (single CLI call), falling
+        back to individual property:set calls if eval fails.
+
+        Args:
+            file: Note name (wikilink style, without .md)
+            **props: Key-value pairs to set as properties
+
+        Returns:
+            True if all properties set successfully, False otherwise.
+        """
+        if self.set_properties_batch(file, **props):
+            return True
+        # Fall back to individual calls
+        return self._set_properties_individual(file, **props)
+
+    def set_properties_batch(self, file, **props):
+        """Set multiple YAML frontmatter properties in one CLI call via eval.
+
+        Uses Obsidian's JS API (app.fileManager.processFrontMatter) to set
+        all properties atomically in a single subprocess invocation.
+
+        Args:
+            file: Note name (wikilink style, without .md)
+            **props: Key-value pairs to set as properties
+
+        Returns:
+            True on success, False on failure.
+        """
+        if not props:
+            return True
+
+        js_assignments = []
+        for key, value in props.items():
+            js_assignments.append(f'fm["{_escape_js(key)}"] = {json.dumps(value)};')
+
+        basename = _escape_js(file)
+        js_code = (
+            f'const files = app.vault.getMarkdownFiles()'
+            f'.filter(f => f.basename === "{basename}");'
+            f'if (files.length > 0) {{'
+            f'await app.fileManager.processFrontMatter(files[0], (fm) => {{'
+            f'{"".join(js_assignments)}'
+            f'}});'
+            f'}}'
+        )
+        result = self._run("eval", f'code={js_code}')
+        return result is not None
+
+    def _set_properties_individual(self, file, **props):
+        """Set properties one at a time via property:set CLI calls.
 
         Args:
             file: Note name (wikilink style, without .md)
@@ -181,12 +257,36 @@ class ObsidianClient:
             return None
 
 
+def _escape_js(s):
+    """Escape a string for safe interpolation into JavaScript code.
+
+    Handles quotes, backslashes, and newlines.
+
+    Args:
+        s: String to escape
+
+    Returns:
+        Escaped string safe for JS string literals.
+    """
+    s = str(s)
+    s = s.replace("\\", "\\\\")
+    s = s.replace('"', '\\"')
+    s = s.replace("'", "\\'")
+    s = s.replace("\n", "\\n")
+    s = s.replace("\r", "\\r")
+    return s
+
+
 class ObsidianSessionLogger:
     """Manages the session note lifecycle in Obsidian.
 
     Creates per-session detail notes with YAML frontmatter and a
     session index/ledger note. Updates notes throughout the session
     lifecycle (start → periodic → end).
+
+    Supports two ledger formats:
+    - "dataview" (default): Auto-updating Dataview TABLE query
+    - "table": Legacy manually-maintained markdown table
 
     All operations are fail-open — errors never block execution.
     """
@@ -208,6 +308,9 @@ class ObsidianSessionLogger:
         self.index_note = config.get_hook_config(
             'obsidian', 'index_note', 'Claude/Sessions Log'
         )
+        self.ledger_format = config.get_hook_config(
+            'obsidian', 'ledger_format', 'dataview'
+        )
 
     def _note_name(self, session_id, project_dir):
         """Generate note name for a session.
@@ -226,7 +329,7 @@ class ObsidianSessionLogger:
         return f"{date_str} {project_name} {session_id}"
 
     def on_session_start(self, session_id, project_dir, branch):
-        """Create session detail note and add ledger row.
+        """Create session detail note and update ledger.
 
         Args:
             session_id: Short session ID
@@ -264,10 +367,13 @@ class ObsidianSessionLogger:
             logger.debug("Failed to create session note", note=note_name)
             return
 
-        # Set YAML frontmatter properties
+        # Set YAML frontmatter properties (including enriched metadata)
         self.client.set_properties(
             note_name,
             type="claude-session",
+            tags=["claude-session", f"project/{project_name}"],
+            aliases=[session_id],
+            cssclasses=["claude-session"],
             session_id=session_id,
             project=project_name,
             project_path=project_dir,
@@ -282,19 +388,22 @@ class ObsidianSessionLogger:
             requirements_satisfied=0,
         )
 
-        # Ensure index note exists and add ledger row
+        # Ensure index note exists
         self._ensure_index_note()
-        ledger_row = self._build_ledger_row(
-            date=now.strftime("%Y-%m-%d"),
-            project=project_name,
-            branch=branch,
-            duration="-",
-            commits="0",
-            files="0",
-            status="\u23f3",
-            link=note_name,
-        )
-        self.client.prepend(self.index_note, ledger_row)
+
+        # In legacy table mode, prepend a ledger row
+        if self.ledger_format == "table":
+            ledger_row = self._build_ledger_row(
+                date=now.strftime("%Y-%m-%d"),
+                project=project_name,
+                branch=branch,
+                duration="-",
+                commits="0",
+                files="0",
+                status="\u23f3",
+                link=note_name,
+            )
+            self.client.prepend(self.index_note, ledger_row)
 
         logger.debug("Obsidian session note created", note=note_name)
 
@@ -444,28 +553,107 @@ class ObsidianSessionLogger:
             )
 
     def _ensure_index_note(self):
-        """Create the index/ledger note if it doesn't exist."""
+        """Create or migrate the index/ledger note.
+
+        In Dataview mode: creates a note with a Dataview TABLE query that
+        auto-renders session data from frontmatter. If an existing legacy
+        table note is found, it is migrated (backed up as "(legacy)").
+
+        In table mode: creates a note with a markdown table header.
+        """
         logger = get_logger()
+        # Extract folder and name from index_note path
+        parts = self.index_note.rsplit("/", 1)
+        if len(parts) == 2:
+            folder, name = parts
+        else:
+            folder, name = "", parts[0]
+
         content = self.client.read(self.index_note)
-        if content is None:
-            header = (
-                "# Claude Sessions Log\\n\\n"
-                "| Date | Project | Branch | Duration | Commits | Files | Status | Link |\\n"
-                "|------|---------|--------|----------|---------|-------|--------|------|"
+
+        if self.ledger_format == "dataview":
+            if content is None:
+                # No note exists — create with Dataview query
+                created = self.client.create_note(
+                    name, folder, DATAVIEW_LEDGER_QUERY
+                )
+                if not created:
+                    logger.debug(
+                        "Failed to create Dataview index note",
+                        note=self.index_note,
+                    )
+            elif "| Date |" in content and "dataview" not in content:
+                # Legacy table note detected — migrate
+                self._migrate_legacy_index(folder, name, content)
+            # else: Dataview note already exists, nothing to do
+        else:
+            # Legacy table mode
+            if content is None:
+                header = (
+                    "# Claude Sessions Log\\n\\n"
+                    "| Date | Project | Branch | Duration | Commits "
+                    "| Files | Status | Link |\\n"
+                    "|------|---------|--------|----------|---------|"
+                    "-------|--------|------|"
+                )
+                created = self.client.create_note(name, folder, header)
+                if not created:
+                    logger.debug(
+                        "Failed to create index note",
+                        note=self.index_note,
+                    )
+
+    def _migrate_legacy_index(self, folder, name, old_content):
+        """Migrate a legacy markdown table index note to Dataview format.
+
+        Backs up the old note as "{name} (legacy)" and creates a new
+        Dataview-powered index note in its place.
+
+        Args:
+            folder: Folder path within the vault
+            name: Note name (without extension)
+            old_content: Content of the existing legacy note
+        """
+        logger = get_logger()
+
+        # Back up old note
+        legacy_name = f"{name} (legacy)"
+        escaped_content = old_content.replace("\\", "\\\\").replace("\n", "\\n")
+        backed_up = self.client.create_note(legacy_name, folder, escaped_content)
+        if not backed_up:
+            logger.debug(
+                "Failed to back up legacy index note, skipping migration",
+                note=self.index_note,
             )
-            # Extract folder and name from index_note path
-            parts = self.index_note.rsplit("/", 1)
-            if len(parts) == 2:
-                folder, name = parts
-            else:
-                folder, name = "", parts[0]
-            created = self.client.create_note(name, folder, header)
-            if not created:
-                logger.debug("Failed to create index note", note=self.index_note)
+            return
+
+        # Overwrite the index note with Dataview content using the
+        # CLI's 'overwrite' flag
+        args = [
+            "create",
+            f'name={name}',
+            f"path={folder}/",
+            f'content={DATAVIEW_LEDGER_QUERY}',
+            "overwrite",
+        ]
+        result = self.client._run(*args)
+        if result is not None:
+            logger.debug(
+                "Migrated legacy index note to Dataview format",
+                note=self.index_note,
+                backup=legacy_name,
+            )
+        else:
+            logger.debug(
+                "Failed to overwrite index note with Dataview content",
+                note=self.index_note,
+            )
 
     def _build_ledger_row(self, date, project, branch, duration,
                           commits, files, status, link):
-        """Build a markdown table row for the ledger.
+        """Build a markdown table row for the legacy ledger.
+
+        Only used when ledger_format is "table".
 
         Returns:
             Single table row string.

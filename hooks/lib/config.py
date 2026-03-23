@@ -770,6 +770,7 @@ class RequirementsConfig:
             "vault": None,
             "session_folder": "Claude/Sessions",
             "index_note": "Claude/Sessions Log",
+            "ledger_format": "dataview",
             "update_on_commit": True,
             "update_on_requirement": True,
             "timeout": 5,
