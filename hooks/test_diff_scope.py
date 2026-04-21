@@ -181,6 +181,85 @@ def test_empty_arg_missing_base_raises(r: TestRunner):
                    f"got: {e}")
 
 
+# --- Tests: branch arg ------------------------------------------------------
+
+def test_branch_arg_valid(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        _run(["git", "checkout", "-b", "feat/x"], cwd=tmp)
+        write_and_stage(tmp, "c.py", "print('new')\n")
+        _run(["git", "commit", "-m", "feat"], cwd=tmp)
+        _run(["git", "checkout", "master"], cwd=tmp)
+        os.chdir(tmp)
+        scope = prepare_diff_scope("feat/x", scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+        r.test("branch arg source correct", scope.source == "branch:feat/x",
+               f"got source={scope.source}")
+        r.test("branch arg files correct", "c.py" in scope.files,
+               f"got files={scope.files}")
+
+
+def test_branch_arg_not_found(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        os.chdir(tmp)
+        try:
+            prepare_diff_scope("nonexistent")
+            r.test("branch not-found raises", False, "no exception")
+        except DiffScopeError as e:
+            r.test("branch not-found raises", "not found" in str(e).lower(),
+                   f"wrong message: {e}")
+
+
+def test_branch_arg_identical_to_base(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        os.chdir(tmp)
+        scope = prepare_diff_scope("master", scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+        r.test("identical branch returns empty scope", scope.files == [],
+               f"expected empty, got {scope.files}")
+
+
+# --- Tests: range arg --------------------------------------------------------
+
+def test_range_arg_two_dot(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        a = _run(["git", "rev-parse", "HEAD"], cwd=tmp).stdout.strip()
+        write_and_stage(tmp, "x.py", "x\n")
+        _run(["git", "commit", "-m", "x"], cwd=tmp)
+        b = _run(["git", "rev-parse", "HEAD"], cwd=tmp).stdout.strip()
+        os.chdir(tmp)
+        scope = prepare_diff_scope(f"{a}..{b}", scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+        r.test("two-dot range resolves", scope.source.startswith("range:"),
+               f"got source={scope.source}")
+        r.test("two-dot range files", "x.py" in scope.files,
+               f"got files={scope.files}")
+
+
+def test_range_arg_three_dot(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        a = _run(["git", "rev-parse", "HEAD"], cwd=tmp).stdout.strip()
+        write_and_stage(tmp, "y.py", "y\n")
+        _run(["git", "commit", "-m", "y"], cwd=tmp)
+        b = _run(["git", "rev-parse", "HEAD"], cwd=tmp).stdout.strip()
+        os.chdir(tmp)
+        scope = prepare_diff_scope(f"{a}...{b}", scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+        r.test("three-dot range resolves", scope.source.startswith("range:"),
+               f"got source={scope.source}")
+
+
+def test_range_arg_malformed(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        os.chdir(tmp)
+        try:
+            prepare_diff_scope("bad..junk..ref")
+            r.test("malformed range raises", False, "no exception")
+        except DiffScopeError:
+            r.test("malformed range raises", True)
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -191,6 +270,16 @@ def main():
     test_non_git_dir_raises(runner)
     test_empty_arg_staged_deletion_included(runner)
     test_empty_arg_missing_base_raises(runner)
+
+    print("\nBranch arg:")
+    test_branch_arg_valid(runner)
+    test_branch_arg_not_found(runner)
+    test_branch_arg_identical_to_base(runner)
+
+    print("\nRange arg:")
+    test_range_arg_two_dot(runner)
+    test_range_arg_three_dot(runner)
+    test_range_arg_malformed(runner)
     sys.exit(runner.summary())
 
 
