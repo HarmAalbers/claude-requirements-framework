@@ -260,6 +260,112 @@ def test_range_arg_malformed(r: TestRunner):
             r.test("malformed range raises", True)
 
 
+# --- Tests: PR# arg ----------------------------------------------------------
+
+def _install_fake_gh(tmp: str, stdout: str, exit_code: int) -> str:
+    """Create a fake gh binary that prints `stdout` and exits `exit_code`.
+
+    Returns the bin directory path to prepend to PATH.
+    """
+    bin_dir = Path(tmp) / "fakebin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    # Use a here-doc-esque approach so the fake gh prints exactly `stdout`.
+    # We write the stdout to a sidecar file and have the gh script cat it,
+    # which avoids shell-escaping headaches for diffs containing quotes.
+    out_file = bin_dir / "stdout.txt"
+    out_file.write_text(stdout)
+    gh.write_text(
+        "#!/bin/bash\n"
+        f"cat {out_file}\n"
+        f"exit {exit_code}\n"
+    )
+    gh.chmod(0o755)
+    return str(bin_dir)
+
+
+def test_pr_gh_missing(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        os.chdir(tmp)
+        old_path = os.environ.get("PATH", "")
+        # PATH without any gh
+        os.environ["PATH"] = "/usr/bin:/bin"
+        try:
+            prepare_diff_scope("1234")
+            r.test("gh missing raises", False, "no exception")
+        except DiffScopeError as e:
+            msg = str(e).lower()
+            r.test("gh missing raises with install hint",
+                   "gh" in msg and ("cli" in msg or "install" in msg),
+                   f"got: {e}")
+        except NotImplementedError as e:
+            # Expected during RED phase before Task 7
+            r.test("gh missing raises with install hint", False,
+                   f"RED: got NotImplementedError: {e}")
+        finally:
+            os.environ["PATH"] = old_path
+
+
+def test_pr_gh_succeeds(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        fake_diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -0,0 +1 @@\n+hello\n"
+        fake_bin = _install_fake_gh(tmp, fake_diff, 0)
+        os.chdir(tmp)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{fake_bin}:{old_path}"
+        try:
+            scope = prepare_diff_scope("1234", scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+            r.test("pr arg source correct", scope.source == "pr:1234",
+                   f"got {scope.source}")
+            r.test("pr arg parsed a.py from diff", "a.py" in scope.files,
+                   f"got {scope.files}")
+        except NotImplementedError as e:
+            r.test("pr arg source correct", False, f"RED: got NotImplementedError: {e}")
+            r.test("pr arg parsed a.py from diff", False, f"RED: got NotImplementedError: {e}")
+        finally:
+            os.environ["PATH"] = old_path
+
+
+def test_pr_gh_not_found(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        fake_bin = _install_fake_gh(tmp, "GraphQL: Could not resolve to a PullRequest", 1)
+        os.chdir(tmp)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{fake_bin}:{old_path}"
+        try:
+            prepare_diff_scope("9999")
+            r.test("pr not-found raises", False, "no exception")
+        except DiffScopeError as e:
+            msg = str(e).lower()
+            r.test("pr not-found raises", "not found" in msg or "access" in msg,
+                   f"got: {e}")
+        except NotImplementedError as e:
+            r.test("pr not-found raises", False, f"RED: got NotImplementedError: {e}")
+        finally:
+            os.environ["PATH"] = old_path
+
+
+def test_pr_gh_not_authed(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        fake_bin = _install_fake_gh(tmp, "auth status failed", 4)
+        os.chdir(tmp)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{fake_bin}:{old_path}"
+        try:
+            prepare_diff_scope("1234")
+            r.test("pr not-authed raises", False, "no exception")
+        except DiffScopeError:
+            r.test("pr not-authed raises", True)
+        except NotImplementedError as e:
+            r.test("pr not-authed raises", False, f"RED: got NotImplementedError: {e}")
+        finally:
+            os.environ["PATH"] = old_path
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -280,6 +386,12 @@ def main():
     test_range_arg_two_dot(runner)
     test_range_arg_three_dot(runner)
     test_range_arg_malformed(runner)
+
+    print("\nPR# arg:")
+    test_pr_gh_missing(runner)
+    test_pr_gh_succeeds(runner)
+    test_pr_gh_not_found(runner)
+    test_pr_gh_not_authed(runner)
     sys.exit(runner.summary())
 
 
