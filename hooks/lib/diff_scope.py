@@ -12,6 +12,7 @@ See docs/plans/2026-04-21-diff-scope-refactor-design.md.
 """
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ DEFAULT_SCOPE_FILE = Path("/tmp/review_scope.txt")
 DEFAULT_DIFF_FILE = Path("/tmp/review.diff")
 DEFAULT_BASE = "origin/master"
 LARGE_DIFF_BYTES = 1_000_000  # 1 MB — warn but don't truncate
+
+_RANGE_RE = re.compile(r"^[^.\s]+\.{2,3}[^.\s]+$")
 
 
 _log = get_logger()
@@ -106,6 +109,38 @@ def _resolve_empty(base: str) -> tuple[list[str], str, str, str | None]:
     return files, diff_text, f"branch:{branch}", base
 
 
+def _classify_arg(arg: str) -> str:
+    """Return 'range', 'pr', or 'branch' based on shape."""
+    if _RANGE_RE.match(arg):
+        return "range"
+    if arg.lstrip("#").isdigit():
+        return "pr"
+    return "branch"
+
+
+def _resolve_branch(branch: str, base: str) -> tuple[list[str], str, str, str | None]:
+    code, _, _ = run_git(f"git rev-parse --verify {branch}")
+    if code != 0:
+        raise DiffScopeError(f"branch '{branch}' not found")
+    # Validate base ref too (consistent with _resolve_empty)
+    verify_code, _, _ = run_git(f"git rev-parse --verify {base}")
+    if verify_code != 0:
+        raise DiffScopeError(f"base ref not found: {base}")
+    code, names, _ = run_git(f"git diff --name-only {base}...{branch}")
+    files = [line for line in names.splitlines() if line] if code == 0 else []
+    _, diff_text, _ = run_git(f"git diff {base}...{branch}")
+    return files, diff_text, f"branch:{branch}", base
+
+
+def _resolve_range(rng: str) -> tuple[list[str], str, str, str | None]:
+    code, names, err = run_git(f"git diff --name-only {rng}")
+    if code != 0:
+        raise DiffScopeError(f"invalid range '{rng}': {err}")
+    files = [line for line in names.splitlines() if line]
+    _, diff_text, _ = run_git(f"git diff {rng}")
+    return files, diff_text, f"range:{rng}", None
+
+
 def prepare_diff_scope(
     arg: str | None = None,
     scope_file: Path = DEFAULT_SCOPE_FILE,
@@ -128,7 +163,26 @@ def prepare_diff_scope(
             base_ref=base_ref,
         )
 
-    raise NotImplementedError(f"arg not yet supported: {arg!r}")
+    # Non-empty arg: classify and dispatch
+    kind = _classify_arg(arg)
+    if kind == "range":
+        files, diff_text, source, base_ref = _resolve_range(arg)
+    elif kind == "branch":
+        files, diff_text, source, base_ref = _resolve_branch(arg, base)
+    elif kind == "pr":
+        raise NotImplementedError("pr support in next task")
+    else:
+        raise DiffScopeError(f"unrecognized arg: {arg!r}")
+
+    _write_scope_files(files, diff_text, scope_file, diff_file)
+    return Scope(
+        files=files,
+        diff_text=diff_text,
+        scope_file=scope_file,
+        diff_file=diff_file,
+        source=source,
+        base_ref=base_ref,
+    )
 
 
 def read_scope(
