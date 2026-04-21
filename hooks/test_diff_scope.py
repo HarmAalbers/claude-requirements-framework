@@ -147,6 +147,40 @@ def test_non_git_dir_raises(r: TestRunner):
                    f"wrong message: {e}")
 
 
+def test_empty_arg_staged_deletion_included(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        # add and commit a file that will later be deleted
+        write_and_stage(tmp, "gone.py", "content\n")
+        _run(["git", "commit", "-m", "add gone.py"], cwd=tmp)
+        # Stage its deletion
+        _run(["git", "rm", "gone.py"], cwd=tmp)
+        os.chdir(tmp)
+        scope = prepare_diff_scope(None, scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+        r.test("staged deletion included in scope", "gone.py" in scope.files,
+               f"expected gone.py in files, got {scope.files}")
+        r.test("staged deletion keeps source=staged", scope.source == "staged",
+               f"got source={scope.source}")
+
+
+def test_empty_arg_missing_base_raises(r: TestRunner):
+    with tempfile.TemporaryDirectory() as tmp:
+        # make_repo creates origin/master; delete it so base is missing
+        make_repo(tmp)
+        _run(["git", "update-ref", "-d", "refs/remotes/origin/master"], cwd=tmp)
+        _run(["git", "checkout", "-b", "feat/x"], cwd=tmp)
+        write_and_stage(tmp, "c.py", "content\n")
+        _run(["git", "commit", "-m", "feat"], cwd=tmp)
+        os.chdir(tmp)
+        try:
+            prepare_diff_scope(None, scope_file=Path(tmp) / "scope.txt", diff_file=Path(tmp) / "review.diff")
+            r.test("missing base ref raises", False, "no exception")
+        except DiffScopeError as e:
+            r.test("missing base ref raises with message",
+                   "base ref" in str(e).lower() or "not found" in str(e).lower(),
+                   f"got: {e}")
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -155,6 +189,8 @@ def main():
     test_empty_arg_branch_vs_base(runner)
     test_empty_arg_detached_head(runner)
     test_non_git_dir_raises(runner)
+    test_empty_arg_staged_deletion_included(runner)
+    test_empty_arg_missing_base_raises(runner)
     sys.exit(runner.summary())
 
 
