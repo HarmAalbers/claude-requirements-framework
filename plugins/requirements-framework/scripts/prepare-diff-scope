@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# plugins/requirements-framework/scripts/prepare-diff-scope
+# Thin wrapper around hooks/lib/diff_scope.py for commands and agents.
+#
+# Usage:
+#   prepare-diff-scope "$ARGUMENTS"   # command-side (always runs)
+#   prepare-diff-scope --ensure       # agent-side (no-op if precomputed)
+
+set -euo pipefail
+
+# Locate diff_scope.py. Search order:
+#   1. $HOME/.claude/hooks/lib            (deployed runtime — every framework user)
+#   2. $script_dir/../../../hooks/lib     (dev mode — running from source repo)
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$HOME/.claude/hooks/lib/diff_scope.py" ]]; then
+  lib_dir="$HOME/.claude/hooks/lib"
+elif [[ -f "$script_dir/../../../hooks/lib/diff_scope.py" ]]; then
+  lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
+else
+  echo "prepare-diff-scope: cannot find diff_scope.py. Run ./sync.sh deploy or install the framework." >&2
+  exit 3
+fi
+
+py="python3"
+
+case "${1:-}" in
+  --ensure)
+    # Silent no-op if both files exist non-empty
+    if [[ -s /tmp/review_scope.txt && -s /tmp/review.diff ]]; then
+      exit 0
+    fi
+    "$py" -c "
+import sys
+sys.path.insert(0, '$lib_dir')
+from diff_scope import ensure_scope
+s = ensure_scope()
+print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"})')
+"
+    ;;
+  *)
+    arg="${1:-}"
+    "$py" -c "
+import sys
+sys.path.insert(0, '$lib_dir')
+from diff_scope import prepare_diff_scope, base_from_config, DiffScopeError
+try:
+    s = prepare_diff_scope('$arg' or None, base=base_from_config())
+    print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"})')
+except DiffScopeError as e:
+    print(f'Cannot resolve scope: {e}', file=sys.stderr)
+    sys.exit(2)
+"
+    ;;
+esac

@@ -21,7 +21,7 @@ Use for database schema evolution analysis.
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 5b1c418
+git_hash: 2aac66f
 ---
 
 # Backward Compatibility Checker Agent
@@ -41,12 +41,15 @@ You are a **backward compatibility specialist** that identifies breaking changes
 
 ## Workflow
 
-### Step 1: Analyze Git Diff for Schema Changes
+### Step 1: Load Review Scope
 
-```bash
-# Get full diff of staged changes
-git diff --cached
-```
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
+
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
+
+Report findings only on scoped files, but you MUST read callers, consumers, and any serialized/persisted references to public APIs being changed. Compat cannot be assessed without knowing who depends on what.
 
 **Look for**:
 - Pydantic model field changes (`class ModelName(BaseModel):`)

@@ -21,27 +21,27 @@ assistant: "I'll use the test-analyzer agent to review test coverage quality."
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 5b1c418
+git_hash: 2aac66f
 ---
 
 You are an expert test coverage analyst specializing in code review. Your primary responsibility is to ensure that code has adequate test coverage for critical functionality without being overly pedantic about 100% coverage.
 
-## Step 1: Get Changes to Analyze
+## Step 1: Load Review Scope
 
-Execute these commands to identify code and test changes:
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
+
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
+
+Report findings only on scoped files. Read related implementation files, `conftest.py`, shared fixtures, and existing test patterns to judge whether test changes cover behavior and follow project conventions.
+
+Partition the scope into source vs test files:
 
 ```bash
-git diff --cached --name-only --diff-filter=ACMR > /tmp/all_changes.txt 2>&1
-if [ ! -s /tmp/all_changes.txt ]; then
-  git diff --name-only --diff-filter=ACMR > /tmp/all_changes.txt 2>&1
-fi
-
-# Separate source files from test files
-grep -vE '(test_|_test\.|\.test\.|\.spec\.)' /tmp/all_changes.txt > /tmp/source_changes.txt 2>&1 || true
-grep -E '(test_|_test\.|\.test\.|\.spec\.)' /tmp/all_changes.txt > /tmp/test_changes.txt 2>&1 || true
+grep -vE '(test_|_test\.|\.test\.|\.spec\.)' /tmp/review_scope.txt > /tmp/source_changes.txt 2>&1 || true
+grep -E '(test_|_test\.|\.test\.|\.spec\.)' /tmp/review_scope.txt > /tmp/test_changes.txt 2>&1 || true
 ```
-
-If both files are empty: Output "No changes to analyze" and EXIT
 
 ## Step 2: Check for Missing Test Coverage - CRITICAL GAP DETECTION
 

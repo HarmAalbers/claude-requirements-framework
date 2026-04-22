@@ -20,7 +20,8 @@ Tool-validator provides deterministic results matching CI tools.
 </commentary>
 </example>
 color: blue
-git_hash: 5b1c418
+allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+git_hash: 2aac66f
 ---
 
 # Tool Validator Agent
@@ -40,14 +41,17 @@ You are a **tool execution specialist** that runs the actual linting and type-ch
 
 ## Workflow
 
-### Step 1: Identify Staged Files
+### Step 1: Load Review Scope
 
-```bash
-# Get all staged files
-git diff --cached --name-only --diff-filter=ACMR
-```
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
 
-Group by file type:
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
+
+Findings must reference scoped files. The tools you invoke (pyright, ruff, eslint, etc.) naturally read project config and imports — that's expected.
+
+Group the scope by file type for downstream tool selection:
 - Python: `*.py`
 - TypeScript: `*.ts`, `*.tsx`
 - JSON/YAML: `*.json`, `*.yaml` (for syntax validation)

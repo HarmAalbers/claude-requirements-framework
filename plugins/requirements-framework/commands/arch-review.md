@@ -3,7 +3,7 @@ name: arch-review
 description: "Multi-perspective team-based architecture review with agent debate and commit planning"
 argument-hint: "[plan-file-path]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: 5b1c418
+git_hash: 068e1d5
 ---
 
 # Architecture Review — Team-Based Multi-Perspective Assessment
@@ -17,32 +17,33 @@ Satisfies all 4 planning requirements: `commit_plan`, `adr_reviewed`, `tdd_plann
 
 You MUST follow these steps in exact order. Do not skip steps or interpret - execute as written.
 
-### Step 1: Locate Plan File
+## Step 0: Resolve Plan File
 
-Check `$ARGUMENTS` for an explicit path first, then auto-discover:
+If `$ARGUMENTS` is provided, treat it as the plan file path:
 
 ```bash
-# Check for explicit argument
-if [ -n "$ARGUMENTS" ]; then
+if [[ -n "$ARGUMENTS" ]]; then
   PLAN_FILE="$ARGUMENTS"
+else
+  # Search conventional plan directories, most-recently-modified first.
+  PLAN_FILE="$(ls -t docs/plans/*.md .claude/plans/*.md ~/.claude/plans/*.md 2>/dev/null | head -1)"
 fi
 
-# Auto-discover if no argument
-if [ -z "$PLAN_FILE" ] || [ ! -f "$PLAN_FILE" ]; then
-  PLAN_FILE=$(ls -t .claude/plans/*.md 2>/dev/null | head -1)
+if [[ -z "$PLAN_FILE" ]] || [[ ! -f "$PLAN_FILE" ]]; then
+  echo "No plan file found. Pass a path or create one under docs/plans/, .claude/plans/, or ~/.claude/plans/." >&2
+  exit 2
 fi
-if [ -z "$PLAN_FILE" ] || [ ! -f "$PLAN_FILE" ]; then
-  PLAN_FILE=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
-fi
+
+echo "Reviewing plan: $PLAN_FILE"
 ```
 
-If no plan file found:
-- Output: "No plan file found. Create a plan in plan mode first, then run this command."
-- **EXIT**
+Pass `$PLAN_FILE` to every teammate / subagent prompt — they should read the plan from that exact path.
 
-Output: "Found plan file: [PLAN_FILE]"
+### Step 1: Locate Plan File
 
-Read the plan file content for use in teammate prompts.
+`$PLAN_FILE` is already resolved by Step 0. Read its content for use in teammate prompts.
+
+Output: "Found plan file: $PLAN_FILE"
 
 ### Step 2: Locate Project ADRs
 
@@ -95,44 +96,44 @@ For each review task (NOT the synthesis task), spawn a teammate:
 **adr-guardian teammate**:
 - `subagent_type`: "requirements-framework:adr-guardian"
 - `name`: "adr-guardian"
-- `prompt`: Include plan file content, ADR directory listing, and instruction:
-  "Review this plan against all project ADRs. Check for violations, missing ADRs, and compliance gaps. Share findings via SendMessage with severity levels. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE`, ADR directory listing, and instruction:
+  "Read the plan from `$PLAN_FILE`. Review this plan against all project ADRs. Check for violations, missing ADRs, and compliance gaps. Share findings via SendMessage with severity levels. Mark task complete when done."
 
 **backward-compatibility-checker teammate**:
 - `subagent_type`: "requirements-framework:backward-compatibility-checker"
 - `name`: "compat-checker"
-- `prompt`: Include plan file content and instruction:
-  "Analyze this plan for breaking changes: renamed fields, removed APIs, changed schemas, migration needs. Share findings via SendMessage with severity levels. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Analyze this plan for breaking changes: renamed fields, removed APIs, changed schemas, migration needs. Share findings via SendMessage with severity levels. Mark task complete when done."
 
 **tdd-validator teammate**:
 - `subagent_type`: "requirements-framework:tdd-validator"
 - `name`: "tdd-validator"
-- `prompt`: Include plan file content and instruction:
-  "Assess the testability of this plan: Does it include test strategy? Are breaking changes covered by tests? Does the TDD sequence account for all components? Share findings via SendMessage. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Assess the testability of this plan: Does it include test strategy? Are breaking changes covered by tests? Does the TDD sequence account for all components? Share findings via SendMessage. Mark task complete when done."
 
 **solid-reviewer teammate**:
 - `subagent_type`: "requirements-framework:solid-reviewer"
 - `name`: "solid-reviewer"
-- `prompt`: Include plan file content and instruction:
-  "Assess this plan for SOLID principles violations with Python focus. Scale strictness to plan size (1-2 files: SRP only, 3-5: SRP+DIP, 6+: full SOLID). Share findings via SendMessage with severity levels. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Assess this plan for SOLID principles violations with Python focus. Scale strictness to plan size (1-2 files: SRP only, 3-5: SRP+DIP, 6+: full SOLID). Share findings via SendMessage with severity levels. Mark task complete when done."
 
 **refactor-advisor teammate**:
 - `subagent_type`: "requirements-framework:refactor-advisor"
 - `name`: "refactor-advisor"
-- `prompt`: Include plan file content and instruction:
-  "Analyze this plan and the existing codebase to identify preparatory refactoring opportunities — structural improvements to existing code that would make the planned change easier to implement. Add a '## Preparatory Refactoring' section to the plan file using the Edit tool. Share findings via SendMessage with severity levels. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Analyze this plan and the existing codebase to identify preparatory refactoring opportunities — structural improvements to existing code that would make the planned change easier to implement. Add a '## Preparatory Refactoring' section to `$PLAN_FILE` using the Edit tool. Share findings via SendMessage with severity levels. Mark task complete when done."
 
 **commit-planner teammate**:
 - `subagent_type`: "requirements-framework:commit-planner"
 - `name`: "commit-planner"
-- `prompt`: Include plan file content and instruction:
-  "Analyze this plan and generate an atomic commit strategy. Break the implementation into small, focused, independently-testable commits. For each commit: title, files changed, what to test. Append the commit strategy to the plan file using the Edit tool. Share a summary via SendMessage. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Analyze this plan and generate an atomic commit strategy. Break the implementation into small, focused, independently-testable commits. For each commit: title, files changed, what to test. Append the commit strategy to `$PLAN_FILE` using the Edit tool. Share a summary via SendMessage. Mark task complete when done."
 
 **codex-arch-reviewer teammate** (ONLY if HAS_CODEX is true):
 - `subagent_type`: "requirements-framework:codex-arch-reviewer"
 - `name`: "codex-arch-reviewer"
-- `prompt`: Include plan file path and instruction:
-  "Analyze the architecture of the code changes on this branch using OpenAI Codex CLI. The plan file is at [PLAN_FILE_PATH]. Focus on coupling/cohesion, module dependencies, API surface design, scalability, and separation of concerns. Share findings via SendMessage with severity levels. Mark task complete when done."
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Analyze the architecture of the code changes on this branch using OpenAI Codex CLI. The plan file is at `$PLAN_FILE`. Focus on coupling/cohesion, module dependencies, API surface design, scalability, and separation of concerns. Share findings via SendMessage with severity levels. Mark task complete when done."
 
 Launch all teammates in a SINGLE message (parallel execution).
 
