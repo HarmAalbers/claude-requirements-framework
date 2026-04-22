@@ -232,15 +232,30 @@ def read_scope(
     diff_file: Path = DEFAULT_DIFF_FILE,
 ) -> Scope:
     """Read pre-computed scope without re-resolving."""
-    raise NotImplementedError
+    files = (
+        [line for line in scope_file.read_text().splitlines() if line]
+        if scope_file.exists()
+        else []
+    )
+    diff_text = diff_file.read_text() if diff_file.exists() else ""
+    return Scope(
+        files=files,
+        diff_text=diff_text,
+        scope_file=scope_file,
+        diff_file=diff_file,
+        source="precomputed",
+        base_ref=None,
+    )
 
 
 def ensure_scope(
     scope_file: Path = DEFAULT_SCOPE_FILE,
     diff_file: Path = DEFAULT_DIFF_FILE,
 ) -> Scope:
-    """Agent entry: read pre-computed if present, else compute."""
-    raise NotImplementedError
+    """Agent entry: read pre-computed scope if present, else compute."""
+    if scope_file.exists() and diff_file.exists() and scope_file.stat().st_size > 0:
+        return read_scope(scope_file, diff_file)
+    return prepare_diff_scope(None, scope_file=scope_file, diff_file=diff_file)
 
 
 def base_from_config(project_dir: str | None = None) -> str:
