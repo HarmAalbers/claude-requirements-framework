@@ -485,6 +485,26 @@ def test_wrapper_smoke(r: TestRunner):
                "scope file missing after wrapper run")
 
 
+# --- Tests: plugin version guard ---------------------------------------------
+
+def test_plugin_version_bumped(r: TestRunner):
+    """If diff_scope.py exists, plugin.json major version must be >= 3."""
+    import json
+    repo_root = Path(__file__).parent.parent
+    manifest = repo_root / "plugins" / "requirements-framework" / ".claude-plugin" / "plugin.json"
+    diff_scope_py = repo_root / "hooks" / "lib" / "diff_scope.py"
+    if not diff_scope_py.exists():
+        r.test("version guard skipped (diff_scope absent)", True)
+        return
+    version = json.loads(manifest.read_text())["version"]
+    major = int(version.split(".")[0])
+    r.test(
+        "plugin version >= 3.0.0 when diff_scope present",
+        major >= 3,
+        f"got version {version}",
+    )
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -522,6 +542,9 @@ def main():
 
     print("\nWrapper integration:")
     test_wrapper_smoke(runner)
+
+    print("\nPlugin version guard:")
+    test_plugin_version_bumped(runner)
     sys.exit(runner.summary())
 
 
