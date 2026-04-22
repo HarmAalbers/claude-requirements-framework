@@ -13,6 +13,8 @@ See docs/plans/2026-04-21-diff-scope-refactor-design.md.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,6 +143,46 @@ def _resolve_range(rng: str) -> tuple[list[str], str, str, str | None]:
     return files, diff_text, f"range:{rng}", None
 
 
+def _parse_diff_files(diff_text: str) -> list[str]:
+    """Extract changed file paths from a unified diff (+++ b/... lines)."""
+    files: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:].strip()
+            if path and path != "/dev/null":
+                files.append(path)
+    return files
+
+
+def _resolve_pr(pr_num: str) -> tuple[list[str], str, str, str | None]:
+    if shutil.which("gh") is None:
+        raise DiffScopeError(
+            "gh CLI required for PR# argument. Install: https://cli.github.com/"
+        )
+    num = pr_num.lstrip("#")
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "diff", num, "--patch"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        raise DiffScopeError(f"gh pr diff {num} timed out")
+
+    if result.returncode != 0:
+        combined = (result.stdout + "\n" + result.stderr).lower()
+        if "could not resolve" in combined or "not found" in combined:
+            raise DiffScopeError(f"PR #{num} not found or access denied")
+        raise DiffScopeError(
+            f"gh pr diff {num} failed: {result.stderr.strip() or result.stdout.strip()}"
+        )
+
+    diff_text = result.stdout
+    files = _parse_diff_files(diff_text)
+    return files, diff_text, f"pr:{num}", None
+
+
 def prepare_diff_scope(
     arg: str | None = None,
     scope_file: Path = DEFAULT_SCOPE_FILE,
@@ -170,7 +212,7 @@ def prepare_diff_scope(
     elif kind == "branch":
         files, diff_text, source, base_ref = _resolve_branch(arg, base)
     elif kind == "pr":
-        raise NotImplementedError("pr support in next task")
+        files, diff_text, source, base_ref = _resolve_pr(arg)
     else:
         raise DiffScopeError(f"unrecognized arg: {arg!r}")
 
