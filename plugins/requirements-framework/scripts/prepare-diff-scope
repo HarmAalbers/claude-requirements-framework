@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
-# scripts/prepare-diff-scope
+# plugins/requirements-framework/scripts/prepare-diff-scope
 # Thin wrapper around hooks/lib/diff_scope.py for commands and agents.
 #
 # Usage:
-#   scripts/prepare-diff-scope "$ARGUMENTS"   # command-side (always runs)
-#   scripts/prepare-diff-scope --ensure       # agent-side (no-op if precomputed)
+#   prepare-diff-scope "$ARGUMENTS"   # command-side (always runs)
+#   prepare-diff-scope --ensure       # agent-side (no-op if precomputed)
 
 set -euo pipefail
 
-# Resolve the framework repo root from this script's location, not from cwd.
-# (The wrapper is typically invoked from inside some other project's working tree.)
+# Locate diff_scope.py. Search order:
+#   1. $HOME/.claude/hooks/lib            (deployed runtime — every framework user)
+#   2. $script_dir/../../../hooks/lib     (dev mode — running from source repo)
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(dirname "$script_dir")"
+if [[ -f "$HOME/.claude/hooks/lib/diff_scope.py" ]]; then
+  lib_dir="$HOME/.claude/hooks/lib"
+elif [[ -f "$script_dir/../../../hooks/lib/diff_scope.py" ]]; then
+  lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
+else
+  echo "prepare-diff-scope: cannot find diff_scope.py. Run ./sync.sh deploy or install the framework." >&2
+  exit 3
+fi
+
 py="python3"
 
 case "${1:-}" in
@@ -22,7 +31,7 @@ case "${1:-}" in
     fi
     "$py" -c "
 import sys
-sys.path.insert(0, '$repo_root/hooks/lib')
+sys.path.insert(0, '$lib_dir')
 from diff_scope import ensure_scope
 s = ensure_scope()
 print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"})')
@@ -32,7 +41,7 @@ print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"}
     arg="${1:-}"
     "$py" -c "
 import sys
-sys.path.insert(0, '$repo_root/hooks/lib')
+sys.path.insert(0, '$lib_dir')
 from diff_scope import prepare_diff_scope, base_from_config, DiffScopeError
 try:
     s = prepare_diff_scope('$arg' or None, base=base_from_config())

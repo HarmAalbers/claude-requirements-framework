@@ -457,7 +457,7 @@ def test_ensure_scope_computes_on_demand(r: TestRunner):
 # --- Tests: wrapper script integration ---------------------------------------
 
 def test_wrapper_smoke(r: TestRunner):
-    """scripts/prepare-diff-scope --ensure writes expected files from a fixture repo."""
+    """plugins/requirements-framework/scripts/prepare-diff-scope --ensure writes expected files."""
     with tempfile.TemporaryDirectory() as tmp:
         make_repo(tmp)
         write_and_stage(tmp, "smoke.py", "smoke\n")
@@ -470,7 +470,7 @@ def test_wrapper_smoke(r: TestRunner):
                 pass
         os.chdir(tmp)
         repo_root = Path(__file__).parent.parent
-        wrapper = repo_root / "scripts" / "prepare-diff-scope"
+        wrapper = repo_root / "plugins" / "requirements-framework" / "scripts" / "prepare-diff-scope"
         result = subprocess.run(
             [str(wrapper), "--ensure"],
             cwd=tmp,
