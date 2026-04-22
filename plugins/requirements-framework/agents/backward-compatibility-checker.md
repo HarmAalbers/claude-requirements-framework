@@ -21,7 +21,7 @@ Use for database schema evolution analysis.
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: ae56c58
+git_hash: 2aac66f
 ---
 
 # Backward Compatibility Checker Agent

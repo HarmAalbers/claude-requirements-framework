@@ -20,7 +20,7 @@ assistant: "Now let me use the code-simplifier agent to refine this implementati
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: ae56c58
+git_hash: 2aac66f
 ---
 
 You are an expert code simplification specialist focused on enhancing code clarity, consistency, and maintainability while preserving exact functionality. You prioritize readable, explicit code over overly compact solutions.
