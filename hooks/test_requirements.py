@@ -8646,6 +8646,93 @@ def test_teammate_idle_hook(runner: TestRunner):
         runner.test("Missing fields = fail open", result.returncode == 0)
 
 
+def test_teammate_idle_normalizes_session_id(runner: TestRunner):
+    """TeammateIdle hook must normalize UUID session IDs so team events
+    land in the canonical 8-char session file, not a separate UUID file.
+    Sub-assertions: UUID-with-dashes → 8-char, UUID-without-dashes → 8-char,
+    already-8-char → unchanged (idempotency)."""
+    print("\n📦 Testing TeammateIdle normalizes session_id...")
+
+    hook_path = Path(__file__).parent / "handle-teammate-idle.py"
+    if not hook_path.exists():
+        runner.test("TeammateIdle hook exists", False, "Not implemented")
+        return
+
+    def _run(tmpdir: str, session_id: str) -> int:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "test-team",
+                "session_id": session_id,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        return result.returncode
+
+    # Case 1: UUID with dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_session = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+        expected_short = "cad0ac4d"
+        rc = _run(tmpdir, uuid_session)
+        runner.test("TeammateIdle UUID-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle UUID-dashes writes 8-char file",
+                   (sessions_dir / f"{expected_short}.json").exists(),
+                   f"Dir: {list(sessions_dir.glob('*.json')) if sessions_dir.exists() else 'missing'}")
+        runner.test("TeammateIdle UUID-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_session}.json").exists())
+
+    # Case 2: UUID without dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_no_dash = "cad0ac4d393345ad9a1c14aec05bb940"
+        rc = _run(tmpdir, uuid_no_dash)
+        runner.test("TeammateIdle UUID-no-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle UUID-no-dashes writes 8-char file",
+                   (sessions_dir / "cad0ac4d.json").exists())
+        runner.test("TeammateIdle UUID-no-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_no_dash}.json").exists())
+
+    # Case 3: Already-8-char → unchanged (idempotency)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        short_id = "deadbeef"
+        rc = _run(tmpdir, short_id)
+        runner.test("TeammateIdle 8-char = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle 8-char writes same short file (idempotent)",
+                   (sessions_dir / f"{short_id}.json").exists())
+
+
 def test_task_completed_hook(runner: TestRunner):
     """Test TaskCompleted hook behavior."""
     print("\n📦 Testing TaskCompleted hook...")
@@ -8784,6 +8871,93 @@ def test_task_completed_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Missing fields = fail open", result.returncode == 0)
+
+
+def test_task_completed_normalizes_session_id(runner: TestRunner):
+    """TaskCompleted hook must normalize UUID session IDs so team events
+    land in the canonical 8-char session file. Same sub-assertions as
+    test_teammate_idle_normalizes_session_id."""
+    print("\n📦 Testing TaskCompleted normalizes session_id...")
+
+    hook_path = Path(__file__).parent / "handle-task-completed.py"
+    if not hook_path.exists():
+        runner.test("TaskCompleted hook exists", False, "Not implemented")
+        return
+
+    def _run(tmpdir: str, session_id: str) -> int:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "Test task",
+                "team_name": "test-team",
+                "session_id": session_id,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        return result.returncode
+
+    # Case 1: UUID with dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_session = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+        expected_short = "cad0ac4d"
+        rc = _run(tmpdir, uuid_session)
+        runner.test("TaskCompleted UUID-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted UUID-dashes writes 8-char file",
+                   (sessions_dir / f"{expected_short}.json").exists(),
+                   f"Dir: {list(sessions_dir.glob('*.json')) if sessions_dir.exists() else 'missing'}")
+        runner.test("TaskCompleted UUID-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_session}.json").exists())
+
+    # Case 2: UUID without dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_no_dash = "cad0ac4d393345ad9a1c14aec05bb940"
+        rc = _run(tmpdir, uuid_no_dash)
+        runner.test("TaskCompleted UUID-no-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted UUID-no-dashes writes 8-char file",
+                   (sessions_dir / "cad0ac4d.json").exists())
+        runner.test("TaskCompleted UUID-no-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_no_dash}.json").exists())
+
+    # Case 3: Already-8-char → unchanged (idempotency)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        short_id = "deadbeef"
+        rc = _run(tmpdir, short_id)
+        runner.test("TaskCompleted 8-char = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted 8-char writes same short file (idempotent)",
+                   (sessions_dir / f"{short_id}.json").exists())
 
 
 def test_carry_over_basic(runner: TestRunner):
@@ -10577,7 +10751,9 @@ def main():
 
     # Agent Teams hook tests
     test_teammate_idle_hook(runner)
+    test_teammate_idle_normalizes_session_id(runner)
     test_task_completed_hook(runner)
+    test_task_completed_normalizes_session_id(runner)
 
     # Session state carry-over tests
     test_carry_over_basic(runner)
