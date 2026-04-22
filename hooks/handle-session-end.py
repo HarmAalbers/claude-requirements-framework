@@ -132,14 +132,18 @@ def main() -> int:
         # marks the instance dirty; save() is required to persist to disk.
         # Without BOTH calls, .git/requirements/sessions/<id>.json ends with
         # ended_at=null — the regression this block protects against.
+        # Only finalize if a metrics file already exists — don't fabricate
+        # synthetic files for sessions that never recorded any metrics
+        # (non-framework sessions, disabled session_learning, non-git dirs).
         # Log failures at warning level so the exact class of bug being fixed
         # cannot silently reappear.
         try:
-            from session_metrics import SessionMetrics
-            metrics = SessionMetrics(session_id, project_dir, branch)
-            metrics.finalize_session()
-            metrics.save()
-            logger.debug("Session metrics finalized")
+            from session_metrics import SessionMetrics, get_metrics_path
+            if get_metrics_path(session_id, project_dir).exists():
+                metrics = SessionMetrics(session_id, project_dir, branch)
+                metrics.finalize_session()
+                metrics.save()
+                logger.debug("Session metrics finalized")
         except Exception as e:
             logger.warning("Session metrics finalization failed (fail-open)",
                            error=str(e), session_id=session_id)

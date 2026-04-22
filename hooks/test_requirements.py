@@ -2901,6 +2901,50 @@ def test_session_end_finalizes_metrics(runner: TestRunner):
                    f"Got: {loaded.get('duration_seconds')!r}")
 
 
+def test_session_end_no_synthetic_metrics(runner: TestRunner):
+    """SessionEnd must NOT fabricate a metrics file for sessions that never
+    recorded any metrics. Regression guard: the finalize step was added to
+    persist ended_at for real sessions, but must not create synthetic files
+    in non-framework contexts (no prior metrics file, session_learning
+    disabled, etc.)."""
+    print("\n📦 Testing SessionEnd does not create synthetic metrics...")
+
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+    if not hook_path.exists():
+        runner.test("SessionEnd hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+
+        # No pre-existing metrics file for this session.
+        test_session = "nofile01"
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_event_name": "SessionEnd",
+                "reason": "clear",
+                "session_id": test_session,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd no-file = returncode 0", result.returncode == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("SessionEnd no-file creates no synthetic metrics",
+                   existing == [],
+                   f"Expected no files, got: {existing}")
+
+
 def test_triggered_requirements(runner: TestRunner):
     """Test triggered state tracking for requirements."""
     print("\n📦 Testing triggered requirements...")
@@ -10681,6 +10725,7 @@ def main():
     test_stop_hook(runner)
     test_session_end_hook(runner)
     test_session_end_finalizes_metrics(runner)
+    test_session_end_no_synthetic_metrics(runner)
 
     # Triggered requirements tests (Stop hook research-session fix)
     test_triggered_requirements(runner)
