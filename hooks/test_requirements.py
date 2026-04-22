@@ -2827,6 +2827,80 @@ def test_session_end_hook(runner: TestRunner):
         runner.test("SessionEnd non-git = pass", result.returncode == 0)
 
 
+def test_session_end_finalizes_metrics(runner: TestRunner):
+    """SessionEnd hook must call finalize_session() + save() so ended_at and
+    duration_seconds are persisted to disk. Regression test for the bug where
+    all session files on disk had ended_at=null because the hook constructed
+    SessionMetrics but never finalized/saved. Test oracle: read the JSON file
+    at .git/requirements/sessions/<id>.json and assert the two fields are
+    non-null integers (not just that the hook exited 0)."""
+    print("\n📦 Testing SessionEnd finalizes metrics...")
+
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+    if not hook_path.exists():
+        runner.test("SessionEnd hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {},
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Pre-create an unfinalized session metrics file (schema matches
+        # create_empty_metrics in session_metrics.py).
+        test_session = "finaliz1"
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = sessions_dir / f"{test_session}.json"
+        metrics_path.write_text(json.dumps({
+            "version": "1.0",
+            "session_id": test_session,
+            "project_dir": tmpdir,
+            "branch": "feature/test",
+            "started_at": 1700000000,
+            "ended_at": None,
+            "duration_seconds": None,
+            "tools": {},
+            "requirements": {},
+            "errors": [],
+            "git": {"commits": [], "files_changed": 0, "lines_added": 0, "lines_removed": 0},
+            "skills": [],
+            "commands": [],
+            "agents": [],
+            "learnings": {"patterns_detected": [], "improvements_made": [], "user_feedback": None},
+        }))
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_event_name": "SessionEnd",
+                "reason": "clear",
+                "session_id": test_session,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd finalize = returncode 0", result.returncode == 0)
+
+        # Read on-disk JSON and assert both fields are populated (non-null integers).
+        loaded = json.loads(metrics_path.read_text())
+        runner.test("SessionEnd sets ended_at on disk",
+                   isinstance(loaded.get("ended_at"), int),
+                   f"Got: {loaded.get('ended_at')!r}")
+        runner.test("SessionEnd sets duration_seconds on disk",
+                   isinstance(loaded.get("duration_seconds"), int),
+                   f"Got: {loaded.get('duration_seconds')!r}")
+
+
 def test_triggered_requirements(runner: TestRunner):
     """Test triggered state tracking for requirements."""
     print("\n📦 Testing triggered requirements...")
@@ -10394,6 +10468,7 @@ def main():
     test_session_start_json_format(runner)
     test_stop_hook(runner)
     test_session_end_hook(runner)
+    test_session_end_finalizes_metrics(runner)
 
     # Triggered requirements tests (Stop hook research-session fix)
     test_triggered_requirements(runner)
