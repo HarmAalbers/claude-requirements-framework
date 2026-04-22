@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# scripts/prepare-diff-scope
+# Thin wrapper around hooks/lib/diff_scope.py for commands and agents.
+#
+# Usage:
+#   scripts/prepare-diff-scope "$ARGUMENTS"   # command-side (always runs)
+#   scripts/prepare-diff-scope --ensure       # agent-side (no-op if precomputed)
+
+set -euo pipefail
+
+# Resolve the framework repo root from this script's location, not from cwd.
+# (The wrapper is typically invoked from inside some other project's working tree.)
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(dirname "$script_dir")"
+py="python3"
+
+case "${1:-}" in
+  --ensure)
+    # Silent no-op if both files exist non-empty
+    if [[ -s /tmp/review_scope.txt && -s /tmp/review.diff ]]; then
+      exit 0
+    fi
+    "$py" -c "
+import sys
+sys.path.insert(0, '$repo_root/hooks/lib')
+from diff_scope import ensure_scope
+s = ensure_scope()
+print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"})')
+"
+    ;;
+  *)
+    arg="${1:-}"
+    "$py" -c "
+import sys
+sys.path.insert(0, '$repo_root/hooks/lib')
+from diff_scope import prepare_diff_scope, base_from_config, DiffScopeError
+try:
+    s = prepare_diff_scope('$arg' or None, base=base_from_config())
+    print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"})')
+except DiffScopeError as e:
+    print(f'Cannot resolve scope: {e}', file=sys.stderr)
+    sys.exit(2)
+"
+    ;;
+esac

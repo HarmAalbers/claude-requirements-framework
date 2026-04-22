@@ -454,6 +454,37 @@ def test_ensure_scope_computes_on_demand(r: TestRunner):
                    f"RED: got NotImplementedError: {e}")
 
 
+# --- Tests: wrapper script integration ---------------------------------------
+
+def test_wrapper_smoke(r: TestRunner):
+    """scripts/prepare-diff-scope --ensure writes expected files from a fixture repo."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        write_and_stage(tmp, "smoke.py", "smoke\n")
+        # Wrapper writes to /tmp/review_scope.txt + /tmp/review.diff by default.
+        # Clear them first so we actually exercise the fallback path.
+        for default in ("/tmp/review_scope.txt", "/tmp/review.diff"):
+            try:
+                Path(default).unlink()
+            except FileNotFoundError:
+                pass
+        os.chdir(tmp)
+        repo_root = Path(__file__).parent.parent
+        wrapper = repo_root / "scripts" / "prepare-diff-scope"
+        result = subprocess.run(
+            [str(wrapper), "--ensure"],
+            cwd=tmp,
+            capture_output=True,
+            text=True,
+        )
+        r.test("wrapper exits 0",
+               result.returncode == 0,
+               f"rc={result.returncode} stderr={result.stderr}")
+        r.test("wrapper wrote /tmp/review_scope.txt",
+               Path("/tmp/review_scope.txt").exists(),
+               "scope file missing after wrapper run")
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -488,6 +519,9 @@ def main():
     print("\nEnsure scope fallback:")
     test_ensure_scope_uses_precomputed(runner)
     test_ensure_scope_computes_on_demand(runner)
+
+    print("\nWrapper integration:")
+    test_wrapper_smoke(runner)
     sys.exit(runner.summary())
 
 
