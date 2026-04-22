@@ -1,7 +1,7 @@
 ---
 name: deep-review
 description: "Cross-validated team-based code review with agent debate"
-argument-hint: ""
+argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: f6369fe
 ---
@@ -16,18 +16,27 @@ Team-based review where agents cross-validate findings and produce a unified ver
 
 You MUST follow these steps in exact order. Do not skip steps or interpret - execute as written.
 
-### Step 1: Identify Changes to Review
+### Step 1: Resolve Review Scope
 
-Execute these bash commands:
+Execute this bash command:
 
 ```bash
-git diff --cached --name-only --diff-filter=ACMR > /tmp/deep_review_scope.txt 2>&1
-if [ ! -s /tmp/deep_review_scope.txt ]; then
-  git diff --name-only --diff-filter=ACMR > /tmp/deep_review_scope.txt 2>&1
-fi
+${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope "$ARGUMENTS"
 ```
 
-If /tmp/deep_review_scope.txt is empty: Output "No changes to review" and **EXIT**.
+The wrapper resolves `$ARGUMENTS` (empty / branch name / `a..b` range / PR number) and writes:
+- `/tmp/review_scope.txt` — one changed file per line
+- `/tmp/review.diff` — unified diff
+
+On success it prints a single `Scope: <source> (<N> files, base=<ref>)` line.
+
+If the wrapper exits non-zero (e.g., missing `gh` CLI for PR# argument, or base ref unavailable):
+- Output the wrapper's stderr message to the user
+- **STOP** — do not proceed with agent dispatch
+
+If `/tmp/review_scope.txt` is empty:
+- Output `No changes to review`
+- **STOP**
 
 ### Step 2: Check Conditional Agent Availability
 
@@ -39,7 +48,7 @@ Set flag:
 - **HAS_CODEX** = true if `which codex` succeeds (exit code 0)
 
 ```bash
-grep -qE '\.(tsx|jsx|css|scss)$' /tmp/deep_review_scope.txt 2>/dev/null
+grep -qE '\.(tsx|jsx|css|scss)$' /tmp/review_scope.txt 2>/dev/null
 ```
 
 Set flag:
@@ -92,6 +101,10 @@ For each review task (NOT the synthesis task), spawn a teammate via the Task too
 
 **Standard preamble for ALL teammate prompts** (include at the top of each prompt):
 ```
+You will review the scope in `/tmp/review_scope.txt` (changed files) and
+`/tmp/review.diff` (unified diff). Focus strictly on files in the scope.
+Do NOT run your own `git diff` — use the prepared scope files above.
+
 You MUST use the standard output format from ADR-013. All findings must use:
 - ### CRITICAL: [title] — for blocking issues
 - ### IMPORTANT: [title] — for significant concerns
