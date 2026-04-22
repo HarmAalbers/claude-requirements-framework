@@ -165,7 +165,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on scoped files. Read related error-handling code, exception classes, logging setup, and retry/fallback infrastructure to judge whether new error paths are consistent with the rest of the codebase.
 
 Focus on:
 - try/catch/except blocks (new or modified)

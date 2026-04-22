@@ -86,7 +86,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Codex receives the unified diff and forms its own context. Your job is to invoke codex and format its output — do not add manual scope restriction to the codex prompt.
 
 ### 3. Execute Codex Review
 

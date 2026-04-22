@@ -43,7 +43,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on files in the scope. Read CLAUDE.md, project docs, imports, and callers of changed functions as needed to judge whether changes fit project conventions.
 
 ## Step 2: Load Project Guidelines
 

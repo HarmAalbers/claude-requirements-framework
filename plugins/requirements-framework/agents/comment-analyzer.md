@@ -38,7 +38,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Focus findings on comments in scoped files. Read surrounding code to judge whether a comment is redundant, misleading, or accurately documents non-obvious intent.
 
 ## Step 2: Identify Comments in Changed Code
 

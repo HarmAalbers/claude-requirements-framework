@@ -43,7 +43,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on scoped files. Read the component hierarchy, shared hooks, context providers, and style system to judge React, accessibility, and performance issues in context.
 
 Narrow to frontend files within the scope:
 

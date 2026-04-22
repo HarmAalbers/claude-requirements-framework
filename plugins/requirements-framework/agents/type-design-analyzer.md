@@ -34,7 +34,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on scoped files. Follow type references into other modules, base classes, and protocols to judge whether new types compose correctly and don't weaken downstream invariants.
 
 ## Step 2: Identify Type Definitions in Changes
 

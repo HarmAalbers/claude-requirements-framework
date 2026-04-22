@@ -34,7 +34,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on scoped files. Read related implementation files, `conftest.py`, shared fixtures, and existing test patterns to judge whether test changes cover behavior and follow project conventions.
 
 Partition the scope into source vs test files:
 

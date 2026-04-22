@@ -46,7 +46,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Report findings only on scoped files, but read data-flow patterns (PII storage, audit logging, retention policies, consent flags) to judge compliance across the system.
 
 ## Step 2: Gather Compliance Context
 

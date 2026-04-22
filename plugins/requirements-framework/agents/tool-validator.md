@@ -49,7 +49,7 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 `/tmp/review.diff` (unified diff). If the scope file is empty, output
 "No review scope provided" and EXIT.
 
-Focus your review on the files in the scope; do not expand beyond them.
+Findings must reference scoped files. The tools you invoke (pyright, ruff, eslint, etc.) naturally read project config and imports — that's expected.
 
 Group the scope by file type for downstream tool selection:
 - Python: `*.py`
