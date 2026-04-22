@@ -1,7 +1,7 @@
 ---
 name: quality-check
 description: "Comprehensive quality review before creating PR"
-argument-hint: "[parallel]"
+argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: f6369fe
 ---
@@ -31,38 +31,47 @@ Comprehensive code quality review before creating a pull request. This runs ALL 
 
 You MUST follow these steps in exact order. This is a comprehensive review - execute all steps precisely.
 
-### Step 1: Identify Changes to Review
+### Step 1: Resolve Review Scope
 
-Execute these bash commands:
+Execute this bash command:
 
 ```bash
-git diff --cached --name-only --diff-filter=ACMR > /tmp/pr_review_scope.txt 2>&1
-if [ ! -s /tmp/pr_review_scope.txt ]; then
-  git diff --name-only --diff-filter=ACMR > /tmp/pr_review_scope.txt 2>&1
-fi
+${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope "$ARGUMENTS"
 ```
 
-If /tmp/pr_review_scope.txt is empty: Output "No changes to review" and EXIT.
+The wrapper resolves `$ARGUMENTS` (empty / branch name / `a..b` range / PR number) and writes:
+- `/tmp/review_scope.txt` — one changed file per line
+- `/tmp/review.diff` — unified diff
+
+On success it prints a single `Scope: <source> (<N> files, base=<ref>)` line.
+
+If the wrapper exits non-zero (e.g., missing `gh` CLI for PR# argument, or base ref unavailable):
+- Output the wrapper's stderr message to the user
+- **STOP** — do not proceed with agent dispatch
+
+If `/tmp/review_scope.txt` is empty:
+- Output `No changes to review`
+- **STOP**
 
 ### Step 2: Detect File Types and Set Applicability Flags
 
-Execute these detection commands to determine which agents apply:
+Execute these detection commands to determine which agents apply. They read the prepared scope files from Step 1 — do not re-run `git diff`.
 
 ```bash
 # Check for test files
-grep -E '(test_|_test\.py|\.test\.|\.spec\.)' /tmp/pr_review_scope.txt > /tmp/has_tests.txt 2>&1
+grep -E '(test_|_test\.py|\.test\.|\.spec\.)' /tmp/review_scope.txt > /tmp/has_tests.txt 2>&1 || true
 
 # Check for type definitions in the diff
-git diff --cached | grep -E '(class.*BaseModel|interface |type |dataclass|TypedDict|NamedTuple)' > /tmp/has_types.txt 2>&1
+grep -E '(class.*BaseModel|interface |type |dataclass|TypedDict|NamedTuple)' /tmp/review.diff > /tmp/has_types.txt 2>&1 || true
 
-# Check for comment changes
-git diff --cached --unified=0 | grep -E '^[+].*#|^[+].*//|^[+].*"""' > /tmp/has_comments.txt 2>&1
+# Check for comment changes (added comment lines in the diff)
+grep -E '^[+].*#|^[+].*//|^[+].*"""' /tmp/review.diff > /tmp/has_comments.txt 2>&1 || true
 
 # Check for schema/model changes (Pydantic, database models)
-git diff --cached | grep -E '(BaseModel|Field\(|Column\(|Table\(|alembic)' > /tmp/has_schemas.txt 2>&1
+grep -E '(BaseModel|Field\(|Column\(|Table\(|alembic)' /tmp/review.diff > /tmp/has_schemas.txt 2>&1 || true
 
 # Check for frontend files
-grep -E '\.(tsx|jsx|css|scss)$' /tmp/pr_review_scope.txt > /tmp/has_frontend.txt 2>&1 || true
+grep -E '\.(tsx|jsx|css|scss)$' /tmp/review_scope.txt > /tmp/has_frontend.txt 2>&1 || true
 ```
 
 Set applicability flags based on detection results:
@@ -79,12 +88,19 @@ Arguments received: "$ARGUMENTS"
 **PARALLEL_MODE**=false
 - Set to true if: $ARGUMENTS contains "parallel"
 
+**Standard preamble for ALL subagent prompts** (include at the top of each subagent prompt in Steps 4–8):
+
+```
+Read `/tmp/review_scope.txt` (changed files, one per line) and `/tmp/review.diff` (unified diff).
+Focus strictly on files in the scope. Do not run your own `git diff` — use the prepared scope files above.
+```
+
 ### Step 4: Execute Tool Validator - BLOCKING GATE (ALWAYS RUNS FIRST)
 
 This step is REQUIRED and MUST run before any other agents:
 
 1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator"
-2. Pass context: File list from /tmp/pr_review_scope.txt
+2. Pass context: File list from /tmp/review_scope.txt
 3. Wait for completion
 4. Parse output for CRITICAL severity issues
 
