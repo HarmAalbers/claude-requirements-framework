@@ -406,6 +406,54 @@ def test_config_default_used(r: TestRunner):
                f"got {scope.base_ref}")
 
 
+# --- Tests: ensure_scope fallback --------------------------------------------
+
+def test_ensure_scope_uses_precomputed(r: TestRunner):
+    """ensure_scope reads pre-existing files without re-running git diff."""
+    with tempfile.TemporaryDirectory() as tmp:
+        scope_f = Path(tmp) / "scope.txt"
+        diff_f = Path(tmp) / "review.diff"
+        scope_f.write_text("a.py\nb.py\n")
+        diff_f.write_text("fake diff content\n")
+        try:
+            scope = ensure_scope(scope_file=scope_f, diff_file=diff_f)
+            r.test("ensure reads precomputed files",
+                   scope.files == ["a.py", "b.py"],
+                   f"got {scope.files}")
+            r.test("ensure reads diff text",
+                   "fake diff" in scope.diff_text,
+                   "diff content not read")
+        except NotImplementedError as e:
+            r.test("ensure reads precomputed files", False,
+                   f"RED: got NotImplementedError: {e}")
+            r.test("ensure reads diff text", False,
+                   f"RED: got NotImplementedError: {e}")
+
+
+def test_ensure_scope_computes_on_demand(r: TestRunner):
+    """ensure_scope falls back to prepare_diff_scope(None) when files absent."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        write_and_stage(tmp, "x.py", "x\n")
+        os.chdir(tmp)
+        scope_f = Path(tmp) / "scope.txt"
+        diff_f = Path(tmp) / "review.diff"
+        # Files don't exist yet
+        try:
+            scope = ensure_scope(scope_file=scope_f, diff_file=diff_f)
+            r.test("ensure falls back to prepare when files absent",
+                   scope.files == ["x.py"],
+                   f"got {scope.files}")
+            r.test("ensure wrote files during fallback",
+                   scope_f.exists() and diff_f.exists(),
+                   "files not written")
+        except NotImplementedError as e:
+            r.test("ensure falls back to prepare when files absent", False,
+                   f"RED: got NotImplementedError: {e}")
+            r.test("ensure wrote files during fallback", False,
+                   f"RED: got NotImplementedError: {e}")
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -436,6 +484,10 @@ def main():
     print("\nConfig override:")
     test_config_override_applied(runner)
     test_config_default_used(runner)
+
+    print("\nEnsure scope fallback:")
+    test_ensure_scope_uses_precomputed(runner)
+    test_ensure_scope_computes_on_demand(runner)
     sys.exit(runner.summary())
 
 
