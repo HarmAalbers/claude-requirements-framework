@@ -8732,6 +8732,25 @@ def test_teammate_idle_normalizes_session_id(runner: TestRunner):
         runner.test("TeammateIdle 8-char writes same short file (idempotent)",
                    (sessions_dir / f"{short_id}.json").exists())
 
+    # Case 4: Empty session_id → no junk files (guards empty-check-before-normalize)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        rc = _run(tmpdir, "")
+        runner.test("TeammateIdle empty-session = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("TeammateIdle empty-session creates no session file",
+                   existing == [],
+                   f"Expected none, got: {existing}")
+
 
 def test_task_completed_hook(runner: TestRunner):
     """Test TaskCompleted hook behavior."""
@@ -8958,6 +8977,25 @@ def test_task_completed_normalizes_session_id(runner: TestRunner):
         sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
         runner.test("TaskCompleted 8-char writes same short file (idempotent)",
                    (sessions_dir / f"{short_id}.json").exists())
+
+    # Case 4: Empty session_id → no junk files (guards empty-check-before-normalize)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        rc = _run(tmpdir, "")
+        runner.test("TaskCompleted empty-session = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("TaskCompleted empty-session creates no session file",
+                   existing == [],
+                   f"Expected none, got: {existing}")
 
 
 def test_carry_over_basic(runner: TestRunner):

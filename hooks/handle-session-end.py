@@ -127,7 +127,13 @@ def main() -> int:
         except Exception as e:
             logger.debug("WIP time tracking failed (fail-open)", error=str(e))
 
-        # 3.5. Finalize session metrics (sets ended_at + duration_seconds and persists)
+        # 3.5. Finalize session metrics.
+        # finalize_session() sets ended_at + duration_seconds in memory and
+        # marks the instance dirty; save() is required to persist to disk.
+        # Without BOTH calls, .git/requirements/sessions/<id>.json ends with
+        # ended_at=null — the regression this block protects against.
+        # Log failures at warning level so the exact class of bug being fixed
+        # cannot silently reappear.
         try:
             from session_metrics import SessionMetrics
             metrics = SessionMetrics(session_id, project_dir, branch)
@@ -135,7 +141,8 @@ def main() -> int:
             metrics.save()
             logger.debug("Session metrics finalized")
         except Exception as e:
-            logger.debug("Session metrics finalization failed (fail-open)", error=str(e))
+            logger.warning("Session metrics finalization failed (fail-open)",
+                           error=str(e), session_id=session_id)
 
         # 4. Obsidian session logging: finalize session note
         try:
