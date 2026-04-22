@@ -366,6 +366,46 @@ def test_pr_gh_not_authed(r: TestRunner):
             os.environ["PATH"] = old_path
 
 
+# --- Tests: config override --------------------------------------------------
+
+def test_config_override_applied(r: TestRunner):
+    """Explicit base= parameter threads through to Scope.base_ref."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        _run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=tmp)
+        _run(["git", "checkout", "-b", "feat/x"], cwd=tmp)
+        write_and_stage(tmp, "z.py", "z\n")
+        _run(["git", "commit", "-m", "z"], cwd=tmp)
+        os.chdir(tmp)
+        scope = prepare_diff_scope(
+            None,
+            base="origin/main",
+            scope_file=Path(tmp) / "scope.txt",
+            diff_file=Path(tmp) / "review.diff",
+        )
+        r.test("explicit base override threaded through",
+               scope.base_ref == "origin/main",
+               f"got {scope.base_ref}")
+
+
+def test_config_default_used(r: TestRunner):
+    """When no base is passed, DEFAULT_BASE is used."""
+    with tempfile.TemporaryDirectory() as tmp:
+        make_repo(tmp)
+        _run(["git", "checkout", "-b", "feat/x"], cwd=tmp)
+        write_and_stage(tmp, "z.py", "z\n")
+        _run(["git", "commit", "-m", "z"], cwd=tmp)
+        os.chdir(tmp)
+        scope = prepare_diff_scope(
+            None,
+            scope_file=Path(tmp) / "scope.txt",
+            diff_file=Path(tmp) / "review.diff",
+        )
+        r.test("default base used when not overridden",
+               scope.base_ref == DEFAULT_BASE,
+               f"got {scope.base_ref}")
+
+
 def main():
     runner = TestRunner()
     print("Empty-arg precedence:")
@@ -392,6 +432,10 @@ def main():
     test_pr_gh_succeeds(runner)
     test_pr_gh_not_found(runner)
     test_pr_gh_not_authed(runner)
+
+    print("\nConfig override:")
+    test_config_override_applied(runner)
+    test_config_default_used(runner)
     sys.exit(runner.summary())
 
 

@@ -241,3 +241,22 @@ def ensure_scope(
 ) -> Scope:
     """Agent entry: read pre-computed if present, else compute."""
     raise NotImplementedError
+
+
+def base_from_config(project_dir: str | None = None) -> str:
+    """Read hooks.diff_scope.base from the config cascade.
+
+    Falls back to DEFAULT_BASE on any error. Config failures must never
+    break scope resolution.
+    """
+    try:
+        # Lazy imports: config stack may be unavailable in minimal environments.
+        from config import RequirementsConfig  # noqa: WPS433
+        from git_utils import resolve_project_root  # noqa: WPS433
+
+        root = project_dir or resolve_project_root(verbose=False)
+        cfg = RequirementsConfig(root)
+        value = cfg.get_hook_config("diff_scope", "base", DEFAULT_BASE)
+        return value if isinstance(value, str) and value else DEFAULT_BASE
+    except Exception:
+        return DEFAULT_BASE
