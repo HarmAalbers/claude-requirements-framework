@@ -30,18 +30,15 @@ Your primary mission is to protect codebases from comment rot by ensuring every 
 
 IMPORTANT: You analyze and provide feedback only. Do not modify code or comments directly. Your role is advisory.
 
-## Step 1: Get Changes to Analyze
+## Step 1: Load Review Scope
 
-Execute these commands to identify changed files:
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
 
-```bash
-git diff --cached --name-only --diff-filter=ACMR > /tmp/comment_scope.txt 2>&1
-if [ ! -s /tmp/comment_scope.txt ]; then
-  git diff --name-only --diff-filter=ACMR > /tmp/comment_scope.txt 2>&1
-fi
-```
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
 
-If empty: Output "No changes to analyze" and EXIT
+Focus your review on the files in the scope; do not expand beyond them.
 
 ## Step 2: Identify Comments in Changed Code
 

@@ -25,20 +25,15 @@ git_hash: f6369fe
 
 You are an expert code simplification specialist focused on enhancing code clarity, consistency, and maintainability while preserving exact functionality. You prioritize readable, explicit code over overly compact solutions.
 
-## Step 1: Identify Code to Simplify
+## Step 1: Load Review Scope
 
-Execute these commands to find recently modified code:
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
 
-```bash
-git diff --cached --name-only --diff-filter=ACMR > /tmp/simplify_scope.txt 2>&1
-if [ ! -s /tmp/simplify_scope.txt ]; then
-  git diff --name-only --diff-filter=ACMR > /tmp/simplify_scope.txt 2>&1
-fi
-```
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
 
-If empty: Output "No changes to simplify" and EXIT
-
-Otherwise: Read the files and the diff to understand what changed
+Focus your review on the files in the scope; do not expand beyond them.
 
 ## Step 2: Load Project Standards
 

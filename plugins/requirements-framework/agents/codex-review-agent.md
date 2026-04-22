@@ -78,48 +78,49 @@ This will open your browser for authentication.
   /requirements-framework:codex-review
 ```
 
-### 2. Determine Review Scope
+### 2. Load Review Scope
 
-**Check for changes**:
-```bash
-git status --porcelain
-```
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
 
-**Detect current branch**:
-```bash
-git branch --show-current
-```
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
 
-**Decision Logic**:
-- If uncommitted changes exist → Review uncommitted changes
-- If on feature branch with no uncommitted changes → Review branch vs main
-- If no changes at all → Show friendly "no changes" message
+Focus your review on the files in the scope; do not expand beyond them.
 
 ### 3. Execute Codex Review
 
 **Parse focus area** from $ARGUMENTS (if provided): security, performance, bugs, style, or all (default)
 
-**Command Options**:
+Feed the pre-computed diff at `/tmp/review.diff` to Codex via `codex exec`
+so every reviewer sees the same unified scope:
 
-**Option A** - Uncommitted changes (default when changes exist):
+**Option A** - Review the pre-computed scope diff (default):
 ```bash
-codex review --uncommitted
+codex exec --stdin <<EOF
+Review the following unified diff for code quality issues. Report findings
+with severity (CRITICAL / IMPORTANT / SUGGESTION), file:line locations, and
+concrete fix suggestions.
+
+$(cat /tmp/review.diff)
+EOF
 ```
 
-**Option B** - With focus area:
+**Option B** - Review with a focus area:
 ```bash
-codex review --uncommitted --focus security
+FOCUS="security"  # or performance, bugs, style
+codex exec --stdin <<EOF
+Review the following unified diff with a focus on ${FOCUS}. Report findings
+with severity (CRITICAL / IMPORTANT / SUGGESTION), file:line locations, and
+concrete fix suggestions.
+
+$(cat /tmp/review.diff)
+EOF
 ```
 
-**Option C** - Full branch review (when no uncommitted changes):
-```bash
-codex review --base main
-```
-
-**Option D** - Branch with focus:
-```bash
-codex review --base main --focus performance
-```
+If `codex exec` is not available in the installed Codex CLI version, fall
+back to `codex review --uncommitted` (or `codex review --base main` when no
+uncommitted changes exist) and note the fallback in the output.
 
 ### 4. Parse and Present Results
 

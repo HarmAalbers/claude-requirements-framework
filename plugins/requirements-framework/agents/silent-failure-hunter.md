@@ -159,16 +159,13 @@ First, check if CLAUDE.md or project documentation defines specific error handli
 
 ## Step 2: Identify Code to Audit
 
-Execute these commands to get error-handling-relevant changes:
+Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`
 
-```bash
-git diff > /tmp/error_audit.diff 2>&1
-if [ ! -s /tmp/error_audit.diff ]; then
-  git diff --cached > /tmp/error_audit.diff 2>&1
-fi
-```
+Read `/tmp/review_scope.txt` (list of changed files, one per line) and
+`/tmp/review.diff` (unified diff). If the scope file is empty, output
+"No review scope provided" and EXIT.
 
-If empty: Output "No changes to audit" and EXIT
+Focus your review on the files in the scope; do not expand beyond them.
 
 Focus on:
 - try/catch/except blocks (new or modified)
