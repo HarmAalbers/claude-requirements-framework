@@ -9935,6 +9935,76 @@ def test_wip_tracker_module(runner: TestRunner):
         runner.test("record_commit returns True for missing", result is True)
 
 
+def test_should_skip_plan_file(runner: TestRunner):
+    """Test should_skip_plan_file() recognizes all three plan directory conventions."""
+    print("\n📦 Testing should_skip_plan_file...")
+
+    # check-requirements.py has a hyphen in the name, so import via importlib
+    import importlib.util
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    spec = importlib.util.spec_from_file_location("check_requirements", hook_path)
+    if spec is None or spec.loader is None:
+        runner.test("check-requirements importable", False, "spec load failed")
+        return
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        runner.test("check-requirements loads", False, str(e))
+        return
+
+    should_skip = module.should_skip_plan_file
+
+    # Positive cases — all three plan directory conventions
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project_docs_plans = Path(tmpdir) / "docs" / "plans"
+        project_claude_plans = Path(tmpdir) / ".claude" / "plans"
+        project_docs_plans.mkdir(parents=True)
+        project_claude_plans.mkdir(parents=True)
+
+        docs_plan = project_docs_plans / "2026-04-23-feature-design.md"
+        claude_plan = project_claude_plans / "2026-04-23-feature-design.md"
+        docs_plan.write_text("# Plan")
+        claude_plan.write_text("# Plan")
+
+        runner.test(
+            "Skips docs/plans/*.md",
+            should_skip(str(docs_plan)),
+            f"Path: {docs_plan}"
+        )
+        runner.test(
+            "Skips .claude/plans/*.md",
+            should_skip(str(claude_plan)),
+            f"Path: {claude_plan}"
+        )
+
+        # Negative cases — paths that must NOT be skipped
+        source_file = Path(tmpdir) / "src" / "main.py"
+        source_file.parent.mkdir(parents=True)
+        source_file.write_text("print('hi')")
+        runner.test(
+            "Does not skip source files",
+            not should_skip(str(source_file)),
+            f"Path: {source_file}"
+        )
+
+        # A file named 'plans.md' inside docs/ but NOT under docs/plans/ — must not skip
+        docs_not_plans = Path(tmpdir) / "docs" / "plans.md"
+        docs_not_plans.write_text("# Not a plan")
+        runner.test(
+            "Does not skip docs/plans.md (sibling, not child)",
+            not should_skip(str(docs_not_plans)),
+            f"Path: {docs_not_plans}"
+        )
+
+        # Malformed path must fail-safe (not skip)
+        runner.test(
+            "Fails safe on empty path",
+            not should_skip(""),
+            ""
+        )
+
+
 def test_handle_git_events(runner: TestRunner):
     """Test handle-git-events.py PostToolUse hook behavior."""
     print("\n📦 Testing GitEvents hook...")
@@ -10874,6 +10944,9 @@ def main():
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
+
+    # Plan file skip exemption tests
+    test_should_skip_plan_file(runner)
 
     # WIP tracker module tests
     test_wip_tracker_module(runner)
