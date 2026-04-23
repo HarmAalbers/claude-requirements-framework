@@ -65,6 +65,11 @@ def should_skip_plan_file(file_path: str) -> bool:
     Plan files need to be written before requirements can be satisfied,
     so we skip checks for them to avoid chicken-and-egg problems.
 
+    Recognized plan directories:
+      - ~/.claude/plans/                 (global)
+      - <project>/.claude/plans/         (project-local, gitignored)
+      - <project>/docs/plans/            (project-local, version-controlled)
+
     Args:
         file_path: Path to check
 
@@ -84,10 +89,19 @@ def should_skip_plan_file(file_path: str) -> bool:
             # Python < 3.9 doesn't have is_relative_to, use string matching
             pass
 
-        # Skip files in project .claude/plans/ directories
-        # Check if path contains .claude/plans/
+        # Skip files in project plans directories.
+        # Both `.claude/plans/` (gitignored convention) and `docs/plans/`
+        # (version-controlled convention, mentioned in the brainstorming and
+        # writing-plans skills) are recognized so the skills' Step 5 writes
+        # are not blocked by requirement gates.
         path_str = str(normalized)
-        if '/.claude/plans/' in path_str or '\\.claude\\plans\\' in path_str:
+        plan_dir_markers = (
+            '/.claude/plans/',
+            '\\.claude\\plans\\',
+            '/docs/plans/',
+            '\\docs\\plans\\',
+        )
+        if any(marker in path_str for marker in plan_dir_markers):
             return True
 
         return False

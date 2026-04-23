@@ -35,6 +35,7 @@ sys.path.insert(0, str(lib_path))
 from logger import get_logger
 from config import RequirementsConfig
 from git_utils import resolve_project_root
+from session import normalize_session_id
 
 
 def append_progress_log(project_dir: str, event: str, detail: str) -> None:
@@ -74,10 +75,14 @@ def main() -> int:
         # Extract fields
         teammate_name = input_data.get('teammate_name', '')
         team_name = input_data.get('team_name', '')
-        session_id = input_data.get('session_id', '')
+        raw_session = input_data.get('session_id', '')
 
-        if not teammate_name or not session_id:
+        # Empty-check MUST precede normalize: normalize_session_id('') would
+        # generate a random 8-char ID, silently creating junk session files.
+        if not teammate_name or not raw_session:
             return 0  # Fail open on missing required fields
+
+        session_id = normalize_session_id(raw_session)
 
         # Resolve project and load config
         hook_cwd = input_data.get('cwd')

@@ -1470,6 +1470,19 @@ def test_cli_commands(runner: TestRunner):
         runner.test("Satisfy runs", result.returncode == 0, result.stderr)
         runner.test("Satisfy confirms", "✅" in result.stdout, result.stdout)
 
+        # Test approve alias — same semantics as satisfy, different verb for dynamic requirements
+        # Clear first so we can satisfy again via the alias
+        subprocess.run(
+            ["python3", str(cli_path), "clear", "commit_plan", "--session", "testcli1"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        result = subprocess.run(
+            ["python3", str(cli_path), "approve", "commit_plan", "--session", "testcli1"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Approve alias runs", result.returncode == 0, result.stderr)
+        runner.test("Approve alias confirms", "✅" in result.stdout, result.stdout)
+
         # Test status after satisfy (use --verbose to see all requirements)
         result = subprocess.run(
             ["python3", str(cli_path), "status", "--verbose", "--session", "testcli1"],
@@ -2825,6 +2838,124 @@ def test_session_end_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionEnd non-git = pass", result.returncode == 0)
+
+
+def test_session_end_finalizes_metrics(runner: TestRunner):
+    """SessionEnd hook must call finalize_session() + save() so ended_at and
+    duration_seconds are persisted to disk. Regression test for the bug where
+    all session files on disk had ended_at=null because the hook constructed
+    SessionMetrics but never finalized/saved. Test oracle: read the JSON file
+    at .git/requirements/sessions/<id>.json and assert the two fields are
+    non-null integers (not just that the hook exited 0)."""
+    print("\n📦 Testing SessionEnd finalizes metrics...")
+
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+    if not hook_path.exists():
+        runner.test("SessionEnd hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {},
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        # Pre-create an unfinalized session metrics file (schema matches
+        # create_empty_metrics in session_metrics.py).
+        test_session = "finaliz1"
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = sessions_dir / f"{test_session}.json"
+        metrics_path.write_text(json.dumps({
+            "version": "1.0",
+            "session_id": test_session,
+            "project_dir": tmpdir,
+            "branch": "feature/test",
+            "started_at": 1700000000,
+            "ended_at": None,
+            "duration_seconds": None,
+            "tools": {},
+            "requirements": {},
+            "errors": [],
+            "git": {"commits": [], "files_changed": 0, "lines_added": 0, "lines_removed": 0},
+            "skills": [],
+            "commands": [],
+            "agents": [],
+            "learnings": {"patterns_detected": [], "improvements_made": [], "user_feedback": None},
+        }))
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_event_name": "SessionEnd",
+                "reason": "clear",
+                "session_id": test_session,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd finalize = returncode 0", result.returncode == 0)
+
+        # Read on-disk JSON and assert both fields are populated (non-null integers).
+        loaded = json.loads(metrics_path.read_text())
+        runner.test("SessionEnd sets ended_at on disk",
+                   isinstance(loaded.get("ended_at"), int),
+                   f"Got: {loaded.get('ended_at')!r}")
+        runner.test("SessionEnd sets duration_seconds on disk",
+                   isinstance(loaded.get("duration_seconds"), int),
+                   f"Got: {loaded.get('duration_seconds')!r}")
+
+
+def test_session_end_no_synthetic_metrics(runner: TestRunner):
+    """SessionEnd must NOT fabricate a metrics file for sessions that never
+    recorded any metrics. Regression guard: the finalize step was added to
+    persist ended_at for real sessions, but must not create synthetic files
+    in non-framework contexts (no prior metrics file, session_learning
+    disabled, etc.)."""
+    print("\n📦 Testing SessionEnd does not create synthetic metrics...")
+
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+    if not hook_path.exists():
+        runner.test("SessionEnd hook exists", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+
+        # No pre-existing metrics file for this session.
+        test_session = "nofile01"
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_event_name": "SessionEnd",
+                "reason": "clear",
+                "session_id": test_session,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("SessionEnd no-file = returncode 0", result.returncode == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("SessionEnd no-file creates no synthetic metrics",
+                   existing == [],
+                   f"Expected no files, got: {existing}")
 
 
 def test_triggered_requirements(runner: TestRunner):
@@ -8572,6 +8703,112 @@ def test_teammate_idle_hook(runner: TestRunner):
         runner.test("Missing fields = fail open", result.returncode == 0)
 
 
+def test_teammate_idle_normalizes_session_id(runner: TestRunner):
+    """TeammateIdle hook must normalize UUID session IDs so team events
+    land in the canonical 8-char session file, not a separate UUID file.
+    Sub-assertions: UUID-with-dashes → 8-char, UUID-without-dashes → 8-char,
+    already-8-char → unchanged (idempotency)."""
+    print("\n📦 Testing TeammateIdle normalizes session_id...")
+
+    hook_path = Path(__file__).parent / "handle-teammate-idle.py"
+    if not hook_path.exists():
+        runner.test("TeammateIdle hook exists", False, "Not implemented")
+        return
+
+    def _run(tmpdir: str, session_id: str) -> int:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TeammateIdle",
+                "teammate_name": "code-reviewer",
+                "team_name": "test-team",
+                "session_id": session_id,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        return result.returncode
+
+    # Case 1: UUID with dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_session = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+        expected_short = "cad0ac4d"
+        rc = _run(tmpdir, uuid_session)
+        runner.test("TeammateIdle UUID-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle UUID-dashes writes 8-char file",
+                   (sessions_dir / f"{expected_short}.json").exists(),
+                   f"Dir: {list(sessions_dir.glob('*.json')) if sessions_dir.exists() else 'missing'}")
+        runner.test("TeammateIdle UUID-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_session}.json").exists())
+
+    # Case 2: UUID without dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_no_dash = "cad0ac4d393345ad9a1c14aec05bb940"
+        rc = _run(tmpdir, uuid_no_dash)
+        runner.test("TeammateIdle UUID-no-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle UUID-no-dashes writes 8-char file",
+                   (sessions_dir / "cad0ac4d.json").exists())
+        runner.test("TeammateIdle UUID-no-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_no_dash}.json").exists())
+
+    # Case 3: Already-8-char → unchanged (idempotency)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        short_id = "deadbeef"
+        rc = _run(tmpdir, short_id)
+        runner.test("TeammateIdle 8-char = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TeammateIdle 8-char writes same short file (idempotent)",
+                   (sessions_dir / f"{short_id}.json").exists())
+
+    # Case 4: Empty session_id → no junk files (guards empty-check-before-normalize)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        rc = _run(tmpdir, "")
+        runner.test("TeammateIdle empty-session = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("TeammateIdle empty-session creates no session file",
+                   existing == [],
+                   f"Expected none, got: {existing}")
+
+
 def test_task_completed_hook(runner: TestRunner):
     """Test TaskCompleted hook behavior."""
     print("\n📦 Testing TaskCompleted hook...")
@@ -8710,6 +8947,112 @@ def test_task_completed_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Missing fields = fail open", result.returncode == 0)
+
+
+def test_task_completed_normalizes_session_id(runner: TestRunner):
+    """TaskCompleted hook must normalize UUID session IDs so team events
+    land in the canonical 8-char session file. Same sub-assertions as
+    test_teammate_idle_normalizes_session_id."""
+    print("\n📦 Testing TaskCompleted normalizes session_id...")
+
+    hook_path = Path(__file__).parent / "handle-task-completed.py"
+    if not hook_path.exists():
+        runner.test("TaskCompleted hook exists", False, "Not implemented")
+        return
+
+    def _run(tmpdir: str, session_id: str) -> int:
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({
+                "hook_type": "TaskCompleted",
+                "task_id": "1",
+                "task_subject": "Test task",
+                "team_name": "test-team",
+                "session_id": session_id,
+                "cwd": tmpdir,
+            }),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        return result.returncode
+
+    # Case 1: UUID with dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_session = "cad0ac4d-3933-45ad-9a1c-14aec05bb940"
+        expected_short = "cad0ac4d"
+        rc = _run(tmpdir, uuid_session)
+        runner.test("TaskCompleted UUID-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted UUID-dashes writes 8-char file",
+                   (sessions_dir / f"{expected_short}.json").exists(),
+                   f"Dir: {list(sessions_dir.glob('*.json')) if sessions_dir.exists() else 'missing'}")
+        runner.test("TaskCompleted UUID-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_session}.json").exists())
+
+    # Case 2: UUID without dashes → 8-char file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        uuid_no_dash = "cad0ac4d393345ad9a1c14aec05bb940"
+        rc = _run(tmpdir, uuid_no_dash)
+        runner.test("TaskCompleted UUID-no-dashes = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted UUID-no-dashes writes 8-char file",
+                   (sessions_dir / "cad0ac4d.json").exists())
+        runner.test("TaskCompleted UUID-no-dashes does not write UUID file",
+                   not (sessions_dir / f"{uuid_no_dash}.json").exists())
+
+    # Case 3: Already-8-char → unchanged (idempotency)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        short_id = "deadbeef"
+        rc = _run(tmpdir, short_id)
+        runner.test("TaskCompleted 8-char = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        runner.test("TaskCompleted 8-char writes same short file (idempotent)",
+                   (sessions_dir / f"{short_id}.json").exists())
+
+    # Case 4: Empty session_id → no junk files (guards empty-check-before-normalize)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "hooks": {"agent_teams": {"enabled": True}},
+                       "requirements": {}}, f)
+
+        rc = _run(tmpdir, "")
+        runner.test("TaskCompleted empty-session = returncode 0", rc == 0)
+
+        sessions_dir = Path(tmpdir) / ".git" / "requirements" / "sessions"
+        existing = list(sessions_dir.glob("*.json")) if sessions_dir.exists() else []
+        runner.test("TaskCompleted empty-session creates no session file",
+                   existing == [],
+                   f"Expected none, got: {existing}")
 
 
 def test_carry_over_basic(runner: TestRunner):
@@ -9592,6 +9935,76 @@ def test_wip_tracker_module(runner: TestRunner):
         runner.test("record_commit returns True for missing", result is True)
 
 
+def test_should_skip_plan_file(runner: TestRunner):
+    """Test should_skip_plan_file() recognizes all three plan directory conventions."""
+    print("\n📦 Testing should_skip_plan_file...")
+
+    # check-requirements.py has a hyphen in the name, so import via importlib
+    import importlib.util
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    spec = importlib.util.spec_from_file_location("check_requirements", hook_path)
+    if spec is None or spec.loader is None:
+        runner.test("check-requirements importable", False, "spec load failed")
+        return
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        runner.test("check-requirements loads", False, str(e))
+        return
+
+    should_skip = module.should_skip_plan_file
+
+    # Positive cases — all three plan directory conventions
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project_docs_plans = Path(tmpdir) / "docs" / "plans"
+        project_claude_plans = Path(tmpdir) / ".claude" / "plans"
+        project_docs_plans.mkdir(parents=True)
+        project_claude_plans.mkdir(parents=True)
+
+        docs_plan = project_docs_plans / "2026-04-23-feature-design.md"
+        claude_plan = project_claude_plans / "2026-04-23-feature-design.md"
+        docs_plan.write_text("# Plan")
+        claude_plan.write_text("# Plan")
+
+        runner.test(
+            "Skips docs/plans/*.md",
+            should_skip(str(docs_plan)),
+            f"Path: {docs_plan}"
+        )
+        runner.test(
+            "Skips .claude/plans/*.md",
+            should_skip(str(claude_plan)),
+            f"Path: {claude_plan}"
+        )
+
+        # Negative cases — paths that must NOT be skipped
+        source_file = Path(tmpdir) / "src" / "main.py"
+        source_file.parent.mkdir(parents=True)
+        source_file.write_text("print('hi')")
+        runner.test(
+            "Does not skip source files",
+            not should_skip(str(source_file)),
+            f"Path: {source_file}"
+        )
+
+        # A file named 'plans.md' inside docs/ but NOT under docs/plans/ — must not skip
+        docs_not_plans = Path(tmpdir) / "docs" / "plans.md"
+        docs_not_plans.write_text("# Not a plan")
+        runner.test(
+            "Does not skip docs/plans.md (sibling, not child)",
+            not should_skip(str(docs_not_plans)),
+            f"Path: {docs_not_plans}"
+        )
+
+        # Malformed path must fail-safe (not skip)
+        runner.test(
+            "Fails safe on empty path",
+            not should_skip(""),
+            ""
+        )
+
+
 def test_handle_git_events(runner: TestRunner):
     """Test handle-git-events.py PostToolUse hook behavior."""
     print("\n📦 Testing GitEvents hook...")
@@ -10394,6 +10807,8 @@ def main():
     test_session_start_json_format(runner)
     test_stop_hook(runner)
     test_session_end_hook(runner)
+    test_session_end_finalizes_metrics(runner)
+    test_session_end_no_synthetic_metrics(runner)
 
     # Triggered requirements tests (Stop hook research-session fix)
     test_triggered_requirements(runner)
@@ -10502,7 +10917,9 @@ def main():
 
     # Agent Teams hook tests
     test_teammate_idle_hook(runner)
+    test_teammate_idle_normalizes_session_id(runner)
     test_task_completed_hook(runner)
+    test_task_completed_normalizes_session_id(runner)
 
     # Session state carry-over tests
     test_carry_over_basic(runner)
@@ -10527,6 +10944,9 @@ def main():
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
+
+    # Plan file skip exemption tests
+    test_should_skip_plan_file(runner)
 
     # WIP tracker module tests
     test_wip_tracker_module(runner)

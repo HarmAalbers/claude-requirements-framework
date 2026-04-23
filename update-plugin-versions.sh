@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 # Parse arguments
 CHECK_MODE=false
 VERIFY_MODE=false
+ONLY_CHANGED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -24,6 +25,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --verify)
             VERIFY_MODE=true
+            shift
+            ;;
+        --only-changed)
+            ONLY_CHANGED=true
             shift
             ;;
         --help|-h)
@@ -45,14 +50,18 @@ Usage: $0 [OPTIONS]
 Update git_hash fields in plugin component YAML frontmatter.
 
 Options:
-  --check       Dry-run mode (report changes, don't modify files)
-  --verify      Verify all files have current git_hash values
-  --help, -h    Show this help message
+  --check          Dry-run mode (report changes, don't modify files)
+  --verify         Verify all files have current git_hash values
+  --only-changed   Only process files with uncommitted changes
+                   (keeps commits atomic — no incidental hash drift)
+  --help, -h       Show this help message
 
 Examples:
-  $0                  # Update all plugin files
-  $0 --check          # Report what would change
-  $0 --verify         # Verify hashes are current
+  $0                       # Update all plugin files
+  $0 --check               # Report what would change
+  $0 --verify              # Verify hashes are current
+  $0 --only-changed        # Update only files with uncommitted changes
+  $0 --check --only-changed  # Preview what --only-changed would update
 
 EOF
 }
@@ -239,6 +248,26 @@ main() {
     if [ ${#files[@]} -eq 0 ]; then
         echo -e "${RED}✗ No plugin component files found${NC}"
         exit 1
+    fi
+
+    # --only-changed filter: keep only files with staged or unstaged modifications
+    if [ "$ONLY_CHANGED" = true ]; then
+        local filtered=()
+        for file in "${files[@]}"; do
+            if ! git diff --quiet -- "$file" 2>/dev/null || \
+               ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+                filtered+=("$file")
+            fi
+        done
+        files=("${filtered[@]}")
+
+        if [ ${#files[@]} -eq 0 ]; then
+            echo -e "${YELLOW}No plugin files have uncommitted changes. Marketplace sync still runs.${NC}"
+            echo ""
+        else
+            echo -e "${BLUE}--only-changed: filtered to ${#files[@]} file(s) with uncommitted changes${NC}"
+            echo ""
+        fi
     fi
 
     echo "Found ${#files[@]} files to process"

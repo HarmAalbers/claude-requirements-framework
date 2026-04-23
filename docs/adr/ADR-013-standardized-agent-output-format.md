@@ -60,8 +60,14 @@ This inconsistency creates two problems:
 - **CRITICAL**: X
 - **IMPORTANT**: Y
 - **SUGGESTION**: Z
-- **Verdict**: ISSUES FOUND | APPROVED
+- **Verdict**: ISSUES FOUND | APPROVED | SKIPPED
 ```
+
+**Verdict values:**
+
+- `ISSUES FOUND` — review produced one or more CRITICAL or IMPORTANT findings.
+- `APPROVED` — review completed with at most SUGGESTION-level findings.
+- `SKIPPED` — agent exercised an early-exit path (e.g., a trivial-diff triage) without running a full review. When an agent emits `SKIPPED`, it MUST include a `- **Reason**:` line in the Summary section explaining why (one sentence).
 
 ### Format Rules
 
@@ -99,6 +105,15 @@ When the lead cross-validates findings from multiple agents, "same location" mea
 | codex-review-agent + any | Same location | Corroborate with "confirmed by external AI" |
 | code-simplifier + code-reviewer | Simplifier targets code-reviewer flagged area | Corroborate: complexity contributes to bug |
 | code-simplifier + silent-failure-hunter | Same region flagged | Note: simplifying may fix error handling |
+| any SKIPPED agent + any non-SKIPPED agent | Any other agent emits CRITICAL or IMPORTANT on overlapping scope | SKIPPED is forfeit — lead must treat the skip as invalid and either re-run that agent or note the gap in the unified verdict |
+
+### SKIPPED semantics
+
+A `SKIPPED` verdict from one agent never overrides a `CRITICAL` or `IMPORTANT` finding from another agent on the same scope. If cross-validation reveals that another agent flagged a finding the skipping agent did not consider, the lead should:
+
+1. Note the skip as forfeit in the synthesis (do not count it as approval).
+2. If the scope of the skip and the finding overlap, consider re-running the skipping agent against just that scope — the skip heuristic may have misfired.
+3. Treat the non-SKIPPED findings as authoritative for the overall verdict.
 
 ## Allowed
 
