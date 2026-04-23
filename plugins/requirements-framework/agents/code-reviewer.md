@@ -45,6 +45,56 @@ Read `/tmp/review_scope.txt` (list of changed files, one per line) and
 
 Report findings only on files in the scope. Read CLAUDE.md, project docs, imports, and callers of changed functions as needed to judge whether changes fit project conventions.
 
+## Step 1.5: Early-Exit Triage (Skip Trivial Changes)
+
+Before loading guidelines or doing deeper analysis, decide whether the diff is small and low-impact enough to skip formal review. This avoids burning review budget on changes that no reasonable reviewer would flag.
+
+**Skip ONLY if ALL of the following hold:**
+
+- Total diff is ≤ 10 changed lines across ≤ 2 files (count added + removed, ignore pure-whitespace lines). Slight excess is acceptable if the change is clearly trivial — the cap is a guideline, not a hard gate.
+- Every change falls into at least one of these low-risk categories:
+  - Comment/docstring edits (typos, grammar, clarifications) with no behavior change
+  - Documentation-only updates (`*.md`, `README`, `CHANGELOG`, inline doc blocks)
+  - Pure formatting or whitespace with no semantic effect
+  - Version bumps in manifest files (`plugin.json`, `package.json`, `pyproject.toml`, `marketplace.json`)
+  - Trivial user-facing string literal updates (copy tweaks) that do not change identifiers, keys, or control flow
+
+Keep the allow-list tight — prefer extending the guardrails list below when new cases arise, rather than growing this list ad hoc.
+
+**NEVER skip — regardless of diff size — if the change touches ANY of the following:**
+
+- Logic (conditions, loops, branching, function bodies beyond comments)
+- Function, method, or class signatures (names, parameters, return types)
+- Security-sensitive code (auth, crypto, SQL, permissions, input validation, secrets handling)
+- Error-handling paths (`raise`, `except`, `try`, `catch`, error propagation)
+- Public API surface or exported symbols
+- Configuration that alters runtime behavior (`requirements.yaml`, settings files, feature flags)
+- Test logic (assertion changes that alter what is being tested, not just renaming)
+- Hooks, agent definitions, or framework wiring
+
+**Tiebreaker rule**: if uncertain whether a change qualifies as trivial → do NOT skip. A wasted full review costs tokens; a missed bug costs more.
+
+**When skipping, still emit the standard output template** with verdict `SKIPPED` and a one-line `Reason`. Do NOT exit silently — downstream readers (human and machine) expect a valid summary block. See ADR-013 for the skip-forfeit cross-validation rule: a `SKIPPED` verdict never overrides a `CRITICAL` or `IMPORTANT` finding from another agent on the same scope.
+
+```markdown
+# Code Review
+
+## Files Reviewed
+- path/to/file.md
+
+## Findings
+_No findings — trivial change below review threshold._
+
+## Summary
+- **CRITICAL**: 0
+- **IMPORTANT**: 0
+- **SUGGESTION**: 0
+- **Verdict**: SKIPPED
+- **Reason**: [one-line justification, e.g., "Comment typo fix, 2 lines in 1 file"]
+```
+
+If skipping, EXIT after emitting the summary — do NOT proceed to Step 2.
+
 ## Step 2: Load Project Guidelines
 
 Check for project guidelines in this order:
@@ -147,7 +197,7 @@ Use this exact template (see ADR-013):
 - **CRITICAL**: X
 - **IMPORTANT**: Y
 - **SUGGESTION**: Z
-- **Verdict**: ISSUES FOUND | APPROVED
+- **Verdict**: ISSUES FOUND | APPROVED | SKIPPED
 ```
 
 If no findings: set all counts to 0 and verdict to APPROVED.
