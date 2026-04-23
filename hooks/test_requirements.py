@@ -1470,6 +1470,19 @@ def test_cli_commands(runner: TestRunner):
         runner.test("Satisfy runs", result.returncode == 0, result.stderr)
         runner.test("Satisfy confirms", "✅" in result.stdout, result.stdout)
 
+        # Test approve alias — same semantics as satisfy, different verb for dynamic requirements
+        # Clear first so we can satisfy again via the alias
+        subprocess.run(
+            ["python3", str(cli_path), "clear", "commit_plan", "--session", "testcli1"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        result = subprocess.run(
+            ["python3", str(cli_path), "approve", "commit_plan", "--session", "testcli1"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Approve alias runs", result.returncode == 0, result.stderr)
+        runner.test("Approve alias confirms", "✅" in result.stdout, result.stdout)
+
         # Test status after satisfy (use --verbose to see all requirements)
         result = subprocess.run(
             ["python3", str(cli_path), "status", "--verbose", "--session", "testcli1"],

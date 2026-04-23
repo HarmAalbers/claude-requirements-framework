@@ -3723,8 +3723,13 @@ Environment Variables:
     status_parser.add_argument('--summary', action='store_true', help='One-line summary only')
     status_parser.add_argument('--timing', '-t', action='store_true', help='Show detailed timing breakdown')
 
-    # satisfy
-    satisfy_parser = subparsers.add_parser('satisfy', help='Satisfy one or more requirements')
+    # satisfy (with `approve` alias — same semantics, exposed for dynamic requirements
+    # like branch_size_limit where "approve" reads more naturally)
+    satisfy_parser = subparsers.add_parser(
+        'satisfy',
+        aliases=['approve'],
+        help='Satisfy (or approve) one or more requirements',
+    )
     satisfy_parser.add_argument('requirements', nargs='+', help='Requirement name(s)')
     satisfy_parser.add_argument('--branch', '-b', help='Branch name (default: current)')
     satisfy_parser.add_argument('--metadata', '-m', help='JSON metadata')
@@ -3897,6 +3902,7 @@ Environment Variables:
     commands = {
         'status': cmd_status,
         'satisfy': cmd_satisfy,
+        'approve': cmd_satisfy,  # Alias — argparse routes via args.command string
         'clear': cmd_clear,
         'list': cmd_list,
         'prune': cmd_prune,
