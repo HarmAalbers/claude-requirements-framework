@@ -34,7 +34,7 @@ The first is the WHAT; the second is the HOW. Both are produced in this skill's 
 
 ## Stages
 
-1. **Inventory.** Two parallel `Explore` agents: one catalogues the layer's current state (every file, every function, every leaked responsibility), one extracts rules from the relevant ADRs / design docs / framework conventions. Produces a "what is" and a "what should be" report.
+1. **Inventory.** Two parallel `Explore` agents: one catalogues the layer's current state (every file, every function, every leaked responsibility), one extracts rules from the relevant ADRs / design docs / framework conventions. If `.claude/refactor-conventions.md` exists, read it and include its **Layer rules** and **Known anti-patterns** sections in the "what should be" report — these are project-tier constraints promoted by prior `refactor-analyzer` runs and must be respected in the plan's §1 (Forbidden). Produces a "what is" and a "what should be" report.
 
 2. **Top-down design.** Draft the IDEAL shape of the layer. For each item that doesn't fit cleanly, push it into the NEXT layer with a placeholder home — even if no clean home exists yet. Capture these in an Export Manifest. The principle: name the responsibility and its target Protocol/method now, defer the destination's implementation shape to the next pass.
 
@@ -42,7 +42,7 @@ The first is the WHAT; the second is the HOW. Both are produced in this skill's 
 
 4. **Harmonization.** Force the design toward maximal symmetry. Define a canonical template; reduce N templates to 1 or 2; fix parameter order; make every endpoint/function/file look as similar as possible to every other. Asymmetric designs grow asymmetric code.
 
-5. **Persist plan.** Write the plan to `.claude/plans/<YYYY-MM-DD>-<slug>.md` using `plan-template.md` (§0–§13 structure). Keep the section headers stable — anyone reading multiple plans should recognize the shape.
+5. **Persist plan.** Write the plan to `.claude/plans/<YYYY-MM-DD>-<slug>.md` using `plan-template.md` (§0–§13 structure). Keep the section headers stable — anyone reading multiple plans should recognize the shape. When a conventions file was read in Stage 1, its Layer rules and Known anti-patterns must appear verbatim in plan §1 (Forbidden). New projects with no conventions file leave §1 populated only from ADR analysis — that is correct and expected.
 
 6. **Orchestrator design.** Decompose the plan into a chunk queue. Each chunk = one atomic commit. Group chunks into phases (typically: shared primitives → protocols/contracts → per-feature rewrites → structural tests → smoke validation).
 
