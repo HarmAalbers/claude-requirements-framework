@@ -30,6 +30,9 @@
     "./agents/refactor-advisor.md",
     "./agents/tenant-isolation-auditor.md",
     "./agents/appsec-auditor.md",
-    "./agents/compliance-auditor.md"
+    "./agents/compliance-auditor.md",
+    "./agents/refactor-executor.md",
+    "./agents/refactor-investigator.md",
+    "./agents/refactor-analyzer.md"
   ]
 }
