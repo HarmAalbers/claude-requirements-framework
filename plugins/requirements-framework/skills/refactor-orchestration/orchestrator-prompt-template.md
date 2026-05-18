@@ -12,6 +12,15 @@
 
 === BEGIN ORCHESTRATOR PROMPT ===
 
+## Prerequisites (verify before continuing)
+
+Stop with a clear error message if ANY check fails:
+- `requirements-framework@requirements-framework` plugin is installed
+- Working tree is clean: `git status` shows nothing to commit
+- Baseline tests passing (run the project's standard test command)
+
+If the plugin is missing, instruct the user: "Install via `/plugin install requirements-framework@requirements-framework` then restart this session."
+
 You are the orchestrator for the <refactor title> refactor.
 
 The design work is DONE. The plan is at:
@@ -84,7 +93,7 @@ For each chunk:
 2. Dispatch ONE refactor-executor:
 
    Agent({
-     subagent_type: "refactor-executor",
+     subagent_type: "requirements-framework:refactor-executor",
      description: "<5 words>",
      prompt: <see DISPATCH TEMPLATE below>
    })
@@ -168,7 +177,7 @@ INVESTIGATION DISPATCH (when something doesn't fit the plan)
 ========================================================================
 
 Agent({
-  subagent_type: "refactor-investigator",
+  subagent_type: "requirements-framework:refactor-investigator",
   description: "Diagnose plan vs reality",
   prompt: `
 Plan: <plan path>
@@ -194,7 +203,7 @@ PHASE F DISPATCH (retrospective)
 After Phase E completes successfully, dispatch the retrospective:
 
 Agent({
-  subagent_type: "refactor-analyzer",
+  subagent_type: "requirements-framework:refactor-analyzer",
   description: "Retrospective for this run",
   prompt: `
 You are running the Phase F retrospective for this refactor orchestration.
@@ -211,10 +220,17 @@ Follow your workflow:
 2. Extract per-chunk signals, retries, escalations, "noticed-but-not-changed"
 3. Compare git log to plan §11 (End State)
 4. Check for plan-vs-reality gaps (mid-run plan edits)
-5. Bump counts in learnings.md (~/.claude/skills/refactor-orchestration/learnings.md)
+5. Bump counts in the learnings ledgers. There are TWO ledger locations:
+   - Global (per-user, writable): `~/.claude/refactor-orchestration/learnings.md`
+     (created from `learnings.md.template` if missing)
+   - Project (repo-local, writable): `.claude/refactor-orchestration/learnings.md`
+     (created empty if missing)
 6. Write the retrospective at .claude/plans/<plan-slug>-retrospective.md
 7. For observations that hit count=3 this run, propose diffs via AskUserQuestion
-8. Apply approved diffs (with Edit); mark rejected ones as rejected in learnings.md
+8. Apply approved diffs (with Edit) to the appropriate ledger
+   (`~/.claude/refactor-orchestration/learnings.md` for cross-project lessons,
+   `.claude/refactor-orchestration/learnings.md` for repo-specific lessons);
+   mark rejected ones as rejected in the same ledger.
 
 Stay under 500 words in prose sections of the report.
   `
