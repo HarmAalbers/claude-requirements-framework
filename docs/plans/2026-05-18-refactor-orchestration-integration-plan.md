@@ -798,20 +798,30 @@ You MUST follow these steps in exact order. Do not skip steps or interpret — e
 
 ### Step 0: Resolve refactor slug
 
-If `` is provided, use as the refactor slug. Otherwise prompt the user once via AskUserQuestion for a short kebab-case slug. The slug becomes part of the output filenames.
+Parse the command argument (`$ARGUMENTS`, set by Claude Code from the user's invocation) into `SLUG`. If empty, prompt the user once via AskUserQuestion for a short kebab-case slug.
 
 ```bash
-SLUG=""
-if [[ -z "$SLUG" ]]; then
-  # Will be set after AskUserQuestion
-  SLUG=""
-fi
+SLUG="${ARGUMENTS:-}"
 DATE="$(date +%Y-%m-%d)"
+
+if [[ -z "$SLUG" ]]; then
+  # Use AskUserQuestion to prompt for a kebab-case slug (e.g., "router-layer", "auth-rewrite").
+  # The response sets $SLUG. Validate: lowercase, hyphens only, no spaces.
+  # (AskUserQuestion happens as a separate tool call between this and the next bash block.)
+  : # SLUG to be set by user response
+fi
+
+# Validate slug format before composing paths
+if [[ ! "$SLUG" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "Invalid slug: must be lowercase kebab-case (a-z, 0-9, -). Got: '$SLUG'" >&2
+  exit 2
+fi
+
 PLAN_PATH=".claude/plans/${DATE}-${SLUG}.md"
 ORCH_PATH=".claude/plans/${DATE}-${SLUG}-orchestrator-prompt.md"
 ```
 
-If either output file already exists, ask the user via AskUserQuestion: overwrite, append-date-suffix, or abort.
+If either output file already exists, ask the user via AskUserQuestion: overwrite, append-date-suffix (`${DATE}-${SLUG}-2.md`), or abort.
 
 ### Step 1: Pre-flight checks
 
@@ -1334,14 +1344,14 @@ Verify:
   - If the test session produces an observation, confirm classifier tags it (global vs project) and the entry is added to the correct ledger with `count=1`.
   - The retrospective file is written to `.claude/plans/<slug>-retrospective.md`.
 
-**Step 6: Synthetic count=3 promotion test (optional but recommended)**
+**Step 6: Synthetic count=3 promotion test (REQUIRED — only path that exercises convention-sheet auto-creation)**
 
 To exercise the count=3 promotion path, manually edit `.claude/refactor-orchestration/learnings.md` to bump a synthetic observation's `count` to 2 BEFORE running the orchestrator. Then run a second orchestration that would naturally re-record the same observation. The analyzer should:
 - Detect the observation, bump count to 3.
 - Trigger AskUserQuestion against `.claude/refactor-conventions.md`.
 - On approval, create `.claude/refactor-conventions.md` with the seed structure and append the promoted line with the footnote.
 
-This is the only path that exercises convention-sheet auto-creation. Skipping it means that code path remains untested.
+**This step is required** because it is the only path that exercises convention-sheet auto-creation. Skipping it means the auto-creation code path ships untested. The only acceptable bypass is if a prior real run (in this repo or another) has already exercised the path and produced a `.claude/refactor-conventions.md` — record that as evidence in the PR description if so.
 
 **Step 7: Cleanup**
 
