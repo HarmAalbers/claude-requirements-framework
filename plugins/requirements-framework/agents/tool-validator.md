@@ -21,7 +21,7 @@ Tool-validator provides deterministic results matching CI tools.
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: eba0c4f
+git_hash: a6e4670
 ---
 
 # Tool Validator Agent

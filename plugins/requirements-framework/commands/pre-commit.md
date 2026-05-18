@@ -3,7 +3,7 @@ name: pre-commit
 description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: eba0c4f
+git_hash: a6e4670
 ---
 
 # Pre-Commit Review
