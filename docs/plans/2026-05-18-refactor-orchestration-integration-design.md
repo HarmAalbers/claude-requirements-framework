@@ -3,7 +3,7 @@
 **Date**: 2026-05-18
 **Status**: Approved, ready for implementation planning
 **Companion plan**: `2026-05-18-refactor-orchestration-integration-plan.md` (to be written via `requirements-framework:writing-plans`)
-**Related ADR**: ADR-013 (to be written as part of this migration)
+**Related ADR**: ADR-014 (to be written as part of this migration)
 
 ## Context
 
@@ -43,7 +43,7 @@ The skill's own SKILL.md already declares a coexistence mapping with `requiremen
 | Approach | **B**: Migration + adaptation pass (move + namespace + rewrite stale cross-references + light docs touch). |
 | Commit policy | `.claude/refactor-orchestration/learnings.md` and `.claude/refactor-conventions.md` both **gitignored** by default. |
 | Convention sheet scope | Scoped to refactor-orchestration only. Other framework commands do not read it in v1. |
-| ADR | ADR-013 written as part of this migration. |
+| ADR | ADR-014 written as part of this migration. |
 | Version bump | Existing `update-plugin-versions.sh` + auto-bump automation handles it. |
 
 ## File layout (post-migration)
@@ -261,9 +261,9 @@ Each promoted line gets a footnote: `<!-- promoted from learning <obs-slug> on Y
 - **Marketplace publish ritual** (post-merge): `/plugin uninstall` → `/plugin marketplace update` → `/plugin install`.
 - **Dev install for iteration**: `claude --plugin-dir ~/Tools/claude-requirements-framework/plugin`.
 
-## ADR-013
+## ADR-014
 
-To be written as part of the migration at `docs/adr/013-refactor-orchestration-bundled-skill.md`. Captures the rationale for:
+To be written as part of the migration at `docs/adr/ADR-014-refactor-orchestration-bundled-skill.md`. Captures the rationale for:
 
 1. Bundled vs standalone/symlinked installation
 2. Explicit command routing (no detection magic)
@@ -271,7 +271,7 @@ To be written as part of the migration at `docs/adr/013-refactor-orchestration-b
 4. Two-tier learning (global plugin templates + project conventions)
 5. Three-model-tier fanout pattern (Haiku executor, Sonnet investigator, Sonnet analyzer) as a new framework pattern
 
-ADR-013 ships **with** the migration, not as a follow-up. It locks in the brainstorm answers.
+ADR-014 ships **with** the migration, not as a follow-up. It locks in the brainstorm answers.
 
 ## Testing & verification
 
