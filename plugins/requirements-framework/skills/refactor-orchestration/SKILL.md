@@ -56,9 +56,9 @@ The first is the WHAT; the second is the HOW. Both are produced in this skill's 
 - **`orchestrator-prompt-template.md`** — `=== BEGIN/END ===` block with placeholders for plan path, branch, chunk queue, dispatch template instance. Ends with Phase F dispatching the analyzer.
 - **`retrospective-template.md`** — §1–§7 structure for the retrospective report the analyzer produces.
 - **`learnings.md`** — ledger that accumulates observations across runs. Rule-of-three promotion controls when an observation becomes a proposed diff.
-- **`refactor-executor`** — Haiku subagent at `~/.claude/agents/refactor-executor.md`. Mechanical chunk execution. Reads only the referenced plan section, edits only the named files, verifies with ruff + import smoke. Does not redesign.
-- **`refactor-investigator`** — Sonnet subagent at `~/.claude/agents/refactor-investigator.md`. Read-only. Diagnoses plan-vs-reality contradictions and proposes 2-3 solution paths.
-- **`refactor-analyzer`** — Sonnet subagent at `~/.claude/agents/refactor-analyzer.md`. Read-mostly. Writes the retrospective report + learnings.md; proposes template/agent diffs via AskUserQuestion. NEVER edits past plans/orchestrator prompts.
+- **`requirements-framework:refactor-executor`** — Haiku subagent. Mechanical chunk execution. Reads only the referenced plan section, edits only the named files, verifies with ruff + import smoke. Does not redesign.
+- **`requirements-framework:refactor-investigator`** — Sonnet subagent. Read-only. Diagnoses plan-vs-reality contradictions and proposes 2-3 solution paths.
+- **`requirements-framework:refactor-analyzer`** — Sonnet subagent. Read-mostly. Writes the retrospective report + learnings.md; proposes template/agent diffs via AskUserQuestion. NEVER edits past plans/orchestrator prompts.
 
 ## Conventions
 
@@ -68,19 +68,19 @@ The first is the WHAT; the second is the HOW. Both are produced in this skill's 
 - **Two retries on simple issues** before escalating to investigation. If Haiku can't fix it in 3 total tries, the problem is probably a misunderstanding, not a typo.
 - **Investigation outputs do not change code** — they produce options for the user to pick. The orchestrator updates the plan only after the user picks an option.
 
-## If you use requirements-framework
+## Part of requirements-framework
 
-This skill is largely a delta over the `requirements-framework` plugin. Mapping:
+This skill is bundled with the `requirements-framework` plugin. Recommended sequencing:
 
-| `requirements-framework` skill | This skill's role |
-|---|---|
-| `req:brainstorm` | Run FIRST if requirements are unclear. Output feeds Stage 1 of this skill. |
-| `req:write-plan` | Stages 1–5 of this skill replace `req:write-plan` for multi-layer refactors. The §0–§13 plan template adds explicit Validation and Harmonization stages. |
-| `req:execute-plan` | Stages 6–8 of this skill replace `req:execute-plan` for refactors that benefit from Haiku-fanout. For single-session feature work, prefer `req:execute-plan`. |
-| `req:plan-review` / `req:quality-check` | Run BEFORE finalizing the plan (between Stages 5 and 6). The orchestrator does NOT re-review the plan — it trusts it. |
-| `req:session-reflect` | Complementary to Stage 9 — does general session reflection. The analyzer mentions it in the retrospective's "Further reading" footer but does not invoke it. Useful for a wider lens than just orchestration mechanics. |
+| Step | Command | What it covers |
+|---|---|---|
+| 1 | `/requirements-framework:arch-review` | Satisfies the framework's planning gates (commit_plan, adr_reviewed, tdd_planned, solid_reviewed) for the upcoming work. |
+| 2 | `/requirements-framework:refactor-orchestrate` | Stages 1–7 of this skill: inventory, top-down design, library-claim validation, harmonization, plan write, chunk queue, orchestrator-prompt write. |
+| 3 | Fresh `claude` session | Paste the orchestrator block. Stages 8–9 (execution + retrospective) run there. |
 
-If `requirements-framework` is not installed, this skill works standalone.
+This skill does **not** auto-satisfy any framework requirements. Run `/requirements-framework:arch-review` first if the project enforces them.
+
+`req:session-reflect` is complementary to Stage 9 — does general session reflection. The analyzer mentions it in the retrospective's "Further reading" footer but does not invoke it.
 
 ## Stop conditions for the orchestrator
 
@@ -104,15 +104,22 @@ Stop and bring problems to the user IF:
 ## File map
 
 ```
-~/.claude/
+plugins/requirements-framework/
 ├── skills/refactor-orchestration/
 │   ├── SKILL.md                            ← you are here
 │   ├── plan-template.md                    ← §0–§13 structure for plans
 │   ├── orchestrator-prompt-template.md     ← BEGIN/END block for orchestrators
 │   ├── retrospective-template.md           ← §1–§7 structure for retrospectives
-│   └── learnings.md                        ← cross-run observation ledger
+│   └── learnings.md.template               ← seed for the global ledger (first run only)
 └── agents/
     ├── refactor-executor.md                ← Haiku mechanical execution
     ├── refactor-investigator.md            ← Sonnet read-only diagnosis
     └── refactor-analyzer.md                ← Sonnet retrospective + rule-of-three promotion
+
+# Writable per-user state (created on first run):
+~/.claude/refactor-orchestration/learnings.md   ← global ledger (seeded from .template)
+
+# Per-project state (gitignored by default):
+.claude/refactor-orchestration/learnings.md     ← project ledger
+.claude/refactor-conventions.md                 ← auto-grown convention sheet
 ```
