@@ -153,7 +153,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 
 **Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`
 
-### Commands (11)
+### Commands (12)
 
 - `/requirements-framework:arch-review` - Team-based architecture review (recommended for planning)
 - `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
@@ -166,6 +166,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 - `/requirements-framework:brainstorm` - Design-first development
 - `/requirements-framework:write-plan` - Create implementation plan
 - `/requirements-framework:execute-plan` - Execute plan with checkpoints
+- `/requirements-framework:refactor-orchestrate` - Multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution)
 
 ### Skills (19)
 
