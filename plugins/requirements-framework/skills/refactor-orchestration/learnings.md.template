@@ -1,0 +1,134 @@
+# Refactor Orchestration — Learnings Ledger
+
+This file accumulates observations from refactor orchestration runs.
+The `refactor-analyzer` agent appends to it at the end of each run.
+
+## Format
+
+Each observation is a section with the structure below. New entries go at the top of the **Entries** section (newest first).
+
+```
+### <obs-slug>
+
+- **First seen:** YYYY-MM-DD (run: `<plan-slug>`)
+- **Last seen:** YYYY-MM-DD (run: `<plan-slug>`)
+- **Count:** N
+- **Affected artifact:** SKILL.md | plan-template.md | orchestrator-prompt-template.md | refactor-executor.md | refactor-investigator.md
+- **Status:** open | promoted | resolved | rejected
+- **Resolution:** <commit SHA or PR link, only if status=resolved>
+
+<One-paragraph observation. Cite the chunk(s) and run(s) where it manifested.>
+```
+
+## Rule-of-three promotion
+
+| Count | Status | Behavior |
+|---|---|---|
+| 1 | `open` | Ledger entry only. No proposal. |
+| 2 | `open` | Ledger entry only. No proposal. |
+| 3 | `promoted` | Analyzer proposes a diff against the affected artifact via AskUserQuestion. |
+| ≥4 with status `open` | `open` | Edge case: analyzer missed promotion previously. Promote now. |
+
+## Status lifecycle
+
+```
+open → promoted → resolved      (user approved the proposed diff)
+              ↳→ rejected       (user rejected; do NOT re-propose)
+```
+
+- `open` — observation in ledger, count below 3
+- `promoted` — proposed to user this run; awaiting / acted on
+- `resolved` — diff applied; affected artifact has been updated
+- `rejected` — terminal; future runs may bump count for record but MUST NOT re-propose
+
+## Tie-breaking when more than 3 observations hit count=3 in one run
+
+The analyzer surfaces at most 3 proposals per retrospective. Tie-break by:
+
+1. Severity (impact × frequency)
+2. Smallest-diff-first (low-risk wins on a tie)
+3. Affected-artifact diversity (don't propose 3 SKILL.md changes; spread)
+
+Deferred observations stay `open` with their incremented count and are re-evaluated next run.
+
+## Entries
+
+<Newest entries go below this line.>
+
+---
+
+### future-annotations-fastapi-request
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `plan-template.md`
+- **Status:** open
+- **Resolution:** —
+
+`from __future__ import annotations` in a FastAPI Depends helper that receives `request: Request` makes the annotation a lazy string. FastAPI's dependency resolver checks `param.annotation is Request` at runtime — the string fails the identity check, so FastAPI drops the `Request` into query-parameter parsing, returning 422 on every real request. In this run the bug was latent in `routers/_disconnect.py` (written in Phase 0) and only surfaced when B1 first wired `build_operational_context` through the Depends chain. The orchestrator diagnosed it in one turn and saved a memory entry (`fastapi-request-no-future-annotations`). The plan's Stage 2 (top-down design) did not audit existing helpers for this constraint. Relevant plan section: none (the helper predated the plan). Saved as memory; repeated correctly in B2-B16 without re-diagnosis.
+
+---
+
+### protocol-as-exception-class
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `plan-template.md`
+- **Status:** open
+- **Resolution:** —
+
+The §3.2 stream-guard template in the application-layer plan was written as `except (HTTPProblem, Exception) as exc:`, where `HTTPProblem` is a `@runtime_checkable Protocol`. Tuple-catching a Protocol is valid Python syntax but raises `TypeError` at runtime (caught in B15). Because `HTTPProblem`-satisfying types are all concrete `Exception` subclasses, the structurally-correct and semantically-equivalent catch is `except Exception`. The plan was amended inline (§3.2 B15 note). The plan-template.md stream-guard subsection should warn: "If a Protocol (not a concrete exception class) appears in an `except` tuple, remove it — all conforming implementations must be `Exception` subclasses anyway, and the Protocol itself is not catchable."
+
+---
+
+### executor-infra-import-at-module-scope
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `refactor-executor.md`
+- **Status:** open
+- **Resolution:** —
+
+In chunk B11, the executor imported `DocumentRepository` (an infrastructure-typed symbol) at module scope in `application/completion/description_use_case.py`. ADR-0030's layer-guard structurally bans this; the fix (f54b2dd4) moved the import under `TYPE_CHECKING`. The same failure pattern appeared in ADR-0048 execution (recorded in memory `adr_0048_execution_lessons`). The executor's current "Imports allowed: stdlib + domain.* + application.*" rule does not explicitly distinguish runtime imports from TYPE_CHECKING-only annotations, leaving a gap for this class of violation. The rule should add: "If a type annotation names a symbol from `infrastructure.*` or from a type that can only be imported from outside the allowed set, place that import under `if TYPE_CHECKING:` only."
+
+---
+
+### executor-multi-chunk-atomicity
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `refactor-executor.md`
+- **Status:** open
+- **Resolution:** —
+
+When the orchestrator dispatched multiple chunks to a single executor invocation (B12+B13+B14, and D2+D3), the executor bundled them into one commit rather than separate atomic commits. The COMMIT CONVENTIONS in the orchestrator prompt say "One chunk = one commit" but the executor agent spec does not commit at all (the orchestrator commits). The root problem is that multi-chunk dispatch blurs the commit boundary: the orchestrator must interleave commit → next-chunk → commit → next-chunk, but a batched dispatch returns all work at once. Either: (a) the executor spec should warn that multi-chunk batches are not recommended and each chunk should be dispatched separately, or (b) the orchestrator-prompt COMMIT CONVENTIONS should explicitly state the orchestrator must commit after each chunk review, before dispatching the next.
+
+---
+
+### dto-coverage-gate-missing
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `plan-template.md`
+- **Status:** open
+- **Resolution:** —
+
+Both the router-layer plan §13 (deferred questions) and the application-layer plan §4.4 silently assumed Input DTOs were already populated with the fields needed by the downstream orchestrators. Neither plan scheduled a "DTO field coverage audit" chunk. The gap was discovered during B2 execution when `EULawSearchInput` had only `filters: object` while `run_eurlex_laws_search` required `query: str` plus 13 filter parameters. One investigator dispatch + user AskUserQuestion resolved it (user chose B1.5 pre-phase DTO expansion). The plan-template.md §12 Migration Sequencing section should include a prompt: "Before the first Bx use-case chunk, add a DTO coverage row: confirm that every Input DTO in `application/**/protocols.py` carries the fields required by the matching collaborator Protocol's methods."
+
+---
+
+### dto-coverage-gate-orchestrator
+
+- **First seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Last seen:** 2026-05-17 (run: `2026-05-17-application-layer-ideal-shape`)
+- **Count:** 1
+- **Affected artifact:** `orchestrator-prompt-template.md`
+- **Status:** open
+- **Resolution:** —
+
+Related to `dto-coverage-gate-missing`: the orchestrator-prompt chunk queue for the application-layer run had no explicit "verify DTO coverage before first use-case chunk" step. When the executor hit B2 and found empty DTOs, it had no signal from the chunk queue that this was a known gate. The orchestrator-prompt-template.md Phase A / Phase B boundary should include a pre-B-phase gate comment: "Confirm each Input DTO in `application/**/protocols.py` carries the fields the matching collaborator Protocol requires. If a DTO is a placeholder, add a pre-B chunk (e.g. B0.5) to populate it."
