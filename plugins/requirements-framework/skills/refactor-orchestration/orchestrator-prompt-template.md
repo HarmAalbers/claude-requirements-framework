@@ -145,9 +145,10 @@ Branch: <branch>
      1	<line content>
      2	<line content>
      ...
-<For NEW files, paste directory listing instead:>
+<For NEW files (nothing to read yet), paste directory listing instead:>
 ### ls -1 <parent-dir>/
 <output>
+<For chunks that touch both existing and new files, include both forms — one block per file.>
 
 ## Project conventions
 <paste the Layer rules and Known anti-patterns from the PROJECT CONVENTIONS block above verbatim>
