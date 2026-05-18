@@ -3,7 +3,7 @@ name: commit-checks
 description: "Auto-fix code quality issues - comment cleanup and import organization"
 argument-hint: "[--skip-autofix]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 8bb7ea7
+git_hash: 214ca26
 ---
 
 # Pre-Commit Auto-Fix
