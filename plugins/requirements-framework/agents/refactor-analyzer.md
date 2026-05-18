@@ -55,7 +55,7 @@ You are a refactor retrospective analyzer. You run after a refactor orchestratio
 
 5. **Read both ledgers.** Read `~/.claude/refactor-orchestration/learnings.md` (global) and `.claude/refactor-orchestration/learnings.md` (project). For each observation extracted in step 4, look up its `obs-slug` in the correctly-classified ledger only (per step 4.5). If found, bump `count` and `last_seen`. If not, create a new entry with `count=1`.
 
-6. **Write the retrospective report** at `.claude/plans/<plan-slug>-retrospective.md` following `~/.claude/skills/refactor-orchestration/retrospective-template.md`.
+6. **Write the retrospective report** at `.claude/plans/<plan-slug>-retrospective.md` following the bundled `retrospective-template.md` in this skill's directory (resolve via plugin install path, typically `plugins/requirements-framework/skills/refactor-orchestration/retrospective-template.md` in the source tree or `~/.claude/plugins/cache/.../skills/refactor-orchestration/retrospective-template.md` post-install).
 
 7. **Append to learnings.md** with new and updated entries. Newest entries at the top of the entries section.
 
