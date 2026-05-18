@@ -66,7 +66,7 @@
 
 ## 6. Learnings Ledger Entries This Run
 
-<Newly created or count-bumped entries this run. Slug links to anchors in `~/.claude/skills/refactor-orchestration/learnings.md`.>
+<Newly created or count-bumped entries this run. Slugs link to anchors in the appropriate ledger: global `~/.claude/refactor-orchestration/learnings.md` (cross-project) or project `.claude/refactor-orchestration/learnings.md` (this repo only).>
 
 | Slug | Status | Count | Affected artifact | One-line observation |
 |---|---|---|---|---|
@@ -76,6 +76,8 @@
 
 ## 7. Further reading
 
-- `~/.claude/skills/refactor-orchestration/learnings.md` — accumulated observations across all runs
-- `~/.claude/skills/refactor-orchestration/SKILL.md` — workflow definition
-- `req:session-reflect` (if installed) — general session reflection on the parent session
+- `~/.claude/refactor-orchestration/learnings.md` — global ledger (cross-project observations)
+- `.claude/refactor-orchestration/learnings.md` — project ledger (this-repo observations, gitignored)
+- `.claude/refactor-conventions.md` — auto-grown repo convention sheet (gitignored)
+- Bundled `SKILL.md` in this skill's plugin install directory — workflow definition
+- `/requirements-framework:session-reflect` (if installed) — general session reflection on the parent session

@@ -26,9 +26,9 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | **Library Modules** | 32 |
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
-| **Plugin Agents** | 19 |
-| **Plugin Commands** | 11 |
-| **Plugin Skills** | 19 |
+| **Plugin Agents** | 25 |
+| **Plugin Commands** | 12 |
+| **Plugin Skills** | 20 |
 
 **→ Full component inventory**: See `references/component-inventory.md`
 
@@ -145,7 +145,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 
 ## Plugin Components
 
-### Agents (19)
+### Agents (25)
 
 **Workflow**: `adr-guardian`, `codex-review-agent`, `codex-arch-reviewer`, `commit-planner`, `solid-reviewer`, `tdd-validator`
 
@@ -212,6 +212,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 | ADR-011 | Externalize messages to YAML |
 | ADR-012 | Agent Teams integration |
 | ADR-013 | Standardized agent output format |
+| ADR-014 | Refactor orchestration via bundled skill |
 
 ---
 
