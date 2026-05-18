@@ -3,7 +3,7 @@ name: refactor-orchestrate
 description: "Multi-layer top-down refactor workflow. Produces a validated plan and an orchestrator-prompt that runs in a fresh claude session, dispatching Haiku executor chunks and escalating contradictions to a Sonnet investigator."
 argument-hint: "[<refactor-slug>]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion", "WebFetch"]
-git_hash: uncommitted
+git_hash: eb25cdb
 ---
 
 # Refactor Orchestration — Deterministic Orchestrator
