@@ -36,7 +36,7 @@ The skill's own SKILL.md already declares a coexistence mapping with `requiremen
 | Question | Decision |
 |---|---|
 | Q1: Primary intent | Adopt into plugin **and** route on detection (resolved in Q2 to: route via explicit command) |
-| Q2: Routing trigger | Explicit `/refactor-orchestrate` command. No magic detection. |
+| Q2: Routing trigger | Explicit `/requirements-framework:refactor-orchestrate` command (deterministic per ADR-007). No magic detection. |
 | Q3: Learning loop relation | Keep separate from `session-learning`. Two distinct systems. |
 | Q4: Requirements bridging | No auto-satisfy. User runs `/arch-review` first by convention. |
 | Q5: Source of truth | Plugin only. Globals at `~/.claude/skills/` and `~/.claude/agents/` get **deleted** after bundling. |
@@ -80,10 +80,10 @@ plugins/requirements-framework/
 ### Touched (existing files, lightly edited)
 
 ```
-plugins/requirements-framework/skills/requirements-framework-status/SKILL.md  ← mention /refactor-orchestrate
-plugins/requirements-framework/skills/requirements-framework-usage/SKILL.md   ← mention /refactor-orchestrate
+plugins/requirements-framework/skills/requirements-framework-status/SKILL.md  ← mention /requirements-framework:refactor-orchestrate
+plugins/requirements-framework/skills/requirements-framework-usage/SKILL.md   ← mention /requirements-framework:refactor-orchestrate
 CLAUDE.md                                                                      ← document command + agent fanout
-docs/adr/013-refactor-orchestration-bundled-skill.md                           ← NEW (rationale ADR)
+docs/adr/ADR-014-refactor-orchestration-bundled-skill.md                       ← NEW (rationale ADR)
 ```
 
 ## Components
@@ -98,7 +98,7 @@ Each agent moved verbatim except two frontmatter field changes:
 
 | Field | Before | After |
 |---|---|---|
-| `name:` | `refactor-executor` | `requirements-framework:refactor-executor` |
+| `name:` | `refactor-executor` | **unchanged** (`refactor-executor`) — plugin loader applies namespace externally |
 | `description:` | (unchanged) | Append " — part of the requirements-framework refactor-orchestration skill." |
 
 All hard rules, workflows, output templates, model assignments stay byte-identical.
@@ -108,7 +108,7 @@ All hard rules, workflows, output templates, model assignments stay byte-identic
 Three edits:
 
 - **Lines 59–61**: replace `~/.claude/agents/refactor-executor.md` etc. with namespaced subagent_type form.
-- **Lines 71–83** ("If you use requirements-framework" table): rewrite framing from optional/coexistence to **bundled** ("This skill is part of requirements-framework. Recommended sequencing: `/arch-review` → `/refactor-orchestrate` → fresh session for execution").
+- **Lines 71–83** ("If you use requirements-framework" table): rewrite framing from optional/coexistence to **bundled** ("This skill is part of requirements-framework. Recommended sequencing: `/requirements-framework:arch-review` → `/requirements-framework:refactor-orchestrate` → fresh session for execution").
 - **Lines 104–118** (File map): point at `plugins/requirements-framework/` paths, not `~/.claude/`.
 
 ### 6.4 `skills/refactor-orchestration/orchestrator-prompt-template.md` (MOVED + edited)
@@ -136,7 +136,7 @@ This solves the persistence-state-inside-plugin-skill pattern cleanly.
 
 ### 6.7 Discovery skill touches
 
-Single-line additions to `requirements-framework-status` and `requirements-framework-usage` SKILL.md bodies mentioning `/refactor-orchestrate` in their command catalogs. No structural changes.
+Single-line additions to `requirements-framework-status` and `requirements-framework-usage` SKILL.md bodies mentioning `/requirements-framework:refactor-orchestrate` in their command catalogs. No structural changes.
 
 ### 6.8 CLAUDE.md update
 
@@ -144,11 +144,11 @@ Small subsection under "Testing Plugin Components":
 
 ```
 **New: refactor orchestration**
-- `/refactor-orchestrate` — multi-layer top-down refactor workflow
+- `/requirements-framework:refactor-orchestrate` — multi-layer top-down refactor workflow
 - Agents: `requirements-framework:refactor-{executor,investigator,analyzer}`
 - Produces: `.claude/plans/<slug>.md` + `<slug>-orchestrator-prompt.md`
 - Execution happens in a fresh `claude` session by pasting the prompt
-- Recommended sequencing: /arch-review → /refactor-orchestrate → fresh session
+- Recommended sequencing: /requirements-framework:arch-review → /requirements-framework:refactor-orchestrate → fresh session
 ```
 
 ## Data flow
@@ -156,8 +156,9 @@ Small subsection under "Testing Plugin Components":
 ### Session A — Planning (user's current session)
 
 ```
-/refactor-orchestrate
-  → Command invokes Skill: requirements-framework:refactor-orchestration
+/requirements-framework:refactor-orchestrate
+  → Command runs deterministic orchestrator steps (see Task 11 of the impl plan)
+  → Invokes Skill: requirements-framework:refactor-orchestration
   → Stage 1: 2× parallel Explore agents (inventory + ADRs)
             + read .claude/refactor-conventions.md if exists
   → Stage 2: top-down design + export manifest
@@ -314,9 +315,9 @@ rg -n 'subagent_type[^"]+"refactor-(executor|investigator|analyzer)"' \
 claude --plugin-dir ~/Tools/claude-requirements-framework/plugin
 ```
 
-1. `/help` shows `/refactor-orchestrate` in command list
+1. `/help` shows `/requirements-framework:refactor-orchestrate` in command list
 2. Subagent registration shows `requirements-framework:refactor-{executor,investigator,analyzer}`
-3. Running `/refactor-orchestrate` against a trivial target produces both output files at `.claude/plans/`
+3. Running `/requirements-framework:refactor-orchestrate` against a trivial target produces both output files at `.claude/plans/`
 
 ### Fresh-session execution smoke (one-time, before merging)
 
