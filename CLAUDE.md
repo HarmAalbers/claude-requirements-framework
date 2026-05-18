@@ -270,6 +270,32 @@ For testing the installed plugin:
 
 **For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
 
+### Refactor Orchestration
+
+The framework includes a bundled refactor-orchestration skill for multi-layer top-down refactors.
+
+**Command**: `/requirements-framework:refactor-orchestrate`
+
+**Agents (Haiku/Sonnet/Sonnet fanout)**:
+- `requirements-framework:refactor-executor` (Haiku) — mechanical chunk execution
+- `requirements-framework:refactor-investigator` (Sonnet) — read-only diagnosis
+- `requirements-framework:refactor-analyzer` (Sonnet) — retrospective + rule-of-three promotion
+
+**Outputs**:
+- `.claude/plans/<YYYY-MM-DD>-<slug>.md` — validated design plan
+- `.claude/plans/<YYYY-MM-DD>-<slug>-orchestrator-prompt.md` — copy-paste orchestrator
+
+**Execution model**: A planning session produces both files. The orchestrator block runs in a **fresh `claude` session** by paste — chunks dispatch atomically, one commit per chunk.
+
+**Recommended sequencing**: `/requirements-framework:arch-review` → `/requirements-framework:refactor-orchestrate` → fresh session for execution.
+
+**Two-tier learning** (refactor-analyzer):
+- Global ledger: `~/.claude/refactor-orchestration/learnings.md` (seeded from plugin template)
+- Project ledger: `.claude/refactor-orchestration/learnings.md` (gitignored)
+- Project conventions: `.claude/refactor-conventions.md` (gitignored, auto-grown)
+
+See `docs/adr/ADR-014-refactor-orchestration-bundled-skill.md` for design rationale.
+
 ## Serena MCP Configuration
 
 The project uses Serena MCP for semantic code analysis. For optimal performance with Claude Code:
