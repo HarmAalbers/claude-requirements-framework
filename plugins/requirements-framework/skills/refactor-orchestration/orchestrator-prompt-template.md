@@ -21,6 +21,13 @@ Stop with a clear error message if ANY check fails:
 
 If the plugin is missing, instruct the user: "Install via `/plugin install requirements-framework@requirements-framework` then restart this session."
 
+========================================================================
+PROJECT CONVENTIONS (from plan §1 — injected into every executor dispatch)
+========================================================================
+
+<paste the Layer rules and Known anti-patterns from plan §1 verbatim>
+<if plan §1 is empty, write: (none — new project, no refactor-conventions.md yet)>
+
 You are the orchestrator for the <refactor title> refactor.
 
 The design work is DONE. The plan is at:
@@ -90,6 +97,13 @@ For each chunk:
 
 1. TodoWrite: mark in_progress.
 
+1.5. Pre-fetch for this chunk:
+   a. Extract the plan section(s) referenced by this chunk from your Step 0 memory.
+   b. Read each target file with the Read tool (returns cat -n output with line numbers).
+      For NEW files (nothing to read yet): run `ls -1 <parent-dir>/` instead.
+   c. Read the `## Project conventions` block from this orchestrator prompt.
+   You will inline all three into the dispatch prompt below — do NOT reference by path.
+
 2. Dispatch ONE refactor-executor:
 
    Task({
@@ -104,34 +118,64 @@ For each chunk:
    - PASS → commit (see COMMIT CONVENTIONS) → TodoWrite mark completed → next chunk
    - SIMPLE ISSUE (missing import, typo, ruff finding, wrong dotted path) → re-dispatch the SAME refactor-executor with a focused 2-3 line fix prompt. Max 2 retries per chunk.
    - COMPLEX ISSUE (plan contradicts code reality, third-party API mismatch, type-checker complaint that implies plan oversight) → dispatch refactor-investigator (see INVESTIGATION DISPATCH below) → AskUserQuestion with the diagnosis and 2-3 options → STOP until the user responds.
+   - NEEDS_CLARIFICATION (executor returned this verdict with a question) →
+     answer the question by calling SendMessage({to: "executor-<chunk-id>", message: "<answer>"}).
+     The executor resumes with full context — do NOT re-dispatch a new Task.
+     If you cannot answer confidently: AskUserQuestion to me first, then SendMessage.
+     Fallback: if SendMessage fails (name was omitted from the Task spawn), treat as COMPLEX ISSUE.
 
 ========================================================================
 DISPATCH TEMPLATE (for refactor-executor)
 ========================================================================
 
+Task({
+  subagent_type: "requirements-framework:refactor-executor",
+  name: "executor-<chunk-id>",   // REQUIRED — enables NEEDS_CLARIFICATION resume via SendMessage
+  description: "<5 words>",
+  prompt: `
 Repo: <repo path>
 Branch: <branch>
-Plan: <plan path>
 
-Task: <chunk title>
-Plan sections to read (ONLY these): <e.g. "§4, §7.1">
-File(s) to create or modify: <exact paths>
+## Plan section (<§N.N> — <section title>)
+<paste the literal plan section text here — do not reference by path>
+
+## Current file contents
+<For each target file, paste Read tool output verbatim, including line numbers:>
+### <path/to/file.py>
+     1	<line content>
+     2	<line content>
+     ...
+<For NEW files, paste directory listing instead:>
+### ls -1 <parent-dir>/
+<output>
+
+## Project conventions
+<paste the Layer rules and Known anti-patterns from the PROJECT CONVENTIONS block above verbatim>
+<if PROJECT CONVENTIONS block is empty, omit this section entirely>
+
+## Your task
+<chunk title — one line>
+
+Apply the plan section above to the file(s) above.
 
 Strict rules:
 - Match the plan's canonical shape exactly.
-- <project-specific rules, e.g. "Use Annotated[T, Marker] for every FastAPI parameter">
-- NO try/except. NO comments. NO unrelated imports.
-- Imports allowed: <list>. Nothing else.
+- NO try/except. NO comments explaining WHAT. NO unrelated imports.
+- DO NOT read any files or grep the codebase — everything is above.
+- If something is missing or contradictory: use verdict: NEEDS_CLARIFICATION with one specific question. No edits.
 
 Verify before reporting:
   <ruff check command>
   <import smoke command>
+  <test collect command>
 
 Report:
-- Files touched
+- Files touched (paths only)
 - Verification output (or "all green")
-- Any deviation from the plan (with reason)
+- Any deviation from the plan (with reason, line numbers)
 - Anything noticed but not changed
+  `
+})
 
 ========================================================================
 REVIEW CHECKLIST (orchestrator runs after every chunk)
