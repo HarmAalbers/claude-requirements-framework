@@ -3,6 +3,7 @@ name: refactor-executor
 description: "Mechanical chunk executor for refactor orchestration. Reads ONLY the referenced plan section, writes or edits the named files, verifies with ruff and an import smoke. Does NOT redesign, does NOT read ADRs, does NOT ask questions. Use when a refactor plan is frozen and you need a specific chunk implemented exactly per a referenced section. Best paired with the refactor-orchestration skill and the refactor-investigator agent. — part of the requirements-framework refactor-orchestration skill."
 model: haiku
 color: green
+allowed-tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
 git_hash: da10f19
 ---
 
