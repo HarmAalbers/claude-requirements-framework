@@ -92,7 +92,7 @@ For each chunk:
 
 2. Dispatch ONE refactor-executor:
 
-   Agent({
+   Task({
      subagent_type: "requirements-framework:refactor-executor",
      description: "<5 words>",
      prompt: <see DISPATCH TEMPLATE below>
@@ -176,7 +176,7 @@ If a commit picks up unrelated lint debt from a touched file, land an isolated d
 INVESTIGATION DISPATCH (when something doesn't fit the plan)
 ========================================================================
 
-Agent({
+Task({
   subagent_type: "requirements-framework:refactor-investigator",
   description: "Diagnose plan vs reality",
   prompt: `
@@ -202,7 +202,7 @@ PHASE F DISPATCH (retrospective)
 
 After Phase E completes successfully, dispatch the retrospective:
 
-Agent({
+Task({
   subagent_type: "requirements-framework:refactor-analyzer",
   description: "Retrospective for this run",
   prompt: `

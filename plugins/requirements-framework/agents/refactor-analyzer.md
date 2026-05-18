@@ -3,6 +3,7 @@ name: refactor-analyzer
 description: "Retrospective writer for refactor orchestration runs. Reads the session transcript, git log, and learnings ledger; produces a structured retrospective report; appends new observations to the learnings ledger; proposes template/agent edits when an observation hits rule-of-three (count=3). Mostly read-only — writes only the retrospective report and learnings.md; all other edits go through AskUserQuestion. Use as the final phase (Phase F) of a refactor orchestration. — part of the requirements-framework refactor-orchestration skill."
 model: sonnet
 color: blue
+allowed-tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "AskUserQuestion"]
 git_hash: 8aae982
 ---
 

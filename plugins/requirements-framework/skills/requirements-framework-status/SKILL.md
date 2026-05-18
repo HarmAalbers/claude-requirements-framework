@@ -151,7 +151,9 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 
 **Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`, `refactor-advisor`
 
-**Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`
+**Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`, `tenant-isolation-auditor`, `appsec-auditor`, `compliance-auditor`
+
+**Refactor Orchestration** (Haiku/Sonnet/Sonnet fanout): `refactor-executor`, `refactor-investigator`, `refactor-analyzer`
 
 ### Commands (12)
 
@@ -168,7 +170,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 - `/requirements-framework:execute-plan` - Execute plan with checkpoints
 - `/requirements-framework:refactor-orchestrate` - Multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution)
 
-### Skills (19)
+### Skills (20)
 
 **Framework Skills (5):**
 - `requirements-framework-usage` - Usage help
@@ -177,7 +179,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 - `requirements-framework-builder` - Extension guidance
 - `session-learning` - Session analysis and improvement
 
-**Process Skills (14):**
+**Process Skills (15):**
 - `using-requirements-framework` - Bootstrap skill (session start injection)
 - `brainstorming` - Design-first exploration
 - `writing-plans` - Implementation plan creation
@@ -192,6 +194,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 - `receiving-code-review` - Technical feedback evaluation
 - `requesting-code-review` - Review agent dispatch
 - `writing-skills` - TDD-for-documentation meta-skill
+- `refactor-orchestration` - Multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution)
 
 ---
 

@@ -2,7 +2,7 @@
 name: refactor-orchestrate
 description: "Multi-layer top-down refactor workflow. Produces a validated plan and an orchestrator-prompt that runs in a fresh claude session, dispatching Haiku executor chunks and escalating contradictions to a Sonnet investigator."
 argument-hint: "[<refactor-slug>]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion", "WebFetch"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion", "WebFetch", "mcp__plugin_context7-plugin_context7__query-docs", "mcp__plugin_context7-plugin_context7__resolve-library-id"]
 git_hash: eb25cdb
 ---
 
@@ -103,7 +103,10 @@ Write the copy-paste orchestrator to `$ORCH_PATH` using the skill's `orchestrato
 grep -q '=== BEGIN ORCHESTRATOR PROMPT ===' "$ORCH_PATH" || exit 2
 grep -q '=== END ORCHESTRATOR PROMPT ===' "$ORCH_PATH" || exit 2
 
-# Confirm subagent_type uses namespaced form
+# Confirm subagent_type uses namespaced form (positive AND negative checks)
+grep -qE 'subagent_type[^"]*"requirements-framework:refactor-(executor|investigator|analyzer)"' "$ORCH_PATH" || {
+  echo "Missing namespaced subagent_type references" >&2; exit 2;
+}
 grep -E 'subagent_type[^"]*"refactor-(executor|investigator|analyzer)"' "$ORCH_PATH" && {
   echo "Found un-namespaced subagent_type references" >&2; exit 2;
 }
