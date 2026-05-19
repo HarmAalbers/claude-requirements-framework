@@ -8,11 +8,24 @@ Replace the current ~1,500-token requirement table dump in the SessionStart hook
 
 Largest single token win. Pure modification of files we own. Reversible in one revert.
 
-## Files touched
+## Files touched (as shipped)
 
-- `hooks/handle-session-start.py` — replace verbose briefing with compact version
-- `hooks/lib/messages.py` (if briefing template lives there) — update `_status.yaml` template
-- `messages/_status.yaml` — add a new `compact` profile if not present
+Production code:
+- `hooks/handle-session-start.py` — removed bootstrap injection block, removed `injection_mode` shim, removed `auto` mode, removed `format_full_status` deprecated wrapper, simplified `format_adaptive_status` to dispatch on `briefing_format` only
+- `hooks/lib/config.py` — clarified `briefing_format` default comment in `HOOK_DEFAULTS`
+
+Tests:
+- `hooks/test_requirements.py` — added `test_session_start_briefing_format_config`, added `test_session_start_bootstrap_removed`, dropped legacy-shim and auto-mode test cases
+
+Example configs:
+- `.claude/requirements.yaml` — `injection_mode: auto` → `briefing_format: compact`
+- `examples/global-requirements.yaml` — same migration + comment block updated
+- `hooks/lib/feature_catalog.py` — example YAML uses `briefing_format: compact`
+
+Plugin:
+- `plugins/requirements-framework/.claude-plugin/plugin.json` — bumped to 3.1.2
+
+> **Not touched**: `hooks/lib/messages.py` and `messages/_status.yaml`. The original plan speculated these might need updates; the implementation went a different route by tightening `format_compact_status` inline.
 
 ## Implementation (as shipped)
 
@@ -33,20 +46,33 @@ The user directed (2026-05-19): "we do not need backwards compatibility, I prefe
 
 The seven-agent arch-review (adr-guardian, compat-checker, tdd-validator, solid-reviewer, refactor-advisor, commit-planner, codex-arch-reviewer) produced cross-validated findings. The team agents went past their advisory remit and implemented the four primary commits directly during analysis (see Commit Strategy section). The follow-up cleanup commit removed the conservative `injection_mode` shim they had added, on user direction.
 
-## Example
+## Example (as shipped)
 
-**Before (today)**:
+**Before** — `format_rich_status` on startup, plus inlined skill body (~1,500+ tokens combined):
 ```
 ## Requirements Framework: Session Briefing
 **Project**: ...
-... (40+ lines of definitions and tables) ...
+### Quick Start
+🚀 Run /arch-review → satisfies commit_plan, adr_reviewed, ...
+### Requirement Definitions
+**commit_plan** (blocking, session-scoped) ...
+[40+ lines of definitions, scope reference, workflow guide]
+
+You have superpowers.
+**Below is the full content of your 'using-requirements-framework' skill — ...**
+[~80 lines of skill body]
 ```
 
-**After**:
+**After** — `format_compact_status` (243 bytes for a 3-requirement fixture):
 ```
-Phase: implementing | 3 unsatisfied | Next likely: /req review
-Run `req status --verbose` for full requirement details.
+## Requirements: 0/3 satisfied
+**Run `/plan-review`** → `commit_plan`
+**Run `/arch-review`** → `adr_reviewed`
+**req satisfy pre_pr_review** → `pre_pr_review`
+**Fallback**: `req satisfy commit_plan adr_reviewed pre_pr_review --session <id>`
 ```
+
+> The `Phase: ... | Next: /cmd` pipe-separated header was speculated in the original plan but **deferred to Step 03** (`Phase-aware statusline`), which will introduce a shared `hooks/lib/derive_phase.py`. Step 01 keeps the existing `## Requirements: N/M satisfied` header to avoid duplicating phase logic ahead of its proper home.
 
 ## Acceptance — verified
 
@@ -75,9 +101,19 @@ Nothing.
 
 ---
 
-## Preparatory Refactoring
+## Preparatory Refactoring (advisory analysis — what was followed)
 
-Analysis of `hooks/handle-session-start.py` (~808 lines) against the three questions.
+The refactor-advisor agent produced three recommendations during arch-review. Outcome of each:
+
+| # | Recommendation | Status |
+|---|----------------|--------|
+| 1 | Do **not** extract formatting to `hooks/lib/briefing_formats.py` before Step 01 | ✅ followed — extraction left for a future step |
+| 2 | Extract bootstrap block into `_inject_bootstrap_skill` helper before deleting | ❌ skipped — agents deleted the block directly (commit fcc2d1c); risk paid off, diff was clean |
+| 3 | Tighten `format_compact_status` in place rather than adding `build_compact_briefing` | ✅ followed — no parallel function was added |
+
+Full analysis kept below as historical record.
+
+---
 
 ### 1. Extract formatting functions into `hooks/lib/briefing_formats.py`?
 
@@ -153,70 +189,54 @@ The plan's proposed `build_compact_briefing` 4-line format is effectively this f
 
 ---
 
-## Commit Strategy
+## Commit Strategy (as shipped)
 
-Four atomic commits in TDD sequence. Each is independently revertible.
+The arch-review's commit-planner agent designed a 4-commit TDD sequence (kept below as historical record). What actually shipped was 7 commits — the first 4 made directly by team agents during analysis, the last 3 by the team lead following user direction.
 
-> **Note on preparatory analysis**: The refactor-advisor (above) recommends extracting the bootstrap block into `_inject_bootstrap_skill(parts, logger)` before deleting it. That extraction is folded into Commit 1 (test) + Commit 2 (refactor), so Commit 3's deletion is a clean one-line removal.
+### Actual commit log
 
----
-
-### Commit 1 — `test: add failing tests for briefing_format config key and no-bootstrap output`
-
-**Files changed**: `hooks/test_requirements.py`
-
-**What it does**:
-- Extend `test_session_start_format_tiers` with assertions that `format_adaptive_status` respects `briefing_format: compact` config key, and that `startup` source with `briefing_format: compact` returns compact-format output (not the rich `"Session Briefing"` header).
-- Add new test `test_session_start_no_bootstrap_injection` that runs the hook subprocess with `inject_context: True` and asserts the output does **not** contain `"superpowers"` or the literal string `"using-requirements-framework"` skill body — RED until Commit 3.
-
-**Test verifies**: Extended `test_session_start_format_tiers` (RED on `briefing_format` key until Commit 2), `test_session_start_no_bootstrap_injection` (RED until Commit 3).
-
----
-
-### Commit 2 — `refactor(hook): extract bootstrap injection into _inject_bootstrap_skill helper`
-
-**Files changed**: `hooks/handle-session-start.py`
-
-**What it does**:
-- Move lines 753–793 (the `bootstrap_text` construction, skill-path glob, frontmatter stripping, and `parts.append(...)`) into a new `_inject_bootstrap_skill(parts, logger)` helper function in the same file.
-- Replace the original block in `main()` with a single call: `_inject_bootstrap_skill(parts, logger)`.
-- **Behavior unchanged** — all existing tests stay green.
-
-**Test verifies**: `test_session_start_bootstrap_injection` (existing, stays GREEN — bootstrap still fires), `test_session_start_format_tiers` (stays GREEN — no format change).
-
----
-
-### Commit 3 — `feat(hook): default briefing_format to compact; remove bootstrap skill injection`
-
-**Files changed**: `hooks/handle-session-start.py`, `hooks/test_requirements.py`
-
-**What it does**:
-1. In `format_adaptive_status`, read `hooks.session_start.briefing_format` first; fall back to `hooks.session_start.injection_mode` for backward compatibility; default to `compact` (was `auto`/rich for `startup`).
-2. Delete the single `_inject_bootstrap_skill(parts, logger)` call from `main()` and remove the helper function — the skill is already surfaced by Claude Code's system-reminder catalog.
-3. In the test file: rename `test_session_start_bootstrap_injection` to `test_session_start_no_bootstrap_injection` and flip its assertion — the hook must **not** output bootstrap text when `inject_context: True`. Update the `briefing_format` assertions to GREEN.
-
-**Test verifies**: `test_session_start_no_bootstrap_injection` (GREEN — no bootstrap), extended `test_session_start_format_tiers` (GREEN — `briefing_format: compact` works), `test_session_start_bootstrap_injection` (removed / replaced).
-
----
-
-### Commit 4 — `chore(plugin): bump plugin version for session-briefing simplification`
-
-**Files changed**: `plugins/requirements-framework/.claude-plugin/plugin.json`
-
-**What it does**:
-- Increment patch version to record that session startup token cost is reduced (no more bootstrap injection; compact default).
-
-**Test verifies**: No dedicated test. Full suite passes after `./sync.sh deploy`. `./update-plugin-versions.sh --verify` confirms hashes are current.
-
----
+| # | SHA | Type | Description | Author |
+|---|-----|------|-------------|--------|
+| 1 | `6921840` | test | add failing tests for briefing_format config and bootstrap removal | agent (during arch-review) |
+| 2 | `1a73050` | feat | wire briefing_format config key, default to compact | agent |
+| 3 | `fcc2d1c` | feat | remove bootstrap skill body injection (directly, no extract step) | agent |
+| 4 | `d2e16ff` | chore | bump version to 3.1.1 | agent |
+| 5 | `8400584` | refactor | remove injection_mode shim, auto value, format_full_status | lead (per user "no backwards compat") |
+| 6 | `6cfbde9` | docs | realign Step 01 plan with shipped implementation | lead |
+| 7 | `d76907a` | chore | bump version to 3.1.2 for cleanup | lead |
 
 ### Sequencing summary
 
 | # | Commit | Suite state after |
 |---|--------|-------------------|
-| 1 | Add failing tests | RED (2 new failing) |
-| 2 | Extract bootstrap helper | RED (bootstrap still fires — no-bootstrap test still fails) |
-| 3 | Default compact + remove bootstrap | GREEN (all pass) |
-| 4 | Bump plugin version | GREEN |
+| 1 | Failing tests added | RED (new tests fail — code still uses old key/has bootstrap) |
+| 2 | briefing_format wired | RED (bootstrap still fires) |
+| 3 | Bootstrap removed | GREEN (1269/1269) |
+| 4 | Version 3.1.1 | GREEN |
+| 5 | Legacy surface removed | GREEN (1267/1267 — 2 obsolete tests dropped) |
+| 6 | Plan realigned | GREEN |
+| 7 | Version 3.1.2 | GREEN |
 
-Each commit builds on the prior one. Commits 2 and 3 are independently revertible: reverting Commit 3 restores the bootstrap call and the `auto` default without touching Commit 2's extraction; reverting Commit 2 un-extracts the helper but leaves Commit 3 in an inconsistent state — so revert order should be 3 then 2 if rolling back both.
+### Divergences from the agent's plan
+
+1. **Extract-then-delete was skipped.** The commit-planner specced Commit 2 as "extract `_inject_bootstrap_skill` helper" before Commit 3's deletion, to keep the deletion diff small. The agent that implemented went straight to deletion. The resulting diff was clean enough that no separate extraction commit was needed.
+2. **`injection_mode` was kept then removed.** The original spec preserved it as a deprecated alias. After landing, the user directed removal — commit `8400584` deleted the shim entirely. See `[[feedback-no-backwards-compat]]` in memory.
+3. **Two extra commits at the end** for the cleanup (commit 5), plan realignment (commit 6), and version re-bump (commit 7).
+
+---
+
+### Original 4-commit plan (kept for historical record)
+
+#### Commit 1 — `test: add failing tests for briefing_format config key and no-bootstrap output`
+- Extend `test_session_start_format_tiers` with `briefing_format: compact` assertions.
+- Add `test_session_start_no_bootstrap_injection` — RED until Commit 3.
+
+#### Commit 2 — `refactor(hook): extract bootstrap injection into _inject_bootstrap_skill helper`
+- Move lines 753–793 into a private helper. Behavior unchanged.
+
+#### Commit 3 — `feat(hook): default briefing_format to compact; remove bootstrap skill injection`
+- Wire the new config key with `injection_mode` fallback for compatibility.
+- Delete the bootstrap helper call.
+
+#### Commit 4 — `chore(plugin): bump plugin version for session-briefing simplification`
+- Patch bump.
