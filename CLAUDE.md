@@ -2,6 +2,53 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Version Control: Always Use Stacked Git
+
+This project uses **Stacked Git (`stg`)** for all local commit authoring. Every patch goes through the stack — **never use `git commit` directly**.
+
+### Per-Branch Setup
+
+`stg init` is per-branch. `master` is already initialized. Every new topic branch needs its own init:
+
+```bash
+git checkout -b feat/your-branch
+stg init
+```
+
+### Atomic Commit Workflow
+
+```bash
+stg new <patch-name>     # Create a new empty patch (opens editor for description)
+# ... edit files ...
+stg refresh              # Fold working-tree changes into the top patch
+# Iterate: keep editing and `stg refresh` until the patch is right
+stg new <next-patch>     # Start the next logical patch on top
+```
+
+### Common Operations
+
+| Task                          | Command                  |
+|-------------------------------|--------------------------|
+| List patch stack              | `stg series`             |
+| Show top patch diff           | `stg show`               |
+| Pop top patch (keep changes)  | `stg pop`                |
+| Re-apply popped patch         | `stg push`               |
+| Amend a non-top patch         | `stg edit <patch>`       |
+| Rename a patch                | `stg rename <old> <new>` |
+| Delete a patch                | `stg delete <patch>`     |
+| Status across all branches    | `stg branch --list`      |
+
+### Pushing to Remote
+
+`git push` works unchanged — stg patches are ordinary git commits, so remotes, CI, and existing pre-commit hooks see no difference.
+
+### Rules
+
+- **Never `git commit`** — always `stg new` + `stg refresh`.
+- **One logical change per patch** — keep patches atomic; refresh as you iterate.
+- **`stg init` first on any new branch** — without it, stg commands fail and the fallback to `git commit` would silently bypass the stack.
+- **Plugin version bumps still apply** — when a patch touches plugin files, bump `plugins/requirements-framework/.claude-plugin/plugin.json` inside the same patch (not a separate one).
+
 ## Build & Test Commands
 
 ```bash
