@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Task"]
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: suggested by `/req ship` after `/req review`, as the second-opinion external review. Run directly any time for an independent AI check.
+
 # Codex AI Code Review
 
 Run OpenAI Codex AI code review on your changes.
