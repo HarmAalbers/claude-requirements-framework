@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# plugins/requirements-framework/scripts/req-phase
+# Thin wrapper around hooks/lib/derive_phase.py for the /req command.
+#
+# Prints the current workflow phase to stdout. Exits 0 even on errors
+# (fail-open) — the statusline and conductor must never refuse to run.
+#
+# Usage:
+#   req-phase
+# Output: one of design | plan-write | plan-validate | implement | review | ship
+
+set -uo pipefail
+
+# Locate derive_phase.py. Search order:
+#   1. $HOME/.claude/hooks/lib  (deployed runtime — every framework user)
+#   2. $script_dir/../../../hooks/lib  (dev mode — source repo)
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$HOME/.claude/hooks/lib/derive_phase.py" ]]; then
+  lib_dir="$HOME/.claude/hooks/lib"
+elif [[ -f "$script_dir/../../../hooks/lib/derive_phase.py" ]]; then
+  lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
+else
+  echo "design"
+  exit 0
+fi
+
+# Find the current branch's state file using the same mangling the
+# framework uses internally (slash → dash, then alnum/dash/underscore).
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ -z "$branch" ]]; then
+  echo "design"
+  exit 0
+fi
+safe_branch=$(printf '%s' "$branch" | tr '/\\' '--' | tr -c '[:alnum:]_-' '_')
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+state_file="$repo_root/.git/requirements/${safe_branch}.json"
+
+PYTHONPATH="$lib_dir" python3 "$lib_dir/derive_phase.py" "$state_file" 2>/dev/null \
+  || echo "design"
