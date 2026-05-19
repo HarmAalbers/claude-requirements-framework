@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: auto-fix utility used during `/req implement`. Run directly to clean up imports and comments before committing.
+
 # Pre-Commit Auto-Fix
 
 Runs 2 auto-fix agents to clean up code before committing. Comments are cleaned and imports are organized, then changes are re-staged.

@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: lightweight alternative to `/req plan` (sequential review, no agent debate). Run directly when a quick check suffices.
+
 # Plan Review Command
 
 > **For thorough multi-perspective review with agent cross-validation, use `/arch-review` instead.**

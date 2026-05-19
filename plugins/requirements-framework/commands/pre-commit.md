@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelet
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: lightweight pre-commit alternative to `/req review`. Run directly before each commit.
+
 # Pre-Commit Review
 
 Run focused code quality checks on unstaged/staged changes before committing.

@@ -6,4 +6,6 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUse
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: invoked by `/req design`. Run directly to override the conductor.
+
 Invoke the `requirements-framework:brainstorming` skill and follow it exactly as presented to you.

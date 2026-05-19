@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: lightweight alternative to `/req review` (faster, no agent debate). Run directly when a quick check suffices.
+
 # Pre-PR Quality Check
 
 > **For cross-validated review with agent debate, use `/deep-review` instead.**

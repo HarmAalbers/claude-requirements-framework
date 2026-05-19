@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUse
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: retrospective tool, not part of the `/req` phase pipeline. Run directly at the end of a session to harvest learnings.
+
 # Session Learning Reflection
 
 Analyze the current session to identify patterns, friction points, and improvement opportunities. Updates memories, skills, and commands to make future sessions more efficient.

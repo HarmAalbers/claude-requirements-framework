@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelet
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: invoked by `/req review`. Run directly to override the conductor.
+
 # Deep Review — Cross-Validated Team-Based Code Review
 
 Team-based review where agents cross-validate findings and produce a unified verdict.

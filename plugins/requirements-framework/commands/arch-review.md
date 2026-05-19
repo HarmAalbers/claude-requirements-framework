@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelet
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: invoked by `/req plan`. Run directly to override the conductor.
+
 # Architecture Review — Team-Based Multi-Perspective Assessment
 
 Team-based architecture review where agents debate architectural implications of a plan and generate an atomic commit strategy.

@@ -6,6 +6,8 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUse
 git_hash: 2f4cfb2
 ---
 
+> **Workflow position**: invoked by `/req refactor`. Run directly to override the conductor.
+
 # Refactor Orchestration — Deterministic Orchestrator
 
 Multi-layer top-down refactor workflow. Satisfies no framework requirements (run `/requirements-framework:arch-review` first if your project enforces planning gates).
