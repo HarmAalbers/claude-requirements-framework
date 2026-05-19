@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: "Validate plan against ADRs, TDD, and SOLID principles, identify preparatory refactoring, then generate atomic commit strategy"
+description: "DEPRECATED — use /arch-review (team-based) or /req plan (conductor). Will be removed in a future major release. Validates plan against ADRs, TDD, and SOLID principles, identifies preparatory refactoring, then generates atomic commit strategy."
 argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 2f4cfb2
