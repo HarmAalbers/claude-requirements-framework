@@ -399,10 +399,11 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
     """
     Select and apply the appropriate format based on source and config.
 
-    Implements tiered progressive disclosure:
-    - compact: ~150 tokens, high context survival (for compaction)
-    - standard: ~400 tokens, best actionability (for resume)
-    - rich: ~800 tokens, full context (for startup/clear)
+    Verbosity is controlled by `hooks.session_start.briefing_format`:
+    - compact (default): ~150 tokens, high context survival
+    - standard: ~400 tokens, best actionability
+    - rich: ~800 tokens, full context (use `briefing_format: rich` to restore old behaviour)
+    - auto: legacy adaptive selection based on source (kept for compatibility)
 
     Args:
         reqs: BranchRequirements manager
@@ -414,32 +415,40 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
     Returns:
         Formatted status string appropriate for the context
     """
-    # Get configured injection mode (default: 'auto')
-    mode = config.get_hook_config('session_start', 'injection_mode', 'auto')
+    # `briefing_format` is the canonical key; `injection_mode` is a deprecated alias.
+    # Read raw hook config to distinguish "not set" from the built-in default.
+    raw_hook = config.get_raw_config().get('hooks', {}).get('session_start', {})
+    if 'briefing_format' in raw_hook:
+        mode = raw_hook['briefing_format']
+    elif 'injection_mode' in raw_hook:
+        get_logger().warning(
+            "injection_mode is deprecated; rename to briefing_format in requirements.yaml"
+        )
+        mode = raw_hook['injection_mode']
+    else:
+        mode = 'compact'  # default: minimal token footprint
 
     # Add custom header if configured (applies to all formats)
     custom_header = config.get_hook_config('session_start', 'custom_header')
     prefix = f"{custom_header.strip()}\n\n" if custom_header and isinstance(custom_header, str) else ""
 
-    # Select format based on mode
-    if mode == 'auto':
-        # Adaptive selection based on source
-        if source == 'compact':
-            return prefix + format_compact_status(reqs, config, session_id, branch)
-        elif source == 'resume':
-            return prefix + format_standard_status(reqs, config, session_id, branch)
-        else:  # startup, clear, or unknown
-            return prefix + format_rich_status(reqs, config, session_id, branch)
-    elif mode == 'compact':
+    if mode == 'compact':
         return prefix + format_compact_status(reqs, config, session_id, branch)
     elif mode == 'standard':
         return prefix + format_standard_status(reqs, config, session_id, branch)
     elif mode == 'rich':
         return prefix + format_rich_status(reqs, config, session_id, branch)
+    elif mode == 'auto':
+        # Legacy adaptive selection: kept so existing configs with injection_mode: auto still work
+        if source == 'compact':
+            return prefix + format_compact_status(reqs, config, session_id, branch)
+        elif source == 'resume':
+            return prefix + format_standard_status(reqs, config, session_id, branch)
+        else:
+            return prefix + format_rich_status(reqs, config, session_id, branch)
     else:
-        # Unknown mode - fall back to standard (good balance)
-        get_logger().warning(f"Unknown injection_mode '{mode}', using 'standard'")
-        return prefix + format_standard_status(reqs, config, session_id, branch)
+        get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
+        return prefix + format_compact_status(reqs, config, session_id, branch)
 
 
 def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,

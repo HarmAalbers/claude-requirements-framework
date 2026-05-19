@@ -7142,19 +7142,23 @@ def test_session_start_format_tiers(runner: TestRunner):
         runner.test("Rich format includes description", "Test commit plan description" in rich,
                    f"Missing description")
 
-        # Test adaptive format selector
-        # Test auto mode with startup source
-        auto_startup = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "startup")
+        # Test adaptive format selector with explicit briefing_format: auto (legacy mode)
+        config_auto = dict(config_content)
+        config_auto["hooks"] = {"session_start": {"briefing_format": "auto"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_auto, f)
+        config_for_auto = RequirementsConfig(tmpdir)
+        reqs_for_auto = BranchRequirements("feature/test-formats", "test-session", tmpdir)
+
+        auto_startup = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "startup")
         runner.test("Auto mode startup uses rich format", "Session Briefing" in auto_startup,
                    f"Expected rich format for startup")
 
-        # Test auto mode with resume source
-        auto_resume = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "resume")
+        auto_resume = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "resume")
         runner.test("Auto mode resume uses standard format", "| Requirement |" in auto_resume,
                    f"Expected standard format for resume")
 
-        # Test auto mode with compact source
-        auto_compact = session_start_module.format_adaptive_status(reqs, config, "test-session", "feature/test-formats", "compact")
+        auto_compact = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "compact")
         runner.test("Auto mode compact uses compact format", "Requirements:" in auto_compact and "Session Briefing" not in auto_compact,
                    f"Expected compact format for compact source")
 
