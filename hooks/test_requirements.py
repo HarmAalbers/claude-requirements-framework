@@ -7142,25 +7142,32 @@ def test_session_start_format_tiers(runner: TestRunner):
         runner.test("Rich format includes description", "Test commit plan description" in rich,
                    f"Missing description")
 
-        # Test adaptive format selector with explicit briefing_format: auto (legacy mode)
-        config_auto = dict(config_content)
-        config_auto["hooks"] = {"session_start": {"briefing_format": "auto"}}
+        # Test format_adaptive_status dispatches by briefing_format (source is ignored)
+        config_compact = dict(config_content)
+        config_compact["hooks"] = {"session_start": {"briefing_format": "compact"}}
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(config_auto, f)
-        config_for_auto = RequirementsConfig(tmpdir)
-        reqs_for_auto = BranchRequirements("feature/test-formats", "test-session", tmpdir)
+            json.dump(config_compact, f)
+        cfg_compact = RequirementsConfig(tmpdir)
+        reqs_for_dispatch = BranchRequirements("feature/test-formats", "test-session", tmpdir)
 
-        auto_startup = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "startup")
-        runner.test("Auto mode startup uses rich format", "Session Briefing" in auto_startup,
-                   f"Expected rich format for startup")
+        adaptive_compact = session_start_module.format_adaptive_status(
+            reqs_for_dispatch, cfg_compact, "test-session", "feature/test-formats", "startup"
+        )
+        runner.test("briefing_format=compact returns compact regardless of source",
+                   "Requirements:" in adaptive_compact and "Session Briefing" not in adaptive_compact,
+                   f"Expected compact format")
 
-        auto_resume = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "resume")
-        runner.test("Auto mode resume uses standard format", "| Requirement |" in auto_resume,
-                   f"Expected standard format for resume")
-
-        auto_compact = session_start_module.format_adaptive_status(reqs_for_auto, config_for_auto, "test-session", "feature/test-formats", "compact")
-        runner.test("Auto mode compact uses compact format", "Requirements:" in auto_compact and "Session Briefing" not in auto_compact,
-                   f"Expected compact format for compact source")
+        config_rich = dict(config_content)
+        config_rich["hooks"] = {"session_start": {"briefing_format": "rich"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_rich, f)
+        cfg_rich = RequirementsConfig(tmpdir)
+        adaptive_rich = session_start_module.format_adaptive_status(
+            reqs_for_dispatch, cfg_rich, "test-session", "feature/test-formats", "resume"
+        )
+        runner.test("briefing_format=rich returns rich regardless of source",
+                   "Session Briefing" in adaptive_rich,
+                   f"Expected rich format")
 
     # Test empty requirements config
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -9626,8 +9633,8 @@ def test_session_start_bootstrap_injection(runner: TestRunner):
 
 
 def test_session_start_briefing_format_config(runner: TestRunner):
-    """Test briefing_format config key replaces injection_mode, with legacy shim."""
-    print("\n📦 Testing briefing_format config key and legacy injection_mode shim...")
+    """Test briefing_format config key drives format selection."""
+    print("\n📦 Testing briefing_format config key...")
 
     import importlib.util
     hook_path = Path(__file__).parent / "handle-session-start.py"
@@ -9682,17 +9689,6 @@ def test_session_start_briefing_format_config(runner: TestRunner):
         out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
         runner.test("briefing_format=standard produces standard output",
                    "| Requirement |" in out and "Session Briefing" not in out,
-                   f"Got: {out[:200]}")
-
-        # Test: legacy injection_mode still works (shim) and honours the value
-        cfg["hooks"] = {"session_start": {"injection_mode": "rich"}}
-        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(cfg, f)
-        config = RequirementsConfig(tmpdir)
-        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
-        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
-        runner.test("legacy injection_mode=rich is honoured via shim",
-                   "Session Briefing" in out,
                    f"Got: {out[:200]}")
 
         # Test: default (no key) is compact for startup source

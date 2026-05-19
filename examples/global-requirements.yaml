@@ -481,12 +481,11 @@ hooks:
   # SessionStart hook - injects requirement context at session start/resume
   session_start:
     inject_context: true  # Enable context injection (default: true)
-    # injection_mode: Controls how much context is injected
-    #   - auto: Adapts based on source (startup→rich, resume→standard, compact→compact)
-    #   - compact: ~150 tokens, high context survival for compaction
-    #   - standard: ~400 tokens, best actionability for resumes
-    #   - rich: ~800 tokens, full definitions/workflow for startups
-    injection_mode: auto  # default: auto
+    # briefing_format: Controls how much context is injected
+    #   - compact: ~150 tokens, minimal footprint (default)
+    #   - standard: ~400 tokens, includes table of requirements
+    #   - rich: ~800 tokens, full definitions/scope reference/workflow
+    briefing_format: compact  # default: compact
     # custom_header: Optional project-specific header text
     # custom_header: "🚀 Project-specific context here"
 

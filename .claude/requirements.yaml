@@ -218,7 +218,7 @@ requirements:
 hooks:
   session_start:
     inject_context: true
-    injection_mode: auto
+    briefing_format: compact
   session_learning:
     enabled: true
     prompt_on_stop: true

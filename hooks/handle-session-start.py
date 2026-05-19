@@ -397,79 +397,36 @@ def format_rich_status(reqs: BranchRequirements, config: RequirementsConfig,
 def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
                            session_id: str, branch: str, source: str) -> str:
     """
-    Select and apply the appropriate format based on source and config.
+    Select and apply the appropriate format based on config.
 
     Verbosity is controlled by `hooks.session_start.briefing_format`:
     - compact (default): ~150 tokens, high context survival
     - standard: ~400 tokens, best actionability
-    - rich: ~800 tokens, full context (use `briefing_format: rich` to restore old behaviour)
-    - auto: legacy adaptive selection based on source (kept for compatibility)
+    - rich: ~800 tokens, full context
 
     Args:
         reqs: BranchRequirements manager
         config: RequirementsConfig instance
         session_id: Current session ID
         branch: Current git branch
-        source: Hook source ('startup', 'resume', 'compact', 'clear')
+        source: Hook source ('startup', 'resume', 'compact', 'clear') — accepted but unused
+            since briefing_format selects the formatter directly.
 
     Returns:
         Formatted status string appropriate for the context
     """
-    # `briefing_format` is the canonical key; `injection_mode` is a deprecated alias.
-    # Read raw hook config to distinguish "not set" from the built-in default.
-    raw_hook = config.get_raw_config().get('hooks', {}).get('session_start', {})
-    if 'briefing_format' in raw_hook:
-        mode = raw_hook['briefing_format']
-    elif 'injection_mode' in raw_hook:
-        get_logger().warning(
-            "injection_mode is deprecated; rename to briefing_format in requirements.yaml"
-        )
-        mode = raw_hook['injection_mode']
-    else:
-        mode = 'compact'  # default: minimal token footprint
+    mode = config.get_hook_config('session_start', 'briefing_format', 'compact')
 
-    # Add custom header if configured (applies to all formats)
     custom_header = config.get_hook_config('session_start', 'custom_header')
     prefix = f"{custom_header.strip()}\n\n" if custom_header and isinstance(custom_header, str) else ""
 
-    if mode == 'compact':
-        return prefix + format_compact_status(reqs, config, session_id, branch)
-    elif mode == 'standard':
+    if mode == 'standard':
         return prefix + format_standard_status(reqs, config, session_id, branch)
-    elif mode == 'rich':
+    if mode == 'rich':
         return prefix + format_rich_status(reqs, config, session_id, branch)
-    elif mode == 'auto':
-        # Legacy adaptive selection: kept so existing configs with injection_mode: auto still work
-        if source == 'compact':
-            return prefix + format_compact_status(reqs, config, session_id, branch)
-        elif source == 'resume':
-            return prefix + format_standard_status(reqs, config, session_id, branch)
-        else:
-            return prefix + format_rich_status(reqs, config, session_id, branch)
-    else:
+    if mode != 'compact':
         get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
-        return prefix + format_compact_status(reqs, config, session_id, branch)
-
-
-def format_full_status(reqs: BranchRequirements, config: RequirementsConfig,
-                       session_id: str, branch: str) -> str:
-    """
-    Format detailed requirement status with rules for autonomous operation.
-
-    DEPRECATED: Use format_adaptive_status() instead for source-aware formatting.
-    This function is kept for backwards compatibility.
-
-    Args:
-        reqs: BranchRequirements manager
-        config: RequirementsConfig instance
-        session_id: Current session ID
-        branch: Current git branch
-
-    Returns:
-        Formatted status string for context injection
-    """
-    # Delegate to adaptive status with 'startup' as default source
-    return format_adaptive_status(reqs, config, session_id, branch, 'startup')
+    return prefix + format_compact_status(reqs, config, session_id, branch)
 
 
 def check_other_sessions_warning(config: RequirementsConfig, project_dir: str,

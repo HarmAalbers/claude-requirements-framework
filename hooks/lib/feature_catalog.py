@@ -379,7 +379,7 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
         "example_yaml": """hooks:
   session_start:
     inject_context: true
-    injection_mode: auto""",
+    briefing_format: compact""",
     },
     "stop_verification": {
         "name": "Stop Verification",
