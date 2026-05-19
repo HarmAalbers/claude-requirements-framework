@@ -161,6 +161,95 @@ echo "🔗 Creating symlink for 'req' command..."
 mkdir -p "$HOME/.local/bin"
 ln -sf "$HOME/.claude/hooks/requirements-cli.py" "$HOME/.local/bin/req"
 
+# Configure ENABLE_TOOL_SEARCH=true in user's shell rc
+# Reduces Claude Code's initial context by deferring tool schemas (Claude Code v2.0.74+).
+configure_tool_search() {
+    echo ""
+    echo "⚡ On-demand tool loading (ENABLE_TOOL_SEARCH)"
+    echo "=============================================="
+    echo ""
+    echo "Setting ENABLE_TOOL_SEARCH=true reduces Claude Code's initial context by"
+    echo "loading tool schemas on demand via ToolSearch (requires Claude Code v2.0.74+)."
+    echo ""
+
+    # Detect shell and config file (mirrors configure_path)
+    local shell_name
+    shell_name=$(basename "$SHELL")
+    local config_file=""
+
+    case "$shell_name" in
+        zsh)
+            if [ -f "$HOME/.zshrc" ]; then
+                config_file="$HOME/.zshrc"
+            elif [ -f "$HOME/.zprofile" ]; then
+                config_file="$HOME/.zprofile"
+            fi
+            ;;
+        bash)
+            if [ -f "$HOME/.bashrc" ]; then
+                config_file="$HOME/.bashrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                config_file="$HOME/.bash_profile"
+            elif [ -f "$HOME/.profile" ]; then
+                config_file="$HOME/.profile"
+            fi
+            ;;
+        fish)
+            mkdir -p "$HOME/.config/fish"
+            config_file="$HOME/.config/fish/config.fish"
+            ;;
+        *)
+            echo "Unknown shell: $shell_name"
+            echo "Please manually add to your shell profile:"
+            echo "  export ENABLE_TOOL_SEARCH=true"
+            return 1
+            ;;
+    esac
+
+    if [ -z "$config_file" ]; then
+        echo "No shell configuration file found."
+        echo "Please manually add to your shell profile:"
+        echo "  export ENABLE_TOOL_SEARCH=true"
+        return 1
+    fi
+
+    # Idempotent: skip if already present
+    if grep -q "ENABLE_TOOL_SEARCH" "$config_file" 2>/dev/null; then
+        echo "✅ ENABLE_TOOL_SEARCH already configured in $config_file"
+        return 0
+    fi
+
+    echo "This installer can add ENABLE_TOOL_SEARCH=true to $config_file."
+    echo ""
+    read -p "Add ENABLE_TOOL_SEARCH=true to your shell? [Y/n] " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo "Skipped. You can manually add to $config_file:"
+        if [ "$shell_name" = "fish" ]; then
+            echo "  set -x ENABLE_TOOL_SEARCH true"
+        else
+            echo "  export ENABLE_TOOL_SEARCH=true"
+        fi
+        return 0
+    fi
+
+    {
+        echo ""
+        echo "# Added by claude-requirements-framework installer on $(date)"
+        if [ "$shell_name" = "fish" ]; then
+            echo "set -x ENABLE_TOOL_SEARCH true"
+        else
+            echo "export ENABLE_TOOL_SEARCH=true"
+        fi
+    } >> "$config_file"
+
+    echo "✅ Added ENABLE_TOOL_SEARCH=true to $config_file"
+    echo "   Restart your shell or run: source $config_file"
+
+    return 0
+}
+
 # Configure PATH interactively
 configure_path() {
     # Check if ~/.local/bin is already in PATH
@@ -254,6 +343,9 @@ configure_path() {
 
     return 0
 }
+
+# Configure on-demand tool loading (reduces Claude Code context size)
+configure_tool_search
 
 # Call PATH configuration
 configure_path
