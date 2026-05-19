@@ -118,6 +118,8 @@ get_all_plugin_files() {
         [ -f "$PLUGIN_DEPLOY_DIR/README.md" ] && echo "README.md"
         [ -f "$PLUGIN_REPO_DIR/.mcp.json" ] && echo ".mcp.json"
         [ -f "$PLUGIN_DEPLOY_DIR/.mcp.json" ] && echo ".mcp.json"
+        [ -f "$PLUGIN_REPO_DIR/statusline.sh" ] && echo "statusline.sh"
+        [ -f "$PLUGIN_DEPLOY_DIR/statusline.sh" ] && echo "statusline.sh"
         # Plugin metadata
         [ -f "$PLUGIN_REPO_DIR/.claude-plugin/plugin.json" ] && echo ".claude-plugin/plugin.json"
         [ -f "$PLUGIN_DEPLOY_DIR/.claude-plugin/plugin.json" ] && echo ".claude-plugin/plugin.json"
@@ -378,6 +380,11 @@ deploy_plugin() {
 
     # Copy README
     cp -v "$PLUGIN_REPO_DIR/README.md" "$PLUGIN_DEPLOY_DIR/"
+
+    # Copy statusline. Preserves +x permission via cp -p.
+    if [ -f "$PLUGIN_REPO_DIR/statusline.sh" ]; then
+        cp -pv "$PLUGIN_REPO_DIR/statusline.sh" "$PLUGIN_DEPLOY_DIR/"
+    fi
 
     echo ""
     echo -e "${GREEN}✓ Plugin deployment complete!${NC}"
