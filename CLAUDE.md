@@ -296,6 +296,35 @@ The framework includes a bundled refactor-orchestration skill for multi-layer to
 
 See `docs/adr/ADR-014-refactor-orchestration-bundled-skill.md` for design rationale.
 
+## On-Demand Tool Loading (`ENABLE_TOOL_SEARCH`)
+
+Claude Code v2.0.74+ supports on-demand tool schema loading via `ToolSearch`. When `ENABLE_TOOL_SEARCH=true` is set in the shell environment, the initial system prompt lists tool *names* only; full JSON schemas are fetched lazily on first use. This trims several thousand tokens from every session's startup context.
+
+### Default in this project
+
+`install.sh` now adds `export ENABLE_TOOL_SEARCH=true` to your shell rc (`~/.zshrc`, `~/.bashrc`, or `~/.config/fish/config.fish`) during installation. The append is idempotent — re-running the installer will not duplicate the line.
+
+### Manual setup
+
+If you skipped the installer prompt or are working in a fresh shell:
+
+```bash
+# zsh / bash
+echo 'export ENABLE_TOOL_SEARCH=true' >> ~/.zshrc
+source ~/.zshrc
+
+# fish
+echo 'set -x ENABLE_TOOL_SEARCH true' >> ~/.config/fish/config.fish
+```
+
+### Verify
+
+In a new Claude Code session, the initial tool list shows names only — schemas appear in the conversation later, fetched by `ToolSearch` calls. If you see complete schemas at session start, the env var didn't make it into the new shell.
+
+### Scope note
+
+This does **not** shrink the "Available agent types" block in the system prompt — that's driven by `plugin.json` and would require splitting agents across separate plugins to address (future work).
+
 ## Serena MCP Configuration
 
 The project uses Serena MCP for semantic code analysis. For optimal performance with Claude Code:
@@ -326,19 +355,6 @@ The project uses Serena MCP for semantic code analysis. For optimal performance 
 
 - `--context claude-code` - Disables tools that duplicate Claude Code's built-in capabilities (prevents conflicts)
 - `--project <path>` - Explicitly specifies project directory for focused codebase analysis
-
-### Token Efficiency
-
-Enable on-demand tool loading (requires Claude Code v2.0.74+) by adding to `~/.zshrc`:
-
-```bash
-# Enable on-demand tool loading for Claude Code (reduces token usage)
-export ENABLE_TOOL_SEARCH=true
-```
-
-Then reload shell: `source ~/.zshrc`
-
-This prevents sending complete tool descriptions at startup, reducing token consumption while allowing dynamic tool discovery.
 
 ### Verification
 
