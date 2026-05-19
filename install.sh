@@ -473,6 +473,19 @@ try:
     # Ensure disableAllHooks is false
     settings["disableAllHooks"] = False
 
+    # Register the phase-aware statusline, but never clobber a user's
+    # existing statusLine — only fill it in when absent or empty.
+    STATUSLINE_CMD = "~/.claude/plugins/requirements-framework/statusline.sh"
+    existing_status = settings.get("statusLine") or {}
+    existing_cmd = existing_status.get("command", "")
+    if not existing_cmd:
+        settings["statusLine"] = {"type": "command", "command": STATUSLINE_CMD}
+        print("   ✅ Statusline registered")
+    elif "requirements-framework/statusline.sh" in existing_cmd:
+        print("   ✅ Statusline already registered")
+    else:
+        print("   ℹ️  Existing statusLine preserved (custom command detected)")
+
     with open(settings_file, 'w') as f:
         json.dump(settings, f, indent=2)
 

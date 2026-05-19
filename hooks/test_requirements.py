@@ -10886,6 +10886,136 @@ def test_obsidian_session_logger(runner: TestRunner):
                     f"Got: {popen_args[1]}")
 
 
+def test_derive_phase(runner: TestRunner):
+    """Test workflow-phase derivation from requirement state files."""
+    print("\n📦 Testing derive_phase module...")
+    from derive_phase import derive_phase, DEFAULT_PHASE, SHIP_PHASE
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+
+        runner.test("missing file → DEFAULT_PHASE",
+                    derive_phase(tmp / "nope.json") == DEFAULT_PHASE)
+
+        bad = tmp / "bad.json"
+        bad.write_text("{not json")
+        runner.test("malformed JSON → DEFAULT_PHASE",
+                    derive_phase(bad) == DEFAULT_PHASE)
+
+        empty = tmp / "empty.json"
+        empty.write_text('{"requirements": {}}')
+        runner.test("empty requirements → design",
+                    derive_phase(empty) == "design")
+
+        def _state(satisfied_reqs: dict[str, str]) -> Path:
+            reqs: dict = {}
+            for name, mode in satisfied_reqs.items():
+                if mode == "branch":
+                    reqs[name] = {"satisfied": True}
+                elif mode == "session":
+                    reqs[name] = {"sessions": {"abc": {"satisfied": True}}}
+            fixture_id = "_".join(sorted(satisfied_reqs)) or "empty"
+            f = tmp / f"state-{fixture_id}.json"
+            f.write_text(json.dumps({"requirements": reqs}))
+            return f
+
+        runner.test("design_approved sat → plan-write",
+                    derive_phase(_state({"design_approved": "session"})) == "plan-write")
+
+        runner.test("plan-write sat → plan-validate",
+                    derive_phase(_state({
+                        "design_approved": "session",
+                        "plan_written": "branch",
+                    })) == "plan-validate")
+
+        runner.test("plan-validate sat → implement",
+                    derive_phase(_state({
+                        "design_approved": "session",
+                        "plan_written": "session",
+                        "solid_reviewed": "session",
+                    })) == "implement")
+
+        runner.test("through verification → review",
+                    derive_phase(_state({
+                        "design_approved": "session",
+                        "plan_written": "session",
+                        "solid_reviewed": "session",
+                        "verification_evidence": "session",
+                    })) == "review")
+
+        runner.test("everything sat → ship",
+                    derive_phase(_state({
+                        "design_approved": "session",
+                        "plan_written": "session",
+                        "solid_reviewed": "session",
+                        "verification_evidence": "session",
+                        "pre_pr_review": "branch",
+                    })) == SHIP_PHASE)
+
+        # Mixed: one session satisfied, others not → still counts as satisfied
+        mixed = tmp / "mixed.json"
+        mixed.write_text(json.dumps({"requirements": {
+            "design_approved": {"sessions": {
+                "old": {"satisfied": False},
+                "new": {"satisfied": True},
+            }},
+        }}))
+        runner.test("any-session-satisfied counts as satisfied",
+                    derive_phase(mixed) == "plan-write")
+
+        # Schema robustness: malformed structures should fail-open, not raise.
+        for label, content in [
+            ("requirements: null", '{"requirements": null}'),
+            ("requirements: list", '{"requirements": []}'),
+            ("req entry: null", '{"requirements": {"design_approved": null}}'),
+            ("sessions: null", '{"requirements": {"design_approved": {"sessions": null}}}'),
+            ("top-level: list", '[]'),
+        ]:
+            f = tmp / f"bad-{label.replace(': ', '-').replace(' ', '_')}.json"
+            f.write_text(content)
+            runner.test(f"defensive: {label} → DEFAULT_PHASE",
+                        derive_phase(f) == DEFAULT_PHASE)
+
+
+def test_count_unsatisfied(runner: TestRunner):
+    """Test count_unsatisfied helper."""
+    print("\n📦 Testing count_unsatisfied module...")
+    from count_unsatisfied import count_unsatisfied
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+
+        runner.test("missing file → 0",
+                    count_unsatisfied(tmp / "nope.json") == 0)
+
+        bad = tmp / "bad.json"
+        bad.write_text("nope")
+        runner.test("malformed → 0",
+                    count_unsatisfied(bad) == 0)
+
+        empty = tmp / "empty.json"
+        empty.write_text('{"requirements": {}}')
+        runner.test("empty → 0",
+                    count_unsatisfied(empty) == 0)
+
+        mix = tmp / "mix.json"
+        mix.write_text(json.dumps({"requirements": {
+            # Triggered + not satisfied (counts).
+            "a": {"sessions": {"s1": {"triggered": True}}},
+            # Triggered + satisfied (excluded).
+            "b": {"sessions": {"s1": {"triggered": True, "satisfied": True}}},
+            # Branch-level satisfied (excluded).
+            "c": {"triggered": True, "satisfied": True},
+            # Branch-level triggered, not satisfied (counts).
+            "d": {"triggered": True},
+            # Not triggered (excluded).
+            "e": {"sessions": {"s1": {"satisfied": False}}},
+        }}))
+        runner.test("counts only triggered-and-unsatisfied",
+                    count_unsatisfied(mix) == 2,
+                    f"Got: {count_unsatisfied(mix)}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -11082,6 +11212,9 @@ def main():
     # Obsidian CLI integration tests
     test_obsidian_client(runner)
     test_obsidian_session_logger(runner)
+
+    test_derive_phase(runner)
+    test_count_unsatisfied(runner)
 
     return runner.summary()
 
