@@ -1,6 +1,6 @@
 ---
 name: quality-check
-description: "Comprehensive quality review before creating PR"
+description: "DEPRECATED — use /deep-review (team-based) or /req review (conductor). Will be removed in a future major release. Runs a comprehensive quality review before creating a PR."
 argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 git_hash: 2f4cfb2

@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Use this agent to simplify code after passing review, before final commit. This agent simplifies code by following project best practices while retaining all functionality. It focuses on recently modified code unless instructed otherwise.
+description: DEPRECATED — overlaps with code-reviewer; will be removed in a future major release. Use this agent to simplify code after passing review, before final commit. This agent simplifies code by following project best practices while retaining all functionality. It focuses on recently modified code unless instructed otherwise.
 
 <example>
 Context: After code passes review.

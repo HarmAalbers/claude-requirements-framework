@@ -12,7 +12,7 @@ instead of asking the model.
 
 | Field    | Meaning                                                      |
 |----------|--------------------------------------------------------------|
-| `phase`  | Derived workflow phase: `design`, `plan`, `implement`, `review`, `ship`, or `?` when outside a git repo |
+| `phase`  | Derived workflow phase: `design`, `plan-write`, `plan-validate`, `implement`, `review`, `ship`, or `?` when outside a git repo |
 | `ctx N%` | Input-side context window usage reported by Claude Code     |
 | `$cost`  | Session cost in USD                                          |
 | `N req⬜` | Count of triggered-but-unsatisfied requirements             |
