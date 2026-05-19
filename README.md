@@ -34,7 +34,19 @@ The installer will:
 1. Copy hooks to `~/.claude/hooks/`
 2. Install the global configuration to `~/.claude/requirements.yaml`
 3. Register all hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
-4. Display marketplace installation instructions for the plugin
+4. Add `ENABLE_TOOL_SEARCH=true` to your shell rc (reduces Claude Code's initial context — requires Claude Code v2.0.74+)
+5. Display marketplace installation instructions for the plugin
+
+### Token Efficiency: on-demand tool loading
+
+The installer enables on-demand tool loading by default by adding `export ENABLE_TOOL_SEARCH=true` to your shell rc. This makes Claude Code load tool schemas lazily via `ToolSearch` instead of dumping every deferred-tool description into the initial system prompt, trimming several thousand tokens per new session.
+
+**Behavior:**
+- The installer prompts before writing to your shell rc and is idempotent (re-running it won't duplicate the line).
+- Decline at the prompt to skip; the framework still works, you just get a fatter initial context.
+- To revert: `sed -i '' '/ENABLE_TOOL_SEARCH=true/d' ~/.zshrc` (or your shell's rc).
+
+**Scope note:** This does *not* shrink the "Available agent types" block at the top of the system prompt — that's driven by `plugin.json` and is a separate concern.
 
 ### Install Plugin via Marketplace
 
