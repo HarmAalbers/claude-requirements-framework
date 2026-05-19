@@ -9621,6 +9621,129 @@ def test_session_start_bootstrap_injection(runner: TestRunner):
                stripped_no_fm == "No frontmatter here.")
 
 
+def test_session_start_briefing_format_config(runner: TestRunner):
+    """Test briefing_format config key replaces injection_mode, with legacy shim."""
+    print("\n📦 Testing briefing_format config key and legacy injection_mode shim...")
+
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook", hook_path)
+    session_start_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(session_start_module)
+
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/briefing-format-test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+
+        base_config = {
+            "version": "1.0", "enabled": True, "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "type": "blocking", "scope": "session"}
+            }
+        }
+
+        # Test: briefing_format=compact forces compact even for startup source
+        cfg = dict(base_config)
+        cfg["hooks"] = {"session_start": {"briefing_format": "compact"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
+        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
+        runner.test("briefing_format=compact forces compact even on startup",
+                   "Session Briefing" not in out and "Requirements:" in out,
+                   f"Got: {out[:200]}")
+
+        # Test: briefing_format=rich produces rich output
+        cfg["hooks"] = {"session_start": {"briefing_format": "rich"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
+        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
+        runner.test("briefing_format=rich produces rich output",
+                   "Session Briefing" in out,
+                   f"Got: {out[:200]}")
+
+        # Test: briefing_format=standard produces standard output
+        cfg["hooks"] = {"session_start": {"briefing_format": "standard"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
+        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
+        runner.test("briefing_format=standard produces standard output",
+                   "| Requirement |" in out and "Session Briefing" not in out,
+                   f"Got: {out[:200]}")
+
+        # Test: legacy injection_mode still works (shim) and honours the value
+        cfg["hooks"] = {"session_start": {"injection_mode": "rich"}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
+        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
+        runner.test("legacy injection_mode=rich is honoured via shim",
+                   "Session Briefing" in out,
+                   f"Got: {out[:200]}")
+
+        # Test: default (no key) is compact for startup source
+        cfg["hooks"] = {"session_start": {}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
+        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
+        runner.test("default briefing_format is compact for startup",
+                   "Session Briefing" not in out and "Requirements:" in out,
+                   f"Got: {out[:200]}")
+
+
+def test_session_start_bootstrap_removed(runner: TestRunner):
+    """Test that SessionStart hook no longer injects bootstrap skill body."""
+    print("\n📦 Testing bootstrap skill injection removed...")
+
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    if not hook_path.exists():
+        runner.test("SessionStart hook exists", False)
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+
+        config = {
+            "version": "1.0", "enabled": True, "inherit": False,
+            "hooks": {"session_start": {"inject_context": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input='{"hook_event_name":"SessionStart","source":"startup","session_id":"nobootstrap1"}',
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        output = result.stdout
+        runner.test("Bootstrap skill body NOT injected (no 'superpowers' text)",
+                   "superpowers" not in output.lower(),
+                   f"Found 'superpowers' in output: {output[:300]}")
+        runner.test("Bootstrap skill body NOT injected (no SKILL.md content marker)",
+                   "using-requirements-framework' skill" not in output,
+                   f"Found skill body marker in output: {output[:300]}")
+        runner.test("Hook still succeeds without bootstrap",
+                   result.returncode == 0,
+                   f"stderr: {result.stderr[:200]}")
+
+
 def test_plugin_command_files_exist(runner: TestRunner):
     """Test that the 3 new command files exist."""
     print("\n🎯 Testing plugin command files exist...")
@@ -10941,6 +11064,8 @@ def main():
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
     test_session_start_bootstrap_injection(runner)
+    test_session_start_briefing_format_config(runner)
+    test_session_start_bootstrap_removed(runner)
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
