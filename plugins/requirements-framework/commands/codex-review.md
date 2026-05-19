@@ -3,7 +3,7 @@ name: codex-review
 description: "AI-powered code review using OpenAI Codex"
 argument-hint: "[focus]"
 allowed-tools: ["Bash", "Task"]
-git_hash: 214ca26
+git_hash: 167b3bd
 ---
 
 # Codex AI Code Review
