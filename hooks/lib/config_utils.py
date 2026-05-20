@@ -283,7 +283,7 @@ def get_requirement_description(req_config: dict) -> str:
 
     Examples:
         {'description': 'Ensures ADRs are reviewed'} → "Ensures ADRs are reviewed"
-        {'message': 'Run /plan-review. Creates commit strategy.'} → "Run /plan-review."
+        {'message': 'Run /arch-review. Creates commit strategy.'} → "Run /arch-review."
         {} → "No description available."
     """
     # Prefer explicit description field
@@ -301,7 +301,7 @@ def get_requirement_description(req_config: dict) -> str:
                 # Skip empty lines and markdown headers
                 if not line or line.startswith('#'):
                     continue
-                # Handle bold markdown at start: **Execute**: `/plan-review` → extract content
+                # Handle bold markdown at start: **Execute**: `/arch-review` → extract content
                 if line.startswith('**'):
                     # Try to extract useful content from bold line
                     # Match pattern like **Label**: content or **Label** content

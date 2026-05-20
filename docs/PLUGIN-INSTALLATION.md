@@ -412,7 +412,7 @@ The Requirements Framework has two complementary components:
 **Purpose:** Provide agents, commands, and skills to satisfy requirements
 **Components:**
 - 15 agents (code review, workflow enforcement)
-- 6 commands (pre-commit, quality-check, codex-review, commit-checks, plan-review, session-reflect)
+- 6 commands (pre-commit, quality-check, codex-review, commit-checks, session-reflect)
 - 5 skills (management and status)
 
 **Installed by:** Marketplace installation (copied to cache)

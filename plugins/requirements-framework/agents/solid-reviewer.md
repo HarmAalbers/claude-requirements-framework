@@ -18,7 +18,7 @@ Context: Plan review command running SOLID step
 user: "Run plan review"
 assistant: "After TDD validation passes, I'll use the solid-reviewer agent to verify SOLID adherence in the plan."
 <commentary>
-SOLID validation is a blocking gate in the plan-review workflow.
+SOLID validation is a blocking gate in the arch-review workflow.
 </commentary>
 </example>
 

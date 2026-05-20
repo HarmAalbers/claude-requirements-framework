@@ -111,8 +111,8 @@ def _shorten_skill_name(skill_path: str) -> str:
     Convert full skill path to short name.
 
     Examples:
-        '/requirements-framework:plan-review' -> '/plan-review'
-        '`/requirements-framework:plan-review`' -> '/plan-review'
+        '/requirements-framework:arch-review' -> '/arch-review'
+        '`/requirements-framework:arch-review`' -> '/arch-review'
         'req satisfy foo' -> 'req satisfy foo'  (unchanged)
         '/simple-skill' -> '/simple-skill'  (unchanged, no namespace)
     """
@@ -121,7 +121,7 @@ def _shorten_skill_name(skill_path: str) -> str:
 
     # Extract short name from namespaced path
     if ':' in skill_path and skill_path.startswith('/'):
-        # '/requirements-framework:plan-review' -> '/plan-review'
+        # '/requirements-framework:arch-review' -> '/arch-review'
         return '/' + skill_path.split(':')[-1]
 
     return skill_path
@@ -200,7 +200,7 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     Example output:
         ## Requirements: 2/4 satisfied
 
-        **Run `/plan-review`** → `adr_reviewed`, `commit_plan`
+        **Run `/arch-review`** → `adr_reviewed`, `commit_plan`
         **Fallback**: `req satisfy adr_reviewed commit_plan --session abc123`
     """
     req_data = _get_requirement_status_data(reqs, config, session_id, branch)
@@ -246,7 +246,7 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
         **Branch**: `master` @ `/project/path` | **Session**: `6d4487f4`
 
         ### Quick Start
-        🚀 **Run `/plan-review`** → satisfies `adr_reviewed`, `commit_plan`
+        🚀 **Run `/arch-review`** → satisfies `adr_reviewed`, `commit_plan`
 
         | Requirement | Status | Triggers | Resolve |
         ...

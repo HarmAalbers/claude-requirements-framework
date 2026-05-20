@@ -438,7 +438,7 @@ requirements:
 #     scope: single_use  # Must re-satisfy for each plan
 #     trigger_tools:
 #       - ExitPlanMode  # ← Triggers when exiting plan mode
-#     auto_resolve_skill: 'requirements-framework:plan-review'
+#     auto_resolve_skill: 'requirements-framework:arch-review'
 #     satisfied_by_skill: 'adr-guardian'  # Auto-satisfied by adr-guardian agent
 #     message: |
 #       ## Blocked: adr_plan_validation

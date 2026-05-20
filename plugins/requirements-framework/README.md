@@ -508,7 +508,6 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ├── commands/ (8 commands)
 │   ├── codex-review.md
 │   ├── commit-checks.md
-│   ├── plan-review.md
 │   ├── pre-commit.md
 │   ├── quality-check.md
 │   └── session-reflect.md

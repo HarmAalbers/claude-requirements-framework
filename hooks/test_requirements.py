@@ -7033,15 +7033,15 @@ def test_get_requirement_description(runner: TestRunner):
                f"Got: {result}")
 
     # Test fallback to message (first sentence)
-    config = {"message": "Run /plan-review. Creates commit strategy."}
+    config = {"message": "Run /arch-review. Creates commit strategy."}
     result = get_requirement_description(config)
-    runner.test("Falls back to message first sentence", result == "Run /plan-review.",
+    runner.test("Falls back to message first sentence", result == "Run /arch-review.",
                f"Got: {result}")
 
     # Test message with markdown header skipped
-    config = {"message": "## Blocked: commit_plan\n\n**Execute**: `/plan-review`"}
+    config = {"message": "## Blocked: commit_plan\n\n**Execute**: `/arch-review`"}
     result = get_requirement_description(config)
-    runner.test("Skips markdown headers", "`/plan-review`" in result,
+    runner.test("Skips markdown headers", "`/arch-review`" in result,
                f"Got: {result}")
 
     # Test empty config
@@ -7097,7 +7097,7 @@ def test_session_start_format_tiers(runner: TestRunner):
                     "type": "blocking",
                     "scope": "session",
                     "description": "Test commit plan description.",
-                    "auto_resolve_skill": "requirements-framework:plan-review"
+                    "auto_resolve_skill": "requirements-framework:arch-review"
                 },
                 "pre_commit_review": {
                     "enabled": True,
@@ -7267,12 +7267,12 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
     shorten = session_start_module._shorten_skill_name
 
     runner.test("Shorten: namespaced skill path",
-               shorten('/requirements-framework:plan-review') == '/plan-review',
-               f"Got: {shorten('/requirements-framework:plan-review')}")
+               shorten('/requirements-framework:arch-review') == '/arch-review',
+               f"Got: {shorten('/requirements-framework:arch-review')}")
 
     runner.test("Shorten: namespaced skill path with backticks",
-               shorten('`/requirements-framework:plan-review`') == '/plan-review',
-               f"Got: {shorten('`/requirements-framework:plan-review`')}")
+               shorten('`/requirements-framework:arch-review`') == '/arch-review',
+               f"Got: {shorten('`/requirements-framework:arch-review`')}")
 
     runner.test("Shorten: simple skill path unchanged",
                shorten('/simple-skill') == '/simple-skill',
@@ -7291,8 +7291,8 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
 
     # Mock requirement data
     req_data = [
-        {'name': 'adr_reviewed', 'satisfied': False, 'resolve_action': '`/requirements-framework:plan-review`', 'triggers': 'Edit, Write'},
-        {'name': 'commit_plan', 'satisfied': False, 'resolve_action': '`/requirements-framework:plan-review`', 'triggers': 'Edit, Write'},
+        {'name': 'adr_reviewed', 'satisfied': False, 'resolve_action': '`/requirements-framework:arch-review`', 'triggers': 'Edit, Write'},
+        {'name': 'commit_plan', 'satisfied': False, 'resolve_action': '`/requirements-framework:arch-review`', 'triggers': 'Edit, Write'},
         {'name': 'pre_commit', 'satisfied': False, 'resolve_action': '`/requirements-framework:commit-checks`', 'triggers': 'git commit'},
         {'name': 'already_done', 'satisfied': True, 'resolve_action': '`/some-skill`', 'triggers': 'Edit'},
     ]
@@ -7304,11 +7304,11 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
                f"Got: {groups}")
 
     runner.test("Group: combines requirements with same resolve action",
-               len(groups.get('/plan-review', [])) == 2,
+               len(groups.get('/arch-review', [])) == 2,
                f"Got: {groups}")
 
     runner.test("Group: separates different resolve actions",
-               '/commit-checks' in groups and '/plan-review' in groups,
+               '/commit-checks' in groups and '/arch-review' in groups,
                f"Got keys: {list(groups.keys())}")
 
     runner.test("Group: skill commands come first",
@@ -7338,7 +7338,7 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
                f"Got: {joined[:200]}")
 
     runner.test("Quick Start: shows run command",
-               "**Run `/plan-review`**" in joined,
+               "**Run `/arch-review`**" in joined,
                f"Got: {joined}")
 
     runner.test("Quick Start: groups requirements",
@@ -7382,13 +7382,13 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
                     "enabled": True,
                     "type": "blocking",
                     "scope": "session",
-                    "auto_resolve_skill": "requirements-framework:plan-review"
+                    "auto_resolve_skill": "requirements-framework:arch-review"
                 },
                 "commit_plan": {
                     "enabled": True,
                     "type": "blocking",
                     "scope": "session",
-                    "auto_resolve_skill": "requirements-framework:plan-review"
+                    "auto_resolve_skill": "requirements-framework:arch-review"
                 }
             }
         }
@@ -7404,7 +7404,7 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
                    "### Quick Start" in rich,
                    f"Got: {rich[:500]}")
         runner.test("Rich format Quick Start uses short skill name",
-                   "/plan-review" in rich and "requirements-framework:plan-review" not in rich.split("Quick Start")[1].split("---")[0],
+                   "/arch-review" in rich and "requirements-framework:arch-review" not in rich.split("Quick Start")[1].split("---")[0],
                    f"Got Quick Start section: {rich.split('Quick Start')[1].split('---')[0][:200] if 'Quick Start' in rich else 'no section'}")
 
         # Standard format should have Quick Start
@@ -7416,10 +7416,10 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
         # Compact format uses grouping
         compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/quick-start-test")
         runner.test("Compact format uses short skill name",
-                   "/plan-review" in compact,
+                   "/arch-review" in compact,
                    f"Got: {compact}")
         runner.test("Compact format groups requirements by action",
-                   "Run `/plan-review`" in compact,
+                   "Run `/arch-review`" in compact,
                    f"Got: {compact}")
 
 
@@ -8423,12 +8423,12 @@ def test_auto_resolve_skill_substitution(runner: TestRunner):
     )
     formatted = msgs.format(
         req_name='commit_plan',
-        auto_resolve_skill='requirements-framework:plan-review'
+        auto_resolve_skill='requirements-framework:arch-review'
     )
     runner.test("format substitutes auto_resolve_skill in blocking_message",
-               formatted.blocking_message == "**Execute**: `/requirements-framework:plan-review`")
+               formatted.blocking_message == "**Execute**: `/requirements-framework:arch-review`")
     runner.test("format substitutes auto_resolve_skill in action_label",
-               formatted.action_label == "Run `/requirements-framework:plan-review`")
+               formatted.action_label == "Run `/requirements-framework:arch-review`")
 
     # Test 2: RequirementMessages.format() leaves {auto_resolve_skill} unchanged when NOT passed
     formatted_no_skill = msgs.format(req_name='commit_plan')
@@ -9410,6 +9410,11 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     runner.test("arch-review mapping still present",
                mappings.get('requirements-framework:arch-review') == ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'])
 
+    # Test: Deprecated /plan-review mapping removed in plugin v4.0.0
+    runner.test("plan-review mapping removed in 4.0.0",
+               'requirements-framework:plan-review' not in mappings,
+               f"DEFAULT_SKILL_MAPPINGS should not contain 'requirements-framework:plan-review'")
+
 
 def test_new_requirement_definitions(runner: TestRunner):
     """Test that new requirement definitions in example config are valid."""
@@ -9758,6 +9763,12 @@ def test_plugin_command_files_exist(runner: TestRunner):
         filepath = commands_dir / cmd_file
         runner.test(f"Command file exists: {cmd_file}",
                    filepath.exists())
+
+    # Absence test: /plan-review command removed in plugin v4.0.0
+    plan_review_path = commands_dir / 'plan-review.md'
+    runner.test("Deprecated /plan-review removed in 4.0.0",
+               not plan_review_path.exists(),
+               f"File should be deleted: {plan_review_path}")
 
 
 def test_plan_enter_hook(runner: TestRunner):
