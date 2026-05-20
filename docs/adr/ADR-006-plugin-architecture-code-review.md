@@ -2,6 +2,7 @@
 
 ## Status
 Approved (2025-12-30)
+Amended (2026-05-20): Component counts updated for plugin v4.0.0 — commands 6→4 (removed `/plan-review`, `/quality-check` per [[ADR-015]]); agents stay at 15 (`code-simplifier` deferred to 4.1+ per ADR-015 Policy 4); DEFAULT_SKILL_MAPPINGS example pruned.
 
 ## Context
 
@@ -27,7 +28,7 @@ The framework plugin structure now includes:
 - `/hooks/` - Python hooks and libraries (copied to ~/.claude/hooks/)
 - `/plugins/requirements-framework/` - Plugin components (installed via marketplace)
   - `/agents/` - 15 specialized agents
-  - `/commands/` - 6 orchestrator commands
+  - `/commands/` - 4 orchestrator commands (was 6 pre-4.0.0; `/plan-review` and `/quality-check` removed in 4.0.0 per [[ADR-015]])
   - `/skills/` - 5 management skills
   - `/.claude-plugin/plugin.json` - Plugin manifest
 
@@ -137,12 +138,10 @@ plugins/requirements-framework/
 │   ├── test-analyzer.md
 │   ├── tool-validator.md
 │   └── type-design-analyzer.md
-├── commands/ (6 total)
+├── commands/ (4 total; was 6 pre-4.0.0)
 │   ├── codex-review.md
 │   ├── commit-checks.md
-│   ├── plan-review.md
 │   ├── pre-commit.md
-│   ├── quality-check.md
 │   └── session-reflect.md
 └── skills/ (5 total)
     ├── requirements-framework-builder/
@@ -154,7 +153,7 @@ plugins/requirements-framework/
 
 ### Namespace Migration
 - `/pre-pr-review:pre-commit` → `/requirements-framework:pre-commit`
-- `/pre-pr-review:quality-check` → `/requirements-framework:quality-check`
+- ~~`/pre-pr-review:quality-check` → `/requirements-framework:quality-check`~~ (removed in 4.0.0 — use `/requirements-framework:deep-review`)
 
 ### Auto-Satisfaction Mapping (hooks/auto-satisfy-skills.py)
 
@@ -162,9 +161,10 @@ plugins/requirements-framework/
 ```python
 DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
 }
+# Post-4.0.0: /quality-check mapping removed (command deleted per ADR-015).
+# /deep-review and /arch-review mappings live in their own dispatch logic.
 ```
 
 **Configurable mappings** (v2.1.0+):
@@ -191,25 +191,26 @@ that reference it are satisfied. This enables orchestrator commands to satisfy m
 requirements in a single workflow:
 
 ```yaml
-# Multiple requirements satisfied by one skill
+# Multiple requirements satisfied by one skill (post-4.0.0)
 requirements:
   adr_reviewed:
     enabled: true
     type: blocking
     scope: session
-    satisfied_by_skill: 'requirements-framework:plan-review'
+    satisfied_by_skill: 'requirements-framework:arch-review'
 
   commit_plan:
     enabled: true
     type: blocking
     scope: session
-    satisfied_by_skill: 'requirements-framework:plan-review'  # Same skill!
+    satisfied_by_skill: 'requirements-framework:arch-review'  # Same skill!
 ```
 
-The `plan-review` command orchestrates:
+The `arch-review` command orchestrates (post-4.0.0; was `plan-review` pre-4.0):
 1. **adr-guardian** validates plan against ADRs (with auto-fix capability)
 2. **commit-planner** creates atomic commit strategy (appends to plan)
-3. Both `adr_reviewed` and `commit_plan` are auto-satisfied on completion
+3. **tdd-validator**, **solid-reviewer**, **refactor-advisor**, **backward-compatibility-checker**, and (conditional) **codex-arch-reviewer** cross-validate findings
+4. All 4 of `adr_reviewed`, `commit_plan`, `tdd_planned`, `solid_reviewed` are auto-satisfied on completion
 
 ### Global Config Updates (examples/global-requirements.yaml)
 ```yaml
@@ -225,7 +226,7 @@ pre_pr_review:
 This architecture is enforced by:
 1. **install.sh** - Installs framework hooks + displays marketplace instructions
 2. **marketplace.json** - Advertises plugin version for marketplace installation
-3. **plugin.json** - Declares all 15 agents + 6 commands + 5 skills
+3. **plugin.json** - Declares all 15 agents + 4 commands + 5 skills (post-4.0.0; was 6 commands pre-4.0)
 4. **sync-versions.sh** - Keeps version numbers consistent across all files
 5. **Auto-satisfy mapping** - Wires commands to requirements
 6. **Global config** - References framework namespace only
