@@ -43,7 +43,6 @@ from hook_utils import extract_skill_name
 DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     # Review commands
     'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:quality-check': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
     'requirements-framework:deep-review': 'pre_pr_review',
     'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],

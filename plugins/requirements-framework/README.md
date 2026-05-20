@@ -123,41 +123,6 @@ Selected AI Agents (parallel or sequential)
 Review Complete → auto-satisfy-skills.py → pre_commit_review satisfied (if enabled)
 ```
 
-#### /requirements-framework:quality-check [parallel]
-
-Comprehensive pre-PR review with all 8 agents.
-
-**Features:**
-- **Smart selection**: Conditionally runs agents based on file types
-- **Deterministic execution**: 10-step workflow with enforced order
-- **Blocking gate**: Tool-validator must pass before AI review
-- **File type detection**: Runs test-analyzer only if tests exist, etc.
-
-**Arguments:**
-- `parallel` - Run agents in parallel for speed
-
-**Examples:**
-```bash
-/requirements-framework:quality-check           # Sequential (thorough)
-/requirements-framework:quality-check parallel  # Parallel (faster)
-```
-
-**Integration:** Auto-satisfies `pre_pr_review` requirement when complete
-
-**Workflow:**
-```
-1. Tool Validator (BLOCKING)
-2. File Type Detection
-3. Code Reviewer
-4. Silent Failure Hunter
-5. Test Analyzer (if tests exist)
-6. Type Design Analyzer (if types exist)
-7. Comment Analyzer (if comments exist)
-8. Backward Compatibility Checker (if schema changes)
-9. Code Simplifier (final polish)
-10. Review Complete → auto-satisfy → pre_pr_review satisfied
-```
-
 #### /requirements-framework:codex-review [focus]
 
 AI-powered code review using OpenAI Codex CLI.
@@ -232,7 +197,7 @@ Type: /requirements-framework:
 
 Autocompletes to:
   • /requirements-framework:pre-commit [aspects]
-  • /requirements-framework:quality-check [parallel]
+  • /requirements-framework:deep-review
 ```
 
 **Example sessions:**
@@ -246,21 +211,6 @@ Claude: Running essential pre-commit checks...
   ✓ Silent Failure Hunter - 1 CRITICAL issue found
 
 Review complete. Address 1 CRITICAL issue before committing.
-```
-
-```
-You: /requirements-framework:quality-check parallel
-
-Claude: Running comprehensive quality check...
-  ✓ Tool Validator - Passed
-  ✓ Code Reviewer - 5 suggestions
-  ✓ Silent Failure Hunter - Clean
-  ✓ Test Analyzer - Coverage gap in UserService
-  ✓ Type Design Analyzer - 2 type improvements
-  ✓ Comment Analyzer - 1 stale comment
-  ✓ Code Simplifier - 3 clarity improvements
-
-Quality check complete. pre_pr_review requirement satisfied.
 ```
 
 ### Triggering Skills
@@ -289,7 +239,7 @@ Agents are invoked via commands (not directly):
 ```
 Want tool validation? → /requirements-framework:pre-commit tools
 Want test review? → /requirements-framework:pre-commit tests
-Want everything? → /requirements-framework:quality-check
+Want everything? → /requirements-framework:deep-review
 ```
 
 ## Testing During Development
@@ -411,7 +361,7 @@ requirements:
   # Use /pre-commit voluntarily or /deep-review for enforced review.
   pre_pr_review:
     scope: single_use
-    message: "Run /requirements-framework:quality-check before creating PR"
+    message: "Run /requirements-framework:deep-review before creating PR"
     trigger_tools:
       - tool: Bash
         command_pattern: 'gh\s+pr\s+create'
@@ -433,7 +383,7 @@ The plugin integrates via `auto-satisfy-skills.py` (PostToolUse hook):
 | Command | Satisfies | Scope |
 |---------|-----------|-------|
 | `/requirements-framework:pre-commit` | `pre_commit_review` (deprecated) | `single_use` |
-| `/requirements-framework:quality-check` | `pre_pr_review` | `single_use` |
+| `/requirements-framework:deep-review` | `pre_pr_review` | `single_use` |
 | `/requirements-framework:codex-review` | `codex_reviewer` | `single_use` |
 
 **Mechanism:**
@@ -441,7 +391,7 @@ The plugin integrates via `auto-satisfy-skills.py` (PostToolUse hook):
 # In ~/.claude/hooks/auto-satisfy-skills.py
 DEFAULT_SKILL_MAPPINGS = {
     'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:quality-check': 'pre_pr_review',
+    'requirements-framework:deep-review': 'pre_pr_review',
     'requirements-framework:codex-review': 'codex_reviewer',
 }
 ```
@@ -509,7 +459,6 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 │   ├── codex-review.md
 │   ├── commit-checks.md
 │   ├── pre-commit.md
-│   ├── quality-check.md
 │   └── session-reflect.md
 └── skills/ (5 skills)
     ├── requirements-framework-builder/
@@ -574,16 +523,6 @@ See [CLAUDE.md](../../CLAUDE.md#plugin-component-versioning) for complete workfl
 6. Report summary
 7. PostToolUse hook auto-satisfies requirement
 
-**quality-check workflow:**
-1. Parse arguments (`parallel` flag)
-2. Run tool-validator (blocking gate)
-3. Detect file types (tests, types, comments, schemas)
-4. Run agents in deterministic order (or parallel)
-5. Conditional execution based on file types
-6. Collect results
-7. Report comprehensive summary
-8. PostToolUse hook auto-satisfies requirement
-
 ## Common Patterns
 
 ### Fast Iteration
@@ -609,7 +548,7 @@ git commit -m "feat: add user validation"
 git add .
 
 # Comprehensive review
-/requirements-framework:quality-check parallel
+/requirements-framework:deep-review
 
 # Address all feedback
 # (iterate until clean)
@@ -650,7 +589,7 @@ gh pr create  # Works!
 
 - **Codex Review**: Requires separate `@openai/codex` CLI installation and API key
 - **Agent Autonomy**: Agents suggest improvements but don't auto-fix (intentional)
-- **File Type Detection**: quality-check detection is heuristic-based (checks file extensions)
+- **File Type Detection**: deep-review file-type detection is heuristic-based (checks file extensions)
 - **Parallel Execution**: Some agents may have overlapping findings when run in parallel
 - **Language Support**: Tool-validator supports Python (ruff/pyright) and JS/TS (eslint)
 

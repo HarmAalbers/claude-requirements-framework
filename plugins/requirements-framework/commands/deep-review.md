@@ -271,14 +271,3 @@ Else:
 ```bash
 /requirements-framework:deep-review
 ```
-
-## Comparison with /quality-check (Lightweight Alternative)
-
-| Aspect | /deep-review (recommended) | /quality-check (lightweight) |
-|--------|---------------------------|------------------------------|
-| Execution | Agent Teams (collaborative) | Subagents (sequential/parallel) |
-| Agents | 10-12 teammates (conditional on file types) | Variable subagents |
-| Cross-validation | Domain-specific rules (ADR-013) | None (independent findings) |
-| Output | Unified verdict with corroboration | Aggregated list |
-| Satisfies | `pre_pr_review` | Same |
-| Cost | Higher (more thorough) | Lower (faster) |

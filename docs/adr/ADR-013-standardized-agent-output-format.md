@@ -23,7 +23,7 @@ This inconsistency creates two problems:
 
 1. **Cross-validation is unreliable**. The `/deep-review` lead must parse free-form markdown from agents using different formats and somehow correlate findings. A code-reviewer "Confidence: 85/100" finding and a silent-failure-hunter "HIGH" finding about the same code location are hard to match programmatically.
 
-2. **Aggregation requires normalization**. Commands like `/quality-check` must map different severity systems to common counts (e.g., treating "HIGH" and "confidence >= 80" as the same level). This normalization logic is fragile and undocumented.
+2. **Aggregation requires normalization**. Commands like `/deep-review` must map different severity systems to common counts (e.g., treating "HIGH" and "confidence >= 80" as the same level). This normalization logic is fragile and undocumented.
 
 ## Decision
 

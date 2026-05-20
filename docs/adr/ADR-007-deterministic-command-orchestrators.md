@@ -2,10 +2,11 @@
 
 ## Status
 Approved (2025-12-30)
+Amended (2026-05-20): `/quality-check` was removed in plugin v4.0.0 per [[ADR-015]]. References to `quality-check` below are historical — the deterministic orchestrator pattern is preserved by `/deep-review`, `/arch-review`, and `/pre-commit`.
 
 ## Context
 
-The pre-commit and quality-check commands coordinate multiple specialized review agents to provide comprehensive code review before commits and PRs. The initial implementation used natural language instructions in markdown files ("Launch agents...", "Run in parallel...", "Aggregate results...") that Claude interpreted at runtime.
+The pre-commit and ~~quality-check~~ (removed in plugin v4.0.0 per [[ADR-015]]) commands coordinate multiple specialized review agents to provide comprehensive code review before commits and PRs. The initial implementation used natural language instructions in markdown files ("Launch agents...", "Run in parallel...", "Aggregate results...") that Claude interpreted at runtime.
 
 This approach created **non-deterministic execution**:
 - Same input could produce different output
@@ -85,7 +86,7 @@ Else: ✅ READY
 - Severity-based aggregation
 - Threshold-based verdicts
 
-**File type detection** (quality-check specific):
+**File type detection** (~~quality-check~~ deep-review specific):
 ```bash
 grep -E '(test_|_test\.)' /tmp/scope.txt > /tmp/has_tests.txt
 git diff | grep -E '(BaseModel|interface )' > /tmp/has_types.txt
@@ -213,7 +214,7 @@ If RUN_TOOL_VALIDATOR is true:
 
 - Commit: `57d0c1a` - feat: merge comprehensive pre-PR review toolkit into framework
 - Analysis: Opus agent found commands were "95% documentation, 5% executable logic"
-- Improvements: pre-commit.md (7-step workflow), quality-check.md (10-step workflow)
+- Improvements: pre-commit.md (7-step workflow), ~~quality-check.md (10-step workflow)~~ — `/quality-check` removed in plugin v4.0.0 per [[ADR-015]]; canonical examples of the pattern now live in `/deep-review` and `/pre-commit`
 - Pattern inspiration: tool-validator agent (rated 10/10 for having explicit bash commands)
 
 ## Notes

@@ -155,12 +155,11 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 
 **Refactor Orchestration** (Haiku/Sonnet/Sonnet fanout): `refactor-executor`, `refactor-investigator`, `refactor-analyzer`
 
-### Commands (12)
+### Commands (11)
 
 - `/requirements-framework:arch-review` - Team-based architecture review (recommended for planning)
 - `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
 - `/requirements-framework:pre-commit` - Quick pre-commit review
-- `/requirements-framework:quality-check` - Lightweight PR review (alternative to /deep-review)
 - `/requirements-framework:codex-review` - Codex-powered review
 - `/requirements-framework:commit-checks` - Auto-fix code quality issues
 - `/requirements-framework:session-reflect` - Session analysis and improvements

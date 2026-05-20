@@ -494,7 +494,7 @@ requirements:
 
 **Built-in Mappings** (for framework skills):
 - `requirements-framework:pre-commit` → `pre_commit_review` (deprecated since v2.6)
-- `requirements-framework:quality-check` → `pre_pr_review`
+- `requirements-framework:deep-review` → `pre_pr_review`
 - `requirements-framework:codex-review` → `codex_reviewer`
 
 ### Auto-Satisfy with Branch Patterns (Future)
