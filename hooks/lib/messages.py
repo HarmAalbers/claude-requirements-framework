@@ -253,40 +253,6 @@ DEFAULT_STATUS_TEMPLATES: Dict[str, str] = {
 {status_table}
 
 {fallback}''',
-
-    'rich': '''## Requirements Framework: Session Briefing
-
-**Project**: `{project_dir}`
-**Branch**: `{branch}` | **Session**: `{session_id}`
-
----
-
-{quick_start}
-
-### Requirement Definitions
-
-{definitions}
-
----
-
-### Scope Reference
-| Scope | Behavior |
-|-------|----------|
-| session | Cleared when session ends |
-| branch | Persists across sessions on same branch |
-| single_use | Cleared after trigger command completes |
-| permanent | Never auto-cleared |
-
----
-
-### Current Status
-
-| Requirement | Status |
-|-------------|--------|
-{status_table}
-
-{workflow_guide}
-{fallback}''',
 }
 
 
@@ -557,7 +523,7 @@ class MessageLoader:
         Get status format template.
 
         Args:
-            mode: Format mode ('compact', 'standard', 'rich')
+            mode: Format mode ('compact', 'standard')
 
         Returns:
             Status template string

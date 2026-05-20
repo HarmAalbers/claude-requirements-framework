@@ -7129,19 +7129,6 @@ def test_session_start_format_tiers(runner: TestRunner):
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
                    f"Missing triggers")
 
-        # Test rich format
-        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/test-formats")
-        runner.test("Rich format has briefing header", "Session Briefing" in rich,
-                   f"Missing briefing header")
-        runner.test("Rich format has definitions section", "Requirement Definitions" in rich,
-                   f"Missing definitions section")
-        runner.test("Rich format has scope reference", "Scope Reference" in rich,
-                   f"Missing scope reference")
-        runner.test("Rich format has workflow guide", "Workflow Guide" in rich,
-                   f"Missing workflow guide")
-        runner.test("Rich format includes description", "Test commit plan description" in rich,
-                   f"Missing description")
-
         # Test format_adaptive_status dispatches by briefing_format (source is ignored)
         config_compact = dict(config_content)
         config_compact["hooks"] = {"session_start": {"briefing_format": "compact"}}
@@ -7157,17 +7144,17 @@ def test_session_start_format_tiers(runner: TestRunner):
                    "Requirements:" in adaptive_compact and "Session Briefing" not in adaptive_compact,
                    f"Expected compact format")
 
-        config_rich = dict(config_content)
-        config_rich["hooks"] = {"session_start": {"briefing_format": "rich"}}
+        config_standard = dict(config_content)
+        config_standard["hooks"] = {"session_start": {"briefing_format": "standard"}}
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(config_rich, f)
-        cfg_rich = RequirementsConfig(tmpdir)
-        adaptive_rich = session_start_module.format_adaptive_status(
-            reqs_for_dispatch, cfg_rich, "test-session", "feature/test-formats", "resume"
+            json.dump(config_standard, f)
+        cfg_standard = RequirementsConfig(tmpdir)
+        adaptive_standard = session_start_module.format_adaptive_status(
+            reqs_for_dispatch, cfg_standard, "test-session", "feature/test-formats", "resume"
         )
-        runner.test("briefing_format=rich returns rich regardless of source",
-                   "Session Briefing" in adaptive_rich,
-                   f"Expected rich format")
+        runner.test("briefing_format=standard returns standard regardless of source",
+                   "| Requirement |" in adaptive_standard and "Session Briefing" not in adaptive_standard,
+                   f"Expected standard format")
 
     # Test empty requirements config
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -7198,11 +7185,6 @@ def test_session_start_format_tiers(runner: TestRunner):
         runner.test("Standard handles empty requirements", "(none configured)" in standard,
                    f"Got: {standard[:300]}")
 
-        # Test rich format with empty requirements
-        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/empty-test")
-        runner.test("Rich handles empty requirements", "(No requirements configured)" in rich or "(none configured)" in rich,
-                   f"Got: {rich[:300]}")
-
     # Test guard requirement formatting
     with tempfile.TemporaryDirectory() as tmpdir:
         subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
@@ -7232,15 +7214,6 @@ def test_session_start_format_tiers(runner: TestRunner):
 
         config = RequirementsConfig(tmpdir)
         reqs = BranchRequirements("feature/guard-test", "test-session", tmpdir)
-
-        # Test rich format includes guard status text
-        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/guard-test")
-        runner.test("Rich format shows protected branch guard status",
-                   "not on protected branch" in rich or "protected_branch_guard" in rich,
-                   f"Got: {rich[:500]}")
-        runner.test("Rich format shows single session guard status",
-                   "no other sessions" in rich or "single_session_guard" in rich,
-                   f"Got: {rich[:500]}")
 
         # Test standard format includes guard type
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/guard-test")
@@ -7397,15 +7370,6 @@ def test_session_start_quick_start_helpers(runner: TestRunner):
 
         config = RequirementsConfig(tmpdir)
         reqs = BranchRequirements("feature/quick-start-test", "test-session", tmpdir)
-
-        # Rich format should have Quick Start
-        rich = session_start_module.format_rich_status(reqs, config, "test-session", "feature/quick-start-test")
-        runner.test("Rich format includes Quick Start section",
-                   "### Quick Start" in rich,
-                   f"Got: {rich[:500]}")
-        runner.test("Rich format Quick Start uses short skill name",
-                   "/arch-review" in rich and "requirements-framework:arch-review" not in rich.split("Quick Start")[1].split("---")[0],
-                   f"Got Quick Start section: {rich.split('Quick Start')[1].split('---')[0][:200] if 'Quick Start' in rich else 'no section'}")
 
         # Standard format should have Quick Start
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/quick-start-test")
@@ -9678,17 +9642,6 @@ def test_session_start_briefing_format_config(runner: TestRunner):
                    "Session Briefing" not in out and "Requirements:" in out,
                    f"Got: {out[:200]}")
 
-        # Test: briefing_format=rich produces rich output
-        cfg["hooks"] = {"session_start": {"briefing_format": "rich"}}
-        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(cfg, f)
-        config = RequirementsConfig(tmpdir)
-        reqs = BranchRequirements("feature/briefing-format-test", "s1", tmpdir)
-        out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
-        runner.test("briefing_format=rich produces rich output",
-                   "Session Briefing" in out,
-                   f"Got: {out[:200]}")
-
         # Test: briefing_format=standard produces standard output
         cfg["hooks"] = {"session_start": {"briefing_format": "standard"}}
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
@@ -9709,6 +9662,64 @@ def test_session_start_briefing_format_config(runner: TestRunner):
         out = session_start_module.format_adaptive_status(reqs, config, "s1", "feature/briefing-format-test", "startup")
         runner.test("default briefing_format is compact for startup",
                    "Session Briefing" not in out and "Requirements:" in out,
+                   f"Got: {out[:200]}")
+
+
+def test_briefing_format_rich_deprecation_warning(runner: TestRunner):
+    """After 4.0.0, briefing_format='rich' is no longer honored but must not crash.
+
+    Permanent regression guard: ensures we fall back to compact output (rather than
+    silently producing no briefing) when a stale config still sets the removed
+    'rich' value. The format_adaptive_status dispatcher is the runtime safety net;
+    the validator is the config-load-time safety net (tested separately).
+    """
+    print("\n📦 Testing briefing_format=rich deprecation fallback...")
+
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook", hook_path)
+    session_start_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(session_start_module)
+
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/rich-deprecation-test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+
+        cfg = {
+            "version": "1.0", "enabled": True, "inherit": False,
+            "hooks": {"session_start": {"briefing_format": "rich"}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "type": "blocking", "scope": "session"}
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/rich-deprecation-test", "s1", tmpdir)
+
+        # Call the dispatcher with the (removed) 'rich' value
+        out = session_start_module.format_adaptive_status(
+            reqs, config, "s1", "feature/rich-deprecation-test", "startup"
+        )
+
+        # Must not crash, must not return empty
+        runner.test("briefing_format=rich returns non-empty string",
+                   isinstance(out, str) and len(out) > 0,
+                   f"Got: {type(out).__name__} len={len(out) if isinstance(out, str) else 'n/a'}")
+
+        # Must fall back to compact (the rich-format 'Session Briefing' header must NOT appear)
+        runner.test("briefing_format=rich falls back to compact (no Session Briefing header)",
+                   "Session Briefing" not in out,
+                   f"Got unexpected rich output: {out[:200]}")
+
+        # Compact format marker must be present
+        runner.test("briefing_format=rich fallback produces compact output",
+                   "Requirements:" in out,
                    f"Got: {out[:200]}")
 
 
@@ -11216,6 +11227,7 @@ def main():
     test_plugin_command_files_exist(runner)
     test_session_start_bootstrap_injection(runner)
     test_session_start_briefing_format_config(runner)
+    test_briefing_format_rich_deprecation_warning(runner)
     test_session_start_bootstrap_removed(runner)
 
     # Plan enter hook tests

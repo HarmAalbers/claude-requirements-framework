@@ -289,111 +289,6 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
     return "\n".join(lines)
 
 
-def format_rich_status(reqs: BranchRequirements, config: RequirementsConfig,
-                       session_id: str, branch: str) -> str:
-    """
-    Format rich status (targets ~800 tokens for typical configurations) for session startup.
-
-    Full context with requirement definitions, scope reference, and workflow guide.
-    Used when `source=startup` or `source=clear`.
-
-    Provides comprehensive briefing for new sessions.
-    """
-    req_data = _get_requirement_status_data(reqs, config, session_id, branch)
-
-    lines = ["## Requirements Framework: Session Briefing", ""]
-    lines.append(f"**Project**: `{reqs.project_dir}`")
-    lines.append(f"**Branch**: `{branch}` | **Session**: `{session_id}`")
-    lines.append("")
-    lines.append("---")
-    lines.append("")
-
-    # Quick Start section (action-oriented) - immediately after header
-    quick_start = _format_quick_start(req_data)
-    if quick_start:
-        lines.extend(quick_start)
-        lines.append("---")
-        lines.append("")
-
-    # Requirement Definitions
-    lines.append("### Requirement Definitions")
-    lines.append("")
-
-    for r in req_data:
-        scope_info = f", {r['scope']}-scoped" if r['type'] != 'guard' else ""
-        short_resolve = _shorten_skill_name(r['resolve_action'])
-        if short_resolve.startswith('/'):
-            short_resolve = f"`{short_resolve}`"
-        lines.append(f"**{r['name']}** ({r['type']}{scope_info})")
-        lines.append(f"> {r['description']}")
-        lines.append(f"> Triggers: {r['triggers']}")
-        lines.append(f"> Resolve: {short_resolve}")
-        lines.append("")
-
-    if not req_data:
-        lines.append("(No requirements configured)")
-        lines.append("")
-
-    # Scope Reference
-    lines.append("---")
-    lines.append("")
-    lines.append("### Scope Reference")
-    lines.append("| Scope | Behavior |")
-    lines.append("|-------|----------|")
-    lines.append("| session | Cleared when session ends |")
-    lines.append("| branch | Persists across sessions on same branch |")
-    lines.append("| single_use | Cleared after trigger command completes |")
-    lines.append("| permanent | Never auto-cleared |")
-    lines.append("")
-
-    # Current Status
-    lines.append("---")
-    lines.append("")
-    lines.append("### Current Status")
-    lines.append("")
-    lines.append("| Requirement | Status |")
-    lines.append("|-------------|--------|")
-
-    unsatisfied_reqs = []
-    for r in req_data:
-        status_text = "✅ Satisfied" if r['satisfied'] else "⬜ Not satisfied"
-        # Add context for guards
-        if r['type'] == 'guard' and r['satisfied']:
-            req_config = r['config']
-            if req_config.get('guard_type') == 'protected_branch':
-                status_text = "✅ (not on protected branch)"
-            elif req_config.get('guard_type') == 'single_session':
-                status_text = "✅ (no other sessions)"
-        lines.append(f"| {r['name']} | {status_text} |")
-        if not r['satisfied']:
-            unsatisfied_reqs.append(r)
-
-    if not req_data:
-        lines.append("| (none configured) | - |")
-
-    lines.append("")
-
-    # Workflow Guide (simplified since Quick Start covers the main action)
-    lines.append("---")
-    lines.append("")
-    lines.append("### Workflow Guide")
-    lines.append("")
-
-    lines.append("**Starting implementation?**")
-    lines.append("1. Make your edits")
-    lines.append("")
-
-    lines.append("**Common patterns**:")
-    lines.append("- New session → satisfy planning requirements first")
-    lines.append("")
-
-    # Fallback
-    if unsatisfied_reqs:
-        lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied_reqs)} --session {session_id}`")
-
-    return "\n".join(lines)
-
-
 def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
                            session_id: str, branch: str, source: str) -> str:
     """
@@ -402,7 +297,6 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
     Verbosity is controlled by `hooks.session_start.briefing_format`:
     - compact (default): ~150 tokens, high context survival
     - standard: ~400 tokens, best actionability
-    - rich: ~800 tokens, full context
 
     Args:
         reqs: BranchRequirements manager
@@ -420,11 +314,15 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
     custom_header = config.get_hook_config('session_start', 'custom_header')
     prefix = f"{custom_header.strip()}\n\n" if custom_header and isinstance(custom_header, str) else ""
 
-    if mode == 'standard':
-        return prefix + format_standard_status(reqs, config, session_id, branch)
     if mode == 'rich':
-        return prefix + format_rich_status(reqs, config, session_id, branch)
-    if mode != 'compact':
+        get_logger().warning(
+            "briefing_format='rich' was removed in 4.0.0; falling back to 'compact'. "
+            "Update your config to 'compact' or 'standard' to silence this warning."
+        )
+        # Fall through to compact
+    elif mode == 'standard':
+        return prefix + format_standard_status(reqs, config, session_id, branch)
+    elif mode != 'compact':
         get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
     return prefix + format_compact_status(reqs, config, session_id, branch)
 

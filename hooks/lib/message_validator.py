@@ -316,7 +316,7 @@ class MessageValidator:
             data: Loaded YAML data
             result: ValidationResult to populate
         """
-        valid_modes = {'compact', 'standard', 'rich'}
+        valid_modes = {'compact', 'standard'}
 
         for mode_name, mode_data in data.items():
             if mode_name == 'version':
