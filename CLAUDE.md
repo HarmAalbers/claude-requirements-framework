@@ -579,7 +579,7 @@ fallback_text: "req satisfy {req_name}"
 
 ### Special Files
 - `_templates.yaml` - Default templates by requirement type (blocking/guard/dynamic)
-- `_status.yaml` - Status briefing format templates (compact/standard/rich)
+- `_status.yaml` - Status briefing format templates (compact/standard)
 
 ### CLI Commands
 ```bash

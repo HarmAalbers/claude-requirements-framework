@@ -741,7 +741,7 @@ class RequirementsConfig:
     HOOK_DEFAULTS: HooksConfigDict = {
         "session_start": {
             "inject_context": True,
-            "briefing_format": "compact",  # compact | standard | rich
+            "briefing_format": "compact",  # compact | standard
             "carry_over": {
                 "enabled": True,
                 "window_seconds": 300,

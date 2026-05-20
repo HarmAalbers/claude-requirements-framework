@@ -484,7 +484,6 @@ hooks:
     # briefing_format: Controls how much context is injected
     #   - compact: ~150 tokens, minimal footprint (default)
     #   - standard: ~400 tokens, includes table of requirements
-    #   - rich: ~800 tokens, full definitions/scope reference/workflow
     briefing_format: compact  # default: compact
     # custom_header: Optional project-specific header text
     # custom_header: "🚀 Project-specific context here"
