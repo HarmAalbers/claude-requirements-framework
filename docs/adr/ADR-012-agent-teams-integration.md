@@ -5,6 +5,7 @@ Approved (2026-02-13)
 Amended (2026-02-13): Team commands promoted to primary review approach
 Amended (2026-02-16): /pre-commit upgraded to team-based with subagent fallback
 Amended (2026-02-17): /deep-review overhaul — all agents always run, no max_teammates cap, code-simplifier as teammate
+Amended (2026-05-20): Prohibition against removing /plan-review and /quality-check superseded by [[ADR-015]] — the /req conductor provides equivalent lightweight UX at no user-facing cost. Both commands removed in plugin v4.0.0.
 
 ## Context
 
@@ -69,7 +70,7 @@ Note: `max_teammates` was removed (2026-02-17). All review agents always run as 
 - `/deep-review` for cross-validated code review
 - `/arch-review` for architecture review with debate
 - `/pre-commit` upgraded to team-based (2026-02-16): uses Agent Teams when 2+ review agents enabled, falls back to subagents for single-agent runs
-- Existing `/quality-check`, `/plan-review` remain unchanged as lightweight alternatives
+- ~~Existing `/quality-check`, `/plan-review` remain unchanged as lightweight alternatives~~ (superseded 2026-05-20 — both removed in plugin v4.0.0 per [[ADR-015]])
 
 **Hybrid execution within team commands**:
 - Blocking gates and final polish via subagents (no debate needed)
@@ -87,9 +88,10 @@ Note: `max_teammates` was removed (2026-02-17). All review agents always run as 
 
 ## Prohibited
 
-**Removing existing subagent commands**:
-- `/plan-review` and `/quality-check` must remain available as lightweight alternatives
-- Users who prefer lower token cost should always have a working option
+**Removing existing subagent commands** ~~(prohibition superseded 2026-05-20 by [[ADR-015]])~~:
+- ~~`/plan-review` and `/quality-check` must remain available as lightweight alternatives~~
+- ~~Users who prefer lower token cost should always have a working option~~
+- **Superseded by [[ADR-015]] (plugin v4.0.0)**: Both commands were removed in the 4.0.0 clean-break release. `/arch-review` replaces `/plan-review`; `/deep-review` replaces `/quality-check`. The `/req` conductor (Step 05 of the simplification refactor) provides the lightweight UX previously served by the deprecated commands — running `/req plan` or `/req review` dispatches to the appropriate team-based command without requiring the user to remember which heavyweight name to invoke. See `CHANGELOG.md` 4.0.0 entry for migration guidance.
 
 **Team mode for blocking gates**:
 - Tool-validator runs deterministic linters — no value from debate
@@ -141,7 +143,7 @@ Considered but not chosen. TeammateIdle and TaskCompleted are distinct lifecycle
 5. **Cross-validation severity adjustment**: Findings confirmed by 2+ agents get escalated; contradicted findings note disagreement
 6. **Teammate timeout**: Team commands should set a per-teammate response timeout (configurable, default 120s). If a teammate fails to produce findings, the lead proceeds with available findings and notes the gap in output. Partial results are better than no results.
 7. **Team cleanup resilience**: Team artifacts are cleaned up at command completion. If cleanup fails (teammate rejects shutdown, TeamDelete errors), log the failure and proceed. Stale teams do not block future operations.
-8. **Graceful TeamCreate failure**: If `TeamCreate` fails (e.g., Agent Teams not available in the user's Claude Code version), catch the error and fall back to the equivalent subagent command (`/plan-review` for `/arch-review`, `/quality-check parallel` for `/deep-review`). Log the fallback for debugging.
+8. **Graceful TeamCreate failure**: If `TeamCreate` fails (e.g., Agent Teams not available in the user's Claude Code version), catch the error and log it. In plugin v4.0.0+ there is no lightweight subagent fallback (the previous fallback commands `/plan-review` and `/quality-check` were removed per [[ADR-015]]). Users on Claude Code versions without Agent Teams support should pin to plugin v3.x or upgrade Claude Code.
 
 ## Files Created/Modified
 
