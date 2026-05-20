@@ -2,6 +2,7 @@
 
 ## Status
 Approved (2026-01-18)
+Amended (2026-05-20): The `/plan-review` command was removed in plugin v4.0.0 per [[ADR-015]]. The auto-fix integration pattern described below is preserved via `/arch-review`, which orchestrates `adr-guardian` with the same Edit-tool context.
 
 ## Context
 
@@ -107,8 +108,8 @@ The agent assesses fixability based on:
 If all three are true → auto-fix
 If any is false → BLOCK with instructions
 
-### Integration with plan-review Command
-The plan-review command passes context to adr-guardian indicating auto-fix is available:
+### Integration with ~~plan-review~~ arch-review Command
+~~The plan-review command~~ The arch-review command (post-4.0; previously /plan-review, removed per [[ADR-015]]) passes context to adr-guardian indicating auto-fix is available:
 ```
 IMPORTANT: You have Edit tool access. If you find ADR violations that can be
 auto-fixed, edit the plan file directly to fix them, then re-validate.
@@ -117,10 +118,11 @@ auto-fixed, edit the plan file directly to fix them, then re-validate.
 ## Related ADRs
 
 - **ADR-006**: Plugin-Based Architecture - Defines agent structure and tool permissions
-- **ADR-007**: Deterministic Command Orchestrators - plan-review orchestrates adr-guardian
+- **ADR-007**: Deterministic Command Orchestrators - ~~plan-review~~ arch-review orchestrates adr-guardian
+- **ADR-015**: Breaking Removal Policy - documents removal of `/plan-review` in plugin v4.0.0
 
 ## References
 
-- Commit: `5148041` - feat: Add automated plan-review workflow
+- Commit: `5148041` - feat: Add automated plan-review workflow (superseded; integration preserved via `/arch-review`)
 - Agent: `plugins/requirements-framework/agents/adr-guardian.md`
-- Command: `plugins/requirements-framework/commands/plan-review.md`
+- Command: `plugins/requirements-framework/commands/arch-review.md` (was `plan-review.md` pre-4.0)

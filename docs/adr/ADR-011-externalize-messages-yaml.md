@@ -53,7 +53,7 @@ blocking_message: |
 short_message: "Requirement `{req_name}` not satisfied (waiting...)"
 success_message: "Requirement `{req_name}` satisfied"
 header: "Commit Plan"
-action_label: "Run `/plan-review`"
+action_label: "Run `/arch-review`"
 fallback_text: "req satisfy {req_name}"
 ```
 
@@ -174,11 +174,11 @@ blocking_message: |
   Before making changes, create a commit plan to ensure
   organized, reviewable commits.
 
-  **Run**: `/plan-review`
+  **Run**: `/arch-review`
 short_message: "Plan required before editing"
 success_message: "Plan approved - proceed with implementation"
 header: "Commit Planning"
-action_label: "Create plan with `/plan-review`"
+action_label: "Create plan with `/arch-review`"
 fallback_text: "req satisfy commit_plan"
 EOF
 ```

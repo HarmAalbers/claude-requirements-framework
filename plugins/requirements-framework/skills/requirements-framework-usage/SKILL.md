@@ -208,10 +208,8 @@ Skills can automatically satisfy requirements:
 
 **Built-in mappings (review skills)**:
 - `requirements-framework:pre-commit` → `pre_commit_review`
-- `requirements-framework:deep-review` → `pre_pr_review` (recommended)
-- `requirements-framework:quality-check` → `pre_pr_review` (lightweight alternative)
-- `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (recommended)
-- `requirements-framework:plan-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` (lightweight alternative)
+- `requirements-framework:deep-review` → `pre_pr_review`
+- `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`
 - `requirements-framework:codex-review` → `codex_reviewer`
 
 **Built-in mappings (process skills)**:

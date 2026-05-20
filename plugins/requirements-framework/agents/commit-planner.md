@@ -35,7 +35,7 @@ You are the Commit Planner, an expert at analyzing implementation plans and crea
 
 Plan files are stored in either `.claude/plans/` (project-local) or `~/.claude/plans/` (global).
 
-**When called by plan-review command**: The plan file path will be provided in the prompt. Use that path directly.
+**When called by arch-review command**: The plan file path will be provided in the prompt. Use that path directly.
 
 **When called standalone**: Find the most recent plan file:
 1. Check project-local first: `.claude/plans/*.md`

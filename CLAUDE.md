@@ -104,7 +104,6 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Maps: /requirements-framework:pre-commit → pre_commit_review (deprecated, kept for backward compat)
     → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
-    → Maps: /requirements-framework:plan-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
     → Maps: /requirements-framework:deep-review → pre_pr_review
     → Maps: /requirements-framework:arch-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
 
@@ -532,7 +531,6 @@ The framework uses Claude Code Agent Teams as the **primary review approach**. A
 
 ### Lightweight Alternatives
 - `/quality-check` — Sequential/parallel subagent review (lower cost, no cross-validation)
-- `/plan-review` — Sequential subagent plan review (lower cost, no cross-validation)
 
 ### Configuration
 ```yaml
@@ -546,7 +544,7 @@ hooks:
 ```
 
 ### When to Use Teams vs Lightweight Alternatives
-| Use Teams (`/deep-review`, `/arch-review`, `/pre-commit`) | Use Lightweight (`/quality-check`, `/plan-review`) |
+| Use Teams (`/deep-review`, `/arch-review`, `/pre-commit`) | Use Lightweight (`/quality-check`) |
 |---|---|
 | Default for most reviews (recommended) | Need faster, cheaper review |
 | Complex changes affecting multiple areas | Simple, focused changes |
@@ -581,7 +579,7 @@ blocking_message: |
 short_message: "Requirement `{req_name}` not satisfied (waiting...)"
 success_message: "Requirement `{req_name}` satisfied"
 header: "Commit Plan"
-action_label: "Run `/plan-review`"
+action_label: "Run `/arch-review`"
 fallback_text: "req satisfy {req_name}"
 ```
 
@@ -604,11 +602,11 @@ cat > .claude/messages/commit_plan.yaml << 'EOF'
 version: "1.0"
 blocking_message: |
   ## Need a Plan First
-  Run `/plan-review` before editing.
+  Run `/arch-review` before editing.
 short_message: "Plan required"
 success_message: "Plan approved"
 header: "Planning"
-action_label: "`/plan-review`"
+action_label: "`/arch-review`"
 fallback_text: "req satisfy commit_plan"
 EOF
 ```

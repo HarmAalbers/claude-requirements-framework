@@ -39,7 +39,7 @@ def _shorten_skill_name(skill_path: str) -> str:
     Convert namespaced skill path to short slash command.
 
     Examples:
-        '/requirements-framework:plan-review' -> '/plan-review'
+        '/requirements-framework:arch-review' -> '/arch-review'
         '/simple-skill' -> '/simple-skill'
     """
     if ':' in skill_path and skill_path.startswith('/'):
@@ -135,33 +135,19 @@ def main() -> int:
         # Format directive message
         req_names = [r[0] for r in unsatisfied]
 
-        # Check if all unsatisfied requirements can be resolved by plan-review
-        all_plan_review = all(
-            req_config.get('auto_resolve_skill', '') == 'requirements-framework:plan-review'
-            for _, req_config in unsatisfied
-        )
-
         lines = ["## Plan Validation Required", ""]
 
-        if all_plan_review:
-            # Simple directive when plan-review resolves all
-            lines.append("**Next Action (run now)**: `/plan-review`")
-            lines.append("")
-            lines.append("Run this immediately after exiting plan mode, before any Edit/Write call.")
-            lines.append("")
-            lines.append(f"Satisfies: {', '.join(req_names)}")
-        else:
-            # Show table for mixed requirements
-            lines.append("| Requirement | Execute |")
-            lines.append("|-------------|---------|")
+        # Show table for unsatisfied requirements
+        lines.append("| Requirement | Execute |")
+        lines.append("|-------------|---------|")
 
-            for req_name, req_config in unsatisfied:
-                auto_skill = req_config.get('auto_resolve_skill', '')
-                if auto_skill:
-                    short_skill = _shorten_skill_name(f"/{auto_skill}")
-                    lines.append(f"| {req_name} | `{short_skill}` |")
-                else:
-                    lines.append(f"| {req_name} | `req satisfy {req_name}` |")
+        for req_name, req_config in unsatisfied:
+            auto_skill = req_config.get('auto_resolve_skill', '')
+            if auto_skill:
+                short_skill = _shorten_skill_name(f"/{auto_skill}")
+                lines.append(f"| {req_name} | `{short_skill}` |")
+            else:
+                lines.append(f"| {req_name} | `req satisfy {req_name}` |")
 
         lines.append("")
         lines.append("---")

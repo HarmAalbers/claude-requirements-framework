@@ -161,7 +161,6 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 - `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
 - `/requirements-framework:pre-commit` - Quick pre-commit review
 - `/requirements-framework:quality-check` - Lightweight PR review (alternative to /deep-review)
-- `/requirements-framework:plan-review` - Lightweight plan review (alternative to /arch-review)
 - `/requirements-framework:codex-review` - Codex-powered review
 - `/requirements-framework:commit-checks` - Auto-fix code quality issues
 - `/requirements-framework:session-reflect` - Session analysis and improvements

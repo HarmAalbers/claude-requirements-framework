@@ -18,7 +18,7 @@ Context: Plan review command running TDD step
 user: "Run plan review"
 assistant: "After ADR validation passes, I'll use the tdd-validator agent to verify TDD readiness in the plan."
 <commentary>
-TDD validation is a blocking gate in the plan-review workflow.
+TDD validation is a blocking gate in the arch-review workflow.
 </commentary>
 </example>
 

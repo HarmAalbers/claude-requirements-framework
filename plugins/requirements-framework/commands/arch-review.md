@@ -243,13 +243,3 @@ If verdict is APPROVED:
 /requirements-framework:arch-review path/to/plan.md    # Explicit plan file
 ```
 
-## Comparison with /plan-review (Lightweight Alternative)
-
-| Aspect | /arch-review (recommended) | /plan-review (lightweight) |
-|--------|---------------------------|---------------------------|
-| Execution | Agent Teams (collaborative) | Subagents (sequential) |
-| Agents | ADR guardian + compat-checker + TDD validator + SOLID reviewer + refactor-advisor + commit planner + codex-arch-reviewer (conditional) | ADR guardian + commit planner |
-| Cross-validation | Agents cross-reference findings | None |
-| Focus | Holistic architecture assessment + commit strategy | ADR compliance + commit strategy |
-| Satisfies | `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | Same 4 requirements |
-| Cost | Higher (more thorough) | Lower (faster) |

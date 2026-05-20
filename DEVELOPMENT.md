@@ -314,7 +314,7 @@ blocking_message: |
 short_message: "Requirement `{req_name}` not satisfied (waiting...)"
 success_message: "Requirement `{req_name}` satisfied"
 header: "Commit Plan"
-action_label: "Run `/plan-review`"
+action_label: "Run `/arch-review`"
 fallback_text: "req satisfy {req_name}"
 ```
 
