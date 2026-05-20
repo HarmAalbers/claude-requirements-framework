@@ -131,4 +131,4 @@ Scope reported. No auto-fixes applied.
 - Run early to catch issues before they compound
 - Use `--skip-autofix` to check which files are in scope without modifying them
 - Auto-fix agents will re-stage modified files automatically
-- For deeper analysis, use `/requirements-framework:pre-commit` or `/requirements-framework:quality-check`
+- For deeper analysis, use `/requirements-framework:pre-commit` or `/requirements-framework:deep-review`

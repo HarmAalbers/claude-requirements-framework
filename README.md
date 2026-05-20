@@ -76,7 +76,7 @@ Verify the plugin loaded successfully:
 
 # Should autocomplete to:
 # - /requirements-framework:pre-commit [aspects]
-# - /requirements-framework:quality-check [parallel]
+# - /requirements-framework:deep-review
 # - /requirements-framework:codex-review [focus]
 
 # Check installed version:
@@ -350,10 +350,10 @@ requirements:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
     message: |
-      Run `/requirements-framework:quality-check` for comprehensive review
+      Run `/requirements-framework:deep-review` for comprehensive review
 ```
 
-**Auto-satisfied** when you run `/requirements-framework:quality-check`
+**Auto-satisfied** when you run `/requirements-framework:deep-review`
 
 ### codex_reviewer (AI-Powered Review)
 
@@ -455,20 +455,6 @@ Examples:
 /requirements-framework:pre-commit tools        # Just CI tools
 /requirements-framework:pre-commit all parallel # Comprehensive + fast
 /requirements-framework:pre-commit tests types  # Specific aspects
-```
-
-**`/requirements-framework:quality-check [parallel]`**
-
-Comprehensive pre-PR review with all 8 review agents:
-- **Smart selection**: Conditionally runs agents based on file types (tests, types, comments, schemas)
-- **Deterministic execution**: 10-step workflow with enforced order and file type detection
-- **Blocking gate**: Tool-validator must pass before AI review
-- **Integrated with**: `pre_pr_review` requirement (auto-satisfies on completion)
-
-Examples:
-```bash
-/requirements-framework:quality-check           # Thorough sequential
-/requirements-framework:quality-check parallel  # Fast comprehensive
 ```
 
 **`/requirements-framework:codex-review [focus]`**

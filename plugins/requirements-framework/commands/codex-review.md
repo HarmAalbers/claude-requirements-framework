@@ -129,10 +129,10 @@ If AGENT_SUCCESS is false:
 
 ## Integration with Other Commands
 
-This command complements `/requirements-framework:quality-check`:
+This command complements `/requirements-framework:deep-review`:
 
 - **codex-review**: AI-powered perspective (patterns, novel insights, OpenAI Codex analysis)
-- **quality-check**: 8 rule-based review agents (systematic, objective, deterministic)
+- **deep-review**: Cross-validated team-based review (systematic, collaborative debate)
 - **Together**: Comprehensive pre-PR coverage
 
 ## Usage Examples
@@ -179,8 +179,7 @@ This command fits into the pre-PR workflow:
 4. `/requirements-framework:pre-commit tools code errors` - Check implementation ✓
 5. Refactor ✓
 6. **`/requirements-framework:codex-review`** ← AI perspective (you are here)
-7. `/requirements-framework:quality-check` ← Comprehensive 8-agent systematic review
-8. Create PR ✓
+7. Create PR ✓
 
 ## Expected Agent Output Format
 

@@ -21,7 +21,7 @@ The Requirements Framework plugin extends Claude Code with workflow automation a
 
 **What's Included:**
 - **10 specialized review agents** - ADR Guardian, Tool Validator, Code Reviewer, Silent Failure Hunter, Test Analyzer, Type Design Analyzer, Comment Analyzer, Code Simplifier, Backward Compatibility Checker, Codex Review Agent
-- **2 orchestrator commands** - `/requirements-framework:pre-commit`, `/requirements-framework:quality-check`
+- **2 orchestrator commands** - `/requirements-framework:pre-commit`, `/requirements-framework:deep-review`
 - **5 management skills** - Status reporting, usage help, framework building, development workflow, Codex review
 
 **Installation Location:** `~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/`
@@ -62,7 +62,7 @@ claude --plugin-dir ~/.claude/plugins/requirements-framework
 ```
 # In Claude Code session
 Type: /requirements-framework:
-# Should show: pre-commit, quality-check, codex-review
+# Should show: pre-commit, deep-review, codex-review
 ```
 
 ### Method 2: GitHub Marketplace (Recommended for Users)
@@ -179,7 +179,7 @@ Type: /requirements-framework:
 
 Should autocomplete to:
   • /requirements-framework:pre-commit [aspects]
-  • /requirements-framework:quality-check [parallel]
+  • /requirements-framework:deep-review
 ```
 
 **Run a command:**
@@ -412,7 +412,7 @@ The Requirements Framework has two complementary components:
 **Purpose:** Provide agents, commands, and skills to satisfy requirements
 **Components:**
 - 15 agents (code review, workflow enforcement)
-- 6 commands (pre-commit, quality-check, codex-review, commit-checks, session-reflect)
+- 6 commands (pre-commit, deep-review, codex-review, commit-checks, session-reflect)
 - 5 skills (management and status)
 
 **Installed by:** Marketplace installation (copied to cache)
@@ -457,7 +457,7 @@ The Requirements Framework has two complementary components:
 | Plugin Command | Satisfies Requirement |
 |----------------|----------------------|
 | `/requirements-framework:pre-commit` | `pre_commit_review` (deprecated) |
-| `/requirements-framework:quality-check` | `pre_pr_review` |
+| `/requirements-framework:deep-review` | `pre_pr_review` |
 
 **See:** `~/.claude/hooks/auto-satisfy-skills.py` for mapping logic
 
@@ -566,7 +566,7 @@ requirements:
   # Use /pre-commit voluntarily or /deep-review for enforced review.
   pre_pr_review:
     scope: single_use
-    message: "Run /requirements-framework:quality-check before creating PR"
+    message: "Run /requirements-framework:deep-review before creating PR"
 ```
 
 **How it works:**

@@ -166,7 +166,6 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `deep-review.md` | Cross-validated team review (recommended for PR) |
 | `execute-plan.md` | Execute plan with checkpoints |
 | `pre-commit.md` | Quick pre-commit review |
-| `quality-check.md` | Lightweight PR review (alternative to /deep-review) |
 | `session-reflect.md` | Session learning and reflection |
 | `write-plan.md` | Create implementation plan |
 

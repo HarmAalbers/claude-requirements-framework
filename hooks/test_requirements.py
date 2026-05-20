@@ -9415,6 +9415,10 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                'requirements-framework:plan-review' not in mappings,
                f"DEFAULT_SKILL_MAPPINGS should not contain 'requirements-framework:plan-review'")
 
+    # Test: Deprecated /quality-check mapping removed in plugin v4.0.0
+    runner.test("quality-check not in mappings (deleted in v4.0)",
+               'requirements-framework:quality-check' not in mappings)
+
 
 def test_new_requirement_definitions(runner: TestRunner):
     """Test that new requirement definitions in example config are valid."""
@@ -9769,6 +9773,12 @@ def test_plugin_command_files_exist(runner: TestRunner):
     runner.test("Deprecated /plan-review removed in 4.0.0",
                not plan_review_path.exists(),
                f"File should be deleted: {plan_review_path}")
+
+    # Absence test: /quality-check command removed in plugin v4.0.0
+    quality_check_path = commands_dir / 'quality-check.md'
+    runner.test("Deprecated /quality-check removed in 4.0.0",
+               not quality_check_path.exists(),
+               f"File should be deleted: {quality_check_path}")
 
 
 def test_plan_enter_hook(runner: TestRunner):

@@ -102,7 +102,6 @@ PermissionRequest (handle-permission-request.py) - before permission dialog show
 PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
     → Auto-satisfy requirements when review skills complete
     → Maps: /requirements-framework:pre-commit → pre_commit_review (deprecated, kept for backward compat)
-    → Maps: /requirements-framework:quality-check → pre_pr_review
     → Maps: /requirements-framework:codex-review → codex_reviewer
     → Maps: /requirements-framework:deep-review → pre_pr_review
     → Maps: /requirements-framework:arch-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
@@ -298,7 +297,6 @@ For testing the installed plugin:
 /requirements-framework:deep-review          # Primary: cross-validated team review
 /requirements-framework:arch-review [path]   # Primary: team-based architecture review
 /requirements-framework:pre-commit [aspects] # Pre-commit code review
-/requirements-framework:quality-check [parallel]  # Lightweight alternative to /deep-review
 /requirements-framework:codex-review [scope]
 ```
 
@@ -529,9 +527,6 @@ The framework uses Claude Code Agent Teams as the **primary review approach**. A
 - `/deep-review` — Cross-validated team-based code review with agent debate. Satisfies `pre_pr_review`.
 - `/arch-review` — Multi-perspective architecture review with commit planning. Satisfies `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`.
 
-### Lightweight Alternatives
-- `/quality-check` — Sequential/parallel subagent review (lower cost, no cross-validation)
-
 ### Configuration
 ```yaml
 hooks:
@@ -543,14 +538,13 @@ hooks:
     fallback_to_subagents: true  # Graceful degradation
 ```
 
-### When to Use Teams vs Lightweight Alternatives
-| Use Teams (`/deep-review`, `/arch-review`, `/pre-commit`) | Use Lightweight (`/quality-check`) |
-|---|---|
-| Default for most reviews (recommended) | Need faster, cheaper review |
-| Complex changes affecting multiple areas | Simple, focused changes |
-| Want cross-validated findings with debate | Independent findings are sufficient |
-| Architecture decisions with trade-offs | Single-aspect reviews |
-| Pre-commit with 2+ review agents (default) | `/pre-commit code` (single agent, no team value) |
+### When to Use Teams
+Use `/deep-review`, `/arch-review`, or `/pre-commit` for:
+- Default for most reviews (recommended)
+- Complex changes affecting multiple areas
+- Cross-validated findings with debate
+- Architecture decisions with trade-offs
+- Pre-commit with 2+ review agents (default)
 
 ### Hook Events
 - `TeammateIdle` — Fires when teammate goes idle. Configurable re-engagement.

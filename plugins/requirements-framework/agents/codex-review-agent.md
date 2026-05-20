@@ -207,7 +207,7 @@ When running as a teammate in `/deep-review` or `/pre-commit`:
 
 - **User has Codex installed**: Per user confirmation, assume they have access
 - **Auto-satisfaction**: This skill auto-satisfies the `codex_reviewer` requirement when complete
-- **Complements pre-pr-review**: Works alongside `/requirements-framework:quality-check` for comprehensive coverage
+- **Complements pre-pr-review**: Works alongside `/requirements-framework:deep-review` for comprehensive coverage
 
 ## Your Approach
 

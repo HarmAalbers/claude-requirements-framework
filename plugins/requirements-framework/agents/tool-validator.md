@@ -186,7 +186,7 @@ If no findings: set all counts to 0 and verdict to APPROVED.
 
 This agent should be invoked:
 1. **In pre-commit command**: `/requirements-framework:pre-commit tools`
-2. **In quality-check command**: As first check before AI agents
+2. **In deep-review command**: As first check before AI agents
 3. **Standalone**: When developer wants quick tool validation
 
 ## Success Criteria

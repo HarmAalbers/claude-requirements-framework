@@ -461,7 +461,7 @@ class SessionMetrics:
         Record a skill invocation.
 
         Args:
-            skill_name: Name of the skill (e.g., 'pre-commit', 'quality-check')
+            skill_name: Name of the skill (e.g., 'pre-commit', 'deep-review')
         """
         try:
             self._ensure_loaded()
