@@ -3,7 +3,7 @@ name: commit-checks
 description: "Auto-fix code quality issues - comment cleanup and import organization"
 argument-hint: "[--skip-autofix]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 2f4cfb2
+git_hash: bdd0dc1
 ---
 
 > **Workflow position**: auto-fix utility used during `/req implement`. Run directly to clean up imports and comments before committing.

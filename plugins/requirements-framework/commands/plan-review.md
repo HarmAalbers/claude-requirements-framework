@@ -3,7 +3,7 @@ name: plan-review
 description: "DEPRECATED — use /arch-review (team-based) or /req plan (conductor). Will be removed in a future major release. Validates plan against ADRs, TDD, and SOLID principles, identifies preparatory refactoring, then generates atomic commit strategy."
 argument-hint: "[plan-file]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 2f4cfb2
+git_hash: 3ca0bde
 ---
 
 > **Workflow position**: lightweight alternative to `/req plan` (sequential review, no agent debate). Run directly when a quick check suffices.

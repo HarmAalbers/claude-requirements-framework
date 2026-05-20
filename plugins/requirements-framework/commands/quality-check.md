@@ -3,7 +3,7 @@ name: quality-check
 description: "DEPRECATED — use /deep-review (team-based) or /req review (conductor). Will be removed in a future major release. Runs a comprehensive quality review before creating a PR."
 argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
-git_hash: 2f4cfb2
+git_hash: 3ca0bde
 ---
 
 > **Workflow position**: lightweight alternative to `/req review` (faster, no agent debate). Run directly when a quick check suffices.

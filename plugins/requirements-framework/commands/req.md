@@ -3,7 +3,7 @@ name: req
 description: "Workflow conductor — derives the current requirements-framework phase and dispatches to the matching skill/command. Run with no arguments to be guided, or pass an explicit phase: design, plan-write, plan-validate, implement, review, refactor, ship. Also accepts `plan` as a friendly alias that auto-picks the active plan sub-phase."
 argument-hint: "[phase]"
 allowed-tools: ["Bash", "Read", "Skill"]
-git_hash: uncommitted
+git_hash: 9d913aa
 ---
 
 # `/req` — Workflow Conductor
