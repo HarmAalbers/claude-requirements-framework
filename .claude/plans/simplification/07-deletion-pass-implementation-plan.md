@@ -1,8 +1,97 @@
 # Step 07 Deletion-Pass Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use requirements-framework:executing-plans to implement this plan task-by-task.
+> **For Claude:** REQUIRED SUB-SKILL: Use requirements-framework:executing-plans to implement this plan task-by-task. **READ THE PLAN REVISIONS SECTION FIRST — it supersedes parts of the body below.**
 
-**Goal:** Delete three deprecated plugin artifacts (`/plan-review`, `/quality-check`, `code-simplifier` agent) and the dead `briefing_format: rich` code path, ship as plugin v4.0.0 with a Keep-a-Changelog `CHANGELOG.md`.
+---
+
+## ⚠️ PLAN REVISIONS (post arch-review cross-validation, 2026-05-20)
+
+The team-based architecture review (`/arch-review` with 7 teammates) surfaced cross-validated findings that change the scope of this branch. The original plan body below is preserved as history; the following revisions override it.
+
+### Decision 1 — Keep `code-simplifier` in 4.0 (partial rollback)
+
+The arch-review found a **CRITICAL** cross-validated finding (compat-checker + tdd-validator + codex-arch-reviewer): `code-simplifier` is *actively spawned* by `/deep-review` (lines 92, 128) and `/pre-commit` (lines 35, 209, 265–266, 300). The cross-validation rules in `/deep-review` are *semantically specific to a simplifier* — mechanical replacement with `code-reviewer` would corrupt them.
+
+**Resolution (user decision 2026-05-20):** Keep the `code-simplifier` agent file and its `plugin.json` manifest entry in 4.0. Restructuring `/deep-review` and `/pre-commit` to drop the dependency is deferred to a future minor release (4.1+).
+
+**Effect on this branch:**
+- Original Patch #3 (`delete-code-simplifier-agent`) is **removed** entirely.
+- `code-simplifier` remains marked DEPRECATED (commit `3ca0bde` on master), but the agent file is not deleted.
+- The version bump to 4.0.0 moves to its own patch (since no other patch now modifies `plugin.json`).
+- CHANGELOG.md drops the `code-simplifier` removal entry but retains the other three.
+
+### Decision 2 — Expand plan scope to cover all team-identified files
+
+The arch-review surfaced **HIGH** cross-validated findings about file coverage. The deletion patches must now also touch:
+
+**For Patch #1 (`delete-plan-review-command`)** — add to file list:
+- `hooks/handle-plan-exit.py` (lines 138–152): remove the hardcoded `/plan-review` "Next Action" emission. *(Already in the team's refined sequence — confirmed.)*
+- `hooks/handle-session-start.py` (lines 203, 249): update docstring example strings from `/plan-review` to `/arch-review`. *(Already in team's refined sequence — confirmed.)*
+- `plugins/requirements-framework/agents/tdd-validator.md` (line 21): change "plan-review workflow" → "arch-review workflow" in system prompt.
+- `plugins/requirements-framework/agents/solid-reviewer.md` (line 21): same.
+- `plugins/requirements-framework/agents/codex-review-agent.md` (line 210, line 182): remove `/quality-check` cross-reference. *(Goes in Patch #2 with quality-check.)*
+- `plugins/requirements-framework/skills/requirements-framework-builder/SKILL.md` (lines 179, 181): update DEFAULT_SKILL_MAPPINGS example.
+- `plugins/requirements-framework/skills/requirements-framework-usage/SKILL.md` (lines 212, 214): same.
+- `plugins/requirements-framework/skills/requirements-framework-usage/references/advanced-features.md` (lines 27, 29, 42): same.
+- `plugins/requirements-framework/skills/requirements-framework-usage/references/configuration-patterns.md` (lines 236, 238): same.
+- `plugins/requirements-framework/skills/requirements-framework-status/SKILL.md` (lines 152, 163, 164): remove from agent/command inventory.
+- `plugins/requirements-framework/skills/requirements-framework-status/references/component-inventory.md` (lines 141, 168, 170): same.
+- `plugins/requirements-framework/commands/arch-review.md` (lines 246–255): **delete** the entire `## Comparison with /plan-review (Lightweight Alternative)` section (not redirect).
+- `plugins/requirements-framework/commands/commit-checks.md` (line 134): remove `/quality-check` reference. *(Patch #2.)*
+- `DEVELOPMENT.md` (line 317): update example YAML.
+- `examples/global-requirements.yaml` (line 441): update commented-out reference.
+
+**For Patch #2 (`delete-quality-check-command`)** — add to file list:
+- `plugins/requirements-framework/commands/deep-review.md` (lines 275–284): **delete** the `## Comparison with /quality-check` section.
+- `plugins/requirements-framework/agents/codex-review-agent.md`: (see above).
+- `plugins/requirements-framework/commands/commit-checks.md`: (see above).
+- All skill reference files: same as above with `quality-check` search term.
+
+**For Patch #4 (`delete-rich-briefing-format`)** — add to file list:
+- `hooks/lib/messages.py` (line 257): remove `'rich'` key from `_status_templates` dict + the line-560 docstring entry referencing `mode='rich'`.
+- `hooks/lib/message_validator.py` (line 319): remove `'rich'` from `valid_modes` list (or whatever the relevant set is).
+- `hooks/lib/config.py` (line 744): update comment `# compact | standard | rich` → `# compact | standard`.
+
+### Decision 3 — ADR amendments + new ADR-015 (required before merge)
+
+The arch-review identified ADR violations and missing decisions. These become **new patches** at the top of the stack (before any code deletion):
+
+- **Patch #0 (new) — `add-adr-015-breaking-removal-policy`**: Create `docs/adr/ADR-015-breaking-removal-policy.md` documenting (a) v3→v4 breaking-removal policy, (b) soak-skip rationale, (c) decision criteria for when lightweight alternatives may be removed.
+- **Patch #0a (new) — `amend-adr-012-remove-prohibition`**: Add Amendment section to ADR-012 superseding the prohibition against removing `/plan-review` and `/quality-check`. Update line-144 fallback reference.
+- **Patch #0b (new) — `amend-adr-006-component-counts`**: Update ADR-006 component counts (commands 6→4; agents stay 15 since code-simplifier is kept) and remove the stale `quality-check` mapping from the DEFAULT_SKILL_MAPPINGS code example.
+
+### Decision 4 — Regression and absence tests (TDD validator's findings)
+
+Add to `hooks/test_requirements.py` in the appropriate patches:
+
+- **In Patch #4 (rich-format deletion):** before deleting rich-format tests, add one test that asserts `briefing_format: rich` post-deletion produces a logged warning + compact fallback (not a silent no-op). Permanent regression guard.
+- **In Patches #1 and #2:** add negative assertions to `test_plugin_command_files_exist` confirming `plan-review.md` and `quality-check.md` are not in the manifest after deletion.
+- **In Patches #1 and #2:** add absence assertions to `test_process_skill_auto_satisfy_mappings` confirming `requirements-framework:plan-review` and `requirements-framework:quality-check` are not in mappings.
+
+### Revised final patch sequence
+
+| # | Patch name | Status |
+|---|---|---|
+| 0 | `add-adr-015-breaking-removal-policy` | new — write ADR-015 |
+| 0a | `amend-adr-012-remove-prohibition` | from team's refined sequence |
+| 0b | `amend-adr-006-component-counts` | new — update ADR-006 |
+| 1 | `delete-plan-review-command` | expanded scope per Decision 2 |
+| 2 | `delete-quality-check-command` | expanded scope per Decision 2 |
+| 3 | `delete-rich-briefing-format` | expanded scope (messages.py, message_validator.py, config.py comment, regression test) |
+| 4 | `bump-version-4.0.0` | standalone (no more `plugin.json` modifications since Patch #3-original was removed) |
+| 5 | `add-changelog` | drop the `code-simplifier` removal entry |
+| 6 | `memory-dedupe` | conditional, unchanged |
+| 7 | `update-status-memory-final` | unchanged |
+
+Total: 10 patches (was 8 in team's refined sequence, was 9 in original proposal).
+
+### Why this matters
+
+The arch-review prevented us from shipping a broken plugin: deleting `code-simplifier` while two surviving commands still spawn it would have produced a load-error at runtime that the test suite would not have caught. The partial rollback ships a smaller, cleaner 4.0 release; the deferred removal can be properly scoped after `/deep-review` and `/pre-commit` are restructured.
+
+---
+
+**Goal:** Delete two deprecated plugin commands (`/plan-review`, `/quality-check`) and the dead `briefing_format: rich` code path. Amend ADR-012 + ADR-006 and create ADR-015 to keep the ADR corpus consistent. Ship as plugin v4.0.0 with a Keep-a-Changelog `CHANGELOG.md`. **`code-simplifier` agent stays in 4.0 — deferred to 4.1+ pending `/deep-review` and `/pre-commit` restructuring.**
 
 **Architecture:** Subtractive change on branch `refactor/step-07-finish-and-delete`. Eight atomic stg patches, each independently revertible. Test suite (1279/1279) must pass after every patch. References design doc `.claude/plans/simplification/07-deletion-pass-design.md`.
 
