@@ -11048,6 +11048,38 @@ def test_count_unsatisfied(runner: TestRunner):
                     f"Got: {count_unsatisfied(mix)}")
 
 
+def test_llm_package_scaffold(runner: TestRunner):
+    """Verify hooks/lib/llm/ scaffold imports cleanly without V3 deps installed."""
+    print("\n📦 Testing hooks/lib/llm/ scaffold...")
+    import importlib
+
+    try:
+        llm_pkg = importlib.import_module("llm")
+        runner.test("llm package imports", True)
+    except ImportError as e:
+        runner.test("llm package imports", False, str(e))
+        return
+
+    runner.test(
+        "llm.__doc__ documents the V3 step plan",
+        llm_pkg.__doc__ is not None and "Step 09" in llm_pkg.__doc__,
+        "__init__.py docstring should list the steps that populate each submodule",
+    )
+
+    for name in ("schemas", "observability", "retrieval", "memory", "eval", "templates"):
+        try:
+            importlib.import_module(f"llm.{name}")
+            runner.test(f"llm.{name} imports", True)
+        except ImportError as e:
+            runner.test(f"llm.{name} imports", False, str(e))
+
+    try:
+        importlib.import_module("llm.workers")
+        runner.test("llm.workers subpackage imports", True)
+    except ImportError as e:
+        runner.test("llm.workers subpackage imports", False, str(e))
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -11248,6 +11280,8 @@ def main():
 
     test_derive_phase(runner)
     test_count_unsatisfied(runner)
+
+    test_llm_package_scaffold(runner)
 
     return runner.summary()
 

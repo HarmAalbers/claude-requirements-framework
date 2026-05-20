@@ -51,6 +51,18 @@ get_py_files() {
     fi
 }
 
+# Get all Python files recursively (excluding __pycache__). Used for hooks/lib
+# so subpackages like lib/llm/ deploy without per-step sync.sh edits.
+get_py_files_recursive() {
+    local dir="$1"
+    local prefix="$2"
+    if [ -d "$dir" ]; then
+        find "$dir" -name "*.py" -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
+            echo "${prefix}${f#$dir/}"
+        done
+    fi
+}
+
 # Get all markdown files from a plugin subdirectory
 get_plugin_md_files() {
     local dir="$1"
@@ -131,8 +143,8 @@ get_all_files() {
     {
         get_py_files "$REPO_DIR/hooks" ""
         get_py_files "$DEPLOY_DIR" ""
-        get_py_files "$REPO_DIR/hooks/lib" "lib/"
-        get_py_files "$DEPLOY_DIR/lib" "lib/"
+        get_py_files_recursive "$REPO_DIR/hooks/lib" "lib/"
+        get_py_files_recursive "$DEPLOY_DIR/lib" "lib/"
     } | sort -u
 }
 
@@ -324,10 +336,15 @@ deploy_to_hooks() {
         [ -f "$f" ] && cp -v "$f" "$DEPLOY_DIR/"
     done
 
-    # Copy library files
+    # Copy library files (recursive — supports subpackages like lib/llm/)
     echo ""
     echo "Copying library files..."
-    cp -v "$REPO_DIR/hooks/lib/"*.py "$DEPLOY_DIR/lib/"
+    (cd "$REPO_DIR/hooks/lib" && find . -name "*.py" -type f -not -path "*/__pycache__/*") | while read -r relpath; do
+        local stripped="${relpath#./}"
+        local target="$DEPLOY_DIR/lib/$stripped"
+        mkdir -p "$(dirname "$target")"
+        cp -v "$REPO_DIR/hooks/lib/$stripped" "$target"
+    done
 
     # Ensure executable permissions for known entry points
     for f in "$DEPLOY_DIR/"*.py; do
