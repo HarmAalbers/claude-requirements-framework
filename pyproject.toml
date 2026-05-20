@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-requirements-framework"
+version = "4.0.0"
+description = "Claude Code requirements framework — workflow gates, hooks, and V3 LLM platform."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Harm Aalbers" }]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+llm = [
+    "pydantic-ai>=1.0",
+    "instructor>=2.0",
+    "anthropic>=0.40",
+    "jinja2>=3.1",
+    "langfuse>=3.0",
+    "openinference-instrumentation-claude-agent-sdk>=0.1",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "qdrant-client>=1.12",
+    "llama-index-core>=0.12",
+    "llama-index-embeddings-openai>=0.3",
+    "llama-index-vector-stores-qdrant>=0.4",
+    "ragas>=0.2",
+    "tiktoken>=0.8",
+]
+
+[tool.setuptools]
+packages = ["hooks.lib.llm", "hooks.lib.llm.workers"]
