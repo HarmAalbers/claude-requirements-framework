@@ -872,6 +872,88 @@ SESSION END
     - Optionally clears session-scoped state
 ```
 
+## Local observability (V3)
+
+V3 LLM calls (Step 11+) can be traced into a self-hosted Langfuse instance.
+This is opt-in: with no env vars set, V3 code runs without tracing and no
+errors are raised.
+
+### One-time bootstrap
+
+```bash
+# 1. Bring up Langfuse + Postgres + ClickHouse + Redis + MinIO
+cd infra && docker compose up -d && cd ..
+
+# Wait ~60s for all containers to become healthy
+docker compose -f infra/docker-compose.yml ps
+
+# 2. Open the UI and create a user + project
+open http://localhost:3000
+#    a. Sign up (local-only account — any email works)
+#    b. Create an organization (e.g., "local")
+#    c. Create a project (e.g., "requirements-framework")
+#    d. Settings → API Keys → Create new keys
+#    e. Copy the public + secret key
+
+# 3. Save the keys to an environment file
+cp infra/.env.example infra/.env
+$EDITOR infra/.env    # paste the two keys
+
+# 4. Source the env vars in your shell
+set -a; source infra/.env; set +a
+```
+
+### Host-port remap (heads-up)
+
+`infra/docker-compose.yml` carries intentional **host-port remappings** so the
+local Langfuse stack doesn't collide with other Postgres/Redis instances on
+your machine:
+
+- Postgres: host `55432` → container `5432`
+- Redis: host `56379` → container `6379`
+
+Container-to-container connections inside the compose network are unaffected,
+and `langfuse-web` still listens on the standard `:3000`. See the header
+comment at the top of `infra/docker-compose.yml` for the full list of local
+deviations from the upstream pin.
+
+### Verify the wiring
+
+Run the joint test suite first — all three scripts should exit cleanly:
+
+```bash
+python3 hooks/test_requirements.py \
+  && python3 tests/test_observability.py \
+  && python3 tests/test_schemas.py
+```
+
+Then exercise the runnable smoke spike against your bootstrapped Langfuse:
+
+```bash
+python3 hooks/lib/llm/_spikes/v3_langfuse_smoke.py
+```
+
+Expected: prints `✓ Got ReviewFinding`, then a UI link. Within 5s, a trace
+appears in Langfuse UI → Traces tab.
+
+### Tear down
+
+```bash
+docker compose -f infra/docker-compose.yml down       # stop containers, keep data
+docker compose -f infra/docker-compose.yml down -v    # stop + delete trace history
+```
+
+### Troubleshooting
+
+- **"observability disabled" log line**: one or more of `LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` is unset. Re-source `infra/.env`.
+- **Code runs but no trace appears**: check `OTEL_LOG_LEVEL=debug python3 ...`
+  to see exporter retries.
+- **Init failure with no traceback**: set `LANGFUSE_DEBUG=1` to get the full
+  stack trace.
+- **Container `unhealthy` after `up -d`**: `docker compose logs <service>` and
+  consult [Langfuse self-hosting docs](https://langfuse.com/self-hosting).
+
 ## Development
 
 ### Creating Custom Requirements
