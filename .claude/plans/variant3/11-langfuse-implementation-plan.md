@@ -30,6 +30,12 @@ Optional revisions also folded in:
 - **R7 (MEDIUM, M2)** — Add `hooks/lib/llm/claude.py` thin wrapper that initializes observability before re-exporting `query` / `ClaudeSDKClient`. Future V3 code imports from this wrapper instead of `claude_agent_sdk` directly, making the ordering constraint structural rather than convention-based.
 - **R8 (IMPORTANT, I3)** — Append an "Operational notes" section to ADR-016 covering: (a) `infra/` is the V3 dev-infra location, intentionally committed; (b) compose-file pinning policy; (c) acknowledgment of the dual-import path between `hooks/test_requirements.py` and `tests/`.
 
+Additional refinements from context7 package validation (2026-05-22):
+
+- **R9 (simplification)** — Replace manual `OTLPSpanExporter(endpoint=..., headers=...)` construction with OTel-native env-var auto-discovery. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_HEADERS` / `_PROTOCOL` env vars (via `os.environ.setdefault` so user-set values take precedence), then `OTLPSpanExporter()` self-configures. Cleaner separation: one helper sets env, another builds the provider. Per Langfuse's own integration cookbook.
+- **R10 (honest scope)** — OpenInference docs explicitly recommend combining `instrumentation-claude-agent-sdk` with `instrumentation-anthropic` for full child-span coverage. We dropped Anthropic per R4 / ADR-016 (Max-only, no API key). Spans will cover the outer `query()` boundary only — no child spans for internal Anthropic API calls, no breakdown of retry/latency subcomponents. Document as an honest limitation; revisit when/if an API-key path exists.
+- **R11 (compatibility)** — Langfuse local OTLP endpoint (`/api/public/otel/v1/traces`) requires Langfuse v3 >= 3.22.0. Verify the upstream compose-file SHA we pin to satisfies this minimum.
+
 ---
 
 ## Patch boundaries (stg series after Step 11)
@@ -243,6 +249,18 @@ curl -sI http://localhost:3000 | head -1
 ```
 
 Expected: `HTTP/1.1 200 OK` (or `302` redirect to `/auth/sign-in`).
+
+**Step 5: Verify Langfuse version satisfies the OTLP-endpoint requirement (R11)**
+
+The local OTLP endpoint at `/api/public/otel/v1/traces` requires Langfuse v3 >= 3.22.0. Confirm by hitting the version endpoint:
+
+```bash
+curl -s http://localhost:3000/api/public/health | head -5
+# or, if that endpoint is locked behind auth:
+docker compose -f infra/docker-compose.yml exec langfuse-web cat /app/web/package.json | python3 -c "import json, sys; print(json.load(sys.stdin)['version'])"
+```
+
+Expected: a version >= 3.22.0. If the pinned upstream SHA from Step 1 produces an older Langfuse build, re-pin to a more recent SHA. Recommend pinning to a tagged release SHA (e.g., `v3.30.x`) rather than a development commit so the version is predictable.
 
 ### Task 5: Add `infra/.env.example`
 
@@ -889,27 +907,46 @@ def _read_langfuse_config() -> tuple[str, str, str] | None:
     return None
 
 
-def _build_tracer_provider(public_key: str, secret_key: str, host: str) -> Any:
-    """Construct an OTel TracerProvider wired to the Langfuse OTLP endpoint.
+def _configure_otel_env(public_key: str, secret_key: str, host: str) -> None:
+    """Populate OTLP env vars so `OTLPSpanExporter()` auto-configures from env.
 
-    Owns the OTel imports. Returns the provider — the caller passes it
-    explicitly to instrument() (R4), avoiding reliance on the OTel global.
+    R9: this is Langfuse's documented integration pattern. We use
+    `os.environ.setdefault` so a user who has pre-set their own OTel
+    config (e.g., a dual-exporter setup pointing at both Langfuse and
+    Phoenix) wins over our defaults.
     """
     from base64 import b64encode
 
+    auth = b64encode(f"{public_key}:{secret_key}".encode()).decode()
+    os.environ.setdefault(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        f"{host.rstrip('/')}/api/public/otel/v1/traces",
+    )
+    os.environ.setdefault(
+        "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+        f"Authorization=Basic {auth}",
+    )
+    os.environ.setdefault("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+
+
+def _build_tracer_provider() -> Any:
+    """Construct a TracerProvider whose OTLP exporter self-configures from env.
+
+    R9: no explicit endpoint / headers / protocol args — they're discovered
+    from the env vars set by `_configure_otel_env`. Cuts ~10 lines of manual
+    construction and ~6 lines of duplicated string-building.
+
+    R4: returns the provider for the caller to pass explicitly to
+    `instrument()`, avoiding reliance on the OTel global.
+    """
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
         OTLPSpanExporter,
     )
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    auth = b64encode(f"{public_key}:{secret_key}".encode()).decode()
-    exporter = OTLPSpanExporter(
-        endpoint=f"{host.rstrip('/')}/api/public/otel/v1/traces",
-        headers={"Authorization": f"Basic {auth}"},
-    )
     provider = TracerProvider()
-    provider.add_span_processor(BatchSpanProcessor(exporter))
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     return provider
 
 
@@ -943,7 +980,8 @@ def init_observability() -> None:
         return
 
     try:
-        provider = _build_tracer_provider(*config)
+        _configure_otel_env(*config)
+        provider = _build_tracer_provider()
         _install_claude_sdk_instrumentor(provider)
     except ImportError as exc:
         # R3: no separate probe — let helpers' imports surface here.
@@ -981,10 +1019,11 @@ Why the decomposition matters:
 
 | Helper | Responsibility | Imports it owns |
 |---|---|---|
-| `_read_langfuse_config` | Env reading | stdlib only |
-| `_build_tracer_provider` | OTel exporter + provider construction | `base64`, `opentelemetry.*` |
-| `_install_claude_sdk_instrumentor` | OpenInference instrumentor install | `openinference.*` |
-| `init_observability` | Policy / idempotence / error handling | None of the above (delegates) |
+| `_read_langfuse_config` | Read three LANGFUSE_* env vars | stdlib only |
+| `_configure_otel_env` | Populate OTEL_EXPORTER_OTLP_TRACES_* env vars from Langfuse config | `base64` (stdlib) |
+| `_build_tracer_provider` | Construct TracerProvider with env-auto-configured OTLP exporter | `opentelemetry.*` |
+| `_install_claude_sdk_instrumentor` | Install OpenInference instrumentor against the provider | `openinference.*` |
+| `init_observability` | Policy / idempotence / error handling | None (delegates) |
 
 Each helper has one reason to change. The leaky-abstraction probe is gone. The success flag (`_instrumented = True`) only flips AFTER `instrument()` actually ran.
 
