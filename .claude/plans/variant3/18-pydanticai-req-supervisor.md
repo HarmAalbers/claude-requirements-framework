@@ -217,13 +217,31 @@ Invoking: /deep-review
 Why: Session has pre_pr_review unsatisfied; 2 similar prior reviews suggest start here.
 ```
 
-## Acceptance
+## Acceptance — revised for the ADR-016 thin-Python scope
 
-- [ ] `python -m hooks.lib.llm.req_cli` prints a valid handoff for each of 5 phases
-- [ ] Hooks capability emits a `[supervisor]` log line on each invocation
-- [ ] Langfuse trace shows a span for the supervisor call (single model request)
-- [ ] If the supervisor takes >2s, log a warning (it's routing only — should be <1s typically)
-- [ ] The Markdown `/req` command from simplification Step 05 is replaced (rollback path: revert)
+- [x] `supervisor.route(phase, unsatisfied)` returns a `HandoffResult` with `target` in the 7-entry literal — proved by `tests/test_supervisor.py::test_route_returns_handoff_result` (mocked) and the 7-scenario smoke (`hooks/lib/llm/_spikes/v3_supervisor_smoke.py`)
+- [x] Empty `unsatisfied` renders as `(none)` in the prompt so the LLM does not see an empty bracket and improvise — `test_empty_unsatisfied_renders_as_none`
+- [x] `allowed_tools=[]` keeps the supervisor a pure transform — `test_route_passes_output_format_and_no_tools`
+- [x] `options.agent = "req-supervisor"` so the budget ledger labels the call — `test_route_labels_options_with_agent_name`
+- [x] `error_max_structured_output_retries` surfaces as a `RuntimeError` — `test_route_raises_on_error_subtype`
+- [x] OpenInference auto-instrumentation produces a span for the supervisor call (Step 11 boundary) — verifiable via the smoke spike with `LANGFUSE_*` set
+- [ ] **Deferred**: Markdown `/req` replacement. Per scoping decision 2026-05-22, the deterministic command stays; the supervisor is purely additive infrastructure ready to be wired in when Step 13 (retrieval) lands.
+- [ ] **Deferred**: Latency-guard warning (>2s). Land with Step 17b token-budget enforcement.
+- [ ] **Deferred** (Future Step 18 expansion): supervisor owns review fan-out and Langfuse session/tag boundary per the "Observability requirement" section above.
+
+## Landing notes (2026-05-22)
+
+Step 18 landed as **2 stacked stg patches** on `refactor/step-08-llm-package-scaffold`:
+
+1. `step-18-extend-handoff-targets` — `HandoffResult.target` Literal grows 6 → 7 (adds `writing-plans`) + 2 new schema tests + the Observability-requirement plan-doc note. 22/22 schema tests green.
+2. `step-18-supervisor-module` — `hooks/lib/llm/supervisor.py` (~30-line `route` function) + `prompts/req-supervisor.txt` + 11 mocked-SDK tests + a 7-scenario smoke spike. 11/11 supervisor tests green.
+
+Scope honored from the user's 2026-05-22 decision matrix:
+- **Supervisor function only** — no `/req` rewrite, no `/deep-review` rewiring.
+- **Inputs: phase + unsatisfied list** — minimal MVP, expansion-ready (kwargs structure).
+- **Schema extended** — `writing-plans` added to fix the 6 vs 7 mismatch with the Markdown `/req` table.
+
+130/130 V3 tests pass (11 supervisor + 22 schemas + 12 prompts + 13 code-reviewer + 12 aggregator + 12 obs + 39 budget + 9 wrapper).
 
 ## Rollback
 
