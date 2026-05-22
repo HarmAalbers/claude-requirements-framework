@@ -275,6 +275,102 @@ def test_logs_init_failure_with_traceback_only_when_debug_set(runner: TestRunner
         obs_logger.removeHandler(handler)
 
 
+def test_atexit_handler_registered_on_success_path(runner: TestRunner):
+    """Gap 1: success path must arm a shutdown handler so BatchSpanProcessor flushes."""
+    print("\ntest_atexit_handler_registered_on_success_path")
+    fake_env = {
+        "LANGFUSE_PUBLIC_KEY": "pk-test",
+        "LANGFUSE_SECRET_KEY": "sk-test",
+        "LANGFUSE_HOST": "http://localhost:3000",
+    }
+
+    class _StubProvider:
+        def __init__(self):
+            self.shutdown_called = 0
+
+        def add_span_processor(self, _proc):
+            pass
+
+        def shutdown(self):
+            self.shutdown_called += 1
+
+    stub = _StubProvider()
+
+    with patch.dict(os.environ, fake_env, clear=True):
+        with fresh_observability_module() as obs:
+            obs._provider = None
+            obs._instrumented = False
+            obs._disabled_logged = False
+            with patch.object(obs, "_build_tracer_provider", return_value=stub), \
+                 patch.object(obs, "_install_claude_sdk_instrumentor"), \
+                 patch.object(obs, "atexit") as mock_atexit:
+                obs.init_observability()
+
+                runner.test(
+                    "success path captures provider into module global",
+                    obs._provider is stub,
+                    f"got {obs._provider!r}",
+                )
+                runner.test(
+                    "success path registers exactly one atexit handler",
+                    mock_atexit.register.call_count == 1,
+                    f"got {mock_atexit.register.call_count} register call(s)",
+                )
+                runner.test(
+                    "registered handler is _shutdown_provider_on_exit",
+                    mock_atexit.register.call_args[0][0]
+                    is obs._shutdown_provider_on_exit,
+                    f"got {mock_atexit.register.call_args!r}",
+                )
+
+            # Invoke the handler directly — it should call provider.shutdown.
+            obs._shutdown_provider_on_exit()
+            runner.test(
+                "_shutdown_provider_on_exit calls provider.shutdown",
+                stub.shutdown_called == 1,
+                f"got {stub.shutdown_called} shutdown call(s)",
+            )
+
+
+def test_atexit_handler_swallows_shutdown_errors(runner: TestRunner):
+    """Gap 1: atexit pipeline must not blow up on a flaky shutdown."""
+    print("\ntest_atexit_handler_swallows_shutdown_errors")
+
+    class _ExplodingProvider:
+        def shutdown(self):
+            raise RuntimeError("simulated shutdown failure")
+
+    with fresh_observability_module() as obs:
+        obs._provider = _ExplodingProvider()
+        raised = False
+        try:
+            obs._shutdown_provider_on_exit()
+        except Exception:  # noqa: BLE001 — this is the property we're testing
+            raised = True
+        runner.test(
+            "_shutdown_provider_on_exit swallows provider.shutdown() exceptions",
+            raised is False,
+            "exception escaped the handler",
+        )
+
+
+def test_atexit_handler_safe_when_provider_unset(runner: TestRunner):
+    """Gap 1: handler must no-op when init never reached the success path."""
+    print("\ntest_atexit_handler_safe_when_provider_unset")
+    with fresh_observability_module() as obs:
+        obs._provider = None
+        raised = False
+        try:
+            obs._shutdown_provider_on_exit()
+        except Exception:  # noqa: BLE001
+            raised = True
+        runner.test(
+            "_shutdown_provider_on_exit no-ops cleanly when _provider is None",
+            raised is False,
+            "exception raised on the no-provider path",
+        )
+
+
 if __name__ == "__main__":
     runner = TestRunner()
     test_disabled_when_no_public_key(runner)
@@ -283,4 +379,7 @@ if __name__ == "__main__":
     test_logs_disabled_message_once(runner)
     test_module_import_triggers_init(runner)
     test_logs_init_failure_with_traceback_only_when_debug_set(runner)
+    test_atexit_handler_registered_on_success_path(runner)
+    test_atexit_handler_swallows_shutdown_errors(runner)
+    test_atexit_handler_safe_when_provider_unset(runner)
     sys.exit(runner.summary())

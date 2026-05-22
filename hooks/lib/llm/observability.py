@@ -42,11 +42,22 @@ Honest scope (R10 — arch-review revision):
     boundary only — no internal-retry breakdown. Revisit if/when an
     API-key code path is added.
 
+Shutdown flush (Gap 1 — 2026-05-22, Langfuse skill audit):
+    `BatchSpanProcessor` buffers spans in memory and flushes on a 5-second
+    tick. A short-lived script (e.g. the smoke spike) routinely finishes
+    inside that window and exits with spans still queued — silently
+    dropped at process teardown. On the success path we register
+    `_shutdown_provider_on_exit` with `atexit`, which calls
+    `provider.shutdown()` (force-flush + worker-thread teardown) before
+    the interpreter exits. Fail-open: any error inside the atexit handler
+    is swallowed so Python's "unraisable exception" warning doesn't fire.
+
 Design: .claude/plans/variant3/11-langfuse-self-host-otel.md
 """
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 from typing import Any
@@ -55,6 +66,7 @@ logger = logging.getLogger(__name__)
 
 _disabled_logged = False
 _instrumented = False
+_provider: Any | None = None
 
 
 def _read_langfuse_config() -> tuple[str, str, str] | None:
@@ -127,9 +139,27 @@ def _install_claude_sdk_instrumentor(provider: Any) -> None:
     ClaudeAgentSDKInstrumentor().instrument(tracer_provider=provider)
 
 
+def _shutdown_provider_on_exit() -> None:
+    """Force-flush BatchSpanProcessor at interpreter shutdown.
+
+    Gap 1: without this, a script that finishes inside the processor's
+    5-second flush window drops every queued span. `provider.shutdown()`
+    calls `force_flush` on each span processor and tears down its worker
+    thread cleanly. Best-effort — any exception is swallowed so the
+    interpreter's atexit pipeline keeps running.
+    """
+    global _provider
+    if _provider is None:
+        return
+    try:
+        _provider.shutdown()
+    except Exception:  # noqa: BLE001 — fail-open at interpreter exit
+        pass
+
+
 def init_observability() -> None:
     """Idempotent on the success path. See module docstring."""
-    global _disabled_logged, _instrumented
+    global _disabled_logged, _instrumented, _provider
     if _instrumented:
         return
 
@@ -175,7 +205,10 @@ def init_observability() -> None:
             _disabled_logged = True
         return
 
-    # ONLY now — after instrument() has actually run — set the success flag.
+    # Capture provider for the atexit hook BEFORE flipping _instrumented —
+    # both writes happen on the success path, in this order, exactly once.
+    _provider = provider
+    atexit.register(_shutdown_provider_on_exit)
     _instrumented = True
 
 
