@@ -1,4 +1,23 @@
-# Step 17 — Token budget enforcement
+# Step 17 — Token budget enforcement (SPLIT 2026-05-22)
+
+> **Status note (2026-05-22):** This plan has been split into two steps under
+> ADR-016's new ordering. The original document is preserved below as
+> historical reference. Active work moved to:
+>
+> - **Step 17a — `17a-sdk-spend-tracker.md`** — Monthly $-tracker against the
+>   SDK credit pool (post-hoc, soft warnings). **Next to implement.**
+>   Independent of Step 16.
+> - **Step 17b — this document, deferred** — Per-call token caps with
+>   degradation ladder. Still gated on Step 16 (Jinja2 templates) because
+>   `render_with_budget` needs slots to drop.
+>
+> Reason for split: the 2026-05-19 plan bundled two distinct concerns
+> (monthly $-rate vs per-call token caps). The monthly $-rate is the actual
+> ADR-016 trigger and is independent of templates; we can land it now.
+
+---
+
+# Original Step 17 plan (historical — supersedes via 17a + 17b)
 
 ## Goal
 
