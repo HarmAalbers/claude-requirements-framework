@@ -51,13 +51,17 @@ get_py_files() {
     fi
 }
 
-# Get all Python files recursively (excluding __pycache__). Used for hooks/lib
-# so subpackages like lib/llm/ deploy without per-step sync.sh edits.
+# Get all Python and text data files recursively (excluding __pycache__).
+# Used for hooks/lib so subpackages like lib/llm/ deploy without per-step
+# sync.sh edits. .txt is included so bundled assets like
+# hooks/lib/llm/prompts/*.txt (Step 12 prompt registry fallbacks) reach
+# the deployed runtime — without them the workers' file-fallback path
+# raises FileNotFoundError when Langfuse is unreachable.
 get_py_files_recursive() {
     local dir="$1"
     local prefix="$2"
     if [ -d "$dir" ]; then
-        find "$dir" -name "*.py" -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
+        find "$dir" \( -name "*.py" -o -name "*.txt" \) -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
             echo "${prefix}${f#$dir/}"
         done
     fi
@@ -219,8 +223,8 @@ show_status() {
     # Hooks
     local repo_hooks=$(find "$REPO_DIR/hooks" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
     local deploy_hooks=$(find "$DEPLOY_DIR" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
-    local repo_lib=$(find "$REPO_DIR/hooks/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
-    local deploy_lib=$(find "$DEPLOY_DIR/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    local repo_lib=$(find "$REPO_DIR/hooks/lib" \( -name "*.py" -o -name "*.txt" \) -type f 2>/dev/null | wc -l | tr -d ' ')
+    local deploy_lib=$(find "$DEPLOY_DIR/lib" \( -name "*.py" -o -name "*.txt" \) -type f 2>/dev/null | wc -l | tr -d ' ')
     printf "  %-12s %s → %s\n" "Hooks:" "$repo_hooks" "$deploy_hooks"
     printf "  %-12s %s → %s\n" "Lib:" "$repo_lib" "$deploy_lib"
 
@@ -336,10 +340,12 @@ deploy_to_hooks() {
         [ -f "$f" ] && cp -v "$f" "$DEPLOY_DIR/"
     done
 
-    # Copy library files (recursive — supports subpackages like lib/llm/)
+    # Copy library files (recursive — supports subpackages like lib/llm/).
+    # .txt is included so bundled assets like hooks/lib/llm/prompts/*.txt
+    # reach the runtime; see get_py_files_recursive comment for context.
     echo ""
     echo "Copying library files..."
-    (cd "$REPO_DIR/hooks/lib" && find . -name "*.py" -type f -not -path "*/__pycache__/*") | while read -r relpath; do
+    (cd "$REPO_DIR/hooks/lib" && find . \( -name "*.py" -o -name "*.txt" \) -type f -not -path "*/__pycache__/*") | while read -r relpath; do
         local stripped="${relpath#./}"
         local target="$DEPLOY_DIR/lib/$stripped"
         mkdir -p "$(dirname "$target")"
