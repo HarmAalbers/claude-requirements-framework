@@ -39,6 +39,20 @@ req budget tail -n 5
 
 Expected: two ledger entries labeled `code-reviewer` and `review-aggregator` from this run.
 
+### `v3_prompt_loader_smoke.py` — Step 12 round-trip
+
+Validates the Langfuse Prompt Management round-trip in three steps:
+
+1. Run `scripts/sync_prompts_to_langfuse.py` to publish `prompts/*.txt`.
+2. Call `load_prompt('code-reviewer')` / `load_prompt('review-aggregator')` — should hit Langfuse and match the disk content (or differ if a newer version was promoted in the UI).
+3. Clear `LANGFUSE_PUBLIC_KEY` and re-import the loader — should silently fall back to file, producing the `{diff}`-placeholder template.
+
+```bash
+python3 hooks/lib/llm/_spikes/v3_prompt_loader_smoke.py
+```
+
+Then visit `http://localhost:3000` → Prompts tab to see `code-reviewer` and `review-aggregator` listed with the `production` label.
+
 ### Predecessor spikes (merged into v3_spike.py)
 
 Earlier in the same session two smaller smoke tests confirmed individual layers:
