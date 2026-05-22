@@ -15,6 +15,7 @@ Not yet wired into `/deep-review`. That happens in Step 18.
 from __future__ import annotations
 
 from hooks.lib.llm.claude import ClaudeAgentOptions, ResultMessage, query
+from hooks.lib.llm.prompts import load_prompt
 from hooks.lib.llm.schemas import ReviewReport
 
 
@@ -23,23 +24,6 @@ _SYSTEM = (
     "ReviewReport. Filter aggressively — quality over quantity. "
     "Only report findings you are confident about."
 )
-
-_PROMPT = """\
-Review the diff below. For each issue, produce a ReviewFinding with:
-  severity:   CRITICAL | IMPORTANT | SUGGESTION
-  file, line: location (line >= 1)
-  category:   security | performance | logic | style | test | compatibility | complexity
-  title:      10-120 chars
-  body:       1-3 sentences explaining the issue
-  suggested_fix: optional code or guidance
-  confidence: 0.0-1.0
-
-Wrap them in a ReviewReport with agent='code-reviewer', scope={scope!r}, and a 1-3 sentence summary.
-
-```diff
-{diff}
-```
-"""
 
 
 def _build_options() -> ClaudeAgentOptions:
@@ -74,7 +58,7 @@ async def review(diff: str, scope: str = "unstaged") -> ReviewReport:
             (the agent could not produce valid JSON within the SDK's internal
             retry cap) or if no terminal `ResultMessage` is observed.
     """
-    prompt = _PROMPT.format(diff=diff, scope=scope)
+    prompt = load_prompt("code-reviewer").format(diff=diff, scope=scope)
     options = _build_options()
 
     async for msg in query(prompt=prompt, options=options):
