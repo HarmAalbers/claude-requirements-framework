@@ -39,6 +39,18 @@ req budget tail -n 5
 
 Expected: two ledger entries labeled `code-reviewer` and `review-aggregator` from this run.
 
+### `v3_supervisor_smoke.py` — Step 18 routing round-trip
+
+Runs `supervisor.route(phase, unsatisfied)` for each of the 7 workflow phases and prints the (target, rationale) pair. The aim is NOT to assert specific targets (small models may diverge from the expected mapping) but to prove the round-trip works end-to-end on real SDK + Max auth + budget ledger + Langfuse instrumentation, and that the LLM produces valid `HandoffResult` JSON within the SDK's internal retry cap.
+
+```bash
+python3 hooks/lib/llm/_spikes/v3_supervisor_smoke.py
+# then:
+req budget tail -n 7   # expect 7 entries labeled 'req-supervisor'
+```
+
+The supervisor is purely additive infrastructure in this step — `/req` stays Markdown-with-derive_phase. Once Step 13 (retrieval) lands and the supervisor has real reasoning context, the spike output should diverge more meaningfully from the deterministic mapping.
+
 ### `v3_prompt_loader_smoke.py` — Step 12 round-trip
 
 Validates the Langfuse Prompt Management round-trip in three steps:
