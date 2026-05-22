@@ -22,7 +22,24 @@ Demonstrates the full V3 flow in ~190 lines:
 - ✅ The Step 09 schemas (`HandoffResult`, `ReviewReport`) survive end-to-end serialization through the SDK
 - ✅ Agent-based aggregation produces semantically correct merges that mechanical key-based dedup cannot
 
-### Predecessor spikes (merged into this one)
+### `v3_code_reviewer_smoke.py` — Step 10 package smoke
+
+Smaller, narrower spike added when Step 10 landed. Validates the package surface (`hooks.lib.llm.workers.review` + `aggregate`) rather than ad-hoc inline functions. Two phases:
+
+1. `review(diff, scope)` over a deliberate-bug diff → typed `ReviewReport`.
+2. `aggregate([report])` over the length-1 result → unified `ReviewReport`. The degenerate case is the smallest valid input; Step 18 will exercise length 2+.
+
+Use this as the **post-Step-10 sanity check** before working on dependent code. The big `v3_spike.py` is still the canonical end-to-end proof.
+
+```bash
+python3 hooks/lib/llm/_spikes/v3_code_reviewer_smoke.py
+# then verify cost telemetry:
+req budget tail -n 5
+```
+
+Expected: two ledger entries labeled `code-reviewer` and `review-aggregator` from this run.
+
+### Predecessor spikes (merged into v3_spike.py)
 
 Earlier in the same session two smaller smoke tests confirmed individual layers:
 - **Hand-rolled prompt-and-parse path** (no `output_format`): proved Max auth + Pydantic post-hoc validation works, ~20s per call.
