@@ -201,3 +201,13 @@ OpenInference's upstream docs recommend combining `instrumentation-claude-agent-
 ### Why no separate ADR-017
 
 These four items are operational refinements of this ADR, not new decisions. Recording them inline keeps the substrate's decision boundary in one document.
+
+### Cost telemetry foundation (added 2026-05-22, Step 17a)
+
+Step 17a landed a passive monthly $-tracker before any worker step (Step 10) runs. The June 15, 2026 billing change introduces a separate Agent SDK credit pool ($100/mo for Max 5x, $200/mo for Max 20x); calling workers without cost telemetry risks exhausting the pool unintentionally.
+
+The implementation is reactive — no pre-call estimation, no blocking. `claude_agent_sdk.ResultMessage` already exposes `total_cost_usd` (verified via live import), so we record what the SDK computes rather than maintaining a pricing table that drifts as Anthropic adjusts rates. One append-only JSONL line per `query()` call, keyed by calendar month, stored globally at `~/.claude/requirements-framework/usage/<YYYY-MM>.jsonl` because the SDK pool is per-user, not per-repo.
+
+Step 17 was split into 17a (this $-tracker) and 17b (per-call token caps with degradation ladder, deferred until Step 16 templates land). The original Step 17 plan bundled both concerns; only the $-rate is independent of templates and addresses this ADR's June-15 trigger directly.
+
+The wrapping point is `hooks/lib/llm/claude.py` — the same V3 import choke point that pre-inits observability per R7 above. Changing it from pure re-export to live async-generator wrapper is a deliberate scope expansion; the wrapper documents the new side-effect explicitly so future readers don't mistake it for the original thin shim.

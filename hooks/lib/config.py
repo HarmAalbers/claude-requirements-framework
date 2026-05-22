@@ -178,6 +178,18 @@ class HookConfigDict(TypedDict, total=False):
 HooksConfigDict = dict[str, HookConfigDict]
 
 
+class SdkPoolBudgetDict(TypedDict, total=False):
+    enabled: bool
+    monthly_limit_usd: float
+    warn_threshold_pct: float
+    critical_threshold_pct: float
+    timezone: str
+
+
+class BudgetsConfigDict(TypedDict, total=False):
+    sdk_pool: SdkPoolBudgetDict
+
+
 class RequirementsConfigData(TypedDict, total=False):
     version: str
     enabled: bool
@@ -187,6 +199,7 @@ class RequirementsConfigData(TypedDict, total=False):
     console: ConsoleConfigDict
     hooks: HooksConfigDict
     debug: DebugConfigDict
+    budgets: BudgetsConfigDict
 
 
 RequirementOverrideValue = Union[bool, RequirementConfigDict, Mapping[str, Any]]

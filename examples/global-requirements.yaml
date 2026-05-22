@@ -476,6 +476,19 @@ requirements:
 #       ---
 #       Fallback: `req satisfy architecture_review`
 
+# Budget tracking (Step 17a — SDK monthly $-tracker)
+# Captures cost_usd / token counts from every claude-agent-sdk query()
+# into ~/.claude/requirements-framework/usage/<YYYY-MM>.jsonl. Inspect
+# with: `req budget status` (also `req budget tail`, `req budget warn-if-over`).
+# The pool is per user account (not per repo), so this block is global.
+# budgets:
+#   sdk_pool:
+#     enabled: true                # Set false to disable ledger writes
+#     monthly_limit_usd: 100       # Max 5x default; bump to 200 for Max 20x
+#     warn_threshold_pct: 75       # Soft stderr warning at this projection
+#     critical_threshold_pct: 95   # Louder warning (still soft in 17a)
+#     timezone: "Europe/Amsterdam" # Used for month boundary alignment
+
 # Hooks configuration
 hooks:
   # SessionStart hook - injects requirement context at session start/resume
