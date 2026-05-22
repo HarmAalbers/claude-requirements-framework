@@ -7,7 +7,8 @@ Submodules are populated by later V3 steps (see `.claude/plans/variant3/`):
     memory         — LlamaIndex memory blocks (Step 14)
     eval           — Ragas eval harness (Step 15)
     templates      — Jinja2 prompt templates (Step 16)
-    workers        — Instructor-wrapped subagent workers (Step 10+)
+    claude         — Thin Agent SDK wrapper that initializes observability (Step 11, R7)
+    workers        — Claude Agent SDK subagent workers (Step 10+)
 
 Submodules do not eagerly import their third-party dependencies at package-import
 time. Install the optional extras with `pip install -e .[llm]` before importing

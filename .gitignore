@@ -61,3 +61,6 @@ sessions.json
 
 # Logs
 *.log
+
+# Local Langfuse credentials (created by user after Langfuse bootstrap)
+infra/.env

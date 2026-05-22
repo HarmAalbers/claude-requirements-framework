@@ -170,3 +170,34 @@ Don't rewrite plans now; absorb the substrate change into each step as it's exec
 - `.claude/plans/variant3/00-overview.md` — revised plan overview pointing at this ADR.
 - `hooks/lib/llm/_spikes/` — runnable validation scripts that produced the empirical data above.
 - Memory: `refactor-current-status.md`, `refactor-vision-and-roadmap.md` — updated 2026-05-22.
+
+## Operational notes (added 2026-05-22, Step 11)
+
+### Local infra location
+
+V3 dev infrastructure (Docker compose for self-hosted Langfuse, future Qdrant in Step 13, etc.) lives under `infra/` at the repo root. This directory is intentionally committed, not gitignored — the compose file is part of the project's operational contract. Per-user credentials go in `infra/.env` (which IS gitignored); `infra/.env.example` is committed as a template.
+
+### Pinning third-party compose files
+
+When this project vendors an upstream Docker compose file (Step 11 imports Langfuse's), we pin to a specific commit SHA, not a branch. The fetched file MUST carry a header comment naming the source repo and SHA. Updates require a deliberate re-fetch with a new pin. Floating `main`-tracked dependencies are out of scope per the spirit of this ADR (predictable substrate).
+
+Host-port deviations from upstream are permitted only when an upstream port conflicts with another long-running local service. Any such remap MUST be recorded in the compose file's header comment alongside the SHA pin so future readers can distinguish intentional drift from accidental edits.
+
+### Dual-import-path caveat for V3 modules
+
+Two import styles for V3 code coexist in this repo:
+
+1. `hooks/test_requirements.py` puts `hooks/lib/` on `sys.path` and imports as `llm.observability`.
+2. V3 tests and spikes under `tests/` and `hooks/lib/llm/_spikes/` put repo root on `sys.path` and import as `hooks.lib.llm.observability`.
+
+Both paths resolve to the same physical files but appear as DIFFERENT `sys.modules` entries when exercised in the same process. V3 modules that hold module-global state (e.g., `observability.py`'s `_disabled_logged` / `_instrumented` flags) must tolerate this by ensuring underlying side effects are themselves idempotent at the library level (OpenInference's `BaseInstrumentor` guard suffices). Do not attempt to reconcile this in Python — it would require canonicalizing `sys.path` across all entry points, which is out of scope.
+
+A related, narrower subtlety surfaced while writing the dep-free unit tests in Step 11: popping `sys.modules['hooks.lib.llm.observability']` is not enough to force a real re-execution of the module body, because Python's `from hooks.lib.llm import observability` reads the `observability` attribute off the parent package — and that attribute keeps a reference to the old module object even after the sys.modules pop. Test code that needs a genuinely fresh module must also `delattr(hooks.lib.llm, "observability")` before re-importing. The `fresh_observability_module()` helper in `tests/test_observability.py` documents and implements this pattern.
+
+### Honest scope of OpenInference instrumentation
+
+OpenInference's upstream docs recommend combining `instrumentation-claude-agent-sdk` with `instrumentation-anthropic` for full child-span coverage of internal Anthropic API calls (retries, `output_format` re-prompting). V3 removed direct Anthropic SDK usage in favor of the bundled CLI subprocess (Max-only, no API key), so we only install the Claude Agent SDK instrumentor. Visible spans therefore cover the outer `query()` boundary only — no breakdown of internal retry or latency subcomponents. Revisit if/when an API-key code path is added.
+
+### Why no separate ADR-017
+
+These four items are operational refinements of this ADR, not new decisions. Recording them inline keeps the substrate's decision boundary in one document.
