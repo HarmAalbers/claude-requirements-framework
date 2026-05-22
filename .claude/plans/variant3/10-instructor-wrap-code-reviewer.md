@@ -1,5 +1,11 @@
 # Step 10 — Instructor-wrap `code-reviewer`
 
+> **⚠️ SUPERSEDED IN PART by [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md) (2026-05-22).**
+>
+> The Instructor + `anthropic.Anthropic()` substrate is no longer viable (user has Max only, no API key). The replacement is `claude_agent_sdk.query()` with native `output_format` — see ADR-016 for the validated call shape. Additionally, the "Python aggregation utility" originally proposed alongside this step is replaced by an **aggregator agent** (a second `query(output_format=ReviewReport)` call reading worker JSON), per spike data.
+>
+> The body below preserves the original design rationale. It will be rewritten when this step is executed.
+
 ## Goal
 
 Convert ONE agent (`code-reviewer`) to use Instructor + Pydantic structured output. Pilot. Once proven, Step 18 templates this pattern across the others.

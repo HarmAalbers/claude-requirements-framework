@@ -1,5 +1,13 @@
 # Step 11 — Self-host Langfuse + OpenInference instrumentation
 
+> **⚠️ PRIORITY BUMPED + PARTIALLY SUPERSEDED by [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md) (2026-05-22).**
+>
+> This step is **now the next V3 step**, not the third. The 2026-05-22 spike (`hooks/lib/llm/_spikes/v3_spike.py`) showed 7x latency variance between two runs of the same workflow on identical inputs (80s vs 583s). Without observability we can't tell good behavior from bad. Step 11 must land before Step 10's worker pattern is built.
+>
+> The OpenInference instrumentor target (`openinference-instrumentation-claude-agent-sdk`) was already correctly chosen in the original plan — that part survives unchanged.
+>
+> The body below preserves the original design. It will be lightly revised on execution to reflect the new "Step 11 is foundational" framing.
+
 ## Goal
 
 Stand up a local Langfuse instance and wire the OpenInference Claude Agent SDK instrumentor. Every Claude call from V3 code is traced. No behavior change for users.

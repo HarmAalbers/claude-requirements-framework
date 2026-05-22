@@ -1,5 +1,15 @@
 # Step 18 — PydanticAI `req-supervisor` (replaces Markdown /req)
 
+> **⚠️ SUPERSEDED IN PART by [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md) (2026-05-22).**
+>
+> PydanticAI is **no longer load-bearing** for this step. The two motivations that originally selected it have both weakened:
+> - `@agent.tool` handoff binding → native `output_format` with `HandoffResult.target` as a `Literal` does the same job at the substrate level.
+> - `Hooks()` capability for tracing → the Agent SDK's PreToolUse/PostToolUse hooks (Python callables) are more granular and don't need a wrapper framework.
+>
+> Revised target: **a thin Python script** (~30 lines) that calls `query(output_format=HandoffResult.model_json_schema())`, reads the result, and prints/invokes the chosen handoff. The supervisor collapses from "PydanticAI agent with custom provider adapter" to "small async function." Spike-validated end-to-end.
+>
+> The body below preserves the original PydanticAI-based design as a historical reference. It will be rewritten when this step is executed.
+
 ## Goal
 
 Replace the Markdown `/req` command (from simplification Step 05) with a PydanticAI agent that owns the workflow routing. Adds typed handoff tools and `Hooks()` capability for instrumentation.

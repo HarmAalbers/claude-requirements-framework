@@ -1,5 +1,13 @@
 # Step 15 — Ragas eval harness + golden set
 
+> **⚠️ SUPERSEDED IN PART by [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md) (2026-05-22).**
+>
+> The judge-model substrate has changed. Original plan: `from ragas.llms import AnthropicChat(...)` using a direct Anthropic API key. Revised: **custom Ragas LLM adapter wrapping `ClaudeSDKClient`** (persistent connection, not `query()`) — the user has Max only and the Agent SDK is the substrate.
+>
+> Critical performance note from spike data: `query()` has ~6-12s subprocess overhead per call. Running 50 golden-set examples serially via `query()` would be ~50 minutes of pure subprocess startup. `ClaudeSDKClient` amortizes the subprocess once, making batch eval feasible.
+>
+> Ragas metrics (`ToolCallAccuracy`, `AgentGoalAccuracy`) and the golden-set approach are unchanged. The body below preserves the original design. It will be rewritten when this step is executed.
+
 ## Goal
 
 Score every traced agent run with Ragas metrics: `ToolCallAccuracy` (where applicable) and `AgentGoalAccuracy`. Build a small golden-set of 20 known-bug commits with expected findings. Post scores to Langfuse traces.

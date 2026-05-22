@@ -1,5 +1,13 @@
 # Step 13 — Qdrant local + session embedding/persistence
 
+> **⚠️ SUPERSEDED IN PART by [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md) (2026-05-22).**
+>
+> The embedding provider has changed. Original plan: OpenAI `text-embedding-3-small` (requires OpenAI API key). Revised: **local `sentence-transformers`** using `BAAI/bge-small-en-v1.5` (~33MB, runs on Apple Silicon CPU at ~100 sentences/sec, 384-dim vectors). No external API key, no per-call cost, fully Max-friendly.
+>
+> Qdrant choice is unchanged — Apple Silicon native, in-memory mode for tests, user has skills. LlamaIndex integration shape is similar but the embedding callable is local.
+>
+> The body below preserves the original design. It will be rewritten when this step is executed.
+
 ## Goal
 
 Stand up a local Qdrant instance. On SessionEnd, summarize the session, embed the summary, and upsert to Qdrant. No retrieval yet (Step 14 wires it).
