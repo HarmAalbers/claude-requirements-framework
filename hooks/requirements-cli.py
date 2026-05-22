@@ -3675,6 +3675,140 @@ def _cmd_wip_summary(args) -> int:
     return 0
 
 
+def cmd_budget(args) -> int:
+    """SDK monthly spend tracker (Step 17a).
+
+    Subcommands:
+        status         — show MTD, projected EOM, threshold status
+        tail           — print recent ledger lines (newest first)
+        warn-if-over   — exit non-zero if projection crosses warn threshold
+    """
+    sub = getattr(args, "budget_command", None)
+    if sub is None or sub == "status":
+        return _cmd_budget_status(args)
+    if sub == "tail":
+        return _cmd_budget_tail(args)
+    if sub == "warn-if-over":
+        return _cmd_budget_warn_if_over(args)
+    out(error(f"Unknown budget subcommand: {sub}"), file=sys.stderr)
+    return 1
+
+
+def _load_budget_config() -> dict:
+    """Pull ``budgets.sdk_pool`` from the config cascade. Missing → empty dict."""
+    try:
+        config = RequirementsConfig()
+        budgets = config._config.get("budgets", {})  # noqa: SLF001
+        if not isinstance(budgets, dict):
+            return {}
+        return budgets.get("sdk_pool", {}) or {}
+    except Exception:  # noqa: BLE001 — CLI should never crash on config quirks
+        return {}
+
+
+def _resolve_target_month(args) -> tuple[int, int]:
+    """Parse --month YYYY-MM or default to current UTC month."""
+    from datetime import datetime, timezone
+    raw = getattr(args, "month", None)
+    if raw:
+        try:
+            year_s, month_s = raw.split("-", 1)
+            return int(year_s), int(month_s)
+        except (ValueError, AttributeError):
+            out(error(f"Invalid --month {raw!r}; expected YYYY-MM"),
+                file=sys.stderr)
+            raise SystemExit(2)
+    now = datetime.now(timezone.utc)
+    return now.year, now.month
+
+
+def _cmd_budget_status(args) -> int:
+    from datetime import datetime, timezone
+    from llm import budget as _budget  # type: ignore[import-not-found]
+
+    cfg = _load_budget_config()
+    if cfg.get("enabled") is False:
+        out(dim("budget tracker disabled (budgets.sdk_pool.enabled: false)"))
+        return 0
+
+    year, month = _resolve_target_month(args)
+    now = datetime.now(timezone.utc)
+    records = list(_budget.load_month(year, month))
+    summary = _budget.summarize(records)
+    summary["projected_eom_usd"] = _budget.project_eom(
+        summary["mtd_usd"],
+        now if (year, month) == (now.year, now.month)
+        else datetime(year, month, 28, 23, 59, 59, tzinfo=timezone.utc),
+    )
+
+    limit = float(cfg.get("monthly_limit_usd",
+                          _budget.DEFAULT_MONTHLY_LIMIT_USD))
+    pct = (summary["projected_eom_usd"] / limit * 100) if limit > 0 else 0.0
+    alerts = _budget.check_thresholds(summary, cfg)
+
+    out(header(f"SDK pool — month-to-date ({year:04d}-{month:02d})"))
+    out("─" * 41)
+    out(f"  Spend so far:        ${summary['mtd_usd']:.2f}")
+    out(f"  Projected EOM:       ${summary['projected_eom_usd']:.2f}  "
+        f"({pct:.0f}% of ${limit:.0f} limit)")
+    out(f"  Calls recorded:      {summary['call_count']}")
+    if summary["top_agents"]:
+        out("  Top agents (by $):")
+        for agent, cost in summary["top_agents"][:5]:
+            calls = summary["agent_calls"].get(agent, 0)
+            out(f"    {agent:<20} ${cost:>6.2f}  ({calls} calls)")
+    out("")
+    if alerts:
+        a = alerts[0]
+        level_fn = error if a["level"] == "critical" else warning
+        out(level_fn(
+            f"Status: {a['level'].upper()} — projection at {a['pct']:.0f}% "
+            f"of ${a['limit_usd']:.0f}/mo limit."))
+    else:
+        out(success("Status: OK — projection well below warn threshold."))
+    return 0
+
+
+def _cmd_budget_tail(args) -> int:
+    from llm import budget as _budget  # type: ignore[import-not-found]
+
+    year, month = _resolve_target_month(args)
+    records = list(_budget.load_month(year, month))
+    n = getattr(args, "count", 20) or 20
+    for r in records[-n:][::-1]:
+        ts = r.get("ts", "?")
+        agent = r.get("agent", "?")
+        cost = r.get("cost_usd")
+        cost_s = f"${cost:.4f}" if isinstance(cost, (int, float)) else "    -"
+        out(f"  {ts}  {cost_s}  {agent}")
+    if not records:
+        out(dim(f"no records for {year:04d}-{month:02d}"))
+    return 0
+
+
+def _cmd_budget_warn_if_over(args) -> int:
+    """Exit 1 if projected EOM crosses the warn threshold. Designed for hooks."""
+    from datetime import datetime, timezone
+    from llm import budget as _budget  # type: ignore[import-not-found]
+
+    cfg = _load_budget_config()
+    if cfg.get("enabled") is False:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    summary = _budget.summarize(_budget.load_month(now.year, now.month))
+    summary["projected_eom_usd"] = _budget.project_eom(summary["mtd_usd"], now)
+    alerts = _budget.check_thresholds(summary, cfg)
+    if alerts:
+        a = alerts[0]
+        out(warning(
+            f"⚠ SDK pool {a['level']}: projection ${a['projected_eom_usd']:.2f} "
+            f"= {a['pct']:.0f}% of ${a['limit_usd']:.0f}/mo limit"),
+            file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
     """
     CLI entry point.
@@ -3892,6 +4026,27 @@ Environment Variables:
     # messages list
     messages_subparsers.add_parser('list', help='List message files and their sources')
 
+    # budget (Step 17a)
+    budget_parser = subparsers.add_parser('budget',
+        help='SDK monthly spend tracker against the Agent SDK credit pool')
+    budget_subparsers = budget_parser.add_subparsers(
+        dest='budget_command', help='Budget subcommand')
+
+    budget_status = budget_subparsers.add_parser('status',
+        help='Show MTD spend, projected EOM, threshold status')
+    budget_status.add_argument('--month',
+        help='Target month YYYY-MM (default: current UTC month)')
+
+    budget_tail = budget_subparsers.add_parser('tail',
+        help='Show recent ledger lines (newest first)')
+    budget_tail.add_argument('-n', '--count', type=int, default=20,
+        help='Number of lines to show (default: 20)')
+    budget_tail.add_argument('--month',
+        help='Target month YYYY-MM (default: current UTC month)')
+
+    budget_subparsers.add_parser('warn-if-over',
+        help='Exit non-zero if projection crosses warn threshold (for hook use)')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -3918,6 +4073,7 @@ Environment Variables:
         'upgrade': cmd_upgrade,
         'messages': cmd_messages,
         'wip': cmd_wip,
+        'budget': cmd_budget,
     }
 
     return commands[args.command](args)
