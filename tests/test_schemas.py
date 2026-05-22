@@ -242,6 +242,42 @@ def test_handoff_result_invalid_target(r: TestRunner) -> None:
         r.test("HandoffResult rejects deprecated target", True)
 
 
+def test_handoff_result_writing_plans(r: TestRunner) -> None:
+    h = HandoffResult(
+        target="writing-plans",
+        rationale="Plan-write phase: design ready, plan not yet written.",
+    )
+    r.test(
+        "HandoffResult accepts writing-plans target",
+        h.target == "writing-plans",
+    )
+
+
+def test_handoff_result_all_targets_distinct(r: TestRunner) -> None:
+    """All 7 workflow targets construct cleanly and round-trip via JSON."""
+    targets = [
+        "brainstorm",
+        "writing-plans",
+        "arch-review",
+        "execute-plan",
+        "deep-review",
+        "refactor-orchestrate",
+        "ship",
+    ]
+    all_ok = True
+    for t in targets:
+        h = HandoffResult(target=t, rationale=f"route to {t}")  # type: ignore[arg-type]
+        roundtrip = HandoffResult.model_validate_json(h.model_dump_json())
+        if roundtrip.target != t:
+            all_ok = False
+            break
+    r.test(
+        "HandoffResult accepts all 7 targets and JSON-round-trips",
+        all_ok,
+        f"failed on one of {targets}",
+    )
+
+
 def main() -> None:
     r = TestRunner()
     print("ReviewFinding:")
@@ -267,6 +303,8 @@ def main() -> None:
     test_handoff_result_valid(r)
     test_handoff_result_ship(r)
     test_handoff_result_invalid_target(r)
+    test_handoff_result_writing_plans(r)
+    test_handoff_result_all_targets_distinct(r)
 
     sys.exit(r.summary())
 

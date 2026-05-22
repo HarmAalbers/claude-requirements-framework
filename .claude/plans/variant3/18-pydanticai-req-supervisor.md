@@ -10,6 +10,18 @@
 >
 > The body below preserves the original PydanticAI-based design as a historical reference. It will be rewritten when this step is executed.
 
+## Observability requirement (added 2026-05-22, Langfuse skill audit)
+
+When this step is rewritten, the supervisor MUST own the Langfuse session/tag boundary for a review run:
+
+- The supervisor generates a `session_id` (uuid4) per fan-out and propagates it to every worker call.
+- Each worker call enters an OpenInference `using_attributes(session_id=..., tags=["worker:<name>", "feature:review"])` context (or sets `langfuse.session.id` / `langfuse.tags` OTel attributes directly on the active span) so that the N workers + 1 aggregator appear as one filterable session in the Langfuse UI.
+- Without this, the existing Step 11 instrumentation produces unrelated AGENT-level traces that can't be grouped after the fact.
+
+**Why here, not Step 11:** Step 11 only sees a single `query()` call — it has no notion of a "review run." The supervisor is the first layer that knows N workers belong together, so session-binding is its responsibility.
+
+**Reference:** `~/.claude/skills/langfuse/references/instrumentation.md` §4 ("Discover Additional Context Needs"). Audit performed 2026-05-22 against the Step 11/12 implementation.
+
 ## Goal
 
 Replace the Markdown `/req` command (from simplification Step 05) with a PydanticAI agent that owns the workflow routing. Adds typed handoff tools and `Hooks()` capability for instrumentation.

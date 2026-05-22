@@ -80,13 +80,20 @@ class RefactorVerdict(BaseModel):
 class HandoffResult(BaseModel):
     """Supervisor routing decision — which command to invoke next.
 
-    Targets match the handoff tools exposed by `hooks/lib/llm/supervisor.py`
-    (Step 18). When that supervisor lands, this literal becomes its
-    `output_type` contract.
+    Targets match the workflow phases owned by the requirements-framework
+    `/req` command (simplification Step 05). Step 18 grew the literal from
+    6 to 7 to surface `writing-plans` separately from `arch-review` — the
+    plan-write phase (design ready, plan not yet written) is a genuinely
+    different action than the plan-validate phase (plan written, needs
+    architectural review).
+
+    Listed in workflow order (design → plan-write → plan-validate →
+    implement → review → refactor → ship) for readability.
     """
 
     target: Literal[
         "brainstorm",
+        "writing-plans",
         "arch-review",
         "execute-plan",
         "deep-review",
