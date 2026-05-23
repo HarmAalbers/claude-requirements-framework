@@ -1,0 +1,29 @@
+# Local Qdrant for Step 13 (V3 session retrieval).
+#
+# Kept SEPARATE from infra/docker-compose.yml because that file is a vendored
+# upstream Langfuse pin marked "Do NOT edit by hand". Adding Qdrant inline
+# would dirty the diff against the pinned upstream.
+#
+# Bring up:    docker compose -f infra/docker-compose.qdrant.yml up -d
+# Bootstrap:   python3 scripts/bootstrap_qdrant.py
+# Dashboard:   http://localhost:6333/dashboard
+# Tear down:   docker compose -f infra/docker-compose.qdrant.yml down       # keeps data
+#              docker compose -f infra/docker-compose.qdrant.yml down -v    # wipes data
+#
+# Port choices: defaults 6333/6334 chosen over remapped ports because nothing
+# else on a typical dev box uses them (unlike postgres 5432 / redis 6379,
+# which is why the Langfuse compose remaps to 55432/56379).
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: qdrant
+    ports:
+      - "127.0.0.1:6333:6333"   # REST API + dashboard
+      - "127.0.0.1:6334:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant-data:
