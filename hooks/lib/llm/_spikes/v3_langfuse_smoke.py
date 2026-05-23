@@ -4,10 +4,18 @@
 Prereqs:
     cd infra && docker compose up -d
     # Bootstrap Langfuse via http://localhost:3000 (see README "Local
-    # observability (V3)") and copy the keys.
-    export LANGFUSE_PUBLIC_KEY=pk-...
-    export LANGFUSE_SECRET_KEY=sk-...
-    export LANGFUSE_HOST=http://localhost:3000
+    # observability (V3)") and write the keys into infra/.env (gitignored).
+    # The file's expected to contain:
+    #   LANGFUSE_PUBLIC_KEY=pk-...
+    #   LANGFUSE_SECRET_KEY=sk-...
+    #   LANGFUSE_HOST=http://localhost:3000
+
+Env-var loading order:
+    1. This script auto-loads `infra/.env` then `.env` from REPO_ROOT (when
+       python-dotenv is available). Existing shell env wins over file values
+       so `export LANGFUSE_HOST=...` overrides the file on a per-run basis.
+    2. If python-dotenv isn't installed, only shell env is used; the
+       pre-flight guard below will tell you which vars are still missing.
 
 Run:
     python3 hooks/lib/llm/_spikes/v3_langfuse_smoke.py
@@ -26,6 +34,30 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
+
+
+def _load_dotenv_files() -> None:
+    """Populate os.environ from gitignored .env files before the env guard.
+
+    Order: `infra/.env` (the Langfuse self-host's canonical location, set by
+    Step 11's docker-compose bootstrap), then repo-root `.env`. Shell env
+    always wins — `override=False` means `export LANGFUSE_HOST=...` in the
+    invoking shell beats whatever the file says.
+
+    Soft-dependency: python-dotenv is not in `[project.optional-dependencies]`,
+    so if it isn't installed we silently fall through. The pre-flight guard
+    below will still report any missing vars with a clear message.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    for candidate in (REPO_ROOT / "infra" / ".env", REPO_ROOT / ".env"):
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
+
+
+_load_dotenv_files()
 
 
 def _refuse_if_observability_will_silently_disable() -> None:
