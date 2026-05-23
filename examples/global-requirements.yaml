@@ -524,3 +524,18 @@ hooks:
     #   - memories  # .serena/memories/ files
     #   - skills    # Plugin skill files
     #   - commands  # Plugin command files (arguments only)
+
+  # Qdrant session embedding (Step 13 — V3 retrieval write side)
+  # Embeds each session's transcript summary into a local Qdrant collection
+  # so future sessions can retrieve related prior work. Off by default;
+  # opt-in by flipping enabled: true here or in .claude/requirements.yaml.
+  #
+  # Prereqs (one-time):
+  #   docker compose -f infra/docker-compose.qdrant.yml up -d
+  #   pip install -e '.[llm]'
+  #   python3 scripts/bootstrap_qdrant.py
+  qdrant:
+    enabled: false                # Flip to true to enable session embedding
+    # host: "localhost"           # override via QDRANT_HOST env var
+    # port: 6333                  # override via QDRANT_PORT env var
+    # collection: "sessions"      # fixed for now — Step 14 may add more

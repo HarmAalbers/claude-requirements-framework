@@ -3,6 +3,15 @@
 > **Rewritten 2026-05-23** for the ADR-016 substrate. The original Step 13 (OpenAI
 > `text-embedding-3-small` + `instructor.from_anthropic`) is non-viable under
 > Max-only auth and was marked "SUPERSEDED IN PART." This document replaces it.
+>
+> **Landed 2026-05-23** as 8 stacked stg patches on
+> `refactor/step-08-llm-package-scaffold`:
+> `step-13-{plan-rewrite, infra, embedder, retrieval, summarizer,
+>   session-end-write, smoke, housekeeping}`. Plugin bumped to 4.1.0.
+> Verification: live smoke against Qdrant v1.15.0 + real
+> `BAAI/bge-small-en-v1.5` model ranked the auth-themed fixture first
+> (score 0.696) for an auth-themed query, ahead of docs (0.591) and
+> perf (0.566).
 
 ## Goal
 
@@ -312,7 +321,8 @@ model load.
 ## Honest scope notes
 
 - The Qdrant dashboard at `http://localhost:6333/dashboard` is a great smoke surface — open it during the first dogfood session.
-- Cold-start cost: `SentenceTransformer("BAAI/bge-small-en-v1.5")` downloads ~33MB the first time (cached in `~/.cache/huggingface/` thereafter). The smoke spike will surface this on a fresh machine.
+- Cold-start cost (measured during the 2026-05-23 live smoke on a fresh cache): **~25 seconds** for the very first run including the 33MB model download from HF Hub. Subsequent runs hit `~/.cache/huggingface/` and complete in ~1.5s. Plan an extra ~25s for the first hook-triggered embed after deployment to a fresh machine; thereafter the cost is negligible.
+- **Version-pin follow-up**: `qdrant-client>=1.12` resolves to a 1.18+ wheel today, while the compose image pin is `qdrant/qdrant:v1.15.0`. That's still a 3-minor-version gap and the client emits a warning on every call. The smoke works regardless, but a future patch should bump the server image to align (target: same minor or +/- 1). Tracked because pinning carelessly to `:latest` would re-introduce reproducibility issues.
 - The `summarize_session` call adds one Haiku invocation per session end. Cost: ~$0.001 per session (300 chars in + 100 chars out). Budget tracker captures it automatically via the `claude.query` wrapper.
 - No PII masking. Per project memory `[[project-no-pii-masking]]`: self-hosted, single-user, out of scope.
 - The `payload` dict is intentionally small (project, branch, ended_at, reason, summary). Step 14 will add structured fields (satisfied requirements, commit shas) once the read side knows what it wants to filter on.

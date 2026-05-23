@@ -13,10 +13,23 @@
 # Port choices: defaults 6333/6334 chosen over remapped ports because nothing
 # else on a typical dev box uses them (unlike postgres 5432 / redis 6379,
 # which is why the Langfuse compose remaps to 55432/56379).
+#
+# Image pin tracking: client `qdrant-client>=1.12` typically resolves to a
+# 1.18+ wheel; pinning the server too far behind triggers the client's
+# "minor version difference must not exceed 1" warning. v1.15.0 narrows
+# the gap from 6 minor versions to 3 — still warns but works. Follow-up:
+# bump to a v1.18.x server image once we confirm it runs cleanly on
+# Apple Silicon. Tracked in the Step 13 plan doc's "Honest scope notes."
+#
+# Project name: explicit so this compose doesn't share a project namespace
+# with infra/docker-compose.yml (Langfuse). Without the explicit name,
+# both files derive the project name from the directory ("infra") and each
+# sees the other's containers as orphans on every `up`.
+name: requirements-framework-qdrant
 
 services:
   qdrant:
-    image: qdrant/qdrant:v1.12.0
+    image: qdrant/qdrant:v1.15.0
     container_name: qdrant
     ports:
       - "127.0.0.1:6333:6333"   # REST API + dashboard
