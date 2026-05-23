@@ -5,6 +5,24 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] — 2026-05-23
+
+### Added
+
+- **Step 15 — Ragas eval harness + minimal golden set.** Closes the eval gap that has gated Step 20 (Sonnet pinning). `hooks/lib/llm/eval.py` exposes `GoldenCase`/`FindingMatch`/`EvalScore` Pydantic models, a deterministic `compute_finding_match` (file exact + line ±2 + category exact, best-of-N), and an async `score_case` that accepts an injected judge callable so tests stay Ragas-free.
+- **Persistent `ClaudeSDKClient` judge** wired through `scripts/run_eval.py` — opens the SDK subprocess once per cycle and reuses it for every judge call, amortizing the ~7s startup cost across the run (5-case Haiku cycle measured at 288s wall-clock vs ~350s with per-call `query()`).
+- **5 hand-authored synthetic golden cases** under `golden_set/cases/` covering security/CRITICAL (SQL injection), performance/IMPORTANT (N+1), logic/IMPORTANT (off-by-one), style/SUGGESTION (`Any` return), complexity/SUGGESTION (deep nesting). Each case has a matching unified-format `.diff` under `golden_set/diffs/`.
+- **JSONL ledger** at `.git/requirements/eval/<timestamp>_<branch>.jsonl` — one `EvalScore` per line, well-formed Pydantic JSON, suitable for diffing across runs.
+- **Optional Langfuse score posting** via `post_to_langfuse(trace_id, name, value)` — env-gated by `LANGFUSE_PUBLIC_KEY`, fail-open.
+- **Loud-fail smoke spike** at `hooks/lib/llm/_spikes/v3_ragas_eval_smoke.py` — hard-fails if extras missing, golden set missing, or median `FindingMatch < 0.50` (proves the harness produces real signal).
+- **30 new tests** in `tests/test_eval.py` — pure-helper + judge-mock + Langfuse-mock coverage.
+
+### Notes
+
+- The "Ragas judge" is currently a direct prompt-and-parse via `ClaudeSDKClient`, not a `BaseRagasLLM` adapter. Same idea (LLM judges agent output against a reference goal), simpler wiring. Upgrade to a real Ragas adapter is a deliberate future patch if v1's scoring proves insufficiently variant.
+- No pre-PR gate, no nightly cron. Threshold automation comes after ≥3 cycles of human-confirmed baseline — wiring it now would be regression-detection theatre.
+- `ToolCallAccuracy` deferred — code-reviewer doesn't use tools.
+
 ## [4.2.0] — 2026-05-23
 
 ### Added
