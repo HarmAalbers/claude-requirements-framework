@@ -5,6 +5,21 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] — 2026-05-23
+
+### Added
+
+- **Step 14 — SessionStart retrieval pipeline.** Closes the read side of the Step 13 Qdrant + local-embeddings loop. `hooks/lib/llm/memory.py` exposes `write_retrieval_json(branch, query, top_k, timeout_s, out_dir)` and `render_retrieval(hits, max_hits, min_score)`. On `SessionStart`, when `hooks.retrieval.enabled: true`, the hook embeds a heuristic query (branch + last 3 commit subjects), persists hits to `.git/requirements/retrieval-<branch>.json`, and prepends a compact "Similar prior sessions" markdown block to the injected briefing.
+- **Hard SIGALRM timeout (default 1.5s)** on the SessionStart retrieval call so a hung Qdrant never blocks CLI startup.
+- **Smoke spike** at `hooks/lib/llm/_spikes/v3_retrieval_pipeline_smoke.py` — loud-fail end-to-end verification against real Qdrant + `BAAI/bge-small-en-v1.5`.
+- **26 new tests** in `tests/test_memory.py` (pure helpers + in-memory Qdrant round-trip + timeout path).
+- **Config block** `hooks.retrieval.{enabled, top_k, max_hits, min_score, timeout_s}` (off by default).
+
+### Notes
+
+- LlamaIndex `Memory` composition (the original Step 14 plan) is deferred until a downstream consumer (worker/supervisor) needs a chat-message-shaped `Memory` object rather than a rendered string. Today, no consumer does — Step 18 supervisor takes a prompt string.
+- Statusline retrieval tag is also deferred — SessionStart context injection is the only consumer this step.
+
 ## [4.0.0] — 2026-05-20
 
 ### Removed
