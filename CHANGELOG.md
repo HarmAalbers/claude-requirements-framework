@@ -5,6 +5,26 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.0] — 2026-05-23
+
+### Added
+
+- **Step 16 — Jinja2 prompt template engine (phase 1: V3 + render plumbing).** First phase of a phased migration of all 60 prompt-like files in the project to Jinja2 (3 V3 worker prompts in this step; 25 plugin agents in Step 16b; 11 commands + 21 skills in Step 16c). This step ships the engine, converts the 3 V3 worker prompts, and stands up the build-time render plumbing that 16b/16c will consume.
+- **`hooks/lib/llm/templates.py`** — Jinja2 Environment with `StrictUndefined`, custom `repr` filter (replaces Python's `{scope!r}`), and a `render(text, **vars)` helper. 16 tests.
+- **3 V3 worker prompts converted to `.md.j2`**: `code-reviewer`, `review-aggregator`, `req-supervisor`. Old `.txt` files deleted (no backwards-compat shims, per project convention).
+- **2 partials** under `prompts/partials/` designed for plugin agent reuse in Step 16b: `safety.j2` (universal review safety rules) and `project_conventions.j2` (optional CLAUDE.md head injection). 10 tests.
+- **`load_prompt(name, *, label="production", **vars)` API** — replaces the previous `load_prompt(name).format(...)` pattern. Workers stop calling `.format()`; the loader fetches raw text from Langfuse (or `.md.j2` file fallback) and renders via `templates.render()` before returning. `label` is a reserved kwarg, not a template variable.
+- **`scripts/render_prompts.py`** — build-time renderer for plugin `.md.j2` sources to `.md` siblings. Supports `--dry-run` and `--check` (for pre-commit). No-op for Step 16 (no plugin `.md.j2` exist yet); plumbing for Step 16b's first plugin agent migration.
+- **`sync.sh deploy` extensions**: now globs `.md.j2` and `.j2` alongside `.py`/`.txt` in the recursive `hooks/lib/` deploy, cleans the prompts subtree before copy (kills orphan `.txt` files from the rename), and invokes `render_prompts.py` against the plugin tree before copying.
+- **`scripts/sync_prompts_to_langfuse.py`** updated to glob `*.md.j2` and correctly strip both suffixes when registering Langfuse prompt names. Docstring carries the research grounding ([Langfuse FAQ](https://langfuse.com/faq/all/using-external-templating-libraries), [Discussion #4315](https://github.com/orgs/langfuse/discussions/4315), [Issue #1912](https://github.com/langfuse/langfuse/issues/1912)).
+- **Smoke spike** at `hooks/lib/llm/_spikes/v3_jinja2_smoke.py` — loud-fail, no SDK calls. Renders all 3 prompts, asserts expected substrings appear, verifies StrictUndefined raises on missing vars, optional Langfuse round-trip when env present.
+
+### Notes
+
+- **Langfuse Playground compatibility loss is intentional and documented.** Templates with `{% %}` blocks can't be auto-rendered in the Playground; Langfuse's UI variable detection only sees top-level alphanumeric `{{ var }}`. Per the Langfuse FAQ, client-side rendering is the maintainer-blessed pattern — TTL caching + version-label rollback story (Step 12) remains intact.
+- **The retrieval slot** (`{% if retrieved %}...{% endfor %}` in code-reviewer) is deferred until a worker actually reads `retrieval.json` (Step 14 only writes it for SessionStart injection today).
+- **Step 16b is queued next** — converting 25 plugin agents using the same engine + render pipeline. Step 16c follows with commands + skills.
+
 ## [4.3.0] — 2026-05-23
 
 ### Added
