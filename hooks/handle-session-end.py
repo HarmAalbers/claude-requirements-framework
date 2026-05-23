@@ -163,6 +163,55 @@ def main() -> int:
         except Exception as e:
             logger.debug("Obsidian finalization failed (fail-open)", error=str(e))
 
+        # 5. Qdrant session embedding (Step 13).
+        #
+        # Fail-open: every nested call already returns "" / False on error,
+        # AND the outer try here catches anything they miss (e.g. extras
+        # missing → ImportError). The framework rule is that SessionEnd
+        # cannot raise; this block honors that at three layers.
+        #
+        # Why an inner sys.path mutation: this hook is invoked as a fresh
+        # subprocess by Claude Code, with no guarantee that `pip install
+        # -e '.[llm]'` has been run in the active python. Adding REPO_ROOT
+        # here lets the package import resolve when extras ARE installed,
+        # and ImportError fail-opens cleanly when they aren't.
+        try:
+            qdrant_enabled = config and config.get_hook_config('qdrant', 'enabled', False)
+            if qdrant_enabled:
+                transcript_path = input_data.get('transcript_path')
+                if transcript_path and Path(transcript_path).is_file():
+                    import asyncio
+                    import time as _time
+                    repo_root = Path(__file__).resolve().parent.parent
+                    if str(repo_root) not in sys.path:
+                        sys.path.insert(0, str(repo_root))
+                    from hooks.lib.llm.retrieval import upsert_session
+                    from hooks.lib.llm.summarizer import summarize_session
+
+                    tail = Path(transcript_path).read_text()[-15000:]
+                    session_summary = asyncio.run(summarize_session(tail))
+                    if session_summary:
+                        ok = upsert_session(
+                            session_id=session_id,
+                            summary=session_summary,
+                            payload={
+                                "project": str(project_dir),
+                                "branch": branch or "",
+                                "ended_at": int(_time.time()),
+                                "reason": reason,
+                            },
+                        )
+                        logger.debug("Qdrant session upsert",
+                                     ok=ok, summary_chars=len(session_summary))
+                    else:
+                        logger.debug("Qdrant: empty summary, skipping upsert")
+                else:
+                    logger.debug("Qdrant: no transcript_path, skipping",
+                                 path=transcript_path)
+        except Exception as e:
+            logger.debug("Qdrant session embedding failed (fail-open)",
+                         error=str(e))
+
         return 0
 
     except Exception as e:
