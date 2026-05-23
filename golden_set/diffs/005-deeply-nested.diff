@@ -1,0 +1,32 @@
+diff --git a/services/router.py b/services/router.py
+index 0000000..1111111 100644
+--- a/services/router.py
++++ b/services/router.py
+@@ -1,5 +1,29 @@
+ """Request-routing utilities."""
+
++
++def classify_request(req):
++    """Pick a handler queue for the incoming request."""
++    if req is not None:
++        if req.headers is not None:
++            if "X-Tenant" in req.headers:
++                if req.method == "POST":
++                    if req.body is not None:
++                        if len(req.body) > 0:
++                            return "tenant-post-bulk"
++                        else:
++                            return "tenant-post-empty"
++                    else:
++                        return "tenant-post-nobody"
++                else:
++                    return "tenant-get"
++            else:
++                return "anonymous"
++        else:
++            return "no-headers"
++    return "null-request"
++
++
+ def public_routes():
+     return ["/health", "/version"]

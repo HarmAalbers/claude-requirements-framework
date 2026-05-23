@@ -1,0 +1,14 @@
+{
+  "id": "004-any-typing",
+  "agent": "code-reviewer",
+  "diff_path": "golden_set/diffs/004-any-typing.diff",
+  "reference_findings": [
+    {
+      "file": "api/handlers.py",
+      "line": 8,
+      "category": "style",
+      "severity": "SUGGESTION"
+    }
+  ],
+  "reference_goal": "Detect overly permissive type annotation in api/handlers.py around line 8 — the handler returns `Any` when it actually returns a concrete dict[str, str | int]. Tightening the return type catches bugs at call sites. Severity should be SUGGESTION."
+}

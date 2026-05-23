@@ -1,0 +1,21 @@
+diff --git a/services/feed.py b/services/feed.py
+index 0000000..1111111 100644
+--- a/services/feed.py
++++ b/services/feed.py
+@@ -10,8 +10,16 @@ from .models import User, Post
+ from .db import session
+
+ def build_homepage_feed(limit: int = 20):
+-    users = session.query(User).limit(limit).all()
+-    return [{"name": u.name} for u in users]
++    users = session.query(User).limit(limit).all()
++    feed = []
++    for user in users:
++        # NOTE: posts is a lazy relationship — this issues one SELECT per user.
++        recent_posts = user.posts[:5]
++        feed.append({
++            "name": user.name,
++            "post_count": len(user.posts),
++            "recent": [p.title for p in recent_posts],
++        })
++    return feed
