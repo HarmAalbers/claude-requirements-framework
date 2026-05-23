@@ -1,17 +1,55 @@
 #!/usr/bin/env python3
-"""Mirror bundled prompt .txt files into Langfuse Prompt Management.
+"""Mirror bundled prompt .md.j2 files into Langfuse Prompt Management.
 
-Step 12. One-shot publisher: reads `hooks/lib/llm/prompts/*.txt` and
-upserts each one as a text-typed Langfuse prompt with the
-`production` label. After this runs, the PromptLoader at
-`hooks.lib.llm.prompts.load_prompt` will fetch from Langfuse on
-its next cache-miss instead of falling back to the file.
+Step 12 (publisher) + Step 16 (Jinja2 source format). Reads
+`hooks/lib/llm/prompts/*.md.j2` and upserts each one as a text-typed
+Langfuse prompt with the `production` label. After this runs, the
+PromptLoader at `hooks.lib.llm.prompts.load_prompt` fetches from Langfuse
+on its next cache-miss instead of falling back to the file.
 
-Why "upsert": `langfuse.create_prompt` is idempotent on content —
-if the prompt text is identical to the latest version it's a no-op
-on Langfuse's side; if different, a new version is created and the
-`production` label is moved to it. That gives a clean
-"edit file → run sync → next workers see new version" loop.
+Templates are stored in Langfuse as **opaque Jinja2 text**, per the
+[Langfuse FAQ on external templating libraries][faq] (the
+maintainer-blessed pattern for prompts that need loops/conditionals/
+includes — Langfuse's native `compile()` is mustache-only). Rendering
+happens client-side in `templates.render()`.
+
+Known Langfuse UI limitations on Jinja2-stored prompts (see the FAQ):
+  - Playground can't auto-render templates with `{% %}` blocks.
+  - In-UI prompt experiments require SDK-side compile (which we do).
+  - Variable hints only detect top-level alphanumeric `{{ var }}` —
+    `{% for hit in retrieved %}` won't surface `retrieved` in the UI's
+    variable list.
+
+These are accepted trade-offs. The TTL caching + version-label rollback
+story Step 12 built remains intact (Langfuse caches the raw text; our
+loader bypasses Langfuse's `compile()`).
+
+Why "upsert": `langfuse.create_prompt` is idempotent on content — if the
+prompt text is identical to the latest version it's a no-op on Langfuse's
+side; if different, a new version is created and the `production` label
+moves to it. Clean "edit file → run sync → next workers see new version"
+loop.
+
+Why we use `prompt.prompt` (raw) instead of `get_langfuse_prompt()`:
+  - `get_langfuse_prompt()` was the subject of [Issue #1912][issue1912]
+    (closed 2024-05-14), which over-eagerly transformed `{{ }}` blocks it
+    interpreted as Langfuse variables, mangling Jinja2 expressions with
+    function calls or quoting. The fix uses a heuristic
+    (alphanumeric-only contents = Langfuse var; anything else = leave
+    alone), which means simple Jinja2 variables like `{{ scope }}` could
+    still collide. Our raw `.prompt` path bypasses the transformation
+    entirely. Anyone reaching for `get_langfuse_prompt` in a future patch
+    needs to know.
+
+Why Langfuse doesn't ship Jinja2 server-side: per
+[Discussion #4315][disc4315] — server-side rendering would defeat
+client-side caching, requiring a Langfuse round-trip on every LLM
+invocation. Maintainer position: client-side rendering is the right
+seam for control flow.
+
+[faq]: https://langfuse.com/faq/all/using-external-templating-libraries
+[issue1912]: https://github.com/langfuse/langfuse/issues/1912
+[disc4315]: https://github.com/orgs/langfuse/discussions/4315
 
 Usage:
     # Prereqs (same as the Step 11 smoke):
@@ -33,6 +71,20 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROMPTS_DIR = REPO_ROOT / "hooks" / "lib" / "llm" / "prompts"
+SOURCE_EXT = ".md.j2"
+
+
+def _prompt_name(path: Path) -> str:
+    """Strip the `.md.j2` extension to get the Langfuse prompt name.
+
+    `Path.stem` only strips the rightmost suffix, so
+    `Path('code-reviewer.md.j2').stem == 'code-reviewer.md'` — wrong.
+    We need both suffixes off to register the prompt as `code-reviewer`.
+    """
+    name = path.name
+    if name.endswith(SOURCE_EXT):
+        return name[: -len(SOURCE_EXT)]
+    return path.stem
 
 
 def _require_env() -> None:
@@ -53,9 +105,11 @@ def _discover_prompts() -> list[Path]:
     if not PROMPTS_DIR.is_dir():
         sys.stderr.write(f"ERROR: prompts dir not found: {PROMPTS_DIR}\n")
         sys.exit(2)
-    files = sorted(PROMPTS_DIR.glob("*.txt"))
+    # Top-level only — partials/ subdirectory holds `{% include %}` targets
+    # that don't have their own Langfuse prompt entries.
+    files = sorted(PROMPTS_DIR.glob(f"*{SOURCE_EXT}"))
     if not files:
-        sys.stderr.write(f"ERROR: no .txt files in {PROMPTS_DIR}\n")
+        sys.stderr.write(f"ERROR: no {SOURCE_EXT} files in {PROMPTS_DIR}\n")
         sys.exit(2)
     return files
 
@@ -78,7 +132,7 @@ def main() -> int:
     if args.dry_run:
         print(f"Would sync {len(files)} prompt(s) to Langfuse with label={args.label!r}:")
         for p in files:
-            print(f"  {p.stem}  ({p.stat().st_size} bytes)")
+            print(f"  {_prompt_name(p)}  ({p.stat().st_size} bytes, source: {p.name})")
         return 0
 
     _require_env()
@@ -87,14 +141,15 @@ def main() -> int:
 
     for p in files:
         content = p.read_text()
+        name = _prompt_name(p)
         result = lf.create_prompt(
-            name=p.stem,
+            name=name,
             type="text",
             prompt=content,
             labels=[args.label],
         )
         version = getattr(result, "version", "?")
-        print(f"synced: {p.stem}  -> version {version}, label {args.label!r}")
+        print(f"synced: {name}  -> version {version}, label {args.label!r}")
 
     lf.flush()
     return 0
