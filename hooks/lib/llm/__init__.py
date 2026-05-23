@@ -5,6 +5,7 @@ Submodules are populated by later V3 steps (see `.claude/plans/variant3/`):
     observability  — Langfuse + OpenInference instrumentation (Step 11)
     embedder       — Local sentence-transformers embedding (Step 13)
     retrieval      — Qdrant-backed session embedding/query (Step 13)
+    summarizer     — Session-transcript summarizer via SDK Haiku (Step 13)
     memory         — LlamaIndex memory blocks (Step 14)
     eval           — Ragas eval harness (Step 15)
     templates      — Jinja2 prompt templates (Step 16)
