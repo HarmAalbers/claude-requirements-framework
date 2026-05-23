@@ -566,10 +566,49 @@ See `req init --help` for options.""")
             config, project_dir, session_id, logger
         )
 
+        # 2f. Retrieval pipeline (Step 14): query Qdrant for similar prior
+        # sessions, render a compact block, prepend to context. Off by default.
+        # Same fail-open + sys.path trick as Step 13's SessionEnd qdrant block:
+        # the llm.* package is only installed if `pip install -e '.[llm]'` has
+        # been run; an ImportError just means retrieval stays disabled.
+        retrieval_block = ""
+        try:
+            retrieval_enabled = config.get_hook_config('retrieval', 'enabled', False)
+            if retrieval_enabled:
+                repo_root = Path(__file__).resolve().parent.parent
+                if str(repo_root) not in sys.path:
+                    sys.path.insert(0, str(repo_root))
+                from hooks.lib.llm.memory import (
+                    write_retrieval_json,
+                    render_retrieval,
+                    _recent_commit_subjects,
+                )
+                query = f"{branch} {_recent_commit_subjects(3)}".strip()
+                payload = write_retrieval_json(
+                    branch,
+                    query,
+                    top_k=config.get_hook_config('retrieval', 'top_k', 3),
+                    timeout_s=config.get_hook_config('retrieval', 'timeout_s', 1.5),
+                )
+                retrieval_block = render_retrieval(
+                    payload.get('hits', []),
+                    max_hits=config.get_hook_config('retrieval', 'max_hits', 3),
+                    min_score=config.get_hook_config('retrieval', 'min_score', 0.5),
+                )
+                logger.debug(
+                    "Retrieval pipeline ran",
+                    hits=len(payload.get('hits', [])),
+                    rendered=bool(retrieval_block),
+                )
+        except Exception as e:
+            logger.debug("Retrieval pipeline failed (fail-open)", error=str(e))
+
         # 3. Assemble and inject context (warnings + status) if applicable
         inject_context = config.get_hook_config('session_start', 'inject_context', True)
 
         parts = []
+        if retrieval_block:
+            parts.append(retrieval_block)
         if wip_summary:
             parts.append(wip_summary)
         if other_sessions_warning:

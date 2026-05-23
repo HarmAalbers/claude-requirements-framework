@@ -539,3 +539,16 @@ hooks:
     # host: "localhost"           # override via QDRANT_HOST env var
     # port: 6333                  # override via QDRANT_PORT env var
     # collection: "sessions"      # fixed for now — Step 14 may add more
+
+  # SessionStart retrieval pipeline (Step 14 — V3 retrieval read side)
+  # On every SessionStart, query the Qdrant `sessions` collection with a
+  # heuristic query (branch name + last 3 commit subjects) and prepend a
+  # compact "Similar prior sessions" block to the briefing.
+  #
+  # Requires the qdrant block above to be enabled too (no data → no hits).
+  retrieval:
+    enabled: false                # Flip to true to enable SessionStart injection
+    # top_k: 3                    # Max hits requested from Qdrant
+    # max_hits: 3                 # Max hits rendered in the briefing
+    # min_score: 0.5              # Drop hits with cosine score below this
+    # timeout_s: 1.5              # Hard SIGALRM timeout for the whole query
