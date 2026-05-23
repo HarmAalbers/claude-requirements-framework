@@ -58,7 +58,7 @@ async def review(diff: str, scope: str = "unstaged") -> ReviewReport:
             (the agent could not produce valid JSON within the SDK's internal
             retry cap) or if no terminal `ResultMessage` is observed.
     """
-    prompt = load_prompt("code-reviewer").format(diff=diff, scope=scope)
+    prompt = load_prompt("code-reviewer", diff=diff, scope=scope)
     options = _build_options()
 
     async for msg in query(prompt=prompt, options=options):

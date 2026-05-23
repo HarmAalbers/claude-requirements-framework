@@ -65,7 +65,7 @@ async def aggregate(reports: list[ReviewReport]) -> ReviewReport:
 
     reports_json = json.dumps(
         [r.model_dump() for r in reports], indent=2)
-    prompt = load_prompt("review-aggregator").format(reports_json=reports_json)
+    prompt = load_prompt("review-aggregator", reports_json=reports_json)
     options = _build_options()
 
     async for msg in query(prompt=prompt, options=options):

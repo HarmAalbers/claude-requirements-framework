@@ -66,16 +66,25 @@ def test_file_fallback_when_no_langfuse_env(runner: TestRunner):
                    if not k.startswith("LANGFUSE_")}
     with patch.dict(os.environ, env_without, clear=True):
         with fresh_prompts_module() as prompts:
-            text = prompts.load_prompt("code-reviewer")
+            text = prompts.load_prompt(
+                "code-reviewer",
+                diff="--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new",
+                scope="unstaged",
+            )
             runner.test(
                 "returns non-empty string",
                 isinstance(text, str) and len(text) > 0,
                 f"got: {type(text).__name__} len={len(text) if isinstance(text, str) else 0}",
             )
             runner.test(
-                "contains {diff} placeholder",
-                "{diff}" in text,
-                "code-reviewer prompt must keep its diff placeholder",
+                "rendered output contains the diff text",
+                "+new" in text,
+                "code-reviewer prompt must render the diff variable",
+            )
+            runner.test(
+                "rendered output contains scope repr",
+                "'unstaged'" in text,
+                "scope should be repr'd with single quotes",
             )
 
 
@@ -85,11 +94,14 @@ def test_file_fallback_for_aggregator(runner: TestRunner):
                    if not k.startswith("LANGFUSE_")}
     with patch.dict(os.environ, env_without, clear=True):
         with fresh_prompts_module() as prompts:
-            text = prompts.load_prompt("review-aggregator")
+            text = prompts.load_prompt(
+                "review-aggregator",
+                reports_json='[{"agent": "code-reviewer", "findings": []}]',
+            )
             runner.test(
-                "contains {reports_json} placeholder",
-                "{reports_json}" in text,
-                "aggregator prompt must keep its reports_json placeholder",
+                "rendered output contains the reports_json content",
+                '"agent": "code-reviewer"' in text,
+                "aggregator prompt must render the reports_json variable",
             )
 
 
@@ -151,11 +163,15 @@ def test_langfuse_exception_falls_back_to_file(runner: TestRunner):
             mock_client = SimpleNamespace(get_prompt=boom)
             with patch.object(prompts, "_get_langfuse_client",
                               return_value=mock_client):
-                text = prompts.load_prompt("code-reviewer")
+                text = prompts.load_prompt(
+                    "code-reviewer",
+                    diff="dummy diff text",
+                    scope="unstaged",
+                )
                 runner.test(
                     "falls back to file on Langfuse exception",
-                    "{diff}" in text,
-                    "expected file content (with {diff} placeholder)",
+                    "dummy diff text" in text,
+                    "expected file content rendered with the diff var",
                 )
 
 
@@ -236,10 +252,10 @@ def test_langfuse_disabled_when_import_fails(runner: TestRunner):
 def test_known_prompt_files_present(runner: TestRunner):
     print("\ntest_known_prompt_files_present")
     root = REPO_ROOT / "hooks" / "lib" / "llm" / "prompts"
-    for name in ("code-reviewer", "review-aggregator"):
-        path = root / f"{name}.txt"
+    for name in ("code-reviewer", "review-aggregator", "req-supervisor"):
+        path = root / f"{name}.md.j2"
         runner.test(
-            f"{name}.txt exists",
+            f"{name}.md.j2 exists",
             path.exists() and path.stat().st_size > 0,
             f"missing or empty: {path}",
         )

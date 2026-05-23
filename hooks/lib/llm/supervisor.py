@@ -83,8 +83,7 @@ async def route(phase: str, unsatisfied: list[str]) -> HandoffResult:
             no terminal `ResultMessage` is observed.
     """
     unsat_repr = ", ".join(unsatisfied) if unsatisfied else "(none)"
-    prompt = load_prompt("req-supervisor").format(
-        phase=phase, unsatisfied=unsat_repr)
+    prompt = load_prompt("req-supervisor", phase=phase, unsatisfied=unsat_repr)
     options = _build_options()
 
     async for msg in query(prompt=prompt, options=options):
