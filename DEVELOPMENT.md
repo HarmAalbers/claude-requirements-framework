@@ -635,14 +635,16 @@ chpwd_functions+=(claude_req_sync_check)  # zsh
 PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}claude_req_sync_check"  # bash
 ```
 
-## Plugin Agent Authoring (Step 16b)
+## Plugin Prompt Authoring (Steps 16b + 16c)
 
-Plugin agents under `plugins/requirements-framework/agents/` use a **two-file template + rendered output** pattern:
+All dispatched plugin prompts — **25 agents** under `plugins/requirements-framework/agents/`, **11 commands** under `plugins/requirements-framework/commands/`, and **21 skills** under `plugins/requirements-framework/skills/*/SKILL.md` — use a **two-file template + rendered output** pattern:
 
 | File | Role | Edit it? |
 |---|---|---|
 | `<name>.md.j2` | Jinja2 source-of-truth — frontmatter + body + `{% include %}` directives | **Yes** |
 | `<name>.md` | Rendered output that Claude Code dispatches at runtime | **No** — build artifact |
+
+The invariant "every dispatched plugin `.md` has a `.md.j2` source" is enforced at CI time by `tests/test_render_prompts.py::test_all_plugin_md_files_have_j2_source`. Three refactor-orchestration template files (`orchestrator-prompt-template.md`, `plan-template.md`, `retrospective-template.md`) are explicitly excluded — they are skill-internal scaffolding read at runtime, not dispatched prompts.
 
 ### Author flow
 
@@ -675,6 +677,14 @@ When adding a partial, extend `tests/test_partials.py` with: a content/include t
 ### When NOT to use `.md.j2`
 
 If an agent template needs runtime variables (anything other than build-time partial composition), it does NOT belong in the plugin tree. Put it under `hooks/lib/llm/prompts/` instead — that's where `load_prompt(name, **vars)` resolves runtime templates. The test `tests/test_render_prompts.py::test_plugin_templates_have_no_runtime_vars` enforces this boundary at CI time.
+
+### `{% include %}` loader-root boundary
+
+Plugin `.md.j2` files CAN use `{% include 'partials/<name>.j2' %}` against `hooks/lib/llm/prompts/partials/`. Both the build-time path (`scripts/render_prompts.py`) and the runtime worker path delegate to the same `hooks.lib.llm.templates.render()` function, which uses a module-level `Environment` configured with `FileSystemLoader(hooks/lib/llm/prompts/)`. `Environment.from_string()` shares that loader, so `{% include %}` resolution works identically in both paths. The 13 diff-scope review agents (`code-reviewer.md.j2`, `appsec-auditor.md.j2`, etc.) demonstrate this — each one includes `{% include 'partials/diff_scope_load.j2' %}` and renders correctly at build time.
+
+What plugin `.md.j2` files CANNOT do is reference runtime variables (`{{ scope }}`, `{% if foo %}`, etc.) — those would render against an empty context and either crash on `StrictUndefined` or produce wrong output. The build-time vs. runtime distinction is **about variable availability, not loader access**: build-time templates render with zero caller vars (enforced by `test_plugin_templates_have_no_runtime_vars`), runtime templates can pass vars via `load_prompt(name, **vars)`.
+
+If you need shared kernels across plugin templates, extract a new partial under `hooks/lib/llm/prompts/partials/` (the discoverability rule above still applies — extract only when the kernel is byte-identical across multiple templates).
 
 ## Contributing
 

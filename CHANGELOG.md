@@ -5,6 +5,39 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.6.0] — 2026-05-24
+
+### Changed
+
+- **Step 16c — Plugin commands and skills converted to Jinja2 templates (source format change only; rendered output is byte-identical).** All 11 commands in `plugins/requirements-framework/commands/` and all 21 skills in `plugins/requirements-framework/skills/*/SKILL.md` now have `.md.j2` source-of-truth alongside their existing `.md` rendered siblings. Completes the Step 16b conversion to cover every dispatched prompt under `plugins/requirements-framework/`. Claude Code continues to dispatch the `.md` files unchanged; the `.md.j2` files are what you edit.
+- **`DEVELOPMENT.md`** — section renamed "Plugin Agent Authoring (Step 16b)" → "Plugin Prompt Authoring (Steps 16b + 16c)" to reflect the broader scope (25 agents + 11 commands + 21 skills). Adds a scope note on `{% include %}` loader-root boundaries between build-time plugin templates and runtime worker templates (codex-arch-reviewer finding).
+- **`scripts/render_prompts.py`** — docstring step reference updated to "Steps 16b–16c" so the script's self-description matches reality (solid-reviewer cosmetic note).
+- **Plugin bumped 4.5.0 → 4.6.0.** Rendered `.md` output is byte-identical to v4.5.0 for every file; source-format change only.
+
+### Added
+
+- **`tests/test_render_prompts.py::test_all_plugin_md_files_have_j2_source`** — permanent regression guard for the "every dispatched plugin `.md` has a `.md.j2` source" invariant. Asserts every `.md` under `agents/`, `commands/`, and `skills/*/SKILL.md` has a `.md.j2` sibling (excluding `README.md`, `ATTRIBUTION.md`, and the 3 documented refactor-orchestration template files). Replaces a previously-manual shell check with machine-enforced coverage. Cross-validated arch-review finding (tdd-validator + adr-guardian).
+
+### Fixed
+
+- **`scripts/pre-commit-check.sh`** error-path remediation hint no longer hardcodes `agents/*.md` — covers the whole plugin tree so a stale command or skill template triggers the correct staging command. Cross-validated arch-review finding (codex-arch-reviewer + refactor-advisor).
+- **`update-plugin-versions.sh`** skill-discovery loops used lowercase `skill.md` patterns that silently matched zero files on case-sensitive filesystems (Linux/CI). Fixed to `SKILL.md` / `SKILL.md.j2` per the Anthropic skill-file convention. Caught by codex-review-agent during Step 16c /codex-review; macOS APFS case-insensitivity had been hiding the bug locally.
+- **`plugins/requirements-framework/skills/requirements-framework-status/SKILL.md.j2`** component-inventory table updated 12→11 commands and 20→21 skills to match repo reality. Caught by codex-review-agent.
+- **`plugins/requirements-framework/.claude-plugin/plugin.json`** `description` field updated from "19 development skills" to "21 development skills" to match repo reality.
+- **`scripts/pre-commit-check.sh`** staging hint changed from `git add -u plugins/requirements-framework/` to `git add plugins/requirements-framework/` so newly-rendered `.md` siblings (untracked on first render of a new `.md.j2`) are also staged.
+
+### Notes
+
+- **No new partials extracted in Step 16c.** Empirical scan across all 32 files (11 commands + 21 skills) found no byte-identical kernels qualifying for shared extraction under Step 16b's discoverability rule. The recurring `> **Workflow position**: invoked by /req X` line in commands and the `# <Skill Name>` / `## Overview` structure in skills are *naming patterns*, not content kernels — extraction would require parameterised macros which Step 16b explicitly avoided.
+- **Zero Jinja2 syntax collisions detected.** Pre-conversion `grep -E '\{\{|\{%'` across all 32 files returned zero matches; no file required `{% raw %}{% endraw %}` wrapping (contrast with Step 16b's frontend-reviewer JSX surprise). Every conversion was a pure verbatim copy with MD5-verified byte-identical render.
+- **Three refactor-orchestration template files explicitly excluded** (`orchestrator-prompt-template.md`, `plan-template.md`, `retrospective-template.md`). They are skill-internal scaffolding read via `Read` at runtime — not dispatched prompts. Their `<placeholder>` syntax is meant for human filling. Converting would add file-pair maintenance for zero benefit.
+- **`keep_trailing_newline=True` is load-bearing for the byte-identical render invariant.** Empirically verified during /codex-review (2026-05-24): the flag IS active in the `Environment.from_string()` code path that `hooks/lib/llm/templates.render()` uses. With the flag set, `from_string('hello\n').render()` returns `'hello\n'`; without it, the same input returns `'hello'` (Jinja2's default behavior strips one trailing newline). Removing the flag would silently strip trailing newlines from every rendered plugin `.md` file, breaking byte-identical render and producing a noisy diff across all 57 files. An earlier /arch-review note incorrectly claimed the flag was "inert in the string-render path" — that was wrong; `Path.read_text()` preserves the source newline and `keep_trailing_newline=True` is what preserves it through render.
+
+### Known Limitations
+
+- **`update-plugin-versions.sh` cross-plugin coupling**: the script walks every plugin tree in the repo (requirements-framework AND github-issues-plugin), so a housekeeping run for one plugin incidentally refreshes hashes in the other. In Step 16c the workaround is to manually revert any unintended `github-issues-plugin/` hash changes after the run. Scoping the version updater per-plugin is a backlog item.
+- **`update-plugin-versions.sh` writes `*` marker into YAML**: when the script runs against a file with uncommitted modifications, it writes the `*` "modified locally" marker directly into the `git_hash:` YAML field instead of treating it as transient display state. Workaround: ensure the file is committed/refreshed before re-running the version updater. Backlog item.
+
 ## [4.5.0] — 2026-05-24
 
 ### Changed

@@ -223,16 +223,47 @@ def test_undefined_runtime_var_reports_render_failure(r: TestRunner) -> None:
 def test_plugin_templates_have_no_runtime_vars(r: TestRunner) -> None:
     # The plugin tree (`plugins/requirements-framework/`) is build-time
     # only — every .md.j2 under it MUST render without any caller vars.
-    # This test currently covers 0 templates (Step 16b conversion not
-    # started) but gains coverage automatically as Patches 4..28 land.
     # Once any plugin .md.j2 introduces a runtime var, this test fails
-    # and the offending agent is forced into the runtime tree
+    # and the offending file is forced into the runtime tree
     # (`hooks/lib/llm/prompts/`) instead.
     result = _run(str(PLUGIN_TREE), "--dry-run")
     r.test(
         "every plugin .md.j2 renders with zero caller vars",
         result.returncode == 0,
         f"exit={result.returncode} stdout={result.stdout!r}",
+    )
+
+
+def test_all_plugin_md_files_have_j2_source(r: TestRunner) -> None:
+    # Step 16c invariant: every dispatched plugin .md has a .md.j2 source.
+    # Turns the previously-manual shell check from the plan's acceptance
+    # criterion into a permanent regression guard. Excludes reference
+    # material under skills/*/references/, plugin docs (README, ATTRIBUTION),
+    # and the 3 refactor-orchestration template files (skill-internal
+    # scaffolding read via Read at runtime — not dispatched prompts).
+    excluded_names = {
+        "README.md",
+        "ATTRIBUTION.md",
+        "orchestrator-prompt-template.md",
+        "plan-template.md",
+        "retrospective-template.md",
+    }
+    missing: list[str] = []
+    # Agents and commands: flat .md scan
+    for sub in ("agents", "commands"):
+        for md in (PLUGIN_TREE / sub).glob("*.md"):
+            if md.name in excluded_names:
+                continue
+            if not Path(str(md) + ".j2").exists():
+                missing.append(str(md.relative_to(PLUGIN_TREE)))
+    # Skills: only SKILL.md at depth 2 (skip references/ and templates)
+    for md in PLUGIN_TREE.glob("skills/*/SKILL.md"):
+        if not Path(str(md) + ".j2").exists():
+            missing.append(str(md.relative_to(PLUGIN_TREE)))
+    r.test(
+        "every dispatched plugin .md has a .md.j2 source",
+        not missing,
+        f"missing .md.j2 source for: {missing}",
     )
 
 
@@ -249,6 +280,7 @@ def main() -> int:
     test_missing_include_reports_render_failure(r)
     test_undefined_runtime_var_reports_render_failure(r)
     test_plugin_templates_have_no_runtime_vars(r)
+    test_all_plugin_md_files_have_j2_source(r)
 
     return r.summary()
 

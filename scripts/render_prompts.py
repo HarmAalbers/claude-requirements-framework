@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Render *.md.j2 sources to *.md siblings under a directory tree (Step 16).
+"""Render *.md.j2 sources to *.md siblings under a directory tree (Steps 16b–16c).
 
-Build-time rendering for plugin files (Step 16b onwards). Source `.md.j2`
-templates that have NO runtime variables get rendered to plain `.md` files
-that Claude Code reads directly via plugin dispatch.
+Build-time rendering for plugin files. Source `.md.j2` templates that have
+NO runtime variables get rendered to plain `.md` files that Claude Code
+reads directly via plugin dispatch.
 
-Step 16 itself has zero `.md.j2` files outside `hooks/lib/llm/prompts/`
-(which are runtime-rendered via load_prompt, NOT build-time-rendered). So
-running this script with the default `plugins/requirements-framework/` path
-prints "no sources found" — that's correct. The plumbing exists so Step 16b
-can drop plugin agent templates without touching sync.sh.
+The plumbing was introduced in Step 16 and fully populated through Step 16c
+(25 agents + 11 commands + 21 skills = 57 templates). Running this script
+with the default `plugins/requirements-framework/` path discovers all of
+them automatically — no per-directory logic needed.
 
 CLI:
     python3 scripts/render_prompts.py [PATH] [--dry-run] [--check]

@@ -253,15 +253,15 @@ main() {
         [ -f "$file" ] && files+=("$file")
     done < <(find plugins/requirements-framework/commands/ -name "*.md.j2" -type f 2>/dev/null)
 
-    # Find all skills
+    # Find all skills (uppercase SKILL.md per Anthropic skill convention; lowercase pattern silently skipped all files on case-sensitive filesystems like Linux/CI — codex-review-agent finding, 2026-05-24)
     while IFS= read -r file; do
-        [ -f "${file}.j2" ] && continue  # skill.md.j2 sibling wins
+        [ -f "${file}.j2" ] && continue  # SKILL.md.j2 sibling wins
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugins/requirements-framework/skills/ -name "skill.md" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/skills/ -name "SKILL.md" -type f 2>/dev/null)
 
     while IFS= read -r file; do
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugins/requirements-framework/skills/ -name "skill.md.j2" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/skills/ -name "SKILL.md.j2" -type f 2>/dev/null)
 
     if [ ${#files[@]} -eq 0 ]; then
         echo -e "${RED}✗ No plugin component files found${NC}"

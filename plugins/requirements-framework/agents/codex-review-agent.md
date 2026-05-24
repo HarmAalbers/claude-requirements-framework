@@ -21,7 +21,7 @@ Codex provides a different perspective from Claude's review.
 </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 9bb92b6
+git_hash: fe1bf87
 ---
 
 # Codex Code Review Agent

@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-status
 description: This skill should be used when the user asks to "requirements framework status", "show requirements project context", "what's the state of requirements framework", "requirements framework overview", or wants a comprehensive status report of the requirements framework implementation and current state.
-git_hash: 7953a43
+git_hash: 3a3f257*
 ---
 
 # Requirements Framework - Status Report
@@ -27,8 +27,8 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | **CLI Commands** | 11 |
 | **Requirement Types** | 3 strategies |
 | **Plugin Agents** | 25 |
-| **Plugin Commands** | 12 |
-| **Plugin Skills** | 20 |
+| **Plugin Commands** | 11 |
+| **Plugin Skills** | 21 |
 
 **→ Full component inventory**: See `references/component-inventory.md`
 

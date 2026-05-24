@@ -6,7 +6,7 @@
 
 **Architecture:** Build-time Jinja2 rendering via the existing `scripts/render_prompts.py` (StrictUndefined, FileSystemLoader). The renderer already walks `plugins/requirements-framework/` recursively, so commands and skills are picked up with zero infrastructure changes. The pre-commit hook and `update-plugin-versions.sh` integration from Step 16b remain in force.
 
-Note on `keep_trailing_newline`: the Jinja2 Environment sets this flag, but it is effectively *inert* in our code path because `render_prompts.py` calls `render(src.read_text())` — passing template source as a string, not loading via `FileSystemLoader`. Python's `str.read_text()` already preserves trailing newlines on POSIX, and Jinja2's string-based render does not strip them. Trailing-newline fidelity for Step 16c is therefore guaranteed by Python's text-mode I/O semantics, not by the Jinja2 flag (tdd-validator finding, 2026-05-24).
+Note on `keep_trailing_newline`: the Jinja2 Environment sets this flag and it is **load-bearing for byte-identical render**, not inert. Empirically verified during /codex-review: `Environment(keep_trailing_newline=True).from_string('hello\n').render()` returns `'hello\n'`; with `keep_trailing_newline=False` the same input returns `'hello'`. Jinja2's default behavior on string-loaded templates is to strip one trailing newline. Combined with `Path.read_text()` (which preserves the source file's trailing `\n` on POSIX), the flag is what closes the loop — remove it and every rendered `.md` loses its final newline, breaking the byte-identical MD5 gate (codex-review-agent finding, 2026-05-24, supersedes an earlier /arch-review tdd-validator note that incorrectly described the flag as inert).
 
 **Tech Stack:** Jinja2 (already a dep), stg for atomic patches, `md5sum` for the acceptance gate, `python3 scripts/render_prompts.py --check` for fresh-state verification.
 
@@ -164,7 +164,7 @@ echo "After MD5: $AFTER_MD5"
 [ "$BEFORE_MD5" = "$AFTER_MD5" ] && echo "✓ byte-identical" || { echo "✗ MISMATCH" && exit 1; }
 ```
 
-If MISMATCH: investigate (likely a trailing-newline edge case in the source file). Step 16b found this never tripped — `keep_trailing_newline=True` handled every variant.
+If MISMATCH: investigate (likely a trailing-newline edge case in the source file, or a real Jinja2 syntax conflict that survived the pre-scan). Step 16b found this never tripped at byte-identical level; `keep_trailing_newline=True` plus Python's POSIX text-mode semantics handle the trailing-newline contract together.
 
 ### Step 5: Stg-commit
 
@@ -347,7 +347,7 @@ The Step 16b infrastructure (`render_prompts.py`, the partial, the tests, the pr
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | `{{` or `{%` in a skill that I didn't grep for | Very Low | Render fails loudly via `StrictUndefined` or `TemplateSyntaxError` | Pre-scan already showed zero matches; the `test_plugin_templates_have_no_runtime_vars` test will catch any missed case at refresh time |
-| Trailing-newline edge case causing MD5 mismatch | Very Low | Caught at Step 4 of per-file procedure | Python's text-mode `read_text()` preserves trailing newlines on POSIX; Jinja2's string-render does not strip them. (Note: the Environment's `keep_trailing_newline=True` flag is inert in the string-render code path — see Architecture paragraph.) Empirically handled every Step 16b variant. |
+| Trailing-newline edge case causing MD5 mismatch | Very Low | Caught at Step 4 of per-file procedure | Two-part guarantee: (1) Python's text-mode `read_text()` preserves the source file's trailing `\n`; (2) `Environment(keep_trailing_newline=True)` preserves it through Jinja2's `from_string().render()`. Remove either half and renders strip the final newline. Both parts must stay. Empirically handled every Step 16b + 16c variant. |
 | CRLF line endings in a source `.md` | Very Low | False MISMATCH on macOS (read_text translates CRLF→LF) | Repo's `.gitattributes` and contributors' editors enforce LF. tdd-validator confirmed no current files have CRLF. |
 | `update-plugin-versions.sh` produces noisy diffs that pollute file patches | Medium | Cosmetic only — `git_hash` field churn | Defer all `update-plugin-versions.sh` output to Patch 33 (housekeeping). Use `stg refresh --index` to absorb only the staged file. |
 | 33-patch stack pushes branch over `branch_size_limit` again | High | Stop hook re-blocks at session end | Already approved this session; will need re-approval on next session — accept and document. |
