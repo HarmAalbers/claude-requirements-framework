@@ -5,6 +5,27 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.0] — 2026-05-24
+
+### Changed
+
+- **Step 16b — Plugin agents converted to Jinja2 templates (source format change only; rendered output is byte-identical).** All 25 plugin agents in `plugins/requirements-framework/agents/` now have a `.md.j2` source-of-truth alongside their existing `.md` rendered sibling. Claude Code continues to dispatch the `.md` file unchanged; the `.md.j2` is the file you edit.
+- **`diff_scope_load.j2` partial** lands under `hooks/lib/llm/prompts/partials/`. 13 diff-scope review agents (`appsec-auditor`, `backward-compatibility-checker`, `code-reviewer`, `code-simplifier`, `codex-review-agent`, `comment-analyzer`, `compliance-auditor`, `frontend-reviewer`, `silent-failure-hunter`, `tenant-isolation-auditor`, `test-analyzer`, `tool-validator`, `type-design-analyzer`) reference it via `{% include 'partials/diff_scope_load.j2' %}`. MD5-verified byte-identical kernel across all 13 agents (`09f3eb3c657bc4397091348edbc95e58`) — single source of truth for the `Execute: prepare-diff-scope ...` boilerplate.
+- **`update-plugin-versions.sh`** extended to discover `.md.j2` source files, skip rendered `.md` siblings whose `.md.j2` source exists (preserves git_hash semantics), and re-invoke `scripts/render_prompts.py` after hash updates to keep rendered output fresh.
+- **`scripts/pre-commit-check.sh`** new — invokes `render_prompts.py --check` and fails the commit if any `.md` sibling is stale vs its `.md.j2` source. See DEVELOPMENT.md for install instructions.
+- **Plugin bumped 4.4.0 → 4.5.0.** Rendered `.md` output is byte-identical to v4.4.0 for every agent; this is a source-format change only.
+
+### Added
+
+- **`tests/test_render_prompts.py`** (14 tests) — covers the 4 CLI modes of `scripts/render_prompts.py` (render, dry-run, check-fresh, check-stale), error paths (missing include, undefined runtime variable), and the zero-variable build-time contract for every `.md.j2` under `plugins/requirements-framework/`.
+- **`tests/test_partials.py` extended** (6 → 16 tests) — new coverage for `diff_scope_load.j2` kernel, boundary-newline contract at include sites, no-vars contract, and nonexistent-partial negative test (TemplateNotFound).
+
+### Notes
+
+- **Only 1 of 5 candidate partials qualified for extraction.** Empirical kernel analysis during Patch 2 found that `severity_vocabulary`, `review_output_format`, `claude_md_loading`, and `critical_rules_tail` each lacked a byte-identical kernel across multiple agents (per-agent customization is genuine, not duplicated boilerplate). The plan's discoverability rule — "we never edit an agent's substantive text to fit a partial" — kept those 4 candidates inline. Future extraction may become viable as the agent corpus evolves; the test infrastructure landed in Patch 2 will protect any later additions.
+- **`frontend-reviewer.md.j2` requires `{% raw %}{% endraw %}` markers** around one prose line (a React rule mentioning JSX `style={{...}}`) so Jinja2 doesn't try to parse the JSX double-brace as a template expression. This regression was caught immediately by `tests/test_render_prompts.py::test_plugin_templates_have_no_runtime_vars` — exactly the failure mode that test was designed to surface.
+- **`.md` is now a build artifact**, not a hand-editable file. Editing the `.md` directly will be reverted on the next `./sync.sh deploy` or `scripts/render_prompts.py` run. Authors edit `.md.j2`; rendering produces the `.md` sibling.
+
 ## [4.4.0] — 2026-05-23
 
 ### Added

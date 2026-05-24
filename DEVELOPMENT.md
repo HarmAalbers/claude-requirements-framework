@@ -635,6 +635,47 @@ chpwd_functions+=(claude_req_sync_check)  # zsh
 PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}claude_req_sync_check"  # bash
 ```
 
+## Plugin Agent Authoring (Step 16b)
+
+Plugin agents under `plugins/requirements-framework/agents/` use a **two-file template + rendered output** pattern:
+
+| File | Role | Edit it? |
+|---|---|---|
+| `<name>.md.j2` | Jinja2 source-of-truth — frontmatter + body + `{% include %}` directives | **Yes** |
+| `<name>.md` | Rendered output that Claude Code dispatches at runtime | **No** — build artifact |
+
+### Author flow
+
+1. **Edit `<name>.md.j2`** (the source). Use `{% include 'partials/<name>.j2' %}` to pull in shared kernels — currently only `diff_scope_load.j2` qualifies (13 diff-scope review agents share its byte-identical `prepare-diff-scope` boilerplate).
+2. **Render**: `python3 scripts/render_prompts.py` — produces `<name>.md` sibling. Idempotent; only writes when content changes.
+3. **Verify freshness**: `python3 scripts/render_prompts.py --check` — exit 0 means every `.md` matches its source.
+4. **Commit both files** (`.md.j2` and `.md`) atomically in the same patch.
+
+### Pre-commit hook (optional)
+
+Wire `scripts/pre-commit-check.sh` to block commits whose `.md` siblings are stale:
+
+```bash
+ln -sf ../../scripts/pre-commit-check.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+The hook calls `render_prompts.py --check` and aborts the commit with the exact remediation command if any `.md.j2` is unrendered.
+
+### What `sync.sh deploy` does
+
+The deploy step already invokes `render_prompts.py` against the plugin tree, so deployed runtime files always reflect the current `.md.j2` sources. Manual rendering is only needed before committing if you skipped the pre-commit hook.
+
+### Adding a new partial
+
+Partials live under `hooks/lib/llm/prompts/partials/`. Author a new partial only when the kernel is **byte-identical** across **multiple agents** — never normalize an agent's substantive text to fit a partial. The acceptance gate is byte-identical rendered output; a partial that drifts even one agent breaks the gate.
+
+When adding a partial, extend `tests/test_partials.py` with: a content/include test, a no-vars contract test (StrictUndefined doesn't fire), and a boundary-newline test (pin the exact whitespace at include sites).
+
+### When NOT to use `.md.j2`
+
+If an agent template needs runtime variables (anything other than build-time partial composition), it does NOT belong in the plugin tree. Put it under `hooks/lib/llm/prompts/` instead — that's where `load_prompt(name, **vars)` resolves runtime templates. The test `tests/test_render_prompts.py::test_plugin_templates_have_no_runtime_vars` enforces this boundary at CI time.
+
 ## Contributing
 
 When contributing changes:

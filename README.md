@@ -423,6 +423,8 @@ When enabled, the Stop hook prevents Claude Code sessions from ending until all 
 
 The requirements framework includes a comprehensive plugin with specialized agents, orchestrator commands, and management skills.
 
+> **Authoring note (v4.5.0+):** Plugin agents under `plugins/requirements-framework/agents/` use a two-file pattern — `<name>.md.j2` (Jinja2 source-of-truth, the file you edit) and `<name>.md` (rendered output, what Claude Code dispatches). Run `python3 scripts/render_prompts.py` after editing a `.md.j2`. See DEVELOPMENT.md § "Plugin Agent Authoring" for the full workflow.
+
 ### Agents (10)
 
 **Workflow Enforcement**:
