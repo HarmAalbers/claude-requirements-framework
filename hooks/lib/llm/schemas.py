@@ -45,7 +45,7 @@ class ReviewReport(BaseModel):
     agent: str
     scope: str
     findings: list[ReviewFinding]
-    summary: str = Field(max_length=500)
+    summary: str
 
 
 class PlanIssue(BaseModel):
