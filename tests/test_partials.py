@@ -106,19 +106,120 @@ def test_project_conventions_skips_empty_string(r: TestRunner) -> None:
     )
 
 
-# ---------- composition: both partials together ----------
+# ---------- diff_scope_load.j2 (Step 16b) ----------
+
+# Byte-identical kernel verified across all 13 diff-scope review agents at
+# Patch 2 authoring time (MD5 09f3eb3c657bc4397091348edbc95e58). Per-agent
+# acceptance gate enforces this match at Patches 4..28 conversion time.
+_DIFF_SCOPE_KERNEL = (
+    "Execute: `${CLAUDE_PLUGIN_ROOT}/scripts/prepare-diff-scope --ensure`\n"
+    "\n"
+    "Read `/tmp/review_scope.txt` (list of changed files, one per line) and\n"
+    "`/tmp/review.diff` (unified diff). If the scope file is empty, output\n"
+    '"No review scope provided" and EXIT.\n'
+)
 
 
-def test_both_partials_compose(r: TestRunner) -> None:
+def test_diff_scope_load_renders_kernel(r: TestRunner) -> None:
+    out = templates.render("{% include 'partials/diff_scope_load.j2' %}")
+    # keep_trailing_newline=True preserves the final \n in the partial file.
+    r.test(
+        "diff_scope_load partial renders the validated byte-identical kernel",
+        out == _DIFF_SCOPE_KERNEL,
+        f"got {out!r}",
+    )
+
+
+def test_diff_scope_load_needs_no_caller_vars(r: TestRunner) -> None:
+    # The partial must render with zero vars — StrictUndefined would raise
+    # at render time if it accidentally referenced one. This guards future
+    # edits from breaking every includer at once.
+    try:
+        templates.render("{% include 'partials/diff_scope_load.j2' %}")
+        r.test("diff_scope_load needs no caller vars", True)
+    except Exception as exc:
+        r.test(
+            "diff_scope_load needs no caller vars",
+            False,
+            f"{type(exc).__name__}: {exc}",
+        )
+
+
+def test_diff_scope_load_boundary_newlines(r: TestRunner) -> None:
+    # Refactor-advisor Gap 1: pin the exact whitespace contract at include
+    # boundaries. Without this, a typo in the partial's trailing newline
+    # could silently drift the rendered .md output across all 13 agents.
+    out = templates.render(
+        "BEFORE\n{% include 'partials/diff_scope_load.j2' %}\nAFTER"
+    )
+    r.test(
+        "diff_scope_load preserves the BEFORE prefix exactly",
+        out.startswith("BEFORE\n"),
+        repr(out[:32]),
+    )
+    r.test(
+        "diff_scope_load preserves the AFTER suffix exactly",
+        out.endswith("\nAFTER"),
+        repr(out[-32:]),
+    )
+    # Partial ends with \n + literal \n after %} + literal \n before AFTER
+    # produces "EXIT.\n\n\nAFTER" — that's two blank lines visually.
+    # Includers in plugin agents put the include on its own line followed
+    # by the next paragraph directly (no extra blank) to land at one blank
+    # line. See Patch 4 pilot for the canonical site pattern.
+    r.test(
+        'diff_scope_load ends its content with EXIT.\\n (the trailing kernel byte)',
+        '"No review scope provided" and EXIT.\n' in out,
+        repr(out),
+    )
+
+
+# ---------- negative tests (Step 16b) ----------
+
+
+def test_nonexistent_partial_raises(r: TestRunner) -> None:
+    # If an agent template references a partial that doesn't exist, we want
+    # a loud failure at render time, not a silent empty include. Jinja2
+    # raises TemplateNotFound — assert that contract.
+    try:
+        templates.render("{% include 'partials/__does_not_exist__.j2' %}")
+        r.test(
+            "nonexistent partial raises TemplateNotFound",
+            False,
+            "render returned without raising",
+        )
+    except Exception as exc:
+        # jinja2.exceptions.TemplateNotFound is the expected type.
+        ok = type(exc).__name__ == "TemplateNotFound"
+        r.test(
+            "nonexistent partial raises TemplateNotFound",
+            ok,
+            f"unexpected exception type: {type(exc).__name__}: {exc}",
+        )
+
+
+# ---------- composition: all partials together ----------
+
+
+def test_partials_compose(r: TestRunner) -> None:
     template = (
         "PROMPT START\n"
         "{% include 'partials/safety.j2' %}\n"
+        "{% include 'partials/diff_scope_load.j2' %}\n"
         "{% include 'partials/project_conventions.j2' %}\n"
         "PROMPT END"
     )
     out = templates.render(template, project_conventions="My conventions here.")
-    r.test("both partials included", "test fixtures" in out and "My conventions" in out)
-    r.test("partial boundaries preserved", "PROMPT START" in out and "PROMPT END" in out)
+    r.test(
+        "all partials included",
+        "test fixtures" in out
+        and "prepare-diff-scope" in out
+        and "My conventions" in out,
+    )
+    r.test(
+        "partial boundaries preserved",
+        "PROMPT START" in out and "PROMPT END" in out,
+    )
 
 
 def main() -> int:
@@ -130,7 +231,11 @@ def main() -> int:
     test_project_conventions_renders_empty_without_var(r)
     test_project_conventions_renders_content_when_var_passed(r)
     test_project_conventions_skips_empty_string(r)
-    test_both_partials_compose(r)
+    test_diff_scope_load_renders_kernel(r)
+    test_diff_scope_load_needs_no_caller_vars(r)
+    test_diff_scope_load_boundary_newlines(r)
+    test_nonexistent_partial_raises(r)
+    test_partials_compose(r)
 
     return r.summary()
 
