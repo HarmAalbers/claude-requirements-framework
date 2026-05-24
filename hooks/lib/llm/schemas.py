@@ -45,6 +45,14 @@ class ReviewReport(BaseModel):
     agent: str
     scope: str
     findings: list[ReviewFinding]
+    # No max_length bound on summary: the prompt-level guidance ("1-3 sentence
+    # summary") is the authoritative constraint. Pydantic max_length=500 was
+    # dropped 2026-05-24 (V4.6.0) after the V3 dogfood empirically showed it
+    # caused Anthropic's structured-output validator to reject every worker
+    # response on large real diffs, surfacing as cryptic
+    # "/summary: must NOT have more than 500 characters" errors and burning
+    # max_turns retries. Downstream consumers (aggregator, ledger, dogfood
+    # artifact) must tolerate variable-length summaries.
     summary: str
 
 

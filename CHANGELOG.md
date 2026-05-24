@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`update-plugin-versions.sh` cross-plugin coupling**: the script walks every plugin tree in the repo (requirements-framework AND github-issues-plugin), so a housekeeping run for one plugin incidentally refreshes hashes in the other. In Step 16c the workaround is to manually revert any unintended `github-issues-plugin/` hash changes after the run. Scoping the version updater per-plugin is a backlog item.
 - **`update-plugin-versions.sh` writes `*` marker into YAML**: when the script runs against a file with uncommitted modifications, it writes the `*` "modified locally" marker directly into the `git_hash:` YAML field instead of treating it as transient display state. Workaround: ensure the file is committed/refreshed before re-running the version updater. Backlog item.
 
+### Changed (V3 dogfood follow-up, 2026-05-24)
+
+- **`ReviewReport.summary` no longer has `Field(max_length=500)`**. The constraint propagated into the Anthropic SDK's `output_format` JSON schema, causing server-side validation to reject every worker response on large real diffs ("/summary: must NOT have more than 500 characters"). The model burned its `max_turns=5` retry budget producing schema-rejected outputs and the worker terminated with `error_max_turns`. Surfaced empirically by the V3 dogfood's full Step 16c branch run (`7c090b4..HEAD`, 8472 lines / 364K chars), which was rerun post-fix and succeeded ($1.96, 112.5s, 3 findings). Inline comment on `hooks/lib/llm/schemas.py:48` documents the rationale. Downstream consumers (aggregator, ledger storage, dogfood artifacts) must tolerate variable-length summaries — the prompt-level "1-3 sentence" guidance remains the authoritative constraint.
+
 ## [4.5.0] — 2026-05-24
 
 ### Changed

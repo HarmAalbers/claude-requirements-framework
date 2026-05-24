@@ -8,14 +8,14 @@
 
 ---
 
-## TL;DR — verdict
+## TL;DR — verdict (CORRECTED 2026-05-24 after follow-up investigation)
 
-**V3 chain works for narrow scopes (housekeeping patch only), produces genuinely additive findings, but has TWO real-world ceilings the dogfood surfaced that would have stayed invisible in mocked-SDK testing**:
+**V3 chain works at full Step 16c branch scope (8933 lines / 390K chars) once the 500-char `summary` schema cap is removed. Both initial "blockers" turned out to be misdiagnoses**:
 
-1. **Diff-size ceiling**: code-reviewer worker fails (`error_max_turns`) on diffs > ~150K chars under current `max_turns=5`. Full Step 16c branch (8472 lines / 364K chars) hit this; the worker burned $2.02 producing nothing.
-2. **Worker observability gap**: only SUPERVISOR spans reach Langfuse. Worker spans (sequential `query()` call in same process) are silently dropped — likely due to the "Failed to detach context" OTel errors that fire between calls.
+1. ~~**Diff-size ceiling**~~ → **Schema constraint causing structured-output rejection**: the worker wasn't failing on diff *size*. Inspection of the failed-run's nested Langfuse observations revealed 4 `StructuredOutput` ERROR spans, all rejecting on `/summary: must NOT have more than 500 characters`. The model produced summaries >500 chars proportional to diff size; each rejection burned a `max_turns` attempt; budget exhausted. Removing `Field(max_length=500)` from `ReviewReport.summary` (Patch `step-V3-remove-summary-length-cap`) directly fixed the failure mode. Post-fix re-run on the FULL branch ($1.96, 112.5s, 3 findings, exit 0). **Resolved.**
+2. ~~**Worker observability gap**~~ → **Trace topology misdiagnosis (not data loss)**: worker spans WERE reaching Langfuse all along, just nested under the supervisor's root trace as child AGENT observations instead of being separate top-level traces. Inspection of `dd6a0ff7...` (success run) revealed both AGENT spans inside one trace: supervisor (1032 chars input) + worker (108677 chars input). My initial API query filtered by a session_id that was never honored, missing the data. **Resolved (data is and was complete; presentation could be improved by isolating root traces per query call, but that's a UX wish, not an observability gap).**
 
-Neither blocker is in Step 16c's responsibility; both are V3 substrate issues queued before V3 can replace `/deep-review`. **The narrow-scope dogfood succeeded** and produced 2 findings the internal 11-agent team missed.
+**The narrow-scope dogfood succeeded** and produced 2 findings the internal 11-agent team missed. **The post-fix full-branch dogfood ALSO succeeded** and produced 3 findings, including V3 critiquing its own enabling fix (asking for CHANGELOG documentation of the schema constraint removal — which was added).
 
 ---
 
@@ -136,29 +136,31 @@ Open these in the Langfuse UI:
 - `http://localhost:3000/traces/dd6a0ff7949313d6c35e5f9348a50d7b`
 - `http://localhost:3000/traces/2780af283fd4a39091478ddf0a941eed`
 
-### Worker traces MISSING from Langfuse (REAL V3 OBSERVABILITY GAP)
+### Worker traces NESTED under supervisor trace (corrected 2026-05-24)
 
-The code-reviewer worker `query()` calls produced **zero traces in Langfuse** despite OpenInference being instrumented. Confirmed by querying the Langfuse API:
+**Initial finding was wrong.** Worker `query()` calls DO produce Langfuse spans. They're nested under the supervisor's root trace as child AGENT observations rather than being separate top-level traces.
 
-```bash
-curl -s -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" \
-  "$LANGFUSE_HOST/api/public/traces?fromTimestamp=2026-05-24T00:00:00Z"
-# → only 2 traces (both supervisor)
-```
-
-This is a **real V3 substrate finding**: OpenInference instrumentation captures the FIRST `query()` call's spans but not subsequent calls in the same Python process. Likely root cause is the "Failed to detach context" + "asyncgen already running" errors that fire between sequential SDK calls:
+Empirical confirmation — inspection of trace `dd6a0ff7...` (success run):
 
 ```
-Failed to detach context
-ValueError: <Token ...> was created in a different Context
-RuntimeError: aclose(): asynchronous generator is already running
+trace name: ClaudeAgentSDK.query, total observations: 6
+  • [AGENT] ClaudeAgentSDK.query    in=108677 chars  out: "★ Insight ─────..."   ← WORKER
+  • [TOOL]  StructuredOutput        in=1973   chars  out: "Structured output provided successfully"
+  • [TOOL]  StructuredOutput        in=2306   chars
+  • [TOOL]  StructuredOutput        in=3062   chars
+  • [AGENT] ClaudeAgentSDK.query    in=1032   chars  out: "Routed to deep-review"  ← SUPERVISOR
+  • [TOOL]  StructuredOutput        in=288    chars  out: "Structured output provided successfully"
 ```
 
-These errors don't break the SDK calls themselves (the worker still ran and returned 2 findings), but they break OTel's context-management chain such that the worker's spans never reach Langfuse's BatchSpanProcessor. The supervisor's spans flush cleanly because they're first; the worker's spans are lost at process teardown.
+Both supervisor (1032 chars) and worker (108677 chars) AGENT spans are present, plus all 4 child `StructuredOutput` TOOL spans. Same for the failed run's trace `2780af28...` — 9 observations including 4 worker-side `StructuredOutput` ERROR spans, each with the literal status `"Output does not match required schema: /summary: must NOT have more than 500 characters"`. The failed-run trace was a complete record of WHY the worker failed.
 
-**Impact**: V3 cost/latency/quality observability is broken for any multi-call workflow. The supervisor-only smoke (`v3_supervisor_smoke.py`) doesn't surface this because it does single-call routing per scenario. The dogfood's supervisor→worker chain is the minimal multi-call pattern that fails.
+**The original misdiagnosis** came from filtering the Langfuse API with a custom `session_id` I tried to set via env var (`LANGFUSE_SESSION_ID`), which is not honored by OpenInference — each SDK call gets its own UUID session. The "missing" traces were just findable by trace ID directly, not by my custom session marker.
 
-**Not fixed in this dogfood** — out of scope. Documented for V3 substrate work to address.
+**The "Failed to detach context" OTel errors are real but cosmetic**: they fire AFTER `span.end()` has already pushed the span into the BatchSpanProcessor queue. Spans are not lost. The errors should still be investigated upstream but they don't break Langfuse observability.
+
+### Optional improvement (out of scope for this dogfood)
+
+The current nesting makes per-call analysis harder — to see a worker's cost/latency you have to expand the supervisor's root trace. Each `query()` call could be promoted to its own root trace by wrapping calls in `contextvars.copy_context()` or by configuring OpenInference to start a new trace per call. Cleaner UI; doesn't change the underlying data.
 
 ### Langfuse prompt-registry 404s
 
@@ -189,14 +191,21 @@ The plan logged 5 predictions before the run. Scoring:
 
 ---
 
-## V3 readiness verdict
+## V3 readiness verdict (CORRECTED 2026-05-24)
 
-**Not ready to replace `/deep-review`. Ready for narrow-scope opt-in dogfooding once two substrate gaps close.**
+**Ready for opt-in dogfooding on full branch-sized diffs after the schema cap fix.** No substrate blockers remain from this dogfood. Multi-worker fan-out for `/deep-review` parity is the only remaining gap.
 
-### Blockers (must close before V3 replaces `/deep-review`)
+### Resolved during this dogfood
 
-1. **Worker diff-size ceiling**: implement diff chunking OR pre-process via the `prepare-diff-scope` pattern already used by classical `/deep-review`. Without this, V3 silently fails on any branch with > ~150K chars of diff (i.e., most non-trivial PRs).
-2. **Worker observability gap**: fix OTel context tear-down so worker spans reach Langfuse. Without this, V3 has no production observability for the workers — only for the supervisor.
+1. ~~Worker diff-size ceiling~~ → root cause was `ReviewReport.summary` max_length=500 hitting upstream schema validation, not context limit. Fixed in patch `step-V3-remove-summary-length-cap` + CHANGELOG + inline comment per V3's own self-critique finding. **Post-fix full-branch run succeeded ($1.96, 112.5s, 3 findings).**
+2. ~~Worker observability gap~~ → worker spans were always in Langfuse, nested under supervisor's root trace. Misdiagnosis caused by API filter on custom session_id env var that wasn't propagated. **No fix needed.**
+
+### Remaining (not blockers, ranked by value)
+
+1. **Multi-worker fan-out** (Future Step 10b/18b): V3 has 1 worker; `/deep-review` has 11 specialist agents. Single-worker recall is 40% of team. Multi-worker would close most of the gap. Not a blocker; just a coverage difference.
+2. **Trace topology improvement** (cosmetic): isolate each `query()` call into its own root trace in Langfuse for cleaner per-call analysis. Spans already complete; this is UX polish.
+3. **Per-call token caps** (Step 17b): now that real cost data is in ($1.96 for a 390K-char-diff full-branch worker review, $0.28 for supervisor), Step 17b's budget enforcement should target $2-5 per V3 review as the realistic ceiling.
+4. **Langfuse prompt-registry labels**: prompts in registry need `production` tag so workers don't fall back silently to local templates. Step 12 followup.
 
 ### Strengths confirmed by this dogfood
 
@@ -231,7 +240,27 @@ The plan logged 5 predictions before the run. Scoring:
 
 - This file: `docs/v3-dogfood/2026-05-24-step-16c-comparison.md`
 - Baseline: `docs/v3-dogfood/2026-05-24-step-16c-baseline.md`
-- V3 success JSON: `docs/v3-dogfood/2026-05-24-step-16c-housekeeping-v3-output.json`
-- V3 failure note: `docs/v3-dogfood/2026-05-24-step-16c-failure-note.md`
+- V3 success JSON (housekeeping scope): `docs/v3-dogfood/2026-05-24-step-16c-housekeeping-v3-output.json`
+- V3 failure note (now-resolved): `docs/v3-dogfood/2026-05-24-step-16c-failure-note.md`
+- V3 success JSON (FULL branch, post-fix): `docs/v3-dogfood/2026-05-24-step-16c-fullbranch-postfix-v3-output.json`
 - Spike script: `hooks/lib/llm/_spikes/v3_dogfood_spike.py`
 - Plan: `.claude/plans/variant3/V3-dogfood-step-16c-shadow.md`
+
+## Post-fix full-branch verification (2026-05-24)
+
+Re-ran the spike on the FULL Step 16c branch after the `Field(max_length=500)` cap was removed from `ReviewReport.summary`:
+
+```
+✓ git diff 7c090b4..HEAD: 8933 lines, 390682 chars
+Phase 1: supervisor.route() — target=deep-review, elapsed=21.5s
+Phase 2: code_reviewer.review() — findings=3, elapsed=91.1s
+Summary: supervisor 21.5s + worker 91.1s = 112.5s
+Cost: $1.96 ($0.28 supervisor + $1.68 worker)
+```
+
+Three findings:
+1. **IMPORTANT**: `hooks/lib/llm/schemas.py:48` — `ReviewReport.summary max_length=500 constraint silently removed`. **V3 critiqued its own enabling fix**, asking for a CHANGELOG entry and inline comment. Both added in the same patch. confidence=0.85.
+2. **IMPORTANT**: stale `*` marker in `requirements-framework-status/SKILL.md.j2:4` — escalated from SUGGESTION in narrow-scope run to IMPORTANT here. Same finding, more confidence with more context.
+3. **SUGGESTION**: pre-commit-check.sh staging hint may over-stage untracked files — consistent with narrow-scope run.
+
+**This run is the empirical verification of the dogfood loop**: dogfood surfaces issue → fix lands → re-run validates fix worked. Total dogfood spend including this run: $5.26.
