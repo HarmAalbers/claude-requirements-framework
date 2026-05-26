@@ -22,7 +22,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from hooks.lib.llm.schemas import ReviewReport
 from hooks.lib.llm.tracing import review_session
@@ -46,6 +46,7 @@ class FanoutResult:
     report: ReviewReport
     session_id: str
     survivor_count: int
+    worker_errors: dict[str, str] = field(default_factory=dict)
 
 
 def _default_workers() -> dict[str, WorkerFn]:
@@ -96,10 +97,12 @@ async def fanout_review(
     )
 
     reports: list[ReviewReport] = []
+    worker_errors: dict[str, str] = {}
     for name, result in zip(names, results):
         if isinstance(result, ReviewReport):
             reports.append(result)
         else:
+            worker_errors[name] = f"{type(result).__name__}: {result}"
             logger.warning("worker %s failed: %s", name, result)
 
     if not reports:
@@ -107,7 +110,7 @@ async def fanout_review(
 
     with review_session(session_id, "aggregator"):
         unified = await aggregate(reports)
-    return FanoutResult(unified, session_id, len(reports))
+    return FanoutResult(unified, session_id, len(reports), worker_errors)
 
 
 __all__ = ["FanoutResult", "fanout_review"]

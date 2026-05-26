@@ -112,6 +112,8 @@ def test_success_all_three(runner):
     runner.test("report is the aggregator's unified report",
                 result.report.agent == "review-aggregator")
     runner.test("session_id is non-empty", bool(result.session_id))
+    runner.test("no worker_errors when all succeed",
+                result.worker_errors == {}, f"got {result.worker_errors}")
 
 
 def test_partial_failure(runner):
@@ -138,6 +140,15 @@ def test_partial_failure(runner):
     runner.test("the failed worker is excluded",
                 survivors == {"code-reviewer", "appsec-auditor"},
                 f"survivors={survivors}")
+    runner.test("failed worker recorded in worker_errors",
+                "solid-reviewer" in result.worker_errors,
+                f"worker_errors={result.worker_errors}")
+    runner.test("worker_errors message carries the exception text",
+                "boom" in result.worker_errors.get("solid-reviewer", ""),
+                f"worker_errors={result.worker_errors}")
+    runner.test("survivors NOT in worker_errors",
+                "code-reviewer" not in result.worker_errors
+                and "appsec-auditor" not in result.worker_errors)
 
 
 def test_all_fail_raises(runner):
