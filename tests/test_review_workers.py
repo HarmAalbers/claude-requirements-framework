@@ -76,6 +76,13 @@ def _valid_report(agent: str) -> dict:
 WORKERS = [
     ("hooks.lib.llm.workers.solid_reviewer", "solid-reviewer", "solid-reviewer"),
     ("hooks.lib.llm.workers.appsec_auditor", "appsec-auditor", "appsec-auditor"),
+    ("hooks.lib.llm.workers.silent_failure_hunter", "silent-failure-hunter",
+     "silent-failure-hunter"),
+    ("hooks.lib.llm.workers.test_analyzer", "test-analyzer", "test-analyzer"),
+    ("hooks.lib.llm.workers.backward_compatibility_checker",
+     "backward-compatibility-checker", "backward-compatibility-checker"),
+    ("hooks.lib.llm.workers.type_design_analyzer", "type-design-analyzer",
+     "type-design-analyzer"),
 ]
 
 
@@ -222,6 +229,54 @@ def test_raises_when_no_result_message(runner):
                     f"msg={raised[0] if raised else '<none>'}")
 
 
+def test_raises_on_empty_success(runner):
+    print("\n[success subtype but empty structured_output]")
+    for path, agent, _ in WORKERS:
+        worker = _reload(path)
+        empty_msg = SimpleNamespace(subtype="success", structured_output=None)
+
+        async def fake_query(*args, prompt=None, options=None, **kw):
+            yield empty_msg
+
+        raised = []
+
+        async def run():
+            with patch.object(worker, "query", fake_query):
+                with patch.object(worker, "ResultMessage", SimpleNamespace):
+                    try:
+                        await worker.review(diff="d", scope="s")
+                    except RuntimeError as e:
+                        raised.append(str(e))
+
+        asyncio.run(run())
+        runner.test(f"{agent}: raises on empty success", len(raised) == 1)
+        runner.test(f"{agent}: message names empty structured_output",
+                    bool(raised) and "empty structured_output" in raised[0],
+                    f"msg={raised[0] if raised else '<none>'}")
+
+
+def test_skips_non_result_messages(runner):
+    print("\n[non-result messages ignored before result]")
+    for path, agent, _ in WORKERS:
+        worker = _reload(path)
+        result_msg = SimpleNamespace(subtype="success",
+                                     structured_output=_valid_report(agent))
+
+        async def fake_query(*args, prompt=None, options=None, **kw):
+            yield "not-a-result"
+            yield "not-a-result"
+            yield result_msg
+
+        async def run():
+            with patch.object(worker, "query", fake_query):
+                with patch.object(worker, "ResultMessage", SimpleNamespace):
+                    return await worker.review(diff="d", scope="s")
+
+        report = asyncio.run(run())
+        runner.test(f"{agent}: consumes pre-result messages and still returns",
+                    report.agent == agent)
+
+
 def test_system_prompt_identity(runner):
     """7th contract test (arch-review #9): a copy-paste of the code-reviewer
     system/template into another worker must be caught — each worker's system
@@ -257,6 +312,8 @@ if __name__ == "__main__":
     test_passes_output_format_and_no_tools(runner)
     test_labels_options_with_agent_name(runner)
     test_raises_on_error_subtype(runner)
+    test_raises_on_empty_success(runner)
     test_raises_when_no_result_message(runner)
+    test_skips_non_result_messages(runner)
     test_system_prompt_identity(runner)
     sys.exit(runner.summary())

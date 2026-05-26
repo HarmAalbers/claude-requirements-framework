@@ -45,8 +45,12 @@ class TestRunner:
         return 0
 
 
-# Seed roster (Step 18c batches 1+2 grow this to 11). Update as batches land.
-EXPECTED_SEED = {"code-reviewer", "solid-reviewer", "appsec-auditor"}
+# Roster grows across Step 18c batches (3 → 7 → 11). Update as batches land.
+EXPECTED_SEED = {
+    "code-reviewer", "solid-reviewer", "appsec-auditor",
+    "silent-failure-hunter", "test-analyzer",
+    "backward-compatibility-checker", "type-design-analyzer",
+}
 
 
 def test_roster_contains_seed_workers(runner):

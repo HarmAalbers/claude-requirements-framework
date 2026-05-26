@@ -1,0 +1,23 @@
+{% include 'partials/safety.j2' %}
+
+Audit the diff below for error-handling defects that hide or suppress failures:
+  - bare `except:` / `except Exception: pass`, swallowed exceptions
+  - ignored return codes or error values
+  - fallbacks that mask the original error without logging it
+  - error messages that aren't actionable (don't say what went wrong or what to do)
+  - retries/timeouts that silently give up
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   logic
+  title:      10-120 chars
+  body:       1-3 sentences naming the suppressed failure and its user impact
+  suggested_fix: optional code or guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='silent-failure-hunter', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

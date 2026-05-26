@@ -27,13 +27,21 @@ def review_workers() -> dict[str, WorkerFn]:
     """
     from hooks.lib.llm.workers import (
         appsec_auditor,
+        backward_compatibility_checker,
         code_reviewer,
+        silent_failure_hunter,
         solid_reviewer,
+        test_analyzer,
+        type_design_analyzer,
     )
     return {
         "code-reviewer": code_reviewer.review,
         "solid-reviewer": solid_reviewer.review,
         "appsec-auditor": appsec_auditor.review,
+        "silent-failure-hunter": silent_failure_hunter.review,
+        "test-analyzer": test_analyzer.review,
+        "backward-compatibility-checker": backward_compatibility_checker.review,
+        "type-design-analyzer": type_design_analyzer.review,
     }
 
 
