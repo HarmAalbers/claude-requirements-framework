@@ -19,9 +19,12 @@ Step 18c. Two layers (arch-review #1):
     main()
         The thin shell: resolve scope via `prepare-diff-scope` (loud-fail), read the
         prepared `/tmp/review.diff` + `/tmp/review_scope.txt`, call `run_review`, and
-        print the markdown plus a session-id + cost footer. The async run is wrapped
-        in try/finally that drains pending tasks to tame the `aclose()` teardown race
-        at N≈10 (arch-review #4).
+        print the markdown plus a session-id + cost footer. Uses plain `asyncio.run`
+        — a manual loop-close/task-cancel (the original aclose-race mitigation) made
+        teardown WORSE under live instrumentation (OTel "Failed to detach context"
+        flood + "Event loop is closed" __del__ errors); letting asyncio.run drain the
+        generators in their own contexts is clean. Accepts the single documented
+        `aclose()` warning (ADR-017) over the flood.
 
 `run_tool_gate`, `fanout_review`, and `render_review_markdown` are imported at module
 level so tests can `patch.object(review_cli, ...)` them.
@@ -124,27 +127,6 @@ async def run_review(diff: str, scope: str, files: list[str], workers) -> str:
     )
 
 
-def _run_async(coro):
-    """Run `coro` and drain any lingering tasks before closing the loop.
-
-    The fan-out leaves worker async-generators mid-stream on the exception path;
-    abandoning them at loop teardown triggers `aclose(): asynchronous generator is
-    already running` (ADR-017). Cancelling + gathering pending tasks first keeps
-    teardown quiet at N≈10.
-    """
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        pending = asyncio.all_tasks(loop)
-        for task in pending:
-            task.cancel()
-        if pending:
-            loop.run_until_complete(
-                asyncio.gather(*pending, return_exceptions=True))
-        loop.close()
-
-
 def _resolve_scope(scope_arg: str) -> tuple[str, list[str], str]:
     """Run prepare-diff-scope; return (diff, python_files, scope_label). Loud-fail."""
     if not _SCOPE_SCRIPT.exists():
@@ -181,7 +163,11 @@ def main() -> None:
     now = datetime.now(timezone.utc)
     before = sum(1 for _ in budget.load_month(now.year, now.month))
 
-    markdown = _run_async(
+    # Plain asyncio.run: lets Python drain the worker generators in their own
+    # contexts, which the OpenInference instrumentor cleans up correctly. A
+    # manual loop-close + task-cancel here instead produced an OTel
+    # "Failed to detach context" flood + "Event loop is closed" __del__ errors.
+    markdown = asyncio.run(
         run_review(diff, scope_label or "v3-review", files, review_workers()))
     print(markdown)
 
