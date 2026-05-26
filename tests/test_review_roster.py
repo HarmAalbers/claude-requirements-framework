@@ -45,12 +45,22 @@ class TestRunner:
         return 0
 
 
-# Roster grows across Step 18c batches (3 → 7 → 11). Update as batches land.
+# Final /v3-review roster — 10 workers (code-simplifier excluded: deprecated).
 EXPECTED_SEED = {
     "code-reviewer", "solid-reviewer", "appsec-auditor",
     "silent-failure-hunter", "test-analyzer",
     "backward-compatibility-checker", "type-design-analyzer",
+    "comment-analyzer", "tenant-isolation-auditor", "compliance-auditor",
 }
+
+
+def test_roster_is_exactly_ten(runner):
+    print("\n[roster size]")
+    roster = review_workers()
+    runner.test("roster has exactly 10 workers", len(roster) == 10,
+                f"got {len(roster)}: {sorted(roster)}")
+    runner.test("matches expected set", set(roster) == EXPECTED_SEED,
+                f"diff={set(roster) ^ EXPECTED_SEED}")
 
 
 def test_roster_contains_seed_workers(runner):
@@ -89,5 +99,6 @@ def test_import_is_lazy(runner):
 if __name__ == "__main__":
     runner = TestRunner()
     test_roster_contains_seed_workers(runner)
+    test_roster_is_exactly_ten(runner)
     test_import_is_lazy(runner)
     sys.exit(runner.summary())

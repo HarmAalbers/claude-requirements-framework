@@ -83,6 +83,12 @@ WORKERS = [
      "backward-compatibility-checker", "backward-compatibility-checker"),
     ("hooks.lib.llm.workers.type_design_analyzer", "type-design-analyzer",
      "type-design-analyzer"),
+    ("hooks.lib.llm.workers.comment_analyzer", "comment-analyzer",
+     "comment-analyzer"),
+    ("hooks.lib.llm.workers.tenant_isolation_auditor", "tenant-isolation-auditor",
+     "tenant-isolation-auditor"),
+    ("hooks.lib.llm.workers.compliance_auditor", "compliance-auditor",
+     "compliance-auditor"),
 ]
 
 

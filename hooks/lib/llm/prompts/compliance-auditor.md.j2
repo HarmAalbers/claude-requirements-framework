@@ -1,0 +1,23 @@
+{% include 'partials/safety.j2' %}
+
+Audit the diff below for privacy/regulatory compliance issues (only where the
+change touches data handling):
+  - PII or secrets written to logs, URLs, or client-side storage
+  - sensitive data persisted or transmitted without encryption
+  - sensitive actions performed without an audit-log entry
+  - retention/erasure gaps (data kept with no expiry/deletion path)
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   security
+  title:      10-120 chars
+  body:       1-3 sentences naming the exposed data and the compliance concern
+  suggested_fix: optional remediation guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='compliance-auditor', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

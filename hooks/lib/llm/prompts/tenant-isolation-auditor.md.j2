@@ -1,0 +1,24 @@
+{% include 'partials/safety.j2' %}
+
+Audit the diff below for multi-tenant data-isolation defects (only where the
+change touches data access, caching, or background work):
+  - DB queries / ORM calls missing a tenant filter or scope
+  - caches keyed without a tenant component (cross-tenant cache hits)
+  - global query-filter bypasses or raw queries that skip tenant scoping
+  - background jobs or service calls that don't carry tenant context
+  - singletons / shared state holding one tenant's data across requests
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   security
+  title:      10-120 chars
+  body:       1-3 sentences naming the leakage path and the affected boundary
+  suggested_fix: optional scoping/filter guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='tenant-isolation-auditor', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

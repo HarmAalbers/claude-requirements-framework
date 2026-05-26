@@ -29,8 +29,11 @@ def review_workers() -> dict[str, WorkerFn]:
         appsec_auditor,
         backward_compatibility_checker,
         code_reviewer,
+        comment_analyzer,
+        compliance_auditor,
         silent_failure_hunter,
         solid_reviewer,
+        tenant_isolation_auditor,
         test_analyzer,
         type_design_analyzer,
     )
@@ -42,6 +45,9 @@ def review_workers() -> dict[str, WorkerFn]:
         "test-analyzer": test_analyzer.review,
         "backward-compatibility-checker": backward_compatibility_checker.review,
         "type-design-analyzer": type_design_analyzer.review,
+        "comment-analyzer": comment_analyzer.review,
+        "tenant-isolation-auditor": tenant_isolation_auditor.review,
+        "compliance-auditor": compliance_auditor.review,
     }
 
 
