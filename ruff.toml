@@ -5,3 +5,12 @@ target-version = "py39"
 [lint]
 select = ["E", "F", "W"]  # Basic error, pyflakes, and warning rules
 ignore = ["E501"]  # Line length handled separately
+
+[lint.per-file-ignores]
+# Hook entry points and test files run as scripts (not installed packages):
+# they intentionally `sys.path.insert(...)` before importing local modules,
+# which ruff flags as E402 (import not at top). The pattern is deliberate and
+# pervasive in these two layers; hooks/lib/** are real packages and stay
+# E402-checked. (Surfaced by the /v3-review tool-gate — see ADR-018 / Step 18c.)
+"hooks/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
