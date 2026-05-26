@@ -67,6 +67,38 @@ logger = logging.getLogger(__name__)
 _disabled_logged = False
 _instrumented = False
 _provider: Any | None = None
+_detach_filter_installed = False
+
+
+class _DetachNoiseFilter(logging.Filter):
+    """Drop the benign 'Failed to detach context' records OpenInference emits.
+
+    Root cause (confirmed in openinference _wrappers.py lines 900/958): the
+    Claude-Agent-SDK instrumentor attaches an OTel context token when a
+    `query()` async generator starts and detaches it in the generator's
+    `finally`. Under `asyncio.gather` (the review fan-out), the generator is
+    resumed/closed across different contextvars Contexts, so
+    `ContextVar.reset(token)` at detach time raises "Token created in a
+    different Context". OTel logs the failure + a full traceback — once per
+    worker, so N workers produce a flood.
+
+    The span itself still ends and EXPORTS correctly; only the token
+    bookkeeping fails. This is an upstream limitation of the instrumentor under
+    concurrent async generators, not fixable in our worker logic. We drop only
+    that specific record so genuine context errors still surface.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Failed to detach context" not in record.getMessage()
+
+
+def _silence_detach_noise() -> None:
+    """Install the detach-noise filter on the opentelemetry.context logger once."""
+    global _detach_filter_installed
+    if _detach_filter_installed:
+        return
+    logging.getLogger("opentelemetry.context").addFilter(_DetachNoiseFilter())
+    _detach_filter_installed = True
 
 
 def _read_langfuse_config() -> tuple[str, str, str] | None:
@@ -209,6 +241,9 @@ def init_observability() -> None:
     # both writes happen on the success path, in this order, exactly once.
     _provider = provider
     atexit.register(_shutdown_provider_on_exit)
+    # Silence the benign per-worker detach noise that concurrent instrumented
+    # query() generators emit under the fan-out (see _DetachNoiseFilter).
+    _silence_detach_noise()
     _instrumented = True
 
 

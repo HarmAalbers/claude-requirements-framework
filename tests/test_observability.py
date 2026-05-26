@@ -371,6 +371,21 @@ def test_atexit_handler_safe_when_provider_unset(runner: TestRunner):
         )
 
 
+def test_detach_noise_filter_drops_only_detach_records(runner):
+    import logging as _logging
+
+    from hooks.lib.llm.observability import _DetachNoiseFilter
+    f = _DetachNoiseFilter()
+    detach = _logging.LogRecord("opentelemetry.context", _logging.ERROR, "p", 1,
+                                "Failed to detach context", (), None)
+    other = _logging.LogRecord("opentelemetry.context", _logging.ERROR, "p", 1,
+                               "some genuine context error", (), None)
+    runner.test("drops the benign 'Failed to detach context' record",
+                f.filter(detach) is False)
+    runner.test("keeps unrelated context errors",
+                f.filter(other) is True)
+
+
 if __name__ == "__main__":
     runner = TestRunner()
     test_disabled_when_no_public_key(runner)
@@ -382,4 +397,5 @@ if __name__ == "__main__":
     test_atexit_handler_registered_on_success_path(runner)
     test_atexit_handler_swallows_shutdown_errors(runner)
     test_atexit_handler_safe_when_provider_unset(runner)
+    test_detach_noise_filter_drops_only_detach_records(runner)
     sys.exit(runner.summary())
