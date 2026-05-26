@@ -180,6 +180,34 @@ def test_review_raises_on_error_subtype(runner):
                 f"msg={raised[0] if raised else '<none>'}")
 
 
+def test_review_raises_on_empty_success(runner):
+    print("\n[success subtype but empty structured_output]")
+    worker = _import_worker_module()
+    empty_msg = SimpleNamespace(subtype="success", structured_output=None)
+
+    async def fake_query(*args, prompt=None, options=None, **kw):
+        yield empty_msg
+
+    raised = []
+
+    async def run():
+        with patch.object(worker, "query", fake_query):
+            with patch.object(worker, "ResultMessage", SimpleNamespace):
+                try:
+                    await worker.review(diff="d", scope="s")
+                except RuntimeError as e:
+                    raised.append(str(e))
+
+    asyncio.run(run())
+    runner.test("raises RuntimeError on empty success", len(raised) == 1)
+    runner.test("message distinguishes empty output from a failed subtype",
+                bool(raised) and "empty structured_output" in raised[0],
+                f"msg={raised[0] if raised else '<none>'}")
+    runner.test("message does NOT mislabel it as 'failed: subtype'",
+                bool(raised) and "failed: subtype" not in raised[0],
+                f"msg={raised[0] if raised else '<none>'}")
+
+
 def test_review_raises_when_no_result_message(runner):
     print("\n[no ResultMessage]")
     worker = _import_worker_module()
@@ -239,6 +267,7 @@ if __name__ == "__main__":
     test_review_passes_output_format_and_no_tools(runner)
     test_review_labels_options_with_agent_name(runner)
     test_review_raises_on_error_subtype(runner)
+    test_review_raises_on_empty_success(runner)
     test_review_raises_when_no_result_message(runner)
     test_review_skips_non_result_messages(runner)
     sys.exit(runner.summary())

@@ -96,10 +96,15 @@ async def run_worker(
         max_turns: SDK turn cap; output_format needs >=2 for internal retry.
 
     Raises:
-        RuntimeError: if the terminal `ResultMessage` reports a non-success
-            subtype (e.g. `error_max_structured_output_retries`), or if the
-            stream ends with no terminal `ResultMessage` observed. NEVER returns
-            None on failure — the fan-out survivor filter depends on this.
+        RuntimeError: in three distinct cases, each with its own message:
+            - the terminal `ResultMessage` reports a non-success subtype
+              (e.g. `error_max_structured_output_retries`);
+            - the subtype IS `success` but `structured_output` is empty/None
+              (observed on oversized prompts — the call "succeeds" yet yields
+              nothing to validate);
+            - the stream ends with no terminal `ResultMessage` observed.
+            NEVER returns None on failure — the fan-out survivor filter depends
+            on this.
     """
     options = build_options(
         system=system,
@@ -109,10 +114,15 @@ async def run_worker(
     )
     async for msg in query(prompt=prompt, options=options):
         if isinstance(msg, result_cls):
-            if msg.subtype == "success" and msg.structured_output:
-                return schema.model_validate(msg.structured_output)
-            raise RuntimeError(
-                f"{error_prefix} failed: subtype={msg.subtype!r}")
+            if msg.subtype != "success":
+                raise RuntimeError(
+                    f"{error_prefix} failed: subtype={msg.subtype!r}")
+            if not msg.structured_output:
+                raise RuntimeError(
+                    f"{error_prefix} returned success but empty "
+                    f"structured_output (often an oversized prompt — try a "
+                    f"narrower diff scope)")
+            return schema.model_validate(msg.structured_output)
     raise RuntimeError(f"{error_prefix}: no ResultMessage observed")
 
 
