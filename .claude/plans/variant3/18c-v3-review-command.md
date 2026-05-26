@@ -63,8 +63,9 @@ doesn't demote ADR-012; (b) record the corroboration-rule divergence as a **know
 ## Goal
 
 Add a `/v3-review` plugin command that runs the SDK fan-out over a diff at **parity-or-better**
-with `/deep-review`'s reviewer roster (the 10 always-on reviewers **plus** `solid-reviewer` =
-11), renders the unified `ReviewReport` into the ADR-013 markdown format users already expect,
+with `/deep-review`'s reviewer roster (its 9 always-on reviewers — excluding the deprecated
+`code-simplifier` — **plus** `solid-reviewer` = **10 workers**), renders the unified
+`ReviewReport` into the ADR-013 markdown format users already expect,
 and satisfies the `pre_pr_review` gate — a genuine drop-in alternative to the team path, not a
 spike. (Known limitation: it does not replicate `/deep-review`'s cross-validation corroboration
 *escalation* rules — see ADR-018.)
@@ -80,15 +81,15 @@ spike. (Known limitation: it does not replicate `/deep-review`'s cross-validatio
 | 5 | Special agents | **Defer** `codex-review-agent` (Codex CLI substrate) and `frontend-reviewer` (conditional) to a follow-up |
 | 6 | `solid-reviewer` | **Include** (bonus SOLID perspective beyond `/deep-review`'s roster) |
 
-## Worker roster (11)
+## Worker roster (10) — code-simplifier EXCLUDED (deprecated, user decision 2026-05-26)
 
 Already exist (Steps 10/18b): `code-reviewer`, `appsec-auditor`, `solid-reviewer`.
 
-**8 new** thin `_base.run_worker` delegates + `prompts/<name>.md.j2` (modeled on the
+**7 new** thin `_base.run_worker` delegates + `prompts/<name>.md.j2` (modeled on the
 plugin agents under `plugins/.../agents/<name>.md.j2`):
 `silent-failure-hunter`, `test-analyzer`, `backward-compatibility-checker`,
-`type-design-analyzer`, `comment-analyzer`, `code-simplifier`,
-`tenant-isolation-auditor`, `compliance-auditor`.
+`type-design-analyzer`, `comment-analyzer`, `tenant-isolation-auditor`,
+`compliance-auditor`. (`code-simplifier` was dropped — deprecated, overlaps code-reviewer.)
 
 Deferred: `codex-review-agent` (shells to Codex CLI — different substrate, not
 `output_format`), `frontend-reviewer` (conditional on `.tsx/.css` in scope).
@@ -171,9 +172,9 @@ Add `'requirements-framework:v3-review': 'pre_pr_review'` to `DEFAULT_SKILL_MAPP
 
 ## Acceptance
 
-- [ ] `/v3-review <scope>` resolves scope, runs the tool-gate, fans out 11 workers, renders ADR-013 markdown with a correct verdict, prints `session_id` + cost
-- [ ] Tool-gate aborts before any LLM spend when ruff/pyright report CRITICAL
-- [ ] All 10 query-workers pass the 7-test contract; roster returns 11 lazily
+- [ ] `/v3-review <scope>` resolves scope, runs the tool-gate, fans out 10 workers, renders ADR-013 markdown with a correct verdict, prints `session_id` + cost
+- [ ] Tool-gate aborts before any LLM spend when ruff reports errors (pyright opt-in)
+- [ ] All 9 new/existing query-workers in the contract pass the 7-test contract; roster returns 10 lazily
 - [ ] Renderer verdict matches `/deep-review`'s rule (FIX/REVIEW/READY)
 - [ ] Completing `/v3-review` satisfies `pre_pr_review`
 - [ ] `plugin.json` bumped; `./sync.sh status` accounted for; framework suite green

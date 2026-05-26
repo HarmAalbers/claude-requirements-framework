@@ -62,11 +62,12 @@ reason a reviewer might see a CRITICAL from `/deep-review` that `/v3-review` rat
 
 ### Parity choices
 
-- **11-worker roster** mirrors `/deep-review`'s always-on reviewers (code-reviewer,
+- **10-worker roster** mirrors `/deep-review`'s always-on reviewers (code-reviewer,
   silent-failure-hunter, test-analyzer, backward-compatibility-checker, type-design-analyzer,
-  comment-analyzer, code-simplifier, tenant-isolation-auditor, appsec-auditor,
-  compliance-auditor) **plus** `solid-reviewer` as a bonus SOLID perspective. Each is a pure
-  `output_format` worker delegating to `_base.run_worker`.
+  comment-analyzer, tenant-isolation-auditor, appsec-auditor, compliance-auditor) **plus**
+  `solid-reviewer` as a bonus SOLID perspective. The deprecated `code-simplifier` (overlaps
+  code-reviewer; slated for removal) is **excluded** — building a new worker for an agent being
+  removed isn't worth it. Each worker is a pure `output_format` delegate to `_base.run_worker`.
 - **Deterministic tool-gate first.** Like `/deep-review` Step 3, a ruff/pyright pre-flight
   blocks the run on CRITICAL tool errors *before* spending on 11 parallel LLM calls —
   "don't review code that doesn't lint." This is a subprocess step, not a fan-out worker.
