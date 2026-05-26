@@ -33,7 +33,6 @@ async def review(diff: str, scope: str = "unstaged") -> ReviewReport:
         system=_SYSTEM,
         schema=ReviewReport,
         agent_label="solid-reviewer",
-        error_prefix="solid-reviewer",
         query=query,
         result_cls=ResultMessage,
     )

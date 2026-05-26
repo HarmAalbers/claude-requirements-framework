@@ -35,7 +35,10 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     if name in ("fanout_review", "FanoutResult"):
-        from hooks.lib.llm.workers import fanout
-        return getattr(fanout, name)
+        # Delegate to the workers subpackage — it is the single source of
+        # truth for where these resolve, so this module doesn't duplicate the
+        # `workers.fanout` import path.
+        from hooks.lib.llm import workers
+        return getattr(workers, name)
     raise AttributeError(
         f"module 'hooks.lib.llm' has no attribute {name!r}")

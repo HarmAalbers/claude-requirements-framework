@@ -33,7 +33,6 @@ async def review(diff: str, scope: str = "unstaged") -> ReviewReport:
         system=_SYSTEM,
         schema=ReviewReport,
         agent_label="appsec-auditor",
-        error_prefix="appsec-auditor",
         query=query,
         result_cls=ResultMessage,
     )

@@ -74,7 +74,6 @@ async def run_worker(
     system: str,
     schema: type[T],
     agent_label: str,
-    error_prefix: str,
     query: Callable[..., AsyncIterator[Any]],
     result_cls: type,
     max_turns: int = 5,
@@ -86,9 +85,9 @@ async def run_worker(
         system: the system prompt.
         schema: the Pydantic model to validate `structured_output` into AND to
             emit as the json_schema `output_format`.
-        agent_label: budget-ledger label (e.g. "code-reviewer").
-        error_prefix: prefix for RuntimeError messages — MUST match what the
-            caller's tests assert verbatim (e.g. "code-reviewer").
+        agent_label: identifies the worker — used BOTH as the budget-ledger
+            label and as the prefix for RuntimeError messages (e.g.
+            "code-reviewer"). Worker tests assert these messages verbatim.
         query: the SDK `query` callable, passed by the caller so mock-patching
             the caller's module namespace works (see module docstring).
         result_cls: the terminal-message type (`ResultMessage`), passed by the
@@ -116,14 +115,14 @@ async def run_worker(
         if isinstance(msg, result_cls):
             if msg.subtype != "success":
                 raise RuntimeError(
-                    f"{error_prefix} failed: subtype={msg.subtype!r}")
+                    f"{agent_label} failed: subtype={msg.subtype!r}")
             if not msg.structured_output:
                 raise RuntimeError(
-                    f"{error_prefix} returned success but empty "
+                    f"{agent_label} returned success but empty "
                     f"structured_output (often an oversized prompt — try a "
                     f"narrower diff scope)")
             return schema.model_validate(msg.structured_output)
-    raise RuntimeError(f"{error_prefix}: no ResultMessage observed")
+    raise RuntimeError(f"{agent_label}: no ResultMessage observed")
 
 
 __all__ = ["build_options", "run_worker"]
