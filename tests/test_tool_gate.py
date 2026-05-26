@@ -49,7 +49,7 @@ class TestRunner:
 def test_clean_returns_no_errors(runner):
     print("\n[clean → no errors]")
 
-    def fake_run(cmd, capture_output, text):
+    def fake_run(cmd, **kwargs):
         return SimpleNamespace(returncode=0, stdout="All checks passed!", stderr="")
 
     with patch.object(tool_gate.subprocess, "run", fake_run):
@@ -60,7 +60,7 @@ def test_clean_returns_no_errors(runner):
 def test_linter_errors_returned(runner):
     print("\n[ruff errors → blocking lines]")
 
-    def fake_run(cmd, capture_output, text):
+    def fake_run(cmd, **kwargs):
         return SimpleNamespace(
             returncode=1,
             stdout="a.py:3:1: F401 imported but unused\n", stderr="")
@@ -75,7 +75,7 @@ def test_non_python_skipped(runner):
     print("\n[non-Python files skipped]")
     called = {"n": 0}
 
-    def fake_run(cmd, capture_output, text):
+    def fake_run(cmd, **kwargs):
         called["n"] += 1
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -95,7 +95,7 @@ def test_empty_input(runner):
 def test_missing_linter_fails_loud(runner):
     print("\n[fail-LOUD: missing linter binary]")
 
-    def fake_run(cmd, capture_output, text):
+    def fake_run(cmd, **kwargs):
         raise FileNotFoundError(2, "No such file or directory", "ruff")
 
     raised = []
@@ -110,11 +110,60 @@ def test_missing_linter_fails_loud(runner):
                 f"msg={raised[0] if raised else '<none>'}")
 
 
+def test_nonzero_exit_empty_output_fails_loud(runner):
+    print("\n[non-zero exit + empty output → synthetic blocking line]")
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=-9, stdout="", stderr="")  # SIGKILL-style
+
+    with patch.object(tool_gate.subprocess, "run", fake_run):
+        errors = tool_gate.run_tool_gate(["a.py"])
+    runner.test("does NOT silently pass on non-zero+empty", errors != [],
+                f"got {errors}")
+    runner.test("synthetic line names the exit code",
+                any("exited -9" in e for e in errors), f"got {errors}")
+
+
+def test_timeout_fails_loud(runner):
+    print("\n[linter hang → RuntimeError, not a freeze]")
+    import subprocess as _sp
+
+    def fake_run(cmd, **kwargs):
+        raise _sp.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+    raised = []
+    with patch.object(tool_gate.subprocess, "run", fake_run):
+        try:
+            tool_gate.run_tool_gate(["a.py"])
+        except RuntimeError as e:
+            raised.append(str(e))
+    runner.test("raises RuntimeError on timeout", len(raised) == 1)
+    runner.test("message says timed out",
+                bool(raised) and "timed out" in raised[0],
+                f"msg={raised[0] if raised else '<none>'}")
+
+
+def test_double_dash_separator(runner):
+    print("\n[-- separator before file paths]")
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with patch.object(tool_gate.subprocess, "run", fake_run):
+        tool_gate.run_tool_gate(["a.py"])
+    cmd = captured["cmd"]
+    runner.test("`--` precedes the file paths",
+                "--" in cmd and cmd.index("--") < cmd.index("a.py"),
+                f"cmd={cmd}")
+
+
 def test_pyright_opt_in(runner):
     print("\n[pyright is opt-in, not default]")
     cmds = []
 
-    def fake_run(cmd, capture_output, text):
+    def fake_run(cmd, **kwargs):
         cmds.append(cmd[0])
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -125,8 +174,8 @@ def test_pyright_opt_in(runner):
         tool_gate.run_tool_gate(["a.py"], linters=("ruff", "pyright"))
     runner.test("default runs ruff only", default_cmds == ["ruff"],
                 f"got {default_cmds}")
-    runner.test("pyright runs when opted in", "pyright" in cmds,
-                f"got {cmds}")
+    runner.test("opt-in runs ruff AND pyright, in order",
+                cmds == ["ruff", "pyright"], f"got {cmds}")
 
 
 if __name__ == "__main__":
@@ -136,5 +185,8 @@ if __name__ == "__main__":
     test_non_python_skipped(runner)
     test_empty_input(runner)
     test_missing_linter_fails_loud(runner)
+    test_nonzero_exit_empty_output_fails_loud(runner)
+    test_timeout_fails_loud(runner)
+    test_double_dash_separator(runner)
     test_pyright_opt_in(runner)
     sys.exit(runner.summary())

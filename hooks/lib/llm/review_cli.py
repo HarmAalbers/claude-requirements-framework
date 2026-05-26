@@ -22,6 +22,7 @@ level so tests can `patch.object(review_cli, ...)` them.
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -122,8 +123,15 @@ def _resolve_scope(scope_arg: str) -> tuple[str, list[str], str]:
         print("v3-review: no changes to review", file=sys.stderr)
         raise SystemExit(1)
     diff = _DIFF_PATH.read_text()
-    scope_files = ([ln.strip() for ln in _SCOPE_PATH.read_text().splitlines()
-                    if ln.strip()] if _SCOPE_PATH.exists() else [])
+    # A successful diff resolution that produced no scope file is anomalous —
+    # treat it as loud, not as "no files to lint" (self-review #8: otherwise a
+    # missing scope file silently degrades the tool-gate to a no-op).
+    if not _SCOPE_PATH.exists():
+        print("v3-review: prepare-diff-scope produced a diff but no scope file "
+              f"({_SCOPE_PATH}) — refusing to run the gate blind", file=sys.stderr)
+        raise SystemExit(1)
+    scope_files = [ln.strip() for ln in _SCOPE_PATH.read_text().splitlines()
+                   if ln.strip()]
     return diff, scope_files, proc.stdout.strip()
 
 
@@ -141,6 +149,16 @@ def main() -> None:
     new = list(budget.load_month(now.year, now.month))[before:]
     cost = budget.summarize(new)
     print(f"\ncost: ${cost['mtd_usd']:.4f} over {cost['call_count']} call(s)")
+
+    # Be honest about observability: a printed session_id only corresponds to a
+    # real Langfuse trace when the LANGFUSE_* env vars were set (self-review:
+    # otherwise the id is local-only and nothing was exported).
+    if all(os.getenv(v) for v in
+           ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST")):
+        print("Langfuse: traces exported — filter by the session_id above")
+    else:
+        print("Langfuse: disabled (LANGFUSE_* unset) — session_id is local-only, "
+              "no trace was sent")
 
 
 if __name__ == "__main__":

@@ -137,9 +137,36 @@ def test_aggregator_failure_does_not_inflate_ratio(runner):
                 "## Aggregator degraded" in md)
 
 
+def test_resolve_scope_missing_scope_file_is_loud(runner):
+    print("\n[_resolve_scope: diff present but no scope file → loud SystemExit]")
+    from types import SimpleNamespace as NS
+    from unittest.mock import MagicMock
+
+    fake_script = MagicMock(); fake_script.exists.return_value = True
+    fake_diff = MagicMock(); fake_diff.exists.return_value = True
+    fake_diff.read_text.return_value = "--- a/x\n+++ b/x\n"
+    fake_scope = MagicMock(); fake_scope.exists.return_value = False
+
+    def fake_run(*a, **k):
+        return NS(returncode=0, stdout="Scope: range (1 file)", stderr="")
+
+    raised = []
+    with patch.object(review_cli, "_SCOPE_SCRIPT", fake_script), \
+            patch.object(review_cli, "_DIFF_PATH", fake_diff), \
+            patch.object(review_cli, "_SCOPE_PATH", fake_scope), \
+            patch.object(review_cli.subprocess, "run", fake_run):
+        try:
+            review_cli._resolve_scope("")
+        except SystemExit as e:
+            raised.append(e.code)
+    runner.test("missing scope file raises SystemExit(1) (not silent no-op)",
+                raised == [1], f"got {raised}")
+
+
 if __name__ == "__main__":
     runner = TestRunner()
     test_gate_abort_skips_fanout(runner)
+    test_resolve_scope_missing_scope_file_is_loud(runner)
     test_all_workers_fail_message(runner)
     test_success_renders_report_with_footer(runner)
     test_aggregator_failure_does_not_inflate_ratio(runner)

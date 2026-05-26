@@ -36,19 +36,36 @@ def _python_files(files: Sequence[str]) -> list[str]:
     return [f for f in files if f.endswith(".py")]
 
 
+_TIMEOUT_SECONDS = 60
+
+
 def _run_linter(name: str, files: list[str]) -> list[str]:
-    cmd = _LINTER_CMDS[name] + files
+    # `--` ends option parsing so a path beginning with '-' can't be read as a
+    # linter flag (argument-injection hardening, self-review).
+    cmd = _LINTER_CMDS[name] + ["--"] + files
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_TIMEOUT_SECONDS)
     except FileNotFoundError as exc:
         raise RuntimeError(
             f"tool-gate: '{name}' not found — install it or fix PATH. "
             f"The gate fails loud rather than skipping a check."
         ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"tool-gate: '{name}' timed out after {_TIMEOUT_SECONDS}s — "
+            f"failing loud rather than hanging before LLM spend."
+        ) from exc
     if proc.returncode == 0:
         return []
     combined = (proc.stdout or "") + (proc.stderr or "")
-    return [ln for ln in combined.splitlines() if ln.strip()]
+    lines = [ln for ln in combined.splitlines() if ln.strip()]
+    # A non-zero exit with NO output (signal kill, internal panic, redirected
+    # output) must not look like a clean pass (self-review #4): synthesize a
+    # line so the caller still blocks.
+    if not lines:
+        return [f"{name}: exited {proc.returncode} with no output"]
+    return lines
 
 
 def run_tool_gate(
