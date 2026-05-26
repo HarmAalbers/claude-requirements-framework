@@ -80,7 +80,8 @@ The original ordering put observability (Step 11) and budgeting (Step 17) in the
 | 17 | Token budget enforcement | ⬜ | Bumped — June-15 SDK credit pool makes cost predictability essential before workers run frequently |
 | 10 | Agent SDK `output_format` wrapper + aggregator agent (pilot on `code-reviewer`) | ⬜ | Body needs full rewrite per ADR-016 — no Instructor, agent-based aggregation |
 | 18 | Thin Python supervisor (replaces Markdown /req from 05) | ⬜ | Body needs rewrite — PydanticAI no longer used |
-| 18b | Multi-worker review fan-out (3 pilot workers + session binding) | 📋 planned (arch-review APPROVED 2026-05-25) | `18b-multi-worker-fanout.md`; closes the 2026-05-24 dogfood gap; see ADR-017 |
+| 18b | Multi-worker review fan-out (3 pilot workers + session binding) | ✅ done + live-validated 2026-05-26 ($2.84/run) | `18b-multi-worker-fanout.md`; closed the 2026-05-24 dogfood gap; see ADR-017 |
+| 18c | `/v3-review` command — fan-out exposed at `/deep-review` parity (11 workers) | 📋 planned 2026-05-26 | `18c-v3-review-command.md`; additive to team `/deep-review`; see ADR-018 |
 | 13 | Qdrant local + local sentence-transformers embedding | ⬜ | Body needs rewrite — no OpenAI embeddings; use `BAAI/bge-small-en-v1.5` locally |
 | 14 | LlamaIndex memory composition | ⬜ | |
 | 15 | Ragas eval harness + golden set (via `ClaudeSDKClient`) | ⬜ | Body needs rewrite — judge model is Agent SDK with persistent client; critical before Step 20 |
