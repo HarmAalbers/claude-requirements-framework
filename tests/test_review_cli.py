@@ -148,10 +148,13 @@ def test_resolve_scope_missing_scope_file_is_loud(runner):
     from types import SimpleNamespace as NS
     from unittest.mock import MagicMock
 
-    fake_script = MagicMock(); fake_script.exists.return_value = True
-    fake_diff = MagicMock(); fake_diff.exists.return_value = True
+    fake_script = MagicMock()
+    fake_script.exists.return_value = True
+    fake_diff = MagicMock()
+    fake_diff.exists.return_value = True
     fake_diff.read_text.return_value = "--- a/x\n+++ b/x\n"
-    fake_scope = MagicMock(); fake_scope.exists.return_value = False
+    fake_scope = MagicMock()
+    fake_scope.exists.return_value = False
 
     def fake_run(*a, **k):
         return NS(returncode=0, stdout="Scope: range (1 file)", stderr="")

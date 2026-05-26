@@ -192,8 +192,11 @@ def main() -> None:
     # Be honest about observability: a printed session_id only corresponds to a
     # real Langfuse trace when instrumentation actually initialized (creds present
     # AND extras installed). Report the true state, not just env presence.
-    if observability._instrumented:
+    if observability._instrumented and cost["call_count"] > 0:
         print("Langfuse: traces exported — filter by the session_id above")
+    elif observability._instrumented:
+        print("Langfuse: instrumented, but no LLM calls were made this run "
+              "(nothing to trace — e.g. the tool gate aborted first)")
     else:
         print("Langfuse: disabled — session_id is local-only, no trace was sent "
               "(set LANGFUSE_* in infra/.env or the shell)")
