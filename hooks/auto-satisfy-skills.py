@@ -45,6 +45,7 @@ DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     'requirements-framework:pre-commit': 'pre_commit_review',
     'requirements-framework:codex-review': 'codex_reviewer',
     'requirements-framework:deep-review': 'pre_pr_review',
+    'requirements-framework:v3-review': 'pre_pr_review',
     'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
     # Process skills (auto-satisfy a requirement when the skill completes)
     'requirements-framework:brainstorming': 'design_approved',
