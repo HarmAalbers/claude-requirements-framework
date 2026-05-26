@@ -87,6 +87,21 @@ def _prompt_name(path: Path) -> str:
     return path.stem
 
 
+def _load_dotenv() -> None:
+    """Load `infra/.env` (then repo `.env`) so this script picks up LANGFUSE_*
+    without the caller exporting them — same loader as `review_cli` and the
+    Langfuse smoke, for one consistent cred source. Shell env wins. Soft-dep on
+    python-dotenv; absent → shell env only and `_require_env` reports what's missing.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    for candidate in (REPO_ROOT / "infra" / ".env", REPO_ROOT / ".env"):
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
+
+
 def _require_env() -> None:
     missing = [
         k for k in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST")
@@ -135,6 +150,7 @@ def main() -> int:
             print(f"  {_prompt_name(p)}  ({p.stat().st_size} bytes, source: {p.name})")
         return 0
 
+    _load_dotenv()
     _require_env()
     from langfuse import Langfuse
     lf = Langfuse()
