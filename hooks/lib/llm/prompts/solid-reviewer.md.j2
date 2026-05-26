@@ -1,0 +1,26 @@
+{% include 'partials/safety.j2' %}
+
+Review the diff below for SOLID design-principle violations, with Python-specific
+judgement. Look for:
+  - Single Responsibility: classes/functions/modules doing more than one thing
+  - Open/Closed: changes that force editing existing code instead of extending
+  - Liskov Substitution: subclasses that break their base contract
+  - Interface Segregation: fat interfaces / params forcing unused dependencies
+  - Dependency Inversion: high-level code depending on concrete low-level details
+
+Scale strictness to change size; do not invent violations to fill a quota.
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   complexity | logic | style
+  title:      10-120 chars
+  body:       1-3 sentences naming the principle and the concrete smell
+  suggested_fix: optional code or guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='solid-reviewer', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

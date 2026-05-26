@@ -1,0 +1,28 @@
+{% include 'partials/safety.j2' %}
+
+Audit the diff below for application-security vulnerabilities aligned with the
+OWASP Top 10. Look for:
+  - Injection: SQL, command (os.system / subprocess shell), template, LDAP,
+    path traversal, XXE, SSRF
+  - Authentication / authorization gaps: missing access checks, weak JWT
+    validation, broad CORS, privilege escalation
+  - Secrets management: hardcoded credentials, keys, or tokens
+  - Cryptographic weaknesses: MD5 / SHA1 / DES, hardcoded keys, weak randomness
+  - Security misconfiguration and unsafe deserialization
+
+Only report vulnerabilities you can tie to a concrete line in the diff.
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   security
+  title:      10-120 chars
+  body:       1-3 sentences naming the vulnerability class and the attack vector
+  suggested_fix: optional code or guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='appsec-auditor', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```
