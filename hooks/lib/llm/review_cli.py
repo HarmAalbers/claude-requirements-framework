@@ -22,19 +22,44 @@ level so tests can `patch.object(review_cli, ...)` them.
 from __future__ import annotations
 
 import asyncio
-import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from hooks.lib.llm import budget
-from hooks.lib.llm.render import render_review_markdown
-from hooks.lib.llm.tool_gate import run_tool_gate
-from hooks.lib.llm.workers.fanout import fanout_review
-from hooks.lib.llm.workers.rosters import review_workers
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
+def _load_dotenv() -> None:
+    """Load `infra/.env` (then repo `.env`) so `/v3-review` picks up LANGFUSE_*
+    without the caller exporting them. Shell env wins (`override=False`).
+
+    Soft dependency on python-dotenv: if it's absent we fall through to shell
+    env only, and the run's footer will report observability disabled.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    for candidate in (REPO_ROOT / "infra" / ".env", REPO_ROOT / ".env"):
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
+
+
+# Load creds + initialize observability BEFORE importing the SDK wrapper chain.
+# The OpenInference instrumentor patches `claude_agent_sdk.query` at instrument
+# time; `claude.py` captures its reference at import time. If we init after that
+# import, review runs untraced (claude.py docstring: import order matters).
+_load_dotenv()
+from hooks.lib.llm.observability import init_observability  # noqa: E402
+init_observability()
+
+from hooks.lib.llm import budget  # noqa: E402
+from hooks.lib.llm import observability  # noqa: E402
+from hooks.lib.llm.render import render_review_markdown  # noqa: E402
+from hooks.lib.llm.tool_gate import run_tool_gate  # noqa: E402
+from hooks.lib.llm.workers.fanout import fanout_review  # noqa: E402
+from hooks.lib.llm.workers.rosters import review_workers  # noqa: E402
 _SCOPE_SCRIPT = (REPO_ROOT / "plugins" / "requirements-framework"
                  / "scripts" / "prepare-diff-scope")
 _DIFF_PATH = Path("/tmp/review.diff")
@@ -151,14 +176,13 @@ def main() -> None:
     print(f"\ncost: ${cost['mtd_usd']:.4f} over {cost['call_count']} call(s)")
 
     # Be honest about observability: a printed session_id only corresponds to a
-    # real Langfuse trace when the LANGFUSE_* env vars were set (self-review:
-    # otherwise the id is local-only and nothing was exported).
-    if all(os.getenv(v) for v in
-           ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST")):
+    # real Langfuse trace when instrumentation actually initialized (creds present
+    # AND extras installed). Report the true state, not just env presence.
+    if observability._instrumented:
         print("Langfuse: traces exported — filter by the session_id above")
     else:
-        print("Langfuse: disabled (LANGFUSE_* unset) — session_id is local-only, "
-              "no trace was sent")
+        print("Langfuse: disabled — session_id is local-only, no trace was sent "
+              "(set LANGFUSE_* in infra/.env or the shell)")
 
 
 if __name__ == "__main__":
