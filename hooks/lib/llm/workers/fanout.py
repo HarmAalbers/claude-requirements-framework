@@ -49,6 +49,23 @@ class FanoutResult:
     worker_errors: dict[str, str] = field(default_factory=dict)
 
 
+def _mechanical_merge(reports: list[ReviewReport]) -> ReviewReport:
+    """Degraded fallback when the aggregator agent fails: concatenate all
+    survivor findings WITHOUT semantic dedup. Clearly labeled so the reader
+    knows it isn't the agent's semantic merge (ADR-016)."""
+    findings = [f for r in reports for f in r.findings]
+    return ReviewReport(
+        agent="review-aggregator (fallback)",
+        scope=reports[0].scope,
+        findings=findings,
+        summary=(
+            "Aggregator agent failed; findings from surviving workers are "
+            "concatenated WITHOUT semantic de-duplication. Treat duplicate "
+            "findings and severity counts with caution."
+        ),
+    )
+
+
 def _default_workers() -> dict[str, WorkerFn]:
     """The 3-worker pilot set. Imports deferred so `import fanout` doesn't pull
     in the worker deps and so test injection of `workers=` avoids them entirely
@@ -108,8 +125,13 @@ async def fanout_review(
     if not reports:
         raise RuntimeError("fanout_review: all workers failed")
 
-    with review_session(session_id, "aggregator"):
-        unified = await aggregate(reports)
+    try:
+        with review_session(session_id, "aggregator"):
+            unified = await aggregate(reports)
+    except Exception as exc:  # noqa: BLE001 — degrade, don't lose survivors
+        worker_errors["aggregator"] = f"{type(exc).__name__}: {exc}"
+        logger.warning("aggregator failed (%s); using mechanical merge", exc)
+        unified = _mechanical_merge(reports)
     return FanoutResult(unified, session_id, len(reports), worker_errors)
 
 

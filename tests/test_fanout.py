@@ -151,6 +151,44 @@ def test_partial_failure(runner):
                 and "appsec-auditor" not in result.worker_errors)
 
 
+def test_aggregator_failure_falls_back_to_mechanical_merge(runner):
+    print("\n[aggregator fails -> mechanical merge of survivors]")
+    recorded = []
+    workers = {
+        "code-reviewer": _make_worker("code-reviewer"),
+        "appsec-auditor": _make_worker("appsec-auditor"),
+    }
+
+    @contextmanager
+    def fake_review_session(session_id, worker):
+        recorded.append((session_id, worker))
+        yield
+
+    async def failing_aggregate(reports):
+        raise RuntimeError("aggregator failed: subtype='success'")
+
+    async def run():
+        with patch.object(fanout, "review_session", fake_review_session), \
+                patch.object(fanout, "aggregate", failing_aggregate):
+            return await fanout.fanout_review("diff", "HEAD", workers=workers)
+
+    result = asyncio.run(run())
+    runner.test("still returns a FanoutResult (no raise)",
+                isinstance(result, fanout.FanoutResult))
+    runner.test("report is the labeled fallback",
+                result.report.agent == "review-aggregator (fallback)",
+                f"agent={result.report.agent!r}")
+    runner.test("survivor findings preserved (concatenated)",
+                len(result.report.findings)
+                == sum(len(_report(a).findings) for a in
+                       ("code-reviewer", "appsec-auditor")))
+    runner.test("aggregator failure recorded in worker_errors",
+                "aggregator" in result.worker_errors,
+                f"worker_errors={result.worker_errors}")
+    runner.test("survivor_count still reflects the 2 workers",
+                result.survivor_count == 2, f"got {result.survivor_count}")
+
+
 def test_all_fail_raises(runner):
     print("\n[all fail -> RuntimeError]")
     recorded, agg_calls = [], []
@@ -211,6 +249,7 @@ if __name__ == "__main__":
     runner = TestRunner()
     test_success_all_three(runner)
     test_partial_failure(runner)
+    test_aggregator_failure_falls_back_to_mechanical_merge(runner)
     test_all_fail_raises(runner)
     test_same_session_id_across_workers_and_aggregator(runner)
     sys.exit(runner.summary())
