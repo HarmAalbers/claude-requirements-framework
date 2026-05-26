@@ -214,7 +214,11 @@ def test_all_fail_raises(runner):
     asyncio.run(run())
     runner.test("raises RuntimeError when all workers fail", len(raised) == 1)
     runner.test("error says all workers failed",
-                bool(raised) and "all workers failed" in raised[0],
+                bool(raised) and "workers failed" in raised[0],
+                f"msg={raised[0] if raised else '<none>'}")
+    runner.test("error surfaces the real per-worker reasons (not a guess)",
+                bool(raised) and "code-reviewer" in raised[0]
+                and "solid-reviewer" in raised[0],
                 f"msg={raised[0] if raised else '<none>'}")
     runner.test("aggregate is NOT called when there are no survivors",
                 len(agg_calls) == 0, f"agg_calls={len(agg_calls)}")

@@ -24,5 +24,6 @@ Relay the script's output verbatim — the rendered review plus the trailing `se
 
 ## Notes
 
+- **Run interactively in a terminal.** The fan-out spawns N Claude-Agent-SDK subprocesses (the bundled Max CLI) whose control handshake needs an interactive stdio context. Launching it as a detached/background process with redirected stdio can fail with `Control request timeout: initialize`. A foreground run works (incl. the `!` prefix inside a Claude Code session).
 - **Additive** to `/deep-review`; see ADR-018 for when to use which.
 - **Known limitation**: this path does not apply `/deep-review`'s cross-validation corroboration *escalation* rules, so a finding may be reported as IMPORTANT where the team path would escalate it to CRITICAL.

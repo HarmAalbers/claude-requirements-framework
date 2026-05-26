@@ -83,7 +83,9 @@ def test_all_workers_fail_message(runner):
     print("\n[all workers fail → human-readable message]")
 
     async def fake_fanout(diff, scope, workers=None):
-        raise RuntimeError("fanout_review: all workers failed")
+        raise RuntimeError(
+            "fanout_review: all 2 workers failed — "
+            "code-reviewer: Control request timeout: initialize")
 
     async def run():
         with patch.object(review_cli, "run_tool_gate", lambda files: []), \
@@ -92,7 +94,11 @@ def test_all_workers_fail_message(runner):
 
     md = asyncio.run(run())
     runner.test("FAILED header", "V3 Review — FAILED" in md)
-    runner.test("suggests narrower scope", "narrower scope" in md)
+    runner.test("surfaces the real worker error (not just a guess)",
+                "Control request timeout" in md)
+    runner.test("lists oversized-diff cause", "narrower scope" in md)
+    runner.test("lists wrong-launch-context cause",
+                "INTERACTIVELY" in md or "detached/background" in md)
 
 
 def test_success_renders_report_with_footer(runner):

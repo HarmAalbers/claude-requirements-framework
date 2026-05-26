@@ -1,5 +1,13 @@
 """Entry point for the `/v3-review` command — SDK fan-out review.
 
+Launch constraint (observed, mechanism not fully diagnosed): run this
+INTERACTIVELY in a terminal. The fan-out spawns N `claude-agent-sdk`
+subprocesses (the bundled Max CLI), and their control-protocol handshake needs
+an interactive stdio context. Launching `/v3-review` as a DETACHED / BACKGROUND
+process with redirected stdio (e.g. via an automation tool) fails with
+`Control request timeout: initialize` + cancelled session hooks. A foreground
+shell run works (incl. via the `!` prefix inside a Claude Code session).
+
 Step 18c. Two layers (arch-review #1):
 
     run_review(diff, scope, files, workers) -> str
@@ -89,9 +97,15 @@ async def run_review(diff: str, scope: str, files: list[str], workers) -> str:
     except RuntimeError as exc:
         return (
             "# V3 Review — FAILED\n\n"
-            f"All review workers failed: {exc}\n\n"
-            "This usually means the diff is too large for the workers to process. "
-            "Try a narrower scope (e.g. a commit range like `abc123~1..HEAD`).\n\n"
+            f"{exc}\n\n"
+            "Likely causes:\n"
+            "- **Oversized diff** — the workers couldn't process it. Try a narrower "
+            "scope (e.g. a commit range like `abc123~1..HEAD`).\n"
+            "- **Wrong launch context** — `Control request timeout: initialize` / "
+            "cancelled hooks mean the SDK subprocess couldn't start. Run "
+            "`/v3-review` INTERACTIVELY in a terminal; launching it as a "
+            "detached/background process with redirected stdio can break the "
+            "SDK's control handshake.\n\n"
             "**Verdict**: FIX ISSUES FIRST"
         )
 

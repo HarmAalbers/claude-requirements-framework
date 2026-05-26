@@ -127,7 +127,10 @@ async def fanout_review(
             logger.warning("worker %s failed: %s", name, result)
 
     if not reports:
-        raise RuntimeError("fanout_review: all workers failed")
+        detail = "; ".join(f"{name}: {err}"
+                           for name, err in worker_errors.items())
+        raise RuntimeError(
+            f"fanout_review: all {len(workers)} workers failed — {detail}")
 
     aggregator_error: str | None = None
     try:
