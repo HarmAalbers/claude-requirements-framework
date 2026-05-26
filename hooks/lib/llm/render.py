@@ -57,6 +57,7 @@ def render_review_markdown(
     report: ReviewReport,
     *,
     worker_errors: dict[str, str] | None = None,
+    aggregator_error: str | None = None,
 ) -> str:
     """Render the unified report as ADR-013 markdown.
 
@@ -65,6 +66,9 @@ def render_review_markdown(
         worker_errors: optional {worker_name: error} for workers that failed in
             the fan-out; rendered as a "Workers that did not complete" section so
             the reader knows coverage was partial.
+        aggregator_error: optional message if the aggregator agent failed and a
+            mechanical-merge fallback was used; rendered as a distinct caveat
+            (it's not a worker — self-review #2/#3).
     """
     counts = _counts(report)
     verdict = compute_verdict(report)
@@ -90,6 +94,14 @@ def render_review_markdown(
         out.append("## Workers that did not complete")
         for name, err in worker_errors.items():
             out.append(f"- **{name}**: {err}")
+        out.append("")
+
+    if aggregator_error:
+        out.append("## Aggregator degraded")
+        out.append(
+            f"The aggregator agent failed ({aggregator_error}); findings were "
+            "concatenated without semantic de-duplication. Treat duplicate "
+            "findings and severity counts with caution.")
         out.append("")
 
     out.extend([

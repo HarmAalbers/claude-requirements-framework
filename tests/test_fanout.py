@@ -114,6 +114,9 @@ def test_success_all_three(runner):
     runner.test("session_id is non-empty", bool(result.session_id))
     runner.test("no worker_errors when all succeed",
                 result.worker_errors == {}, f"got {result.worker_errors}")
+    runner.test("no aggregator_error when aggregator succeeds",
+                result.aggregator_error is None,
+                f"got {result.aggregator_error!r}")
 
 
 def test_partial_failure(runner):
@@ -182,8 +185,10 @@ def test_aggregator_failure_falls_back_to_mechanical_merge(runner):
                 len(result.report.findings)
                 == sum(len(_report(a).findings) for a in
                        ("code-reviewer", "appsec-auditor")))
-    runner.test("aggregator failure recorded in worker_errors",
-                "aggregator" in result.worker_errors,
+    runner.test("aggregator failure recorded in aggregator_error (NOT worker_errors)",
+                result.aggregator_error is not None
+                and "aggregator" not in result.worker_errors,
+                f"aggregator_error={result.aggregator_error!r} "
                 f"worker_errors={result.worker_errors}")
     runner.test("survivor_count still reflects the 2 workers",
                 result.survivor_count == 2, f"got {result.survivor_count}")

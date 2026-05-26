@@ -138,6 +138,20 @@ def test_markdown_worker_errors_section(runner):
                 "Workers that did not complete" not in md_none)
 
 
+def test_markdown_aggregator_error_section(runner):
+    print("\n[markdown: aggregator_error rendered distinctly]")
+    md = render_review_markdown(
+        _report([_finding("IMPORTANT")]),
+        aggregator_error="RuntimeError: aggregator failed: subtype='success'")
+    runner.test("aggregator-degraded section present",
+                "## Aggregator degraded" in md)
+    runner.test("aggregator NOT listed under workers section",
+                "Workers that did not complete" not in md)
+    md_none = render_review_markdown(_report([_finding("IMPORTANT")]))
+    runner.test("no aggregator section when it succeeded",
+                "Aggregator degraded" not in md_none)
+
+
 if __name__ == "__main__":
     runner = TestRunner()
     test_verdict_empty_is_ready(runner)
@@ -146,4 +160,5 @@ if __name__ == "__main__":
     test_markdown_groups_by_severity_in_order(runner)
     test_markdown_empty_findings(runner)
     test_markdown_worker_errors_section(runner)
+    test_markdown_aggregator_error_section(runner)
     sys.exit(runner.summary())

@@ -117,9 +117,30 @@ def test_success_renders_report_with_footer(runner):
                 "Workers that did not complete" in md)
 
 
+def test_aggregator_failure_does_not_inflate_ratio(runner):
+    print("\n[aggregator failure → degraded section, honest ratio]")
+
+    async def fake_fanout(diff, scope, workers=None):
+        # all 10 workers survived; the aggregator itself failed → fallback
+        return FanoutResult(_report(), "sess-agg", 10, {},
+                            "RuntimeError: aggregator failed")
+
+    async def run():
+        with patch.object(review_cli, "run_tool_gate", lambda files: []), \
+                patch.object(review_cli, "fanout_review", fake_fanout):
+            return await review_cli.run_review("diff", "HEAD", ["a.py"], {})
+
+    md = asyncio.run(run())
+    runner.test("ratio is 10/10 (aggregator NOT counted as a worker)",
+                "survivors: 10/10" in md, f"footer: {md[-120:]!r}")
+    runner.test("aggregator-degraded section shown",
+                "## Aggregator degraded" in md)
+
+
 if __name__ == "__main__":
     runner = TestRunner()
     test_gate_abort_skips_fanout(runner)
     test_all_workers_fail_message(runner)
     test_success_renders_report_with_footer(runner)
+    test_aggregator_failure_does_not_inflate_ratio(runner)
     sys.exit(runner.summary())

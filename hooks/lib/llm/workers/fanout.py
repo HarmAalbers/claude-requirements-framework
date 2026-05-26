@@ -46,7 +46,11 @@ class FanoutResult:
     report: ReviewReport
     session_id: str
     survivor_count: int
+    # worker_errors keys are WORKER names only. Aggregator failure is a distinct
+    # population — kept separate so the survivor arithmetic stays sound and the
+    # renderer can present the two cases differently (self-review #2/#3).
     worker_errors: dict[str, str] = field(default_factory=dict)
+    aggregator_error: str | None = None
 
 
 def _mechanical_merge(reports: list[ReviewReport]) -> ReviewReport:
@@ -125,14 +129,16 @@ async def fanout_review(
     if not reports:
         raise RuntimeError("fanout_review: all workers failed")
 
+    aggregator_error: str | None = None
     try:
         with review_session(session_id, "aggregator"):
             unified = await aggregate(reports)
     except Exception as exc:  # noqa: BLE001 — degrade, don't lose survivors
-        worker_errors["aggregator"] = f"{type(exc).__name__}: {exc}"
+        aggregator_error = f"{type(exc).__name__}: {exc}"
         logger.warning("aggregator failed (%s); using mechanical merge", exc)
         unified = _mechanical_merge(reports)
-    return FanoutResult(unified, session_id, len(reports), worker_errors)
+    return FanoutResult(unified, session_id, len(reports),
+                        worker_errors, aggregator_error)
 
 
 __all__ = ["FanoutResult", "fanout_review"]

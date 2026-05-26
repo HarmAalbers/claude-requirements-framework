@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 
 def review_workers() -> dict[str, WorkerFn]:
-    """The `/v3-review` roster — `/deep-review`'s reviewers plus `solid-reviewer`.
-
-    Seeded here with the 3 existing workers; Step 18c batches 1 and 2 grow this to 11.
-    Imports are deferred so this is callable without eagerly importing the worker modules.
+    """The 10-worker `/v3-review` roster — `/deep-review`'s non-deprecated
+    reviewers plus `solid-reviewer`. The deprecated `code-simplifier` agent is
+    intentionally excluded (see ADR-018). Imports are deferred so this is callable
+    without eagerly importing the worker modules.
     """
     from hooks.lib.llm.workers import (
         appsec_auditor,

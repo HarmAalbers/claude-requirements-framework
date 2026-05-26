@@ -69,11 +69,18 @@ async def run_review(diff: str, scope: str, files: list[str], workers) -> str:
             "**Verdict**: FIX ISSUES FIRST"
         )
 
-    md = render_review_markdown(result.report, worker_errors=result.worker_errors)
+    md = render_review_markdown(
+        result.report,
+        worker_errors=result.worker_errors,
+        aggregator_error=result.aggregator_error,
+    )
+    # Total workers = survivors + failed workers. aggregator_error is NOT a
+    # worker and must not inflate the ratio (self-review #3).
+    total_workers = result.survivor_count + len(result.worker_errors)
     return (
         f"{md}\n\n---\n"
-        f"session_id: {result.session_id}  ·  survivors: {result.survivor_count}/"
-        f"{result.survivor_count + len(result.worker_errors)}"
+        f"session_id: {result.session_id}  ·  "
+        f"survivors: {result.survivor_count}/{total_workers}"
     )
 
 
