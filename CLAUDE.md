@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Handoff — check FIRST on every session start
+
+**Before doing anything else (before reading the rest of this file, before responding to the user's first prompt), check whether `.claude/handoff.md` exists in the repo root.** It is a cross-session handoff prompt written by a prior session, gitignored, pointing at a specific next step. If present:
+
+1. Read `.claude/handoff.md` in full.
+2. Summarize it in 2–3 lines for the user: where the prior session left off + the recommended next step + the named alternatives.
+3. Ask the user whether to proceed with the proposed next step, pick an alternative, or do something else entirely. Do NOT auto-execute it.
+4. After the user decides (whichever path), MOVE the file to `.claude/handoff.archive/<YYYY-MM-DD-HHMMSS>.md` (`mkdir -p` the archive dir if needed) so the file stays as durable history but never re-prompts in a future session. If the user explicitly says "leave it for later," skip the archive step and tell them you've left it in place.
+
+If `.claude/handoff.md` is absent, do not mention this section or the convention to the user — just proceed normally with the rest of the file.
+
+This convention exists so prior sessions can hand off mid-refactor state without the user copy-pasting prompts. To write one for the next session, save the handoff content to `.claude/handoff.md` (it's gitignored).
+
 ## Version Control: Always Use Stacked Git
 
 This project uses **Stacked Git (`stg`)** for all local commit authoring. Every patch goes through the stack — **never use `git commit` directly**.

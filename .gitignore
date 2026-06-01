@@ -64,3 +64,7 @@ sessions.json
 
 # Local Langfuse credentials (created by user after Langfuse bootstrap)
 infra/.env
+
+# Session handoff (cross-session continuation prompt; see CLAUDE.md "Session Handoff")
+.claude/handoff.md
+.claude/handoff.archive/
