@@ -20,6 +20,7 @@ Usage:
     reqs.satisfy('commit_plan', scope='session', method='cli')
 """
 import time
+from contextlib import contextmanager
 from typing import Optional
 
 # Handle both package import and direct execution
@@ -29,6 +30,7 @@ try:
         save_state,
         delete_state,
         list_all_states,
+        state_lock,
     )
     from .git_utils import get_all_branches
 except ImportError:
@@ -37,6 +39,7 @@ except ImportError:
         save_state,
         delete_state,
         list_all_states,
+        state_lock,
     )
     from git_utils import get_all_branches
 
@@ -72,7 +75,30 @@ class BranchRequirements:
         # Migrate old state with full UUID session keys to normalized 8-char format
         self._migrate_session_keys()
 
-    def _migrate_session_keys(self) -> None:
+    @contextmanager
+    def transaction(self):
+        """Run a locked, atomic read-modify-write against the branch state file.
+
+        Acquires the cross-process branch lock, reloads FRESH state from disk
+        (so the mutation is applied to the latest committed state rather than the
+        possibly-stale snapshot taken at __init__), yields for the caller to
+        mutate ``self._state``, then persists atomically while still holding the
+        lock. This serializes concurrent writers (parallel hook processes) so
+        they can no longer silently clobber each other's satisfactions
+        (last-writer-wins) or corrupt the file.
+
+        On an exception inside the block the state is NOT saved (the partial
+        mutation is discarded) and the lock is released.
+        """
+        with state_lock(self.branch, self.project_dir):
+            self._state = load_state(self.branch, self.project_dir)
+            # Re-apply the idempotent key migration on the freshly-loaded state,
+            # but let the transaction's own save persist it (avoid a nested save).
+            self._migrate_session_keys(save=False)
+            yield
+            save_state(self.branch, self.project_dir, self._state)
+
+    def _migrate_session_keys(self, save: bool = True) -> None:
         """
         Migrate session keys from full UUID format to 8-char normalized format.
 
@@ -125,8 +151,9 @@ class BranchRequirements:
                 del sessions[old_key]
                 migrated = True
 
-        # Save migrated state
-        if migrated:
+        # Save migrated state (skipped when called inside transaction(), which
+        # persists the migrated state via its own atomic save).
+        if migrated and save:
             self._save()
 
     def _save(self) -> None:
@@ -280,32 +307,31 @@ class BranchRequirements:
             req_name: Requirement name
             scope: One of 'session', 'branch', 'permanent', 'single_use'
         """
-        req_state = self._get_req_state(req_name)
-        req_state['scope'] = scope
-        now = int(time.time())
+        with self.transaction():
+            req_state = self._get_req_state(req_name)
+            req_state['scope'] = scope
+            now = int(time.time())
 
-        if scope in ('session', 'single_use'):
-            # Session/single_use: store under current session ID
-            if 'sessions' not in req_state:
-                req_state['sessions'] = {}
+            if scope in ('session', 'single_use'):
+                # Session/single_use: store under current session ID
+                if 'sessions' not in req_state:
+                    req_state['sessions'] = {}
 
-            if self.session_id not in req_state['sessions']:
-                req_state['sessions'][self.session_id] = {}
+                if self.session_id not in req_state['sessions']:
+                    req_state['sessions'][self.session_id] = {}
 
-            session_state = req_state['sessions'][self.session_id]
+                session_state = req_state['sessions'][self.session_id]
 
-            # Only set triggered if not already set (idempotent - preserve timestamp)
-            if not session_state.get('triggered', False):
-                session_state['triggered'] = True
-                session_state['triggered_at'] = now
-                self._save()
+                # Only set triggered if not already set (idempotent - preserve timestamp)
+                if not session_state.get('triggered', False):
+                    session_state['triggered'] = True
+                    session_state['triggered_at'] = now
 
-        elif scope in ('branch', 'permanent'):
-            # Branch/permanent: store at requirement level
-            if not req_state.get('triggered', False):
-                req_state['triggered'] = True
-                req_state['triggered_at'] = now
-                self._save()
+            elif scope in ('branch', 'permanent'):
+                # Branch/permanent: store at requirement level
+                if not req_state.get('triggered', False):
+                    req_state['triggered'] = True
+                    req_state['triggered_at'] = now
 
     def is_triggered(self, req_name: str, scope: str = 'session') -> bool:
         """
@@ -355,49 +381,48 @@ class BranchRequirements:
             metadata: Optional extra data (e.g., {"ticket": "#1234"})
             ttl: Optional time-to-live in seconds
         """
-        req_state = self._get_req_state(req_name)
-        req_state['scope'] = scope
-        now = int(time.time())
+        with self.transaction():
+            req_state = self._get_req_state(req_name)
+            req_state['scope'] = scope
+            now = int(time.time())
 
-        if scope in ('session', 'single_use'):
-            # Session/single_use: store under current session ID
-            # (single_use is stored the same way; it's cleared via clear_single_use())
-            if 'sessions' not in req_state:
-                req_state['sessions'] = {}
+            if scope in ('session', 'single_use'):
+                # Session/single_use: store under current session ID
+                # (single_use is stored the same way; it's cleared via clear_single_use())
+                if 'sessions' not in req_state:
+                    req_state['sessions'] = {}
 
-            # Preserve existing session state (especially triggered field)
-            if self.session_id not in req_state['sessions']:
-                req_state['sessions'][self.session_id] = {}
+                # Preserve existing session state (especially triggered field)
+                if self.session_id not in req_state['sessions']:
+                    req_state['sessions'][self.session_id] = {}
 
-            session_state = req_state['sessions'][self.session_id]
-            session_state['satisfied'] = True
-            session_state['satisfied_at'] = now
-            session_state['satisfied_by'] = method
+                session_state = req_state['sessions'][self.session_id]
+                session_state['satisfied'] = True
+                session_state['satisfied_at'] = now
+                session_state['satisfied_by'] = method
 
-            if metadata:
-                session_state['metadata'] = metadata
+                if metadata:
+                    session_state['metadata'] = metadata
 
-            if ttl is not None:
-                session_state['expires_at'] = now + ttl
+                if ttl is not None:
+                    session_state['expires_at'] = now + ttl
+                else:
+                    session_state['expires_at'] = None
+
             else:
-                session_state['expires_at'] = None
+                # Branch or permanent scope
+                req_state['satisfied'] = True
+                req_state['satisfied_at'] = now
+                req_state['satisfied_by'] = method
 
-        else:
-            # Branch or permanent scope
-            req_state['satisfied'] = True
-            req_state['satisfied_at'] = now
-            req_state['satisfied_by'] = method
+                if metadata:
+                    req_state['metadata'] = metadata
 
-            if metadata:
-                req_state['metadata'] = metadata
-
-            # TTL only applies to branch scope (permanent never expires)
-            if ttl and scope == 'branch':
-                req_state['expires_at'] = now + ttl
-            else:
-                req_state['expires_at'] = None
-
-        self._save()
+                # TTL only applies to branch scope (permanent never expires)
+                if ttl and scope == 'branch':
+                    req_state['expires_at'] = now + ttl
+                else:
+                    req_state['expires_at'] = None
 
     def clear(self, req_name: str) -> None:
         """
@@ -406,9 +431,9 @@ class BranchRequirements:
         Args:
             req_name: Requirement name to clear
         """
-        if req_name in self._state['requirements']:
-            del self._state['requirements'][req_name]
-            self._save()
+        with self.transaction():
+            if req_name in self._state['requirements']:
+                del self._state['requirements'][req_name]
 
     def clear_single_use(self, req_name: str) -> bool:
         """
@@ -427,25 +452,25 @@ class BranchRequirements:
         Returns:
             True if the requirement was cleared, False otherwise
         """
-        req_state = self._state['requirements'].get(req_name, {})
+        with self.transaction():
+            req_state = self._state['requirements'].get(req_name, {})
 
-        # Only clear if scope is single_use
-        if req_state.get('scope') != 'single_use':
+            # Only clear if scope is single_use
+            if req_state.get('scope') != 'single_use':
+                return False
+
+            # Clear only the current session's satisfaction
+            sessions = req_state.get('sessions', {})
+            if self.session_id in sessions:
+                del sessions[self.session_id]
+                return True
+
             return False
-
-        # Clear only the current session's satisfaction
-        sessions = req_state.get('sessions', {})
-        if self.session_id in sessions:
-            del sessions[self.session_id]
-            self._save()
-            return True
-
-        return False
 
     def clear_all(self) -> None:
         """Clear all requirements for this branch."""
-        self._state['requirements'] = {}
-        self._save()
+        with self.transaction():
+            self._state['requirements'] = {}
 
     def get_status(self) -> dict:
         """
@@ -514,27 +539,26 @@ class BranchRequirements:
             Uses the same state structure as satisfy() but specifically
             sets satisfied_by='approval' to distinguish from manual CLI satisfaction.
         """
-        req_state = self._get_req_state(req_name)
-        req_state['scope'] = 'session'  # Approvals are always session-scoped
+        with self.transaction():
+            req_state = self._get_req_state(req_name)
+            req_state['scope'] = 'session'  # Approvals are always session-scoped
 
-        if 'sessions' not in req_state:
-            req_state['sessions'] = {}
+            if 'sessions' not in req_state:
+                req_state['sessions'] = {}
 
-        if self.session_id not in req_state['sessions']:
-            req_state['sessions'][self.session_id] = {}
+            if self.session_id not in req_state['sessions']:
+                req_state['sessions'][self.session_id] = {}
 
-        now = int(time.time())
-        session_state = req_state['sessions'][self.session_id]
+            now = int(time.time())
+            session_state = req_state['sessions'][self.session_id]
 
-        session_state.update({
-            'satisfied': True,
-            'satisfied_at': now,
-            'satisfied_by': 'approval',  # Marks this as approval (vs 'cli')
-            'expires_at': now + ttl,
-            'metadata': metadata or {}
-        })
-
-        self._save()
+            session_state.update({
+                'satisfied': True,
+                'satisfied_at': now,
+                'satisfied_by': 'approval',  # Marks this as approval (vs 'cli')
+                'expires_at': now + ttl,
+                'metadata': metadata or {}
+            })
 
     def is_approved(self, req_name: str) -> bool:
         """
@@ -633,71 +657,69 @@ class BranchRequirements:
         if guard_names is None:
             guard_names = set()
 
-        now = time.time()
-        cutoff = now - window_seconds
-        carried = {}
+        with self.transaction():
+            now = time.time()
+            cutoff = now - window_seconds
+            carried = {}
 
-        for req_name, req_state in self._state['requirements'].items():
-            # Skip guard-type requirements (ADR-004: approvals expire with session)
-            if req_name in guard_names:
-                continue
-
-            # Only carry over matching scopes
-            scope = req_state.get('scope')
-            if scope not in scopes:
-                continue
-
-            sessions = req_state.get('sessions', {})
-
-            # Skip if current session already has satisfaction
-            current = sessions.get(self.session_id, {})
-            if current.get('satisfied', False):
-                continue
-
-            # Find most recently satisfied session within the time window
-            best_session_id = None
-            best_satisfied_at = 0
-
-            for sid, session_state in sessions.items():
-                if sid == self.session_id:
+            for req_name, req_state in self._state['requirements'].items():
+                # Skip guard-type requirements (ADR-004: approvals expire with session)
+                if req_name in guard_names:
                     continue
-                if not session_state.get('satisfied', False):
+
+                # Only carry over matching scopes
+                scope = req_state.get('scope')
+                if scope not in scopes:
                     continue
-                satisfied_at = session_state.get('satisfied_at', 0)
-                if satisfied_at < cutoff:
+
+                sessions = req_state.get('sessions', {})
+
+                # Skip if current session already has satisfaction
+                current = sessions.get(self.session_id, {})
+                if current.get('satisfied', False):
                     continue
-                # Respect TTL: skip if the source entry itself has expired
-                expires_at = session_state.get('expires_at')
-                if expires_at is not None and now > expires_at:
+
+                # Find most recently satisfied session within the time window
+                best_session_id = None
+                best_satisfied_at = 0
+
+                for sid, session_state in sessions.items():
+                    if sid == self.session_id:
+                        continue
+                    if not session_state.get('satisfied', False):
+                        continue
+                    satisfied_at = session_state.get('satisfied_at', 0)
+                    if satisfied_at < cutoff:
+                        continue
+                    # Respect TTL: skip if the source entry itself has expired
+                    expires_at = session_state.get('expires_at')
+                    if expires_at is not None and now > expires_at:
+                        continue
+                    if satisfied_at > best_satisfied_at:
+                        best_satisfied_at = satisfied_at
+                        best_session_id = sid
+
+                if best_session_id is None:
                     continue
-                if satisfied_at > best_satisfied_at:
-                    best_satisfied_at = satisfied_at
-                    best_session_id = sid
 
-            if best_session_id is None:
-                continue
+                # Copy satisfaction to current session
+                source = sessions[best_session_id]
+                if self.session_id not in sessions:
+                    sessions[self.session_id] = {}
 
-            # Copy satisfaction to current session
-            source = sessions[best_session_id]
-            if self.session_id not in sessions:
-                sessions[self.session_id] = {}
-
-            sessions[self.session_id] = {
-                'satisfied': True,
-                'satisfied_at': int(now),
-                'satisfied_by': 'carry_over',
-                'expires_at': source.get('expires_at'),
-                'metadata': {
-                    'carried_from': best_session_id,
-                    'original_satisfied_at': source.get('satisfied_at'),
-                    'original_satisfied_by': source.get('satisfied_by'),
-                    'carry_over_window': window_seconds,
-                },
-            }
-            carried[req_name] = best_session_id
-
-        if carried:
-            self._save()
+                sessions[self.session_id] = {
+                    'satisfied': True,
+                    'satisfied_at': int(now),
+                    'satisfied_by': 'carry_over',
+                    'expires_at': source.get('expires_at'),
+                    'metadata': {
+                        'carried_from': best_session_id,
+                        'original_satisfied_at': source.get('satisfied_at'),
+                        'original_satisfied_by': source.get('satisfied_by'),
+                        'carry_over_window': window_seconds,
+                    },
+                }
+                carried[req_name] = best_session_id
 
         return carried
 

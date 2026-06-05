@@ -30,11 +30,93 @@ State File Format (JSON):
 import fcntl
 import json
 import os
+import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
 
 from logger import get_logger
+
+
+def atomic_write_json(path: Path, data: dict) -> None:
+    """Atomically write JSON to ``path`` via a per-writer unique temp + rename.
+
+    Writes to a UNIQUE temp file in the same directory (``tempfile.mkstemp``),
+    fsyncs, then ``os.replace`` over the target. The unique name is the crux of
+    the fix: the old code shared a fixed ``<name>.tmp`` and truncated it at
+    ``open('w')`` before taking the lock, so a second concurrent writer could
+    truncate the first's in-flight temp to 0 bytes and the rename would then
+    install an empty file. With unique temps that interleaving is impossible,
+    and ``os.replace`` is an atomic same-directory rename on POSIX.
+
+    Raises ``OSError`` on failure (callers decide whether to fail-open).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    except OSError:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        raise
+
+
+@contextmanager
+def exclusive_file_lock(lock_path: Path):
+    """Hold an exclusive cross-process advisory lock for the duration of the block.
+
+    The lock is taken on a dedicated sidecar lock file (opened in append mode so
+    it is never truncated, and never deleted) so it can safely serialize a full
+    read-modify-write of a SEPARATE data file. Fail-open: if the lock cannot be
+    acquired (unsupported filesystem, OS error, uncreatable path) the block still
+    runs unlocked rather than blocking work — consistent with the framework's
+    fail-open principle.
+    """
+    lock_file = None
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(lock_path, "a")
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+    except OSError as e:
+        get_logger().warning(f"⚠️ Could not acquire lock {lock_path}: {e}")
+        if lock_file is not None:
+            try:
+                lock_file.close()
+            except OSError:
+                pass
+            lock_file = None
+    try:
+        yield
+    finally:
+        if lock_file is not None:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                lock_file.close()
+            except OSError:
+                pass
+
+
+def get_lock_path(branch: str, project_dir: str) -> Path:
+    """Path to the sidecar lock file guarding a branch's state file."""
+    return get_state_path(branch, project_dir).with_suffix(".lock")
+
+
+def state_lock(branch: str, project_dir: str):
+    """Exclusive lock context manager for a branch's state-file read-modify-write."""
+    return exclusive_file_lock(get_lock_path(branch, project_dir))
 
 def get_state_dir(project_dir: str) -> Path:
     """
@@ -189,30 +271,16 @@ def save_state(branch: str, project_dir: str, state: dict) -> None:
     path = get_state_path(branch, project_dir)
     state['updated_at'] = int(time.time())
 
-    # Write to temp file, then atomic rename
-    temp_path = path.with_suffix('.tmp')
-
+    # Atomic, corruption-safe write via a unique temp + os.replace.
+    # Note: this writes the state as given. Serializing the full
+    # read-modify-write across processes (so concurrent writers don't
+    # last-writer-wins) is the caller's job via BranchRequirements.transaction()
+    # / exclusive_file_lock(); save_state on its own only guarantees that an
+    # individual write never corrupts the file.
     try:
-        with open(temp_path, 'w') as f:
-            # Exclusive lock for writing
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                json.dump(state, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())  # Ensure written to disk
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        # Atomic rename (POSIX guarantees atomicity)
-        temp_path.rename(path)
+        atomic_write_json(path, state)
     except OSError as e:
         get_logger().warning(f"⚠️ Could not save state for {branch}: {e}")
-        # Clean up temp file if it exists
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
 
 
 def delete_state(branch: str, project_dir: str) -> None:

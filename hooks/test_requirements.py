@@ -11080,6 +11080,157 @@ def test_llm_package_scaffold(runner: TestRunner):
         runner.test("llm.workers subpackage imports", False, str(e))
 
 
+def test_state_write_concurrency(runner: TestRunner):
+    """Regression tests for the state-file concurrency data-loss bugs.
+
+    Covers three confirmed defects:
+      1. save_state used a fixed <branch>.tmp truncated before flock -> a
+         concurrent writer could 0-byte the file (atomic_write_json uses a
+         unique temp + os.replace, so this is structurally impossible).
+      2. BranchRequirements load->mutate->save held no cross-process lock ->
+         last-writer-wins dropped satisfactions (transaction() locks+reloads).
+      3. RegistryClient.update did an unlocked read-modify-write.
+    """
+    import threading
+
+    print("\n🔒 Testing state-write concurrency safety...")
+
+    import state_storage
+    from state_storage import (
+        atomic_write_json,
+        exclusive_file_lock,
+        load_state,
+    )
+    from requirements import BranchRequirements
+
+    # --- New primitives exist ---
+    runner.test(
+        "atomic_write_json is exported",
+        callable(getattr(state_storage, "atomic_write_json", None)),
+    )
+    runner.test(
+        "exclusive_file_lock is exported",
+        callable(getattr(state_storage, "exclusive_file_lock", None)),
+    )
+    runner.test(
+        "state_lock is exported",
+        callable(getattr(state_storage, "state_lock", None)),
+    )
+
+    # --- atomic_write_json: valid output, no stray fixed-name temp ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = Path(tmpdir) / "data.json"
+        atomic_write_json(target, {"a": 1})
+        ok = target.exists() and json.loads(target.read_text()) == {"a": 1}
+        runner.test("atomic_write_json writes valid JSON", ok)
+        # The old shared fixed-name temp (<name>.tmp) must NOT be used/left behind.
+        leftover = list(Path(tmpdir).glob("*.tmp"))
+        runner.test(
+            "atomic_write_json leaves no temp file behind",
+            leftover == [],
+            f"stray temps: {leftover}",
+        )
+
+    # --- exclusive_file_lock: usable + fail-open on a bad path ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        lock_path = Path(tmpdir) / "x.lock"
+        entered = {"v": False}
+        with exclusive_file_lock(lock_path):
+            entered["v"] = True
+        runner.test("exclusive_file_lock enters/exits cleanly", entered["v"])
+        # Fail-open: a lock path under a nonexistent, uncreatable parent must
+        # still run the body rather than raise.
+        entered2 = {"v": False}
+        try:
+            with exclusive_file_lock(Path("/nonexistent_root_dir_xyz/sub/y.lock")):
+                entered2["v"] = True
+            runner.test("exclusive_file_lock fails open on bad path", entered2["v"])
+        except Exception as e:  # noqa: BLE001 - must never raise
+            runner.test("exclusive_file_lock fails open on bad path", False, str(e))
+
+    # --- Lost-update regression (deterministic, two stale instances) ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+        branch = "concurrent/lost-update"
+        # Two managers load the SAME (empty) state, then each satisfies a
+        # different branch-scoped requirement. Pre-fix, the second save
+        # clobbered the first. Post-fix, transaction() reloads under lock.
+        a = BranchRequirements(branch, "sess-a", tmpdir)
+        b = BranchRequirements(branch, "sess-b", tmpdir)
+        a.satisfy("req_a", scope="branch")
+        b.satisfy("req_b", scope="branch")
+        fresh = BranchRequirements(branch, "sess-c", tmpdir)
+        runner.test(
+            "concurrent satisfy: first writer survives",
+            fresh.is_satisfied("req_a", scope="branch"),
+            "req_a was clobbered (last-writer-wins)",
+        )
+        runner.test(
+            "concurrent satisfy: second writer survives",
+            fresh.is_satisfied("req_b", scope="branch"),
+        )
+
+    # --- Threaded stress: N distinct satisfies must ALL survive + no corruption ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+        branch = "concurrent/stress"
+        N = 20
+
+        def worker(i):
+            r = BranchRequirements(branch, f"s{i:02d}", tmpdir)
+            r.satisfy(f"req_{i:02d}", scope="branch")
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(N)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        fresh = BranchRequirements(branch, "final", tmpdir)
+        present = sum(
+            1 for i in range(N) if fresh.is_satisfied(f"req_{i:02d}", scope="branch")
+        )
+        runner.test(
+            "threaded concurrent writes: all satisfactions survive",
+            present == N,
+            f"only {present}/{N} survived (lost updates / corruption)",
+        )
+        runner.test(
+            "threaded concurrent writes: state file not corrupted",
+            len(load_state(branch, tmpdir)["requirements"]) == N,
+            "load_state fell open to empty/partial (truncation corruption)",
+        )
+
+    # --- RegistryClient.update is lock-serialized (no lost session adds) ---
+    from registry_client import RegistryClient
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        reg_path = Path(tmpdir) / "sessions.json"
+        N = 20
+
+        def reg_worker(i):
+            client = RegistryClient(reg_path)
+
+            def add(registry):
+                registry.setdefault("sessions", {})[f"sid{i:02d}"] = {"pid": i}
+                return registry
+
+            client.update(add)
+
+        threads = [threading.Thread(target=reg_worker, args=(i,)) for i in range(N)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        final = RegistryClient(reg_path).read()
+        runner.test(
+            "RegistryClient.update: all concurrent session adds survive",
+            len(final.get("sessions", {})) == N,
+            f"only {len(final.get('sessions', {}))}/{N} sessions registered",
+        )
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -11282,6 +11433,9 @@ def main():
     test_count_unsatisfied(runner)
 
     test_llm_package_scaffold(runner)
+
+    # State-write concurrency safety (Phase 1a)
+    test_state_write_concurrency(runner)
 
     return runner.summary()
 

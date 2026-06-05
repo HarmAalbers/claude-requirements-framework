@@ -30,11 +30,15 @@ Registry Structure:
 
 import fcntl
 import json
-import os
 from pathlib import Path
 from typing import Callable, Optional
 
 from logger import get_logger
+
+try:
+    from .state_storage import atomic_write_json, exclusive_file_lock
+except ImportError:
+    from state_storage import atomic_write_json, exclusive_file_lock
 
 class RegistryClient:
     """
@@ -123,34 +127,14 @@ class RegistryClient:
             Fails open - errors don't raise, ensuring registry
             write failures never block hook operations.
         """
-        # Ensure parent directory exists
-        self.registry_path.parent.mkdir(parents=True, exist_ok=True)
-
-        temp_path = self.registry_path.with_suffix('.tmp')
-
         try:
-            with open(temp_path, 'w') as f:
-                fcntl.flock(f, fcntl.LOCK_EX)  # Exclusive lock for writing
-                try:
-                    json.dump(registry, f, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())  # Ensure written to disk
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
-
-            # Atomic rename (POSIX guarantees atomicity)
-            temp_path.rename(self.registry_path)
+            # Unique-temp + os.replace (shared with state_storage) — never leaves
+            # a half-written or 0-byte registry even under concurrent writers.
+            atomic_write_json(self.registry_path, registry)
             return True
         except (OSError, IOError) as e:
-            # Fail-open: clean up temp file but don't raise
+            # Fail-open: don't raise
             get_logger().warning(f"⚠️ Registry write error ({self.registry_path}): {e}")
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError as cleanup_err:
-                    get_logger().warning(
-                        f"⚠️ Failed to cleanup temp file ({temp_path}): {cleanup_err}"
-                    )
             return False
 
     def update(self, update_fn: Callable[[dict], Optional[dict]]) -> bool:
@@ -176,27 +160,32 @@ class RegistryClient:
             client.update(add_session)
 
         Note:
-            The update_fn should be idempotent and fast, as the
-            registry is locked during its execution.
+            The update_fn should be idempotent and fast: an exclusive
+            cross-process lock (on a sidecar ``<registry>.lock`` file) is held
+            across the entire read -> update_fn -> write cycle, so concurrent
+            updaters are serialized and cannot last-writer-wins each other's
+            changes.
         """
-        registry = self.read()
+        lock_path = self.registry_path.with_suffix('.lock')
+        with exclusive_file_lock(lock_path):
+            registry = self.read()
 
-        try:
-            updated = update_fn(registry)
+            try:
+                updated = update_fn(registry)
 
-            # If update_fn returns None, skip write
-            if updated is None:
-                return True
+                # If update_fn returns None, skip write
+                if updated is None:
+                    return True
 
-            return self.write(updated)
-        except (OSError, IOError, json.JSONDecodeError) as e:
-            # Expected I/O errors from read/write - fail open
-            get_logger().warning(f"⚠️ Registry update I/O error: {e}")
-            return False
-        except Exception as e:
-            # Unexpected errors from update_fn - indicates programming bug
-            get_logger().warning(f"⚠️ Registry update function error: {e}")
-            # In production, we still fail-open, but log the full error
-            import traceback
-            get_logger().warning(traceback.format_exc())
-            return False
+                return self.write(updated)
+            except (OSError, IOError, json.JSONDecodeError) as e:
+                # Expected I/O errors from read/write - fail open
+                get_logger().warning(f"⚠️ Registry update I/O error: {e}")
+                return False
+            except Exception as e:
+                # Unexpected errors from update_fn - indicates programming bug
+                get_logger().warning(f"⚠️ Registry update function error: {e}")
+                # In production, we still fail-open, but log the full error
+                import traceback
+                get_logger().warning(traceback.format_exc())
+                return False
