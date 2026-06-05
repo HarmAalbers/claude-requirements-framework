@@ -16,8 +16,9 @@ Input (stdin JSON):
     "cwd": "/path/to/project"
 }
 
-Output:
-- {"decision": "deny", "reason": "..."} to block dangerous commands
+Output (Claude Code PermissionRequest schema, v2.1.x):
+- {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
+   "decision": {"behavior": "deny"}}} to block dangerous commands
 - Empty to allow the permission dialog to proceed normally
 """
 import json
@@ -25,6 +26,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add lib to path
 lib_path = Path(__file__).parent / 'lib'
@@ -45,6 +47,32 @@ DANGEROUS_PATTERNS = [
     (re.compile(r'DROP\s+(?:TABLE|DATABASE)', re.IGNORECASE), 'SQL DROP statement'),
     (re.compile(r'TRUNCATE\s+TABLE', re.IGNORECASE), 'SQL TRUNCATE statement'),
 ]
+
+
+def match_dangerous(command: str) -> Optional[str]:
+    """Return the description of the first dangerous pattern matched, else None."""
+    for pattern, description in DANGEROUS_PATTERNS:
+        if pattern.search(command):
+            return description
+    return None
+
+
+def deny_payload() -> dict:
+    """Build the PermissionRequest hook output that denies the tool call.
+
+    Claude Code's PermissionRequest schema (verified against v2.1.165) requires a
+    NESTED hookSpecificOutput.decision.behavior == "deny". The previous top-level
+    {"decision": "deny", "reason": ...} shape is silently ignored, so the guard
+    never fired. The deny branch does NOT accept message/interrupt fields — adding
+    unknown keys risks a strict schema rejecting the whole decision and silently
+    allowing the command, so the human-readable reason is logged separately.
+    """
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "deny"},
+        }
+    }
 
 
 def main() -> int:
@@ -93,31 +121,31 @@ def main() -> int:
             return 0
 
         # Check against dangerous patterns
-        for pattern, description in DANGEROUS_PATTERNS:
-            if pattern.search(command):
-                logger.warning(
-                    "Auto-denied dangerous command",
-                    command_preview=command[:100],
-                    reason=description,
-                )
+        description = match_dangerous(command)
+        if description:
+            logger.warning(
+                "Auto-denied dangerous command",
+                command_preview=command[:100],
+                reason=description,
+            )
 
-                # Record in metrics
-                try:
-                    metrics = SessionMetrics(session_id, project_dir, branch)
-                    metrics.record_tool_use('PermissionDenied', blocked=True)
-                    metrics.save()
-                except Exception:
-                    pass
+            # Record in metrics
+            try:
+                metrics = SessionMetrics(session_id, project_dir, branch)
+                metrics.record_tool_use('PermissionDenied', blocked=True)
+                metrics.save()
+            except Exception:
+                pass
 
-                response = {
-                    "decision": "deny",
-                    "reason": f"**Blocked by requirements framework**: {description}\n\n"
-                              f"Command: `{command[:80]}{'...' if len(command) > 80 else ''}`\n\n"
-                              "If you need to run this command, disable the safety check:\n"
-                              "`req config set hooks.permission_request.auto_deny_dangerous false`"
-                }
-                emit_json(response)
-                return 0
+            # The deny JSON cannot carry a human-readable message under the
+            # PermissionRequest schema, so surface the reason via stderr.
+            print(
+                f"Blocked by requirements framework: {description}. "
+                "Disable with: req config set hooks.permission_request.auto_deny_dangerous false",
+                file=sys.stderr,
+            )
+            emit_json(deny_payload())
+            return 0
 
         return 0
 

@@ -11080,6 +11080,75 @@ def test_llm_package_scaffold(runner: TestRunner):
         runner.test("llm.workers subpackage imports", False, str(e))
 
 
+def test_permission_request_hook(runner: TestRunner):
+    """PermissionRequest auto-deny must emit the correct nested schema (regression).
+
+    The old code emitted top-level {"decision":"deny","reason":...}, which Claude
+    Code silently ignores -> the dangerous-command guard no-opped. The fix emits
+    hookSpecificOutput.decision.behavior == "deny" with no message/interrupt.
+    """
+    import importlib.util
+
+    print("\n🛡️  Testing PermissionRequest auto-deny shape...")
+    hook_path = Path(__file__).parent / "handle-permission-request.py"
+    spec = importlib.util.spec_from_file_location("permission_request_hook", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    payload = mod.deny_payload()
+    hso = payload.get("hookSpecificOutput", {})
+    decision = hso.get("decision", {})
+    runner.test("deny: has hookSpecificOutput wrapper", "hookSpecificOutput" in payload)
+    runner.test(
+        "deny: hookEventName is PermissionRequest",
+        hso.get("hookEventName") == "PermissionRequest",
+    )
+    runner.test(
+        "deny: decision.behavior == 'deny'",
+        decision.get("behavior") == "deny",
+        str(payload),
+    )
+    # Regression guard: the OLD broken top-level shape must NOT reappear.
+    runner.test(
+        "deny: no top-level 'decision' key (old broken shape)",
+        "decision" not in payload,
+    )
+    runner.test(
+        "deny: decision carries no message/interrupt (strict-schema safe)",
+        "message" not in decision and "interrupt" not in decision,
+    )
+
+    # Dangerous-pattern matching: real threats flagged...
+    dangerous = [
+        "rm -rf /",
+        "git push origin main --force",
+        "git push -f origin main",
+        "git reset --hard origin/main",
+        "DROP TABLE users",
+        "truncate table logs",
+    ]
+    for cmd in dangerous:
+        runner.test(
+            f"match_dangerous flags: {cmd[:28]}",
+            mod.match_dangerous(cmd) is not None,
+            cmd,
+        )
+    # ...and safe / lease-protected commands allowed through.
+    safe = [
+        "ls -la",
+        "git push --force-with-lease",
+        "rm -rf /tmp/scratch",
+        "git commit -m wip",
+        "echo hello",
+    ]
+    for cmd in safe:
+        runner.test(
+            f"match_dangerous allows: {cmd[:28]}",
+            mod.match_dangerous(cmd) is None,
+            f"{cmd} -> {mod.match_dangerous(cmd)}",
+        )
+
+
 def test_state_write_concurrency(runner: TestRunner):
     """Regression tests for the state-file concurrency data-loss bugs.
 
@@ -11436,6 +11505,9 @@ def main():
 
     # State-write concurrency safety (Phase 1a)
     test_state_write_concurrency(runner)
+
+    # PermissionRequest auto-deny shape (Phase 1b)
+    test_permission_request_hook(runner)
 
     return runner.summary()
 
