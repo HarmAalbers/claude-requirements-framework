@@ -9536,6 +9536,86 @@ def test_process_skill_message_files(runner: TestRunner):
                        'short_message' in data)
 
 
+def test_plugin_hooks_bundle_fresh(runner: TestRunner):
+    """Bundle freshness invariant: `build_plugin_hooks.py --check` is clean.
+
+    The plugin ships copies of the hook runtime (hooks/*.py + hooks/lib/) under
+    plugins/requirements-framework/hooks/ so a marketplace / --plugin-dir
+    install is self-contained. The build script's --check mode is the drift
+    guard: exit 0 means the committed bundle matches the repo source of truth.
+    Run it as a subprocess to exercise the real entry point / exit code.
+    """
+    print("\n🎯 Testing plugin hooks bundle freshness...")
+
+    repo_root = Path(__file__).resolve().parent.parent
+    build_script = repo_root / 'scripts' / 'build_plugin_hooks.py'
+
+    if not build_script.exists():
+        runner.test("build_plugin_hooks.py exists", False,
+                    f"missing: {build_script}")
+        return
+
+    result = subprocess.run(
+        [sys.executable, str(build_script), '--check'],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+    )
+    runner.test(
+        "plugin hooks bundle is in sync with source (build --check exit 0)",
+        result.returncode == 0,
+        f"exit={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}",
+    )
+
+
+def test_plugin_hooks_json_self_contained(runner: TestRunner):
+    """hooks.json is plugin-root-relative, not deploy-path-bound.
+
+    Asserts every command uses ${CLAUDE_PLUGIN_ROOT}, none references the
+    deployed ~/.claude/hooks location, every referenced script is bundled, and
+    handle-git-events.py is registered.
+    """
+    print("\n🎯 Testing plugin hooks.json is self-contained...")
+
+    hooks_dir = (Path(__file__).resolve().parent.parent
+                 / 'plugins' / 'requirements-framework' / 'hooks')
+    hooks_json = hooks_dir / 'hooks.json'
+
+    if not hooks_json.exists():
+        runner.test("hooks.json exists", False, f"missing: {hooks_json}")
+        return
+
+    data = json.loads(hooks_json.read_text())
+    commands = [
+        h['command']
+        for event in data.get('hooks', {}).values()
+        for block in event
+        for h in block.get('hooks', [])
+    ]
+    runner.test("hooks.json declares commands", bool(commands))
+
+    # (a) every command is plugin-root-relative
+    plugin_root = '${CLAUDE_PLUGIN_ROOT}'
+    non_root = [c for c in commands if plugin_root not in c]
+    runner.test("every command uses ${CLAUDE_PLUGIN_ROOT}",
+                not non_root, f"offenders={non_root}")
+
+    # (b) no command points at the deployed ~/.claude/hooks location
+    deployed = [c for c in commands if '~/.claude/hooks' in c]
+    runner.test("no command references ~/.claude/hooks",
+                not deployed, f"offenders={deployed}")
+
+    # (c) every referenced script exists in the bundle
+    missing = [c.rsplit('/', 1)[-1] for c in commands
+               if not (hooks_dir / c.rsplit('/', 1)[-1]).exists()]
+    runner.test("every referenced hook script exists in the bundle",
+                not missing, f"missing scripts: {missing}")
+
+    # (d) handle-git-events.py is registered
+    runner.test("handle-git-events.py is registered in hooks.json",
+                any(c.endswith('handle-git-events.py') for c in commands))
+
+
 def test_plugin_skill_files_exist(runner: TestRunner):
     """Test that all 14 new skill SKILL.md files exist."""
     print("\n🎯 Testing plugin skill files exist...")
@@ -11636,6 +11716,8 @@ def main():
     test_process_skill_auto_satisfy_mappings(runner)
     test_new_requirement_definitions(runner)
     test_process_skill_message_files(runner)
+    test_plugin_hooks_bundle_fresh(runner)
+    test_plugin_hooks_json_self_contained(runner)
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
     test_session_start_bootstrap_injection(runner)

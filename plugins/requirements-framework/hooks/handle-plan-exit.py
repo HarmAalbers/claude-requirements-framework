@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""
+PostToolUse Hook for ExitPlanMode - shows requirements status proactively.
+
+Fires immediately when Claude exits plan mode, BEFORE any Edit attempts.
+This gives the user a chance to satisfy requirements upfront.
+
+Input (stdin JSON):
+{
+    "tool_name": "ExitPlanMode",
+    "tool_input": {...},
+    "tool_result": {...},
+    "session_id": "abc123",
+    "cwd": "/path/to/project"
+}
+
+Output:
+- Structured JSON with hookSpecificOutput.additionalContext (shown to Claude in context)
+- Empty if all requirements satisfied
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+# Add lib to path
+lib_path = Path(__file__).parent / 'lib'
+sys.path.insert(0, str(lib_path))
+
+from requirements import BranchRequirements
+from session import update_registry, normalize_session_id
+from logger import get_logger
+from hook_utils import early_hook_setup
+from console import emit_hook_context
+
+
+def _shorten_skill_name(skill_path: str) -> str:
+    """
+    Convert namespaced skill path to short slash command.
+
+    Examples:
+        '/requirements-framework:arch-review' -> '/arch-review'
+        '/simple-skill' -> '/simple-skill'
+    """
+    if ':' in skill_path and skill_path.startswith('/'):
+        return '/' + skill_path.split(':')[-1]
+    return skill_path
+
+
+def main() -> int:
+    """Hook entry point."""
+    # Parse stdin input
+    input_data = {}
+    try:
+        stdin_content = sys.stdin.read()
+        if stdin_content:
+            input_data = json.loads(stdin_content)
+    except json.JSONDecodeError as e:
+        # Log parse error but fail open
+        logger = get_logger(base_context={"hook": "PlanExit"})
+        logger.error(
+            "Failed to parse hook input JSON",
+            error=str(e),
+            stdin_preview=stdin_content[:200] if stdin_content else "empty"
+        )
+
+    # Only run this hook for ExitPlanMode tool
+    tool_name = input_data.get('tool_name')
+    if tool_name != 'ExitPlanMode':
+        return 0  # Silent skip for other tools
+
+    # Get session ID from stdin (Claude Code always provides this)
+    raw_session = input_data.get('session_id')
+    if not raw_session:
+        # This should NEVER happen - Claude Code always provides session_id
+        # If it does, fail open with a logged warning
+        logger = get_logger(base_context={"hook": "PlanExit"})
+        logger.error("No session_id in hook input!", input_keys=list(input_data.keys()))
+        return 0  # Fail open
+
+    session_id = normalize_session_id(raw_session)
+
+    # Early hook setup: loads config, creates logger with correct level
+    project_dir, branch, config, logger = early_hook_setup(
+        session_id, "PlanExit", cwd=input_data.get('cwd')
+    )
+
+    try:
+        # Skip if requirements explicitly disabled
+        if os.environ.get('CLAUDE_SKIP_REQUIREMENTS'):
+            return 0
+
+        # Skip if no project context
+        if not project_dir or not branch or not config:
+            return 0
+
+        # Skip if framework disabled
+        if not config.is_enabled():
+            return 0
+
+        # Update session registry
+        try:
+            update_registry(session_id, project_dir, branch)
+        except Exception as e:
+            logger.error("Failed to update registry", error=str(e))
+
+        # Initialize requirements manager
+        reqs = BranchRequirements(branch, session_id, project_dir)
+
+        # Collect unsatisfied requirements
+        unsatisfied = []
+        for req_name in config.get_all_requirements():
+            if not config.is_requirement_enabled(req_name):
+                continue
+            req_config = config.get_requirement(req_name)
+            scope = req_config.get('scope', 'session')
+            req_type = config.get_requirement_type(req_name)
+
+            # Context-aware checking for guard requirements
+            if req_type == 'guard':
+                context = {
+                    'branch': branch,
+                    'session_id': session_id,
+                    'project_dir': project_dir,
+                }
+                if not reqs.is_guard_satisfied(req_name, config, context):
+                    unsatisfied.append((req_name, req_config))
+            else:
+                if not reqs.is_satisfied(req_name, scope):
+                    unsatisfied.append((req_name, req_config))
+
+        if not unsatisfied:
+            return 0  # All satisfied, nothing to show
+
+        # Format directive message
+        req_names = [r[0] for r in unsatisfied]
+
+        lines = ["## Plan Validation Required", ""]
+
+        # Show table for unsatisfied requirements
+        lines.append("| Requirement | Execute |")
+        lines.append("|-------------|---------|")
+
+        for req_name, req_config in unsatisfied:
+            auto_skill = req_config.get('auto_resolve_skill', '')
+            if auto_skill:
+                short_skill = _shorten_skill_name(f"/{auto_skill}")
+                lines.append(f"| {req_name} | `{short_skill}` |")
+            else:
+                lines.append(f"| {req_name} | `req satisfy {req_name}` |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append(f"Manual fallback: `req satisfy {' '.join(req_names)} --session {session_id}`")
+
+        # PostToolUse output goes to Claude's context via structured JSON
+        emit_hook_context("PostToolUse", "\n".join(lines))
+
+        logger.info("Plan exit - showed requirements", requirements=req_names)
+
+        # WIP tracking: auto-create/update entry from plan context (silent)
+        try:
+            wip_enabled = config.get_hook_config('wip_tracking', 'enabled', False)
+            exclude_branches = config.get_hook_config(
+                'wip_tracking', 'exclude_branches',
+                ['main', 'master', 'develop']
+            )
+            if wip_enabled and branch not in exclude_branches:
+                import re
+                from wip_tracker import WipTracker
+
+                tracker = WipTracker()
+                updates = {"status": "wip"}
+
+                # Auto-generate summary from plan path if available
+                plan_path = input_data.get('tool_result', {}).get('plan_path', '')
+                if plan_path:
+                    updates["plan_path"] = plan_path
+                    # Extract readable name from filename
+                    name = Path(plan_path).stem
+                    # Strip UUID prefixes (common in plan files)
+                    name = re.sub(r'^[a-f0-9]{8}-[a-f0-9-]+_?', '', name)
+                    if name:
+                        updates["summary"] = name.replace('-', ' ').replace('_', ' ')[:80]
+
+                # Detect github issue from branch name patterns
+                m = re.search(r'(?:feature|fix|issue|bug)[/-](\d+)', branch)
+                if m:
+                    updates["github_issue"] = f"#{m.group(1)}"
+
+                tracker.upsert_entry(project_dir, branch, updates)
+                logger.debug("WIP entry created/updated from plan exit")
+        except Exception as e:
+            logger.debug("WIP tracking in plan-exit failed (fail-open)", error=str(e))
+
+        return 0
+
+    except Exception as e:
+        # FAIL OPEN - never block on errors
+        logger.error("Unhandled error in PlanExit hook", error=str(e))
+        return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
