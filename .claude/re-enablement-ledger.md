@@ -18,6 +18,29 @@ Legend: ✅ graduated · 🟡 in progress · ⬜ not started · ❌ dropped
 | R7 | Retrieval / memory / Qdrant | ⬜ | — |
 | aux | Obsidian, session-learning | ⬜ | — |
 
+### R1 enhancement — evidence-gated commit_plan (`step-2-evidence-gated-commit-plan`, plugin 4.9.0)
+
+From the cross-session investigation: `commit_plan` was a **checkbox** (boolean flag; auto-satisfy
+fired even on a BLOCKED review; `req satisfy` = labelled bypass). Cross-session blocking was already
+fine (session-scoped + `single_session_per_project` disabled). Built per user decisions
+(time-based `replan_ttl`; require `## Verdict APPROVED`):
+
+- **Gate** (`plan_evidence.py` + `blocking_strategy.py`): a satisfied flag now ALSO requires a recent
+  `.claude/plans/*.md` with `## Commit Plan` + a `## Verdict` section containing `APPROVED`. Fail-open;
+  back-compat no-op when no `evidence` config.
+- **Producer** (`/arch-review`): persists `.claude/plans/<date>-<slug>.md` with those markers, only
+  when actually APPROVED (BLOCKED/ADR_REQUIRED leave the gate closed).
+- **`replan_ttl`** so a branch plan expires; `config.get_ttl()` + auto-satisfy passes it.
+
+**Controlled dogfood (4/4):** (1) unset+no-plan → BLOCK; (2) **flag SET but no plan doc → STILL BLOCK**
+(cli_bypass / verdict-blind auto-satisfy neutralised); (3) flag + `APPROVED` artifact → ALLOW;
+(4) verdict flipped to BLOCKED → BLOCK again. 1343/1343 hermetic; bundle + render fresh.
+
+**Not yet armed live** (the live sandbox still runs the simpler R1 `scope: session` checkbox). Arming
+evidence-gating live needs a real `.claude/plans/*.md` (the evidence) authored first to avoid a
+lockout, then flipping `.claude/requirements.local.yaml` to `scope: branch` + the `evidence`/`replan_ttl`
+block.
+
 ---
 
 ## R1 — Core gating — ✅ GRADUATED (2026-06-05)
