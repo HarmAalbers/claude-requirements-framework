@@ -11,7 +11,7 @@ Legend: ✅ graduated · 🟡 in progress · ⬜ not started · ❌ dropped
 |------|------------|--------|---------|
 | R1 | Core gating (one requirement) | ✅ graduated | Works end-to-end; no false positives; state integrity holds |
 | R2 | Status injection + statusline | ⬜ | — |
-| R3 | Plugin review commands (/deep-review, /arch-review) | ⬜ | — |
+| R3 | Plugin review commands (/deep-review, /arch-review) | 🟡 ready to dogfood | plugin self-contained + loadable; needs a live --plugin-dir session |
 | R4 | /v3-review LIVE (budget rung) | ⬜ | — |
 | R5 | Observability / Langfuse | ⬜ | — |
 | R6 | Eval harness + golden set | ⬜ | — |
@@ -40,6 +40,27 @@ fine (session-scoped + `single_session_per_project` disabled). Built per user de
 evidence-gating live needs a real `.claude/plans/*.md` (the evidence) authored first to avoid a
 lockout, then flipping `.claude/requirements.local.yaml` to `scope: branch` + the `evidence`/`replan_ttl`
 block.
+
+---
+
+## R3 — Plugin review commands — 🟡 READY TO DOGFOOD (2026-06-05)
+
+Unblocked by the self-contained plugin (task #3). Verified offline: a **bundled** hook
+(`plugins/requirements-framework/hooks/check-requirements.py`) runs standalone and imports its
+**bundled** `lib/` (returned a correct DENY) — build-copy genuinely works. Plugin manifest sane
+(4.9.0, 25 agents, `./commands/` + `./skills/`); `arch-review`/`deep-review`/`v3-review` commands
+present; `hooks.json` resolves all 16 commands to existing `${CLAUDE_PLUGIN_ROOT}/hooks/*.py`.
+
+**Sandbox reconfigured for R3:** the `hooks` block was removed from `.claude/settings.local.json` so
+the plugin's `hooks.json` is the SOLE hook source in a `--plugin-dir` session (no double-fire).
+`.claude/requirements.local.yaml` (requirement config) stays.
+
+**Graduation gate (needs a live session — user action):** launch
+`claude --plugin-dir /Users/harm/Tools/claude-requirements-framework/plugins/requirements-framework`
+from this repo, then confirm: (1) the SessionStart briefing appears (plugin hooks fired), (2) `/arch-review`
+and `/deep-review` are available, (3) an Edit is gated by `commit_plan` (bundled hook fired via
+`${CLAUDE_PLUGIN_ROOT}`), (4) `/arch-review` (or `req satisfy`) clears it, (5) no `exit 127` / missing-
+script hook errors. Report keep/drop/fix.
 
 ---
 
