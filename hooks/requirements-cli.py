@@ -1180,7 +1180,6 @@ def _check_all_hook_files(hooks_dir: Path) -> list:
         'auto-satisfy-skills.py',
         'clear-single-use.py',
         'handle-plan-exit.py',
-        'ruff_check.py'
     ]
     return [_check_hook_file_exists(hook, hooks_dir) for hook in hooks]
 

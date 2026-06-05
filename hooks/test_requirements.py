@@ -11080,6 +11080,33 @@ def test_llm_package_scaffold(runner: TestRunner):
         runner.test("llm.workers subpackage imports", False, str(e))
 
 
+def test_ruff_check_removed(runner: TestRunner):
+    """The dead ruff_check.py hook is deleted and no longer referenced at runtime.
+
+    ruff_check.py crashed at import and was registered in no hook config; this
+    guards against it being re-introduced as dead, fail-closed code.
+    """
+    import importlib.util
+
+    print("\n🧹 Testing dead ruff_check.py removal...")
+    repo_hooks = Path(__file__).parent
+
+    runner.test("ruff_check.py deleted", not (repo_hooks / "ruff_check.py").exists())
+
+    # `req doctor`'s hook-file list must not reference the deleted file.
+    spec = importlib.util.spec_from_file_location(
+        "requirements_cli_ruffcheck", repo_hooks / "requirements-cli.py"
+    )
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    results = cli._check_all_hook_files(repo_hooks)
+    runner.test(
+        "req doctor hook list excludes ruff_check.py",
+        "ruff_check" not in json.dumps(results),
+        json.dumps(results)[:200],
+    )
+
+
 def test_collect_unsatisfied_guard_aware(runner: TestRunner):
     """collect_unsatisfied must treat a passing guard as satisfied (regression).
 
@@ -11578,6 +11605,9 @@ def main():
 
     # Guard-aware unsatisfied collection (Phase 1c)
     test_collect_unsatisfied_guard_aware(runner)
+
+    # Dead ruff_check.py removal (Phase 1d)
+    test_ruff_check_removed(runner)
 
     return runner.summary()
 

@@ -15,7 +15,7 @@ Default linter set is **ruff only**. Pyright is supported (`linters=("ruff",
 "pyright")`) but excluded by default: this repo resolves `hooks.lib.*` via a
 runtime `sys.path` insert, so a file-scoped `pyright` run reports spurious
 `reportMissingImports` errors that would block every review. Ruff is the
-repo's actually-enforced linter (see `ruff_check.py`).
+repo's actually-enforced linter for the V3 review path.
 """
 
 from __future__ import annotations
