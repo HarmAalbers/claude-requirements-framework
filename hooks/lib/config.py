@@ -1258,6 +1258,21 @@ class RequirementsConfig:
         """
         return cast(RequirementScope, self.get_attribute(name, "scope", "session"))
 
+    def get_ttl(self, name: str) -> Optional[int]:
+        """
+        Get the replan TTL (time-to-live, in seconds) for a requirement.
+
+        Used so a branch-scoped plan satisfaction expires after `replan_ttl`
+        seconds, forcing a re-plan. Returns None when not configured (no expiry).
+
+        Args:
+            name: Requirement name
+
+        Returns:
+            TTL in seconds, or None if `replan_ttl` is not configured
+        """
+        return self.get_attribute(name, "replan_ttl", None)
+
     def get_trigger_tools(self, name: str) -> list[str]:
         """
         Get tools that trigger this requirement check.

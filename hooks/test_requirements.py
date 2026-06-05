@@ -5663,6 +5663,153 @@ def test_registry_client(runner: TestRunner):
         runner.test("No orphaned temp files", len(tmp_files) == 0)
 
 
+def test_plan_evidence(runner: TestRunner):
+    """Test plan-evidence gating: a satisfied flag needs a real plan artifact."""
+    print("\n📦 Testing plan evidence gating...")
+
+    from plan_evidence import verify_plan_evidence
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # commit_plan has an evidence gate; plain_req has none (back-compat).
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'evidence': {
+                        'dirs': ['.claude/plans'],
+                        'require_markers': ['## Commit Plan'],
+                        'require_verdict': 'APPROVED',
+                        'max_age_seconds': 86400,
+                    },
+                },
+                'plain_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                },
+            },
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(os.path.join(tmpdir, '.claude', 'requirements.yaml'), 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        context = {'project_dir': tmpdir}
+
+        plans_dir = Path(tmpdir) / '.claude' / 'plans'
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_file = plans_dir / 'plan.md'
+
+        # (a) fresh plan with markers + '## Verdict\nAPPROVED' section -> qualifies
+        plan_file.write_text(
+            "# My Plan\n\n## Commit Plan\n- do the thing\n\n## Verdict\nAPPROVED\n"
+        )
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(a) qualifying plan -> allowed", ok is True and reason == "")
+
+        # (a') inline '## Verdict APPROVED' heading also qualifies
+        plan_file.write_text("## Commit Plan\n- stuff\n\n## Verdict APPROVED\n")
+        ok_inline, _ = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(a') inline verdict heading qualifies", ok_inline is True)
+
+        # (b) markers present but verdict is not APPROVED -> denied
+        plan_file.write_text("## Commit Plan\n- do the thing\n\n## Verdict\nREJECTED\n")
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(b) missing APPROVED verdict -> denied", ok is False and bool(reason))
+
+        # (c) markers + verdict but mtime older than max_age -> denied
+        plan_file.write_text("## Commit Plan\n- do the thing\n\n## Verdict\nAPPROVED\n")
+        old = time.time() - 200000  # well beyond max_age_seconds (86400)
+        os.utime(plan_file, (old, old))
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(c) stale plan (mtime too old) -> denied", ok is False and bool(reason))
+
+        # (d) requirement with NO evidence config -> allowed (back-compat)
+        ok, reason = verify_plan_evidence(config, 'plain_req', context)
+        runner.test("(d) no evidence config -> allowed (back-compat)", ok is True and reason == "")
+
+
+def test_blocking_strategy_evidence_gate(runner: TestRunner):
+    """A satisfied flag + evidence config still DENIES until a plan artifact exists."""
+    print("\n📦 Testing blocking strategy evidence gate...")
+
+    from blocking_strategy import BlockingRequirementStrategy
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'message': 'Plan required',
+                    'evidence': {
+                        'dirs': ['.claude/plans'],
+                        'require_markers': ['## Commit Plan'],
+                        'require_verdict': 'APPROVED',
+                        'max_age_seconds': 86400,
+                    },
+                },
+                'plain_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'message': 'Plain plan required',
+                },
+            },
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(os.path.join(tmpdir, '.claude', 'requirements.yaml'), 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': 'x.py'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+        }
+
+        # Baseline: unsatisfied flag denies.
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test("Unsatisfied flag denies", result is not None)
+
+        # Satisfy the flag, but NO plan artifact yet -> evidence gate still denies.
+        reqs.satisfy('commit_plan', 'branch', method='skill')
+        runner.test("Flag satisfied", reqs.is_satisfied('commit_plan', 'branch'))
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test(
+            "Satisfied flag WITHOUT plan artifact still DENIES",
+            result is not None
+            and result['hookSpecificOutput']['permissionDecision'] == 'deny',
+        )
+
+        # Add a qualifying plan artifact -> now ALLOWS.
+        plans_dir = Path(tmpdir) / '.claude' / 'plans'
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        (plans_dir / 'plan.md').write_text("## Commit Plan\n- ship it\n\n## Verdict\nAPPROVED\n")
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test("Satisfied flag + qualifying plan ALLOWS", result is None)
+
+        # Back-compat: satisfied requirement with NO evidence config allows.
+        reqs.satisfy('plain_plan', 'branch', method='skill')
+        result = strategy.check('plain_plan', config, reqs, context)
+        runner.test("No evidence config: satisfied flag allows (back-compat)", result is None)
+
+
 def test_codex_reviewer_requirement(runner: TestRunner):
     """Test codex_reviewer requirement with single_use scope."""
     print("\n📦 Testing codex_reviewer requirement...")
@@ -11651,6 +11798,10 @@ def main():
 
     # Permission error fail-open tests
     test_permission_errors_fail_open(runner)
+
+    # Plan-evidence gating tests
+    test_plan_evidence(runner)
+    test_blocking_strategy_evidence_gate(runner)
 
     # Codex reviewer requirement tests
     test_codex_reviewer_requirement(runner)

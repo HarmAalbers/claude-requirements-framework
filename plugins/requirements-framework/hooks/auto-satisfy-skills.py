@@ -189,7 +189,16 @@ def main() -> int:
                 continue  # Skip disabled requirements
 
             scope = config.get_scope(req_name)
-            reqs.satisfy(req_name, scope, method='skill', metadata={'skill': skill_name})
+            # Pass replan_ttl (if configured) so a branch-scoped plan expires and
+            # forces a re-plan. get_ttl returns None when unconfigured -> identical
+            # behavior to the previous unconditional satisfy().
+            reqs.satisfy(
+                req_name,
+                scope,
+                method='skill',
+                metadata={'skill': skill_name},
+                ttl=config.get_ttl(req_name),
+            )
             satisfied_reqs.append(req_name)
 
             # Record requirement satisfaction in metrics

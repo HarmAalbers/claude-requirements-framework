@@ -52,7 +52,20 @@ class BlockingRequirementStrategy(RequirementStrategy):
             # Not satisfied - create denial response
             return self._create_denial_response(req_name, config, context)
 
-        return None  # Satisfied, allow
+        # Evidence gate: the satisfied flag WOULD allow the operation, but if the
+        # requirement declares an `evidence` config, a real plan artifact must
+        # also exist on disk before we allow. Fail-open: evidence errors never
+        # block work (the gate only ever ADDS denials, never masks them).
+        try:
+            from plan_evidence import verify_plan_evidence
+            ok, reason = verify_plan_evidence(config, req_name, context)
+        except Exception:
+            ok, reason = True, ""  # fail-open: evidence errors never block work
+        if not ok:
+            context["evidence_reason"] = reason
+            return self._create_denial_response(req_name, config, context)
+
+        return None  # Satisfied (flag + evidence), allow
 
     def _create_denial_response(self, req_name: str, config: RequirementsConfig,
                                 context: dict) -> dict:

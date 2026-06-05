@@ -179,6 +179,17 @@ Read all teammate findings. Perform architectural synthesis:
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
 
+### Step 6.5: Persist Plan Artifact
+
+After determining the verdict, PERSIST the reviewed plan to disk so the requirements-framework plan-evidence gate can find it. Write to `.claude/plans/<YYYY-MM-DD>-<slug>.md` (run `mkdir -p .claude/plans` first to create the directory if needed). If `$PLAN_FILE` already lives under `.claude/plans/`, reuse and update that file in place rather than creating a duplicate; otherwise derive `<slug>` from the plan title and `<YYYY-MM-DD>` from `date -u +%Y-%m-%d`.
+
+The persisted file MUST contain:
+
+- A `## Commit Plan` section holding the atomic commit breakdown produced by the commit-planner agent (one entry per commit: title, files changed, what to test).
+- A `## Verdict` section whose body is the actual verdict. Write `APPROVED` **only** when the verdict is genuinely APPROVED, followed by a one-line stamp `Reviewed: <branch> @ <ISO time>` (branch from `git rev-parse --abbrev-ref HEAD`, time from `date -u +%Y-%m-%dT%H:%M:%SZ`). If the verdict is `BLOCKED` or `ADR_REQUIRED`, write that verdict honestly — never write `APPROVED` for a non-approved review — so the plan-evidence gate stays CLOSED until the issues are resolved.
+
+This persisted `## Verdict APPROVED` artifact is what satisfies the requirements-framework `commit_plan` gate; a BLOCKED review intentionally leaves the gate closed.
+
 ### Step 7: Auto-satisfy
 
 If verdict is APPROVED:
