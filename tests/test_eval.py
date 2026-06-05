@@ -325,6 +325,47 @@ def test_post_to_langfuse_no_trace_id_returns_false(r: TestRunner) -> None:
         os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
 
 
+def test_post_to_langfuse_calls_create_score(r: TestRunner) -> None:
+    """The client path must call create_score (langfuse v3), not removed score()."""
+    import types
+
+    calls: dict = {}
+
+    class FakeLangfuse:
+        def create_score(self, **kwargs):
+            calls["create_score"] = kwargs
+
+        def score(self, **kwargs):  # the removed v2 API — must not be used
+            calls["score"] = kwargs
+            raise AttributeError("score() removed in langfuse v3")
+
+        def flush(self):
+            calls["flushed"] = True
+
+    fake_mod = types.ModuleType("langfuse")
+    fake_mod.Langfuse = FakeLangfuse
+    saved_mod = sys.modules.get("langfuse")
+    sys.modules["langfuse"] = fake_mod
+    os.environ["LANGFUSE_PUBLIC_KEY"] = "fake_key_for_test"
+    try:
+        ok = post_to_langfuse(trace_id="t1", name="finding_match", value=0.67)
+        r.test("returns True on successful create_score", ok is True)
+        r.test(
+            "create_score called with right kwargs",
+            calls.get("create_score")
+            == {"trace_id": "t1", "name": "finding_match", "value": 0.67},
+            str(calls.get("create_score")),
+        )
+        r.test("removed score() was NOT called", "score" not in calls)
+        r.test("client was flushed", calls.get("flushed") is True)
+    finally:
+        os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
+        if saved_mod is not None:
+            sys.modules["langfuse"] = saved_mod
+        else:
+            sys.modules.pop("langfuse", None)
+
+
 # ---------- EvalScore serialization ----------
 
 
@@ -374,6 +415,7 @@ def main() -> int:
 
     test_post_to_langfuse_returns_false_without_env(r)
     test_post_to_langfuse_no_trace_id_returns_false(r)
+    test_post_to_langfuse_calls_create_score(r)
 
     test_eval_score_json_round_trip(r)
 

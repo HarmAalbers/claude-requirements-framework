@@ -191,7 +191,9 @@ def post_to_langfuse(
         from langfuse import Langfuse
 
         client = Langfuse()
-        client.score(trace_id=trace_id, name=name, value=value)
+        # langfuse v3 renamed Langfuse.score() -> create_score(); the old name
+        # raises AttributeError (swallowed below), so scores silently never posted.
+        client.create_score(trace_id=trace_id, name=name, value=value)
         client.flush()
         return True
     except Exception:
