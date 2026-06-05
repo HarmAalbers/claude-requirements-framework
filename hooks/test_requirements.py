@@ -8528,6 +8528,72 @@ def test_auto_resolve_skill_substitution(runner: TestRunner):
                        '/my-plugin:my-skill' in deny_msg and 'test-session-42' in deny_msg)
 
 
+def test_batched_denial_substitutes_auto_resolve_skill(runner: TestRunner):
+    """create_batched_denial() substitutes {auto_resolve_skill} (shortened) in inline messages.
+
+    Regression: the single-requirement branch of create_batched_denial() used to
+    append the configured inline message verbatim, so '/{auto_resolve_skill}'
+    leaked into the blocking message literally. It must render the short skill
+    name (e.g. '/arch-review') to match the SessionStart briefing convention.
+    """
+    print("\n📦 Testing create_batched_denial auto_resolve_skill substitution...")
+
+    # check-requirements.py has a hyphen, so import via importlib
+    import importlib.util
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    spec = importlib.util.spec_from_file_location("check_requirements", hook_path)
+    if spec is None or spec.loader is None:
+        runner.test("check-requirements importable", False, "spec load failed")
+        return
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        runner.test("check-requirements loads", False, str(e))
+        return
+
+    create_batched_denial = module.create_batched_denial
+
+    # Single unsatisfied requirement with a namespaced skill + placeholder message
+    req_config = {
+        'enabled': True,
+        'type': 'blocking',
+        'auto_resolve_skill': 'requirements-framework:arch-review',
+        'message': '## Blocked: commit_plan\n\n**Execute**: `/{auto_resolve_skill}`',
+    }
+    response = create_batched_denial(
+        [('commit_plan', req_config)],
+        session_id='sess-batched',
+        project_dir='/tmp/proj',
+        branch='feature/test',
+    )
+    deny_msg = response.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+
+    runner.test("Batched denial substitutes shortened auto_resolve_skill",
+               '/arch-review' in deny_msg, f"Got: {deny_msg}")
+    runner.test("Batched denial does not leak raw placeholder",
+               '{auto_resolve_skill}' not in deny_msg, f"Got: {deny_msg}")
+    runner.test("Batched denial does not leak namespaced skill prefix",
+               'requirements-framework:arch-review' not in deny_msg, f"Got: {deny_msg}")
+
+    # {session_id} placeholder is also substituted in inline messages
+    req_config_sid = {
+        'enabled': True,
+        'type': 'blocking',
+        'auto_resolve_skill': 'requirements-framework:arch-review',
+        'message': 'Run `/{auto_resolve_skill}` (fallback: `req satisfy x --session {session_id}`)',
+    }
+    response_sid = create_batched_denial(
+        [('commit_plan', req_config_sid)],
+        session_id='sess-xyz',
+        project_dir='/tmp/proj',
+        branch='feature/test',
+    )
+    deny_sid = response_sid.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+    runner.test("Batched denial substitutes session_id in inline message",
+               'sess-xyz' in deny_sid and '{session_id}' not in deny_sid, f"Got: {deny_sid}")
+
+
 def test_teammate_idle_hook(runner: TestRunner):
     """Test TeammateIdle hook behavior."""
     print("\n📦 Testing TeammateIdle hook...")
@@ -11545,6 +11611,7 @@ def main():
     test_messages_module(runner)
     test_message_validator_module(runner)
     test_auto_resolve_skill_substitution(runner)
+    test_batched_denial_substitutes_auto_resolve_skill(runner)
 
     # Agent Teams hook tests
     test_teammate_idle_hook(runner)

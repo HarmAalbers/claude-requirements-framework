@@ -150,7 +150,14 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
         message = req_config.get('message', '')
 
         if message:
-            # Use the configured message (which should be directive-first)
+            # Use the configured message (which should be directive-first).
+            # Substitute placeholders the same way the blocking strategy does,
+            # shortening the namespaced skill to the SessionStart convention
+            # (e.g. 'requirements-framework:arch-review' -> 'arch-review') so a
+            # '/{auto_resolve_skill}' template renders as '/arch-review'.
+            short_skill = auto_skill.split(':')[-1] if auto_skill else auto_skill
+            message = message.replace('{auto_resolve_skill}', short_skill)
+            message = message.replace('{session_id}', session_id)
             lines.append(message.strip())
         else:
             # Fallback format
