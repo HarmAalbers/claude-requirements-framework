@@ -91,6 +91,8 @@ The framework exists in two places that must stay synchronized:
 
 Always run `./sync.sh status` before committing to ensure both locations are in sync.
 
+> **Hook registration is owned by the plugin.** The self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for registering all lifecycle hooks (via `${CLAUDE_PLUGIN_ROOT}`). `install.sh` no longer copies hook scripts to `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json` — it only sets up the `req` CLI, the statusline, and shell env. Install the plugin to activate hooks.
+
 ### Session Lifecycle (Thirteen Hooks)
 ```
 SessionStart (handle-session-start.py)

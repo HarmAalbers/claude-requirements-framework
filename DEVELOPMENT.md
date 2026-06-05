@@ -16,6 +16,8 @@ The framework exists in two locations:
    - Active runtime environment
    - Where the framework actually executes
 
+> **Note on hook registration:** Hooks are registered by the self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` (single source of truth, resolved via `${CLAUDE_PLUGIN_ROOT}`) — **not** by `install.sh`. As of the self-contained-plugin change, `install.sh` no longer copies hook scripts into `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json`; it only configures the `req` CLI, statusline, and shell env. The `sync.sh` deploy flow below remains for any legacy `~/.claude/hooks/` runtime, but installing the plugin is the supported path.
+
 ## Sync Strategy
 
 Use the `sync.sh` script to keep these locations in sync:

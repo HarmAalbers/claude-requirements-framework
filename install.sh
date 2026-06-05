@@ -19,42 +19,15 @@ if [ ! -d "$HOME/.claude" ]; then
     exit 1
 fi
 
-# Create hooks directory if it doesn't exist
-mkdir -p "$HOME/.claude/hooks/lib"
-
-# Copy hook files
-echo "📦 Copying hook files to ~/.claude/hooks/..."
-cp -v "$REPO_DIR/hooks/check-requirements.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/requirements-cli.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/test_requirements.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-session-start.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-stop.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-session-end.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/auto-satisfy-skills.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/clear-single-use.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-plan-exit.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-plan-enter.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-teammate-idle.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-task-completed.py" "$HOME/.claude/hooks/"
-cp -v "$REPO_DIR/hooks/handle-git-events.py" "$HOME/.claude/hooks/"
-
-# Copy library files
-echo "📚 Copying library files to ~/.claude/hooks/lib/..."
-cp -v "$REPO_DIR/hooks/lib/"*.py "$HOME/.claude/hooks/lib/"
-
-# Make scripts executable
-chmod +x "$HOME/.claude/hooks/check-requirements.py"
-chmod +x "$HOME/.claude/hooks/requirements-cli.py"
-chmod +x "$HOME/.claude/hooks/handle-session-start.py"
-chmod +x "$HOME/.claude/hooks/handle-stop.py"
-chmod +x "$HOME/.claude/hooks/handle-session-end.py"
-chmod +x "$HOME/.claude/hooks/auto-satisfy-skills.py"
-chmod +x "$HOME/.claude/hooks/clear-single-use.py"
-chmod +x "$HOME/.claude/hooks/handle-plan-exit.py"
-chmod +x "$HOME/.claude/hooks/handle-plan-enter.py"
-chmod +x "$HOME/.claude/hooks/handle-teammate-idle.py"
-chmod +x "$HOME/.claude/hooks/handle-task-completed.py"
-chmod +x "$HOME/.claude/hooks/handle-git-events.py"
+# Lifecycle hooks are provided by the self-contained plugin — its
+# hooks/hooks.json is the single source of truth for hook registration
+# (commands resolved via ${CLAUDE_PLUGIN_ROOT}). install.sh no longer copies
+# hook scripts to ~/.claude/hooks/ or edits settings.json hook blocks.
+echo "🪝 Lifecycle hooks are provided by the requirements-framework plugin."
+echo "   Nothing is copied to ~/.claude/hooks/ — install the plugin to activate them:"
+echo "     /plugin install requirements-framework@requirements-framework"
+echo "   For development (live reload):"
+echo "     claude --plugin-dir $REPO_DIR/plugins/requirements-framework"
 
 # Configure Codex requirement interactively
 configure_codex_requirement() {
@@ -153,11 +126,12 @@ else
     echo "   (Not overwriting - see examples/global-requirements.yaml for reference)"
 fi
 
-# Create symlink for CLI tool
+# Create symlink for CLI tool (points at the repo copy; requirements-cli.py
+# resolves its lib/ via the real path, so the symlink target works directly).
 echo ""
 echo "🔗 Creating symlink for 'req' command..."
 mkdir -p "$HOME/.local/bin"
-ln -sf "$HOME/.claude/hooks/requirements-cli.py" "$HOME/.local/bin/req"
+ln -sf "$REPO_DIR/hooks/requirements-cli.py" "$HOME/.local/bin/req"
 
 # Configure ENABLE_TOOL_SEARCH=true in user's shell rc
 # Reduces Claude Code's initial context by deferring tool schemas (Claude Code v2.0.74+).
@@ -377,73 +351,15 @@ display_marketplace_instructions() {
 # Show marketplace instructions
 display_marketplace_instructions
 
-# Configure hooks in settings.json (primary hook registration location)
-configure_settings_json_hooks() {
-    local settings_file="$HOME/.claude/settings.json"
-
-    # Use Python to safely create/merge hooks into settings.json
+# Register the phase-aware statusline in settings.json. Hook registration is
+# NOT done here — the plugin's hooks/hooks.json is the single source of truth.
+configure_statusline() {
     python3 << 'PYTHON_SCRIPT'
 import json
 import os
 import sys
 
 settings_file = os.path.expanduser("~/.claude/settings.json")
-
-# Required hooks configuration
-REQUIRED_HOOKS = {
-    "PreToolUse": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/check-requirements.py"
-        }]
-    }],
-    "PostToolUse": [{
-        "matcher": "*",
-        "hooks": [
-            {"type": "command", "command": "~/.claude/hooks/auto-satisfy-skills.py"},
-            {"type": "command", "command": "~/.claude/hooks/clear-single-use.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-plan-exit.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-plan-enter.py"},
-            {"type": "command", "command": "~/.claude/hooks/handle-git-events.py"}
-        ]
-    }],
-    "SessionStart": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-session-start.py"
-        }]
-    }],
-    "Stop": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-stop.py"
-        }]
-    }],
-    "SessionEnd": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-session-end.py"
-        }]
-    }],
-    "TeammateIdle": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-teammate-idle.py"
-        }]
-    }],
-    "TaskCompleted": [{
-        "matcher": "*",
-        "hooks": [{
-            "type": "command",
-            "command": "~/.claude/hooks/handle-task-completed.py"
-        }]
-    }]
-}
 
 try:
     # Load existing settings or create new
@@ -454,22 +370,6 @@ try:
     else:
         settings = {}
         print("   Creating new settings.json...")
-
-    # Get existing hooks or empty dict
-    existing_hooks = settings.get("hooks", {})
-
-    # Merge: add our hooks if not already present or if empty
-    for hook_name, hook_config in REQUIRED_HOOKS.items():
-        if hook_name not in existing_hooks:
-            existing_hooks[hook_name] = hook_config
-        # If exists but empty, replace it
-        elif not existing_hooks[hook_name]:
-            existing_hooks[hook_name] = hook_config
-
-    settings["hooks"] = existing_hooks
-
-    # Ensure disableAllHooks is false
-    settings["disableAllHooks"] = False
 
     # Register the phase-aware statusline, but never clobber a user's
     # existing statusLine — only fill it in when absent or empty.
@@ -487,94 +387,23 @@ try:
     with open(settings_file, 'w') as f:
         json.dump(settings, f, indent=2)
 
-    print("   ✅ Hooks configured in settings.json")
-
 except (IOError, OSError, json.JSONDecodeError) as e:
-    print(f"   ❌ Could not configure settings.json: {e}", file=sys.stderr)
+    print(f"   ❌ Could not configure statusline in settings.json: {e}", file=sys.stderr)
     sys.exit(1)
 except Exception as e:
-    print(f"   ❌ Unexpected error configuring settings.json: {e}", file=sys.stderr)
+    print(f"   ❌ Unexpected error configuring statusline: {e}", file=sys.stderr)
     sys.exit(1)
 PYTHON_SCRIPT
 
     if [ $? -ne 0 ]; then
-        echo "   ❌ Hook configuration failed"
-        return 1
+        echo "   ⚠️  Statusline configuration failed (non-fatal — hooks are unaffected)"
     fi
+    return 0
 }
 
-# Migrate old settings.local.json hooks if present
-migrate_settings_local_json() {
-    local local_settings="$HOME/.claude/settings.local.json"
-
-    if [[ ! -f "$local_settings" ]]; then
-        return 0
-    fi
-
-    # Check if it has our hooks and clean them up
-    python3 << 'PYTHON_SCRIPT'
-import json
-import os
-import sys
-
-local_settings = os.path.expanduser("~/.claude/settings.local.json")
-
-try:
-    with open(local_settings, 'r') as f:
-        settings = json.load(f)
-
-    hooks = settings.get("hooks", {})
-    if not hooks:
-        sys.exit(0)  # No hooks to migrate
-
-    # Check if these are our hooks (contain our hook paths)
-    our_hooks = [
-        "check-requirements.py", "handle-session-start.py", "handle-stop.py",
-        "handle-session-end.py", "auto-satisfy-skills.py", "clear-single-use.py",
-        "handle-plan-exit.py"
-    ]
-    has_our_hooks = False
-
-    for hook_config in hooks.values():
-        if isinstance(hook_config, list):
-            for matcher in hook_config:
-                if isinstance(matcher, dict):
-                    for h in matcher.get("hooks", []):
-                        cmd = h.get("command", "")
-                        if any(our_hook in cmd for our_hook in our_hooks):
-                            has_our_hooks = True
-                            break
-
-    if has_our_hooks:
-        # Remove hooks section (our hooks are now in settings.json)
-        del settings["hooks"]
-
-        if settings:
-            # Other settings exist, keep the file
-            with open(local_settings, 'w') as f:
-                json.dump(settings, f, indent=2)
-            print("   📦 Migrated hooks from settings.local.json (file kept with other settings)")
-        else:
-            # File only had our hooks, remove it
-            os.remove(local_settings)
-            print("   📦 Removed settings.local.json (hooks migrated to settings.json)")
-
-except Exception as e:
-    # Non-fatal - just skip migration
-    print(f"   ⚠️  Could not migrate settings.local.json: {e}")
-PYTHON_SCRIPT
-}
-
-# Register hooks in Claude Code settings.json (single source of truth)
-echo "📝 Registering hooks in settings.json..."
-if ! configure_settings_json_hooks; then
-    echo ""
-    echo "❌ Critical: Hook configuration failed. Installation cannot continue."
-    exit 1
-fi
-
-# Migrate any old settings.local.json hooks
-migrate_settings_local_json
+# Register the statusline (hooks come from the plugin's hooks.json)
+echo "📝 Registering statusline in settings.json..."
+configure_statusline
 
 echo ""
 echo "🧪 Verifying installation..."
@@ -582,76 +411,10 @@ echo ""
 
 VERIFICATION_PASSED=true
 
-# Test 1: Check if hooks are executable
-echo "1️⃣  Checking hook permissions..."
-HOOK_OK=true
-for hook in check-requirements.py requirements-cli.py handle-session-start.py handle-stop.py handle-session-end.py; do
-    if [ ! -x "$HOME/.claude/hooks/$hook" ]; then
-        echo "   ❌ Hook not executable: $hook"
-        HOOK_OK=false
-        VERIFICATION_PASSED=false
-    fi
-done
+# Hook registration is owned by the plugin's hooks.json — nothing to verify here.
 
-if [ "$HOOK_OK" = true ]; then
-    echo "   ✅ All hooks are executable"
-fi
-
-# Test 2: Check if hooks are registered in settings.json
-echo ""
-echo "2️⃣  Checking hook registration in settings.json..."
-if [ -f "$HOME/.claude/settings.json" ]; then
-    python3 - "$HOME/.claude/settings.json" << 'EOF'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], 'r') as f:
-        settings = json.load(f)
-
-    required_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd', 'PostToolUse']
-    missing = []
-    empty = []
-
-    hooks = settings.get('hooks', {})
-
-    # Check for empty hooks object
-    if hooks == {}:
-        print("   ❌ hooks object is empty in settings.json")
-        sys.exit(1)
-
-    for hook in required_hooks:
-        if hook not in hooks:
-            missing.append(hook)
-        elif not hooks[hook]:
-            empty.append(hook)
-
-    if missing:
-        print(f"   ❌ Missing hooks: {', '.join(missing)}")
-        sys.exit(1)
-
-    if empty:
-        print(f"   ❌ Empty hooks: {', '.join(empty)}")
-        sys.exit(1)
-
-    print("   ✅ All hooks registered in settings.json")
-    sys.exit(0)
-except Exception as e:
-    print(f"   ❌ Hook registration issue: {e}")
-    sys.exit(1)
-EOF
-
-    if [ $? -ne 0 ]; then
-        VERIFICATION_PASSED=false
-    fi
-else
-    echo "   ❌ settings.json not found"
-    VERIFICATION_PASSED=false
-fi
-
-# Test 3: Check if req command works
-echo ""
-echo "3️⃣  Checking 'req' command..."
+# Test 1: Check if req command works
+echo "1️⃣  Checking 'req' command..."
 if command -v req &> /dev/null; then
     if req --help &> /dev/null; then
         echo "   ✅ 'req' command is accessible and working"
@@ -664,29 +427,9 @@ else
     echo "      (Will be available after restarting shell or adding ~/.local/bin to PATH)"
 fi
 
-# Test 4: Test PreToolUse hook responds correctly
+# Test 2: Check plugin marketplace
 echo ""
-echo "4️⃣  Testing PreToolUse hook..."
-if echo '{"tool_name":"Read"}' | python3 "$HOME/.claude/hooks/check-requirements.py" > /dev/null 2>&1; then
-    echo "   ✅ PreToolUse hook responds correctly"
-else
-    echo "   ❌ PreToolUse hook failed to respond"
-    VERIFICATION_PASSED=false
-fi
-
-# Test 5: Test SessionStart hook
-echo ""
-echo "5️⃣  Testing SessionStart hook..."
-if echo '{}' | python3 "$HOME/.claude/hooks/handle-session-start.py" > /dev/null 2>&1; then
-    echo "   ✅ SessionStart hook responds correctly"
-else
-    echo "   ❌ SessionStart hook failed"
-    VERIFICATION_PASSED=false
-fi
-
-# Test 6: Check plugin marketplace
-echo ""
-echo "6️⃣  Checking plugin marketplace..."
+echo "2️⃣  Checking plugin marketplace..."
 if [ -f "$REPO_DIR/.claude-plugin/marketplace.json" ]; then
     marketplace_version=$(python3 -c "import json; print(json.load(open('$REPO_DIR/.claude-plugin/marketplace.json'))['plugins'][0]['version'])" 2>/dev/null || echo "unknown")
     echo "   ✅ Local marketplace available (v$marketplace_version)"
@@ -695,9 +438,9 @@ else
     echo "   ⚠️  Marketplace manifest not found"
 fi
 
-# Test 7: Check global config
+# Test 3: Check global config
 echo ""
-echo "7️⃣  Checking global configuration..."
+echo "3️⃣  Checking global configuration..."
 if [ -f "$HOME/.claude/requirements.yaml" ]; then
     python3 - "$HOME/.claude/requirements.yaml" << 'EOF' > /dev/null 2>&1
 import sys
@@ -732,22 +475,9 @@ else
     echo "⚠️  Some verification checks failed"
     echo ""
     echo "Troubleshooting steps:"
-    echo "  1. Check ~/.claude/hooks/ directory permissions"
-    echo "  2. Verify Python 3 is installed and accessible"
-    echo "  3. Review ~/.claude/settings.json for hook configuration"
-    echo "  4. Run: python3 ~/.claude/hooks/test_requirements.py"
-    echo ""
-fi
-
-# Check if hooks are globally disabled in settings.json
-echo ""
-if grep -q '"disableAllHooks"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null; then
-    echo "⚠️  WARNING: Hooks are globally disabled"
-    echo "   Your hooks are registered but won't run because ~/.claude/settings.json has:"
-    echo "   \"disableAllHooks\": true"
-    echo ""
-    echo "   To enable hooks, edit ~/.claude/settings.json and change to:"
-    echo "   \"disableAllHooks\": false"
+    echo "  1. Verify Python 3 is installed and accessible"
+    echo "  2. Ensure the plugin is installed: /plugin install requirements-framework@requirements-framework"
+    echo "  3. Run: python3 $REPO_DIR/hooks/test_requirements.py"
     echo ""
 fi
 
@@ -757,9 +487,13 @@ echo "✅ Installation Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📦 What was installed:"
-echo "   • 7 lifecycle hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd, TeammateIdle, TaskCompleted)"
 echo "   • 'req' CLI command at ~/.local/bin/req"
 echo "   • Global configuration at ~/.claude/requirements.yaml"
+echo "   • Phase-aware statusline registered in ~/.claude/settings.json"
+echo ""
+echo "   🪝 Lifecycle hooks ship with the plugin (single source of truth: hooks.json)."
+echo "      Install it to activate them:"
+echo "      /plugin install requirements-framework@requirements-framework"
 echo ""
 
 # Show Codex status
@@ -793,7 +527,7 @@ echo "   2. Review global settings:"
 echo "      cat ~/.claude/requirements.yaml"
 echo ""
 echo "   3. Run comprehensive tests (optional):"
-echo "      python3 ~/.claude/hooks/test_requirements.py"
+echo "      python3 $REPO_DIR/hooks/test_requirements.py"
 echo ""
 echo "   4. Enable for your projects:"
 echo "      cd your-project"
@@ -808,7 +542,7 @@ echo "   • Plugin skills: Type 'show requirements framework status' in Claude 
 echo "   • Config reference: $REPO_DIR/examples/"
 echo ""
 echo "🎯 Quick Start:"
-echo "   The framework is now active for all Claude Code sessions."
-echo "   You'll see requirement prompts when editing files."
+echo "   Install the plugin (above) to activate requirement hooks in your sessions."
+echo "   You'll then see requirement prompts when editing files."
 echo "   Use 'req satisfy <requirement>' to mark requirements as met."
 echo ""
