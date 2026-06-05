@@ -11080,6 +11080,73 @@ def test_llm_package_scaffold(runner: TestRunner):
         runner.test("llm.workers subpackage imports", False, str(e))
 
 
+def test_collect_unsatisfied_guard_aware(runner: TestRunner):
+    """collect_unsatisfied must treat a passing guard as satisfied (regression).
+
+    Pre-fix, handle-prompt-submit / handle-subagent-start used bare is_satisfied
+    for every type, so a protected_branch guard on a feature branch (condition
+    passes) was wrongly reported unsatisfied. The shared helper is guard-aware.
+    """
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+    from hook_utils import collect_unsatisfied
+    from session import normalize_session_id
+
+    print("\n🧭 Testing guard-aware collect_unsatisfied...")
+
+    cfg = {
+        "version": "1.0",
+        "enabled": True,
+        "inherit": False,
+        "requirements": {
+            "protected_branch": {
+                "type": "guard",
+                "enabled": True,
+                "guard_type": "protected_branch",
+                "protected_branches": ["master", "main"],
+            },
+            "commit_plan": {"type": "blocking", "enabled": True, "scope": "session"},
+        },
+    }
+    sid = normalize_session_id("guardtest")
+
+    def setup(tmpdir, branch):
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-B", branch], cwd=tmpdir, capture_output=True)
+        with open(f"{tmpdir}/.claude/requirements.yaml", "w") as f:
+            json.dump(cfg, f)
+
+    # On a feature branch the guard condition passes -> NOT unsatisfied.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup(tmpdir, "feature/test")
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", sid, tmpdir)
+        unsat = collect_unsatisfied(reqs, config, "feature/test", sid, tmpdir)
+        runner.test(
+            "guard excluded on feature branch (passing condition)",
+            "protected_branch" not in unsat,
+            f"unsatisfied={unsat}",
+        )
+        runner.test(
+            "unsatisfied blocking req still reported",
+            "commit_plan" in unsat,
+            f"unsatisfied={unsat}",
+        )
+
+    # On master the guard condition fails -> IS unsatisfied.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup(tmpdir, "master")
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", sid, tmpdir)
+        unsat = collect_unsatisfied(reqs, config, "master", sid, tmpdir)
+        runner.test(
+            "guard included on protected branch (failing condition)",
+            "protected_branch" in unsat,
+            f"unsatisfied={unsat}",
+        )
+
+
 def test_permission_request_hook(runner: TestRunner):
     """PermissionRequest auto-deny must emit the correct nested schema (regression).
 
@@ -11508,6 +11575,9 @@ def main():
 
     # PermissionRequest auto-deny shape (Phase 1b)
     test_permission_request_hook(runner)
+
+    # Guard-aware unsatisfied collection (Phase 1c)
+    test_collect_unsatisfied_guard_aware(runner)
 
     return runner.summary()
 

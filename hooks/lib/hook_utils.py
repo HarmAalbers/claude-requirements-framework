@@ -136,6 +136,48 @@ def early_hook_setup(
     return project_dir, branch, config, logger
 
 
+def collect_unsatisfied(reqs, config, branch, session_id, project_dir) -> list:
+    """Return the names of enabled requirements that are NOT currently satisfied.
+
+    Guard-aware: guard requirements are checked against their live condition via
+    ``reqs.is_guard_satisfied`` (matching handle-session-start / handle-stop /
+    handle-plan-exit), while all other types use the state-based
+    ``reqs.is_satisfied``. Using bare ``is_satisfied`` for guards produced false
+    "unsatisfied" reports — e.g. a ``protected_branch`` guard on a feature branch
+    (condition passes) was wrongly listed as unsatisfied.
+
+    Args:
+        reqs: BranchRequirements instance for the current branch/session.
+        config: RequirementsConfig instance.
+        branch: Current git branch name.
+        session_id: Normalized session id.
+        project_dir: Project root directory.
+
+    Returns:
+        List of unsatisfied requirement names (enabled only), in config order.
+    """
+    unsatisfied = []
+    for req_name in config.get_all_requirements():
+        if not config.is_requirement_enabled(req_name):
+            continue
+
+        if config.get_requirement_type(req_name) == 'guard':
+            context = {
+                'branch': branch,
+                'session_id': session_id,
+                'project_dir': project_dir,
+            }
+            satisfied = reqs.is_guard_satisfied(req_name, config, context)
+        else:
+            scope = config.get_scope(req_name)
+            satisfied = reqs.is_satisfied(req_name, scope)
+
+        if not satisfied:
+            unsatisfied.append(req_name)
+
+    return unsatisfied
+
+
 # =============================================================================
 # Tool Input Field Extractors (Issue #05)
 # =============================================================================

@@ -31,7 +31,7 @@ sys.path.insert(0, str(lib_path))
 from requirements import BranchRequirements
 from session import normalize_session_id
 from session_metrics import SessionMetrics
-from hook_utils import early_hook_setup
+from hook_utils import early_hook_setup, collect_unsatisfied
 from console import emit_hook_context
 
 # Review agent types that benefit from requirement context injection
@@ -98,14 +98,9 @@ def main() -> int:
             return 0
 
         # Build requirement context for review agents
+        # (guard-aware: a passing guard is not reported as unsatisfied)
         reqs = BranchRequirements(branch, session_id, project_dir)
-        unsatisfied = []
-        for req_name in config.get_all_requirements():
-            if not config.is_requirement_enabled(req_name):
-                continue
-            scope = config.get_scope(req_name)
-            if not reqs.is_satisfied(req_name, scope):
-                unsatisfied.append(req_name)
+        unsatisfied = collect_unsatisfied(reqs, config, branch, session_id, project_dir)
 
         lines = [
             "## Requirements Framework Context",
