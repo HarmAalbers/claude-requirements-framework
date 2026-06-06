@@ -10541,6 +10541,10 @@ def test_plan_enter_hook(runner: TestRunner):
             "session_id": "planenter-test"
         }
 
+        # The once-per-session brainstorm-nudge dedup means re-running the hook
+        # in the SAME session suppresses the directive. Each emit-expecting
+        # sub-test below therefore uses a distinct session_id.
+
         # Test 1: Injects brainstorm directive with config (no design_approved requirement)
         os.makedirs(f"{tmpdir}/.claude")
         config = {
@@ -10554,12 +10558,18 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-emit-1"}, tmpdir)
         ctx = extract_hook_context(result.stdout)
         runner.test("Injects brainstorm directive",
                    "Brainstorm Before Planning" in ctx and "/brainstorming" in ctx,
                    f"Got: {result.stdout[:300]}")
         runner.test("Injects directive exit 0", result.returncode == 0)
+
+        # Dedup: a SECOND EnterPlanMode in the SAME session does not re-emit.
+        result_dup = run_hook({**base_input, "session_id": "pe-emit-1"}, tmpdir)
+        runner.test("Plan-enter dedup suppresses second nudge",
+                   result_dup.stdout.strip() == "",
+                   f"Got: {result_dup.stdout[:200]}")
 
         # Test 2: Fires without design_approved requirement configured
         config_no_design = {
@@ -10571,7 +10581,7 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_no_design, f)
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-emit-2"}, tmpdir)
         ctx = extract_hook_context(result.stdout)
         runner.test("Fires without design_approved requirement",
                    "Brainstorm Before Planning" in ctx,
@@ -10596,12 +10606,13 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_with_design, f)
 
-        # Satisfy design_approved via BranchRequirements
+        # Satisfy design_approved via BranchRequirements (fresh session so the
+        # skip is driven by gate-satisfaction, not the nudge dedup).
         from requirements import BranchRequirements
-        reqs = BranchRequirements("feature/test", "planenter-test", tmpdir)
+        reqs = BranchRequirements("feature/test", "pe-sat-4", tmpdir)
         reqs.satisfy("design_approved", "session")
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-sat-4"}, tmpdir)
         runner.test("Skips when design_approved satisfied",
                    result.stdout.strip() == "",
                    f"Expected empty output, got: {result.stdout[:200]}")
@@ -10673,18 +10684,19 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_custom_wf, f)
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-wf-9"}, tmpdir)
         ctx = extract_hook_context(result.stdout)
         runner.test("Config brainstorm phase emits configured skill",
                    "Brainstorm Before Planning" in ctx and "/writing-plans" in ctx,
                    f"Got: {result.stdout[:300]}")
 
         # Test 10: Skips on the CONFIGURED gate, not design_approved. Satisfy
-        # explore_done (design_approved stays unsatisfied) → no directive,
-        # proving the gate came from the brainstorm_on_enter phase.
-        reqs_wf = BranchRequirements("feature/test", "planenter-test", tmpdir)
+        # explore_done (design_approved stays unsatisfied) on a FRESH session →
+        # no directive, proving the gate came from the brainstorm_on_enter phase
+        # (and not the nudge dedup).
+        reqs_wf = BranchRequirements("feature/test", "pe-wf-10", tmpdir)
         reqs_wf.satisfy("explore_done", "session")
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-wf-10"}, tmpdir)
         runner.test("Skips when configured brainstorm gate satisfied",
                    result.stdout.strip() == "",
                    f"Expected empty, got: {result.stdout[:200]}")
@@ -10695,6 +10707,196 @@ def test_plan_enter_hook(runner: TestRunner):
         cfg = RequirementsConfig(tmpdir)
         val = cfg.get_hook_config('plan_enter', 'brainstorm_on_enter')
         runner.test("Hook default brainstorm_on_enter is True", val is True,
+                   f"Got: {val}")
+
+
+def test_brainstorm_lib(runner: TestRunner):
+    """Test the shared brainstorm helpers (hooks/lib/brainstorm.py)."""
+    print("\n📦 Testing brainstorm lib...")
+    from brainstorm import (
+        resolve_brainstorm_phase,
+        brainstorm_directive,
+        nudge_already_shown,
+        mark_nudge_shown,
+    )
+    from config import RequirementsConfig
+
+    # Default resolution: design_approved / brainstorming
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg = RequirementsConfig(tmpdir)
+        gate, skill = resolve_brainstorm_phase(cfg)
+        runner.test("resolve_brainstorm_phase default gate",
+                   gate == "design_approved", f"Got: {gate}")
+        runner.test("resolve_brainstorm_phase default skill",
+                   skill == "requirements-framework:brainstorming", f"Got: {skill}")
+
+    # Honors a workflow phase flagged brainstorm_on_enter (non-first phase)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "d"},
+                "explore_done": {"enabled": True, "scope": "session",
+                                 "type": "blocking", "message": "e"},
+            },
+            "workflow": {
+                "phases": [
+                    {"name": "design", "gate": "design_approved",
+                     "skill": "requirements-framework:brainstorming"},
+                    {"name": "explore", "gate": "explore_done",
+                     "skill": "requirements-framework:writing-plans",
+                     "brainstorm_on_enter": True},
+                ],
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+        cfg = RequirementsConfig(tmpdir)
+        gate, skill = resolve_brainstorm_phase(cfg)
+        runner.test("resolve_brainstorm_phase honors brainstorm_on_enter gate",
+                   gate == "explore_done", f"Got: {gate}")
+        runner.test("resolve_brainstorm_phase honors brainstorm_on_enter skill",
+                   skill == "requirements-framework:writing-plans", f"Got: {skill}")
+
+    # brainstorm_directive renders the short slash command (skill-agnostic)
+    directive = brainstorm_directive("requirements-framework:brainstorming")
+    runner.test("brainstorm_directive contains short skill name",
+               "/brainstorming" in directive, f"Got: {directive[:120]}")
+    custom = brainstorm_directive("requirements-framework:writing-plans")
+    runner.test("brainstorm_directive is skill-agnostic",
+               "/writing-plans" in custom, f"Got: {custom[:120]}")
+
+    # Dedup marker round-trips; fresh sessions are independent
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("nudge not shown before mark",
+                   nudge_already_shown("sess-a", tmpdir) is False)
+        mark_nudge_shown("sess-a", tmpdir)
+        runner.test("nudge shown after mark",
+                   nudge_already_shown("sess-a", tmpdir) is True)
+        runner.test("fresh session independent of marked session",
+                   nudge_already_shown("sess-b", tmpdir) is False)
+
+
+def test_prompt_submit_brainstorm_nudge(runner: TestRunner):
+    """Test the proactive UserPromptSubmit brainstorm nudge + shared dedup."""
+    print("\n📦 Testing prompt-submit brainstorm nudge...")
+
+    hook_path = Path(__file__).parent / "handle-prompt-submit.py"
+    plan_hook = Path(__file__).parent / "handle-plan-enter.py"
+
+    def run_hook(path, input_data, cwd):
+        return subprocess.run(
+            ["python3", str(path)],
+            input=json.dumps(input_data),
+            cwd=cwd, capture_output=True, text=True,
+            env={**os.environ},
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir,
+                       capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "Design!"}
+            },
+        }
+
+        def write_config(cfg):
+            with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+                json.dump(cfg, f)
+
+        write_config(config)
+
+        def prompt_input(session_id, prompt):
+            return {
+                "session_id": session_id,
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": prompt,
+                "cwd": tmpdir,
+            }
+
+        substantive = "let's implement the new auth flow"
+
+        # 1. Substantive prompt + design_approved unsatisfied -> nudge
+        result = run_hook(hook_path, prompt_input("ps-1", substantive), tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Substantive prompt injects brainstorm nudge",
+                   "/brainstorming" in ctx and "Brainstorm Before Planning" in ctx,
+                   f"Got: {result.stdout[:300]}")
+
+        # 2. Second substantive prompt SAME session -> dedup, no second nudge
+        result2 = run_hook(hook_path,
+                           prompt_input("ps-1", "now refactor the session module too"),
+                           tmpdir)
+        ctx2 = extract_hook_context(result2.stdout)
+        runner.test("Second substantive prompt deduped (no second nudge)",
+                   "Brainstorm Before Planning" not in ctx2,
+                   f"Got: {result2.stdout[:300]}")
+
+        # 3. Trivial prompt -> no nudge (fresh session)
+        result3 = run_hook(hook_path, prompt_input("ps-3", "what does this do?"), tmpdir)
+        ctx3 = extract_hook_context(result3.stdout)
+        runner.test("Trivial prompt -> no nudge",
+                   "Brainstorm Before Planning" not in ctx3,
+                   f"Got: {result3.stdout[:300]}")
+
+        # 4. design_approved satisfied -> no nudge (fresh session)
+        from requirements import BranchRequirements
+        reqs = BranchRequirements("feature/test", "ps-4", tmpdir)
+        reqs.satisfy("design_approved", "session")
+        result4 = run_hook(hook_path, prompt_input("ps-4", substantive), tmpdir)
+        ctx4 = extract_hook_context(result4.stdout)
+        runner.test("Satisfied gate -> no nudge",
+                   "Brainstorm Before Planning" not in ctx4,
+                   f"Got: {result4.stdout[:300]}")
+
+        # 5. Config flag disables the nudge
+        write_config({**config, "hooks": {"prompt_submit": {"brainstorm_nudge": False}}})
+        result5 = run_hook(hook_path, prompt_input("ps-5", substantive), tmpdir)
+        ctx5 = extract_hook_context(result5.stdout)
+        runner.test("brainstorm_nudge=False suppresses nudge",
+                   "Brainstorm Before Planning" not in ctx5,
+                   f"Got: {result5.stdout[:300]}")
+        write_config(config)  # restore
+
+        # 6. Shared dedup across hooks: prompt-submit marks, plan-enter respects it
+        result6 = run_hook(hook_path, prompt_input("ps-6", substantive), tmpdir)
+        ctx6 = extract_hook_context(result6.stdout)
+        runner.test("Prompt-submit emits + marks shared dedup",
+                   "Brainstorm Before Planning" in ctx6,
+                   f"Got: {result6.stdout[:300]}")
+        plan_input = {
+            "tool_name": "EnterPlanMode", "tool_input": {}, "tool_result": {},
+            "session_id": "ps-6", "cwd": tmpdir,
+        }
+        result6b = run_hook(plan_hook, plan_input, tmpdir)
+        runner.test("Plan-enter respects shared dedup from prompt-submit",
+                   result6b.stdout.strip() == "",
+                   f"Got: {result6b.stdout[:200]}")
+
+        # 7. Plan-enter still emits once in a fresh session (shared helper sanity)
+        result7 = run_hook(plan_hook, {**plan_input, "session_id": "ps-7"}, tmpdir)
+        ctx7 = extract_hook_context(result7.stdout)
+        runner.test("Plan-enter emits once in fresh session",
+                   "Brainstorm Before Planning" in ctx7,
+                   f"Got: {result7.stdout[:300]}")
+
+    # Default config value
+    from config import RequirementsConfig
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg = RequirementsConfig(tmpdir)
+        val = cfg.get_hook_config('prompt_submit', 'brainstorm_nudge')
+        runner.test("Hook default brainstorm_nudge is True", val is True,
                    f"Got: {val}")
 
 
@@ -12659,6 +12861,10 @@ def main():
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
+
+    # Shared brainstorm helpers + proactive prompt-submit nudge
+    test_brainstorm_lib(runner)
+    test_prompt_submit_brainstorm_nudge(runner)
 
     # Plan file skip exemption tests
     test_should_skip_plan_file(runner)

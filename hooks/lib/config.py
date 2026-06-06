@@ -853,6 +853,9 @@ class RequirementsConfig:
         "plan_enter": {
             "brainstorm_on_enter": True,
         },
+        "prompt_submit": {
+            "brainstorm_nudge": True,
+        },
         "wip_tracking": {
             "enabled": False,
             "prompt_on_stop": True,

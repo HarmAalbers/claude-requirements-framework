@@ -34,62 +34,12 @@ from session import normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
 from console import emit_hook_context
-
-# Fail-open defaults: the historical hardcoded gate/skill. Used whenever the
-# configured workflow can't be resolved, so a missing/malformed `workflow:`
-# section never breaks plan-mode entry.
-DEFAULT_BRAINSTORM_GATE = 'design_approved'
-DEFAULT_BRAINSTORM_SKILL = 'requirements-framework:brainstorming'
-
-
-def _brainstorm_directive(skill: str) -> str:
-    """Render the brainstorm directive for *skill* (a ``plugin:skill`` name).
-
-    The slash form drops the plugin prefix: ``requirements-framework:brainstorming``
-    → ``/brainstorming``. Skill-agnostic so a custom brainstorm phase dispatches
-    its own configured skill.
-    """
-    command = '/' + skill.split(':')[-1]
-    return f"""\
-## Brainstorm Before Planning
-
-Before writing your implementation plan, invoke the brainstorming skill to design the approach first.
-
-**Action**: Invoke `{command}` now.
-
-The brainstorm will help you explore the problem, ask clarifying questions, propose approaches, and validate the design — all inside plan mode.
-
-**Important**: Write the design output directly into the plan file. Do NOT create a separate design document or attempt git commits during brainstorming."""
-
-
-def _resolve_brainstorm_phase(config) -> tuple[str, str]:
-    """Return ``(gate, skill)`` for the configured brainstorm-on-enter phase.
-
-    Picks the phase flagged ``brainstorm_on_enter: true`` from the project's
-    ``workflow:`` config; if none is flagged, the first phase. Fail-open: returns
-    the historical ``design_approved`` / brainstorming pair on any error so a
-    missing/malformed workflow never breaks plan-mode entry.
-    """
-    gate = DEFAULT_BRAINSTORM_GATE
-    skill = DEFAULT_BRAINSTORM_SKILL
-    try:
-        phases = config.get_workflow_phases().get('phases') or []
-        chosen = next(
-            (p for p in phases
-             if isinstance(p, dict) and p.get('brainstorm_on_enter') is True),
-            None,
-        )
-        if chosen is None and phases and isinstance(phases[0], dict):
-            chosen = phases[0]
-        if isinstance(chosen, dict):
-            if isinstance(chosen.get('gate'), str) and chosen['gate']:
-                gate = chosen['gate']
-            if isinstance(chosen.get('skill'), str) and chosen['skill']:
-                skill = chosen['skill']
-    except Exception:
-        # Fail-open: keep the historical gate/skill on any resolution failure.
-        pass
-    return gate, skill
+from brainstorm import (
+    brainstorm_directive,
+    resolve_brainstorm_phase,
+    nudge_already_shown,
+    mark_nudge_shown,
+)
 
 
 def main() -> int:
@@ -148,7 +98,7 @@ def main() -> int:
 
         # Resolve the brainstorm phase (gate + skill) from the configured
         # workflow. Fail-open to design_approved / brainstorming.
-        gate, skill = _resolve_brainstorm_phase(config)
+        gate, skill = resolve_brainstorm_phase(config)
 
         # Check if the brainstorm gate exists AND is already satisfied.
         req_config = config.get_requirement(gate)
@@ -162,8 +112,15 @@ def main() -> int:
                 )
                 return 0
 
+        # Once-per-session dedup shared with the UserPromptSubmit nudge so the
+        # user never sees two brainstorm directives in one session.
+        if nudge_already_shown(session_id, project_dir):
+            logger.info("Brainstorm nudge already shown this session, skipping")
+            return 0
+
         # Emit brainstorm directive
-        emit_hook_context("PostToolUse", _brainstorm_directive(skill))
+        emit_hook_context("PostToolUse", brainstorm_directive(skill))
+        mark_nudge_shown(session_id, project_dir)
         logger.info(
             "Plan enter - injected brainstorm directive", gate=gate, skill=skill
         )

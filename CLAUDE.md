@@ -440,6 +440,20 @@ Use cases:
 - Plan validation against ADRs (ExitPlanMode)
 - Architectural compliance at planning stage
 
+**Caveat — plan-mode triggers are mode-dependent**: `EnterPlanMode`/`ExitPlanMode`
+only fire when the user actually transitions into/out of plan mode. Users who
+live in `acceptEdits`/auto-accept mode never emit these events, so a hook keyed
+solely on them never runs for those users.
+
+**Brainstorm nudge is mode-independent**: the brainstorm auto-invoke therefore
+fires from TWO hooks — `handle-plan-enter.py` (on `EnterPlanMode`, for plan-mode
+users) AND `handle-prompt-submit.py` (on `UserPromptSubmit`, which fires every
+turn in every mode). The proactive prompt-submit nudge fires on a substantive
+prompt while the brainstorm gate is unsatisfied, and is deduplicated to once per
+session (shared marker) so the two hooks never double-nudge. Toggle it with
+`hooks.prompt_submit.brainstorm_nudge` (default `true`); the plan-mode path stays
+on `hooks.plan_enter.brainstorm_on_enter` (default `true`).
+
 See `examples/global-requirements.yaml` for full example configuration.
 
 ## Requirement Scopes
