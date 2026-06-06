@@ -9979,6 +9979,34 @@ def test_plugin_hooks_bundle_fresh(runner: TestRunner):
         f"exit={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}",
     )
 
+    # __pycache__ in the bundle must NOT count as drift — it is gitignored
+    # bytecode regenerated at runtime (e.g. `req verify` smoke-testing the
+    # plugin's check-requirements.py, or the suite itself). Regression guard for
+    # the CI false-failure where build --check flagged
+    # plugins/.../hooks/lib/__pycache__ as drift (exit 1).
+    bundle_cache = repo_root / 'plugins' / 'requirements-framework' / 'hooks' / 'lib' / '__pycache__'
+    created_cache = not bundle_cache.exists()
+    bundle_cache.mkdir(parents=True, exist_ok=True)
+    sentinel = bundle_cache / '_drift_guard_test.pyc'
+    sentinel.write_bytes(b'\x00')
+    try:
+        result_cache = subprocess.run(
+            [sys.executable, str(build_script), '--check'],
+            cwd=str(repo_root), capture_output=True, text=True,
+        )
+        runner.test(
+            "build --check ignores __pycache__ in the bundle (not drift)",
+            result_cache.returncode == 0,
+            f"exit={result_cache.returncode}\nstdout={result_cache.stdout}",
+        )
+    finally:
+        sentinel.unlink(missing_ok=True)
+        if created_cache:
+            try:
+                bundle_cache.rmdir()
+            except OSError:
+                pass
+
 
 def test_plugin_hooks_json_self_contained(runner: TestRunner):
     """hooks.json is plugin-root-relative, not deploy-path-bound.
