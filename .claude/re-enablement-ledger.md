@@ -11,7 +11,7 @@ Legend: ✅ graduated · 🟡 in progress · ⬜ not started · ❌ dropped
 |------|------------|--------|---------|
 | R1 | Core gating (one requirement) | ✅ graduated | Works end-to-end; no false positives; state integrity holds |
 | R2 | Status injection + statusline | ⬜ | — |
-| R3 | Plugin review commands (/deep-review, /arch-review) | 🟡 ready to dogfood | plugin self-contained + loadable; needs a live --plugin-dir session |
+| R3 | Plugin review commands (/deep-review, /arch-review) | ✅ graduated | --plugin-dir session: hooks fired + gate blocked an edit, zero errors |
 | R4 | /v3-review LIVE (budget rung) | ⬜ | — |
 | R5 | Observability / Langfuse | ⬜ | — |
 | R6 | Eval harness + golden set | ⬜ | — |
@@ -55,12 +55,17 @@ present; `hooks.json` resolves all 16 commands to existing `${CLAUDE_PLUGIN_ROOT
 the plugin's `hooks.json` is the SOLE hook source in a `--plugin-dir` session (no double-fire).
 `.claude/requirements.local.yaml` (requirement config) stays.
 
-**Graduation gate (needs a live session — user action):** launch
-`claude --plugin-dir /Users/harm/Tools/claude-requirements-framework/plugins/requirements-framework`
-from this repo, then confirm: (1) the SessionStart briefing appears (plugin hooks fired), (2) `/arch-review`
-and `/deep-review` are available, (3) an Edit is gated by `commit_plan` (bundled hook fired via
-`${CLAUDE_PLUGIN_ROOT}`), (4) `/arch-review` (or `req satisfy`) clears it, (5) no `exit 127` / missing-
-script hook errors. Report keep/drop/fix.
+**Graduation — ✅ CONFIRMED LIVE (2026-06-06, session `6b7fe5de`):** launched
+`claude --plugin-dir .../plugins/requirements-framework` and:
+- SessionStart bundled hook fired via `${CLAUDE_PLUGIN_ROOT}` — registered the session + metrics +
+  project (requirements.log, 08:08:06), **zero errors / no exit 127**.
+- A `Write test.txt` was **BLOCKED** by the bundled PreToolUse gate: "## Blocked: commit_plan,
+  Execute: `/arch-review`" — so the gate fires from the plugin AND the `{auto_resolve_skill}`
+  placeholder fix renders correctly live (`/arch-review`, not the raw token).
+**Verdict:** the self-contained plugin is genuinely distributable — hooks + commands load and run from
+`${CLAUDE_PLUGIN_ROOT}` with no `~/.claude/hooks` deploy. R3 graduated. (Note: that session runs the
+simple `scope: session` checkbox gate; a plain `req satisfy` clears it. The evidence-gating built in
+the R1-enhancement is not armed there.)
 
 ---
 
