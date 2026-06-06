@@ -334,6 +334,7 @@ def main() -> int:
 
         # Collect all unsatisfied requirements (batch blocking)
         unsatisfied = []
+        triggered_candidates = []  # (req_name, scope) staged; marked only if the tool is allowed
 
         # Check all enabled requirements using strategy pattern
         for req_name in config.get_all_requirements():
@@ -345,10 +346,12 @@ def main() -> int:
             if not matches_trigger(tool_name, tool_input, triggers):
                 continue
 
-            # Mark requirement as triggered for Stop hook verification
-            # (do this before checking satisfaction - triggered != satisfied)
+            # Stage this requirement as a trigger candidate. We must NOT mark it
+            # triggered yet: a denied tool writes nothing, so marking here would
+            # leave a phantom trigger that the Stop hook blocks on forever
+            # (the deadlock). Marking happens only on the allow path below.
             scope = config.get_scope(req_name)
-            reqs.mark_triggered(req_name, scope)
+            triggered_candidates.append((req_name, scope))
 
             # Get strategy for requirement type (blocking, dynamic, etc.)
             req_type = config.get_requirement_type(req_name)
@@ -443,6 +446,12 @@ def main() -> int:
             response = create_batched_denial(unsatisfied, session_id, project_dir, branch)
             emit_json(response)
             return 0
+
+        # Allow path: no requirement denied. Now that the tool is permitted to
+        # run, mark each triggered candidate so the Stop hook still verifies
+        # requirements for edits that actually happen.
+        for cand_name, cand_scope in triggered_candidates:
+            reqs.mark_triggered(cand_name, cand_scope)
 
         # All requirements satisfied or passed - record successful tool use
         metrics.record_tool_use(tool_name, file=file_path, blocked=False)

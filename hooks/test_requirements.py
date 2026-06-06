@@ -3586,6 +3586,191 @@ def test_partial_satisfaction(runner: TestRunner):
                    f"Message: {message[:200]}")
 
 
+def _triggered_anywhere(tmpdir: str, branch: str, req_name: str, session_id: str) -> bool:
+    """Read persisted branch state and report whether req_name is marked triggered.
+
+    Checks both the session-scoped location
+    (requirements[req].sessions[session_id].triggered) and the
+    branch/permanent location (requirements[req].triggered).
+    """
+    from state_storage import load_state
+
+    state = load_state(branch, tmpdir)
+    req_state = state.get('requirements', {}).get(req_name, {})
+    if req_state.get('triggered') is True:
+        return True
+    sess = req_state.get('sessions', {}).get(session_id, {})
+    return sess.get('triggered') is True
+
+
+def test_blocked_edit_does_not_trigger(runner: TestRunner):
+    """Regression: a DENIED edit must not leave the requirement triggered.
+
+    The deadlock: check-requirements.py used to mark_triggered() the moment a
+    tool matched a trigger, BEFORE the strategy decided allow/deny. When the
+    gate denied the edit (nothing written), the requirement was still recorded
+    as triggered, so the Stop hook blocked the turn forever over an edit that
+    never happened. The fix only marks triggered on the allow path.
+    """
+    print("\n📦 Testing blocked edit does not leave phantom trigger...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/deadlock-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dltrap1"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # The hook must DENY the unsatisfied edit.
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Unsatisfied edit is denied", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
+
+        # The regression assertion: commit_plan must NOT be triggered for the
+        # session after a denied edit (no phantom trigger -> Stop never traps).
+        runner.test("Denied edit leaves no phantom trigger",
+                    _triggered_anywhere(tmpdir, branch, "commit_plan", session_id) is not True,
+                    "commit_plan was marked triggered despite the edit being denied")
+
+
+def test_allowed_edit_marks_triggered(runner: TestRunner):
+    """An ALLOWED edit must still mark the requirement triggered.
+
+    Counterpart to the deadlock fix: when the gate permits the edit, the
+    requirement is marked triggered so the Stop hook still verifies it.
+    """
+    print("\n📦 Testing allowed edit marks requirement triggered...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/deadlock-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dlallow"
+
+        # Satisfy commit_plan for this session so the gate allows the edit.
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", session_id],
+            cwd=tmpdir, capture_output=True
+        )
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # Satisfied -> hook allows (empty output).
+        runner.test("Satisfied edit is allowed", result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+
+        # Allowed edit must mark triggered so Stop still verifies real edits.
+        runner.test("Allowed edit marks requirement triggered",
+                    _triggered_anywhere(tmpdir, branch, "commit_plan", session_id) is True,
+                    "commit_plan was not marked triggered after an allowed edit")
+
+
+def test_blocked_guard_does_not_trigger(runner: TestRunner):
+    """Regression: a DENIED guard edit must not leave the guard triggered.
+
+    Same deadlock as test_blocked_edit_does_not_trigger but via a guard
+    requirement (protected_branch on a protected branch).
+    """
+    print("\n📦 Testing blocked guard edit does not leave phantom trigger...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "master"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"],
+                    "message": "Cannot edit on protected branch"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dlguard"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # The guard must DENY the edit on the protected branch.
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Guard edit on protected branch is denied", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
+
+        # The guard must NOT be left triggered after the denied edit.
+        runner.test("Denied guard edit leaves no phantom trigger",
+                    _triggered_anywhere(tmpdir, branch, "protected_branch", session_id) is not True,
+                    "protected_branch was marked triggered despite the edit being denied")
+
+
 def test_guard_strategy_blocks_protected_branch(runner: TestRunner):
     """Test that guard strategy blocks edits on protected branches."""
     print("\n📦 Testing guard strategy blocks protected branch...")
@@ -11746,6 +11931,11 @@ def main():
     test_cli_satisfy_branch_flag_dynamic(runner)
     test_cli_satisfy_branch_flag_multiple(runner)
     test_partial_satisfaction(runner)
+
+    # Deadlock regression: only mark triggered on the allow path
+    test_blocked_edit_does_not_trigger(runner)
+    test_allowed_edit_marks_triggered(runner)
+    test_blocked_guard_does_not_trigger(runner)
 
     # Guard strategy tests
     test_guard_strategy_blocks_protected_branch(runner)
