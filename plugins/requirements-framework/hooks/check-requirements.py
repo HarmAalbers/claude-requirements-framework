@@ -191,11 +191,21 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
             for req_name, req_config in no_skill_reqs:
                 lines.append(f"| {req_name} | `req satisfy {req_name}` |")
 
-    # Add fallback command
+    # Standard stand-down footer + fallback command. This carries the same
+    # guidance as the default blocking template so it shows even when a
+    # requirement supplied an inline `message` (which bypasses the template).
     lines.append("")
     lines.append("---")
+    lines.append(
+        "Blocked before any write — nothing changed on disk. If there's no real "
+        "work to plan, stand down and tell the user this is gated."
+    )
+    lines.append(
+        "Do NOT run `req satisfy`/`req clear` yourself — that's a USER action; "
+        "the user may run the fallback below."
+    )
     req_list = ' '.join(req_names)
-    lines.append(f"Fallback: `req satisfy {req_list} --session {session_id}`")
+    lines.append(f"Fallback (user action): `req satisfy {req_list} --session {session_id}`")
 
     return {
         "hookSpecificOutput": {

@@ -182,12 +182,18 @@ class CalculatorMessageProvider(Protocol):
 # Default templates for each requirement type
 DEFAULT_TEMPLATES: Dict[str, Dict[str, str]] = {
     'blocking': {
-        'blocking_message': '''## Blocked: {req_name}
+        'blocking_message': '''## Blocked: {req_name} (not satisfied)
 
-**Action**: `req satisfy {req_name} --session {session_id}`
+This edit was blocked BEFORE anything was written — nothing changed on disk.
+
+Two choices:
+1. **Real change to make** → run the resolution skill to plan it (`/{auto_resolve_skill}`), then redo the edit.
+2. **No real work to plan** → stand down and tell the user this is gated on `{req_name}`.
+
+Do NOT run `req satisfy {req_name}` / `req clear` yourself — those are USER actions. The user may run the fallback below if they choose.
 
 ---
-Fallback: `req satisfy {req_name} --session {session_id}`''',
+Fallback (user action): `req satisfy {req_name} --session {session_id}`''',
         'short_message': 'Requirement `{req_name}` not satisfied (waiting...)',
         'success_message': 'Requirement `{req_name}` satisfied',
         'header': '{req_name}',

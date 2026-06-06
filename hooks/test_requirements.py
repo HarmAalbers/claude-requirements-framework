@@ -15,6 +15,7 @@ Tests all framework components:
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -7449,8 +7450,17 @@ def test_session_start_format_tiers(runner: TestRunner):
         compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/test-formats")
         runner.test("Compact format has requirements header", "Requirements:" in compact,
                    f"Got: {compact[:200]}")
-        runner.test("Compact format is concise", len(compact) < 500,
+        # Concise budget guard. The bound accommodates the one-line stand-down
+        # gating directive appended when >=1 requirement is unsatisfied.
+        runner.test("Compact format is concise", len(compact) < 800,
                    f"Length: {len(compact)}")
+        # Gating directive present because both requirements are unsatisfied.
+        runner.test("Compact shows gating directive when unsatisfied",
+                   "do NOT attempt Edit/Write/MultiEdit first" in compact,
+                   f"Got: {compact[:400]}")
+        runner.test("Compact gating directive flags req satisfy as user action",
+                   "USER action" in compact and "`req satisfy`" in compact,
+                   f"Got: {compact[:400]}")
 
         # Test standard format
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/test-formats")
@@ -7460,6 +7470,9 @@ def test_session_start_format_tiers(runner: TestRunner):
                    f"Missing Quick Start section")
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
                    f"Missing triggers")
+        runner.test("Standard shows gating directive when unsatisfied",
+                   "do NOT attempt Edit/Write/MultiEdit first" in standard,
+                   f"Got: {standard[:600]}")
 
         # Test format_adaptive_status dispatches by briefing_format (source is ignored)
         config_compact = dict(config_content)
@@ -7516,6 +7529,38 @@ def test_session_start_format_tiers(runner: TestRunner):
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/empty-test")
         runner.test("Standard handles empty requirements", "(none configured)" in standard,
                    f"Got: {standard[:300]}")
+
+    # Test gating directive is OMITTED when all requirements are satisfied
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/all-satisfied"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        sat_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "type": "blocking", "scope": "session"},
+                "adr_reviewed": {"enabled": True, "type": "blocking", "scope": "branch"},
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(sat_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/all-satisfied", "sat-session", tmpdir)
+        reqs.satisfy("commit_plan", scope="session")
+        reqs.satisfy("adr_reviewed", scope="branch")
+
+        compact_sat = session_start_module.format_compact_status(reqs, config, "sat-session", "feature/all-satisfied")
+        standard_sat = session_start_module.format_standard_status(reqs, config, "sat-session", "feature/all-satisfied")
+        runner.test("Compact omits gating directive when all satisfied",
+                   "Edit/Write/MultiEdit" not in compact_sat,
+                   f"Got: {compact_sat[:400]}")
+        runner.test("Standard omits gating directive when all satisfied",
+                   "Edit/Write/MultiEdit" not in standard_sat,
+                   f"Got: {standard_sat[:400]}")
 
     # Test guard requirement formatting
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -8462,6 +8507,15 @@ def test_messages_module(runner: TestRunner):
                    isinstance(messages, RequirementMessages))
         runner.test("get_messages uses template defaults",
                    '{req_name}' in messages.blocking_message)
+        # Default blocking template is self-explanatory: explains the block
+        # happened before any write and that req satisfy/clear are user actions.
+        runner.test("Default blocking template explains nothing was written",
+                   'nothing changed on disk' in messages.blocking_message)
+        runner.test("Default blocking template flags req satisfy as user action",
+                   'USER action' in messages.blocking_message)
+        runner.test("Default blocking template only uses supplied placeholders",
+                   set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}', messages.blocking_message))
+                   <= {'req_name', 'session_id', 'branch', 'project_dir', 'auto_resolve_skill'})
 
         # Test 9: get_status_template
         template = loader.get_status_template('compact')
@@ -8907,6 +8961,12 @@ def test_batched_denial_substitutes_auto_resolve_skill(runner: TestRunner):
                '{auto_resolve_skill}' not in deny_msg, f"Got: {deny_msg}")
     runner.test("Batched denial does not leak namespaced skill prefix",
                'requirements-framework:arch-review' not in deny_msg, f"Got: {deny_msg}")
+    # Stand-down footer is appended even when an inline message is present.
+    runner.test("Batched denial appends stand-down footer",
+               "Blocked before any write" in deny_msg and "USER action" in deny_msg,
+               f"Got: {deny_msg}")
+    runner.test("Batched denial footer keeps fallback command",
+               "Fallback (user action): `req satisfy" in deny_msg, f"Got: {deny_msg}")
 
     # {session_id} placeholder is also substituted in inline messages
     req_config_sid = {

@@ -40,6 +40,19 @@ from hook_utils import early_hook_setup
 from console import emit_hook_context
 
 
+# Stand-down directive appended to the SessionStart briefing ONLY when at least
+# one gating requirement is unsatisfied (satisfied_count < total_count). It tells
+# Claude not to blindly attempt blocked edits, to resolve via the listed skill,
+# and that `req satisfy`/`req clear` are USER actions (the permission layer blocks
+# Claude from running them). Kept to ~2 lines to respect the compact token budget.
+_GATING_DIRECTIVE = (
+    "**Gated**: edits/commits are blocked until the above are satisfied — do NOT "
+    "attempt Edit/Write/MultiEdit first. To satisfy, run the listed resolution skill "
+    "(you may run it). Do NOT run `req satisfy`/`req clear` yourself — those are USER "
+    "actions (the permission layer blocks Claude from running them)."
+)
+
+
 def _get_requirement_status_data(reqs: BranchRequirements, config: RequirementsConfig,
                                   session_id: str, branch: str) -> list[dict]:
     """
@@ -228,6 +241,7 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     unsatisfied = [r for r in req_data if not r['satisfied']]
     if unsatisfied:
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`")
+        lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(line for line in lines if line)
 
@@ -285,6 +299,8 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
     if unsatisfied_reqs:
         lines.append("")
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied_reqs)} --session {session_id}`")
+        lines.append("")
+        lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(lines)
 
