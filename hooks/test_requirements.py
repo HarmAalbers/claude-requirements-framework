@@ -1680,7 +1680,7 @@ def test_cli_sessions_command(runner: TestRunner):
 
 
 def test_cli_doctor_command(runner: TestRunner):
-    """Test doctor command for environment checks."""
+    """Doctor validates the plugin-owned hooks.json and exits 0 on a clean repo."""
 
     print("\n📦 Testing doctor command...")
 
@@ -1688,96 +1688,8 @@ def test_cli_doctor_command(runner: TestRunner):
     repo_root = Path(__file__).parent.parent
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Isolated HOME so doctor does not read the developer's real ~/.claude.
         home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "handle-session-start.py",
-            "handle-stop.py",
-            "handle-session-end.py",
-            "test_requirements.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py",
-                      "handle-session-start.py", "handle-stop.py", "handle-session-end.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with hook registration (new format - all 4 required hooks)
-        settings_path = claude_dir / "settings.local.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Edit|Write|MultiEdit|Bash",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/check-requirements.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ],
-                        "SessionStart": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-session-start.py"
-                                    }
-                                ]
-                            }
-                        ],
-                        "Stop": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-stop.py"
-                                    }
-                                ]
-                            }
-                        ],
-                        "SessionEnd": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-session-end.py"
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
         project_dir = home_dir / "project"
         (project_dir / ".claude").mkdir(parents=True)
         config = {
@@ -1797,263 +1709,11 @@ def test_cli_doctor_command(runner: TestRunner):
             env=env,
         )
 
-        runner.test("Doctor runs", result.returncode == 0, result.stdout + result.stderr)
-        runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
+        runner.test("Doctor runs and exits 0", result.returncode == 0, result.stdout + result.stderr)
+        runner.test("Validates plugin hooks.json", "hooks.json present and valid" in result.stdout, result.stdout)
+        runner.test("Reports plugin hook scripts", "check-requirements.py exists" in result.stdout, result.stdout)
         # With verbose flag, should show "All Checks" section
-        runner.test("Reports sync status", "All Checks" in result.stdout or "✅" in result.stdout, result.stdout)
-
-
-def test_cli_doctor_old_format_migration(runner: TestRunner):
-    """Test doctor command shows migration message for old format."""
-
-    print("\n📦 Testing doctor with old hook format...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with OLD FORMAT
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {"PreToolUse": "~/.claude/hooks/check-requirements.py"}
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor detects old format", result.returncode != 0, result.stdout + result.stderr)
-        runner.test("Shows migration message", "old format" in result.stdout.lower(), result.stdout)
-        runner.test("Mentions upgrade", "upgrade" in result.stdout.lower() or "new format" in result.stdout.lower(), result.stdout)
-
-
-def test_cli_doctor_wrong_script(runner: TestRunner):
-    """Test doctor command detects wrong script."""
-
-    print("\n📦 Testing doctor with wrong script...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings pointing to WRONG SCRIPT
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Edit|Write",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/other-hook.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor fails with wrong script", result.returncode != 0, result.stdout + result.stderr)
-        runner.test("Mentions check-requirements.py", "check-requirements.py" in result.stdout, result.stdout)
-
-
-def test_cli_doctor_multiple_matchers(runner: TestRunner):
-    """Test doctor command handles multiple matchers."""
-
-    print("\n📦 Testing doctor with multiple matchers...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with MULTIPLE MATCHERS
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Bash",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/other.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            },
-                            {
-                                "matcher": "Edit|Write",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/check-requirements.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root), "--verbose"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor finds hook in multiple matchers", result.returncode == 0, result.stdout + result.stderr)
-        runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
+        runner.test("Shows all checks", "All Checks" in result.stdout, result.stdout)
 
 
 def test_enhanced_doctor_json_output(runner: TestRunner):
@@ -2164,6 +1824,106 @@ def test_enhanced_doctor_check_functions(runner: TestRunner):
     result = _check_plugin_installation()
     runner.test("Plugin check returns dict", isinstance(result, dict))
     runner.test("Plugin check has status", 'status' in result)
+
+
+def test_doctor_plugin_hooks_checks(runner: TestRunner):
+    """Doctor validates the plugin-owned hooks.json + the scripts it registers.
+
+    Hooks are registered by plugins/requirements-framework/hooks/hooks.json
+    (the single source of truth via ${CLAUDE_PLUGIN_ROOT}), replacing the
+    defunct ~/.claude/hooks deploy + ~/.claude/settings.json registration.
+    """
+    print("\n📦 Testing doctor plugin hooks integrity...")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "requirements_cli_pluginhooks", Path(__file__).parent / "requirements-cli.py"
+    )
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    # The real repo passes: hooks.json present, valid, every script exists.
+    repo_root = Path(__file__).parent.parent
+    results = cli._check_plugin_hooks(repo_root)
+    runner.test("Plugin hooks check returns list", isinstance(results, list) and len(results) > 0)
+    runner.test(
+        "hooks.json reported valid",
+        results[0]['id'] == 'plugin_hooks_json' and results[0]['status'] == 'pass',
+        json.dumps(results[0]),
+    )
+    runner.test(
+        "No critical failures on real repo",
+        all(not (c['status'] in ('fail', 'error') and c['severity'] == 'critical') for c in results),
+        json.dumps(results),
+    )
+
+    # _collect_plugin_hook_scripts extracts every registered script in order,
+    # including multiple matchers and multiple hooks under a single matcher.
+    config = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Edit", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-requirements.py"}
+                ]}
+            ],
+            "PostToolUse": [
+                {"matcher": "Bash", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/clear-single-use.py"},
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-git-events.py"},
+                ]},
+                {"matcher": "Skill", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-satisfy-skills.py"}
+                ]},
+            ],
+        }
+    }
+    scripts = cli._collect_plugin_hook_scripts(config)
+    runner.test(
+        "Collects scripts across multiple matchers",
+        scripts == [
+            "check-requirements.py",
+            "clear-single-use.py",
+            "handle-git-events.py",
+            "auto-satisfy-skills.py",
+        ],
+        str(scripts),
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        plugin_hooks = repo / "plugins" / "requirements-framework" / "hooks"
+        plugin_hooks.mkdir(parents=True)
+
+        # Missing hooks.json -> critical failure.
+        results = cli._check_plugin_hooks(repo)
+        runner.test(
+            "Missing hooks.json is critical fail",
+            results[0]['status'] == 'fail' and results[0]['severity'] == 'critical',
+            json.dumps(results),
+        )
+
+        # hooks.json registering a script that does not exist -> critical fail.
+        (plugin_hooks / "hooks.json").write_text(json.dumps({
+            "hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [
+                {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-requirements.py"}
+            ]}]}
+        }))
+        results = cli._check_plugin_hooks(repo)
+        has_critical = any(
+            c['status'] in ('fail', 'error') and c['severity'] == 'critical' for c in results
+        )
+        runner.test("Missing registered script is critical fail", has_critical, json.dumps(results))
+
+        # Invalid JSON -> critical fail.
+        (plugin_hooks / "hooks.json").write_text("{not valid json")
+        results = cli._check_plugin_hooks(repo)
+        runner.test(
+            "Invalid hooks.json is critical fail",
+            results[0]['status'] == 'fail'
+            and results[0]['severity'] == 'critical'
+            and 'valid JSON' in results[0]['message'],
+            json.dumps(results),
+        )
 
 
 def test_hook_behavior(runner: TestRunner):
@@ -12514,13 +12274,14 @@ def test_ruff_check_removed(runner: TestRunner):
 
     runner.test("ruff_check.py deleted", not (repo_hooks / "ruff_check.py").exists())
 
-    # `req doctor`'s hook-file list must not reference the deleted file.
+    # `req doctor`'s plugin hook list (derived from hooks.json) must not
+    # reference the deleted file.
     spec = importlib.util.spec_from_file_location(
         "requirements_cli_ruffcheck", repo_hooks / "requirements-cli.py"
     )
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
-    results = cli._check_all_hook_files(repo_hooks)
+    results = cli._check_plugin_hooks(repo_hooks.parent)
     runner.test(
         "req doctor hook list excludes ruff_check.py",
         "ruff_check" not in json.dumps(results),
@@ -12849,6 +12610,7 @@ def main():
     test_cli_doctor_command(runner)
     test_enhanced_doctor_json_output(runner)
     test_enhanced_doctor_check_functions(runner)
+    test_doctor_plugin_hooks_checks(runner)
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
 

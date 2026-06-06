@@ -15,7 +15,6 @@ Shell Alias (add to ~/.zshrc or ~/.bashrc):
     alias req='python3 ~/.claude/hooks/requirements-cli.py'
 """
 import argparse
-import filecmp
 import json
 import os
 import sys
@@ -36,18 +35,6 @@ from colors import success, error, warning, info, header, hint, dim, bold
 from console import emit_text
 from progress import ProgressReporter, show_progress, clear_progress
 import time
-
-
-SYNC_FILES = [
-    "check-requirements.py",
-    "requirements-cli.py",
-    "test_requirements.py",
-    "lib/config.py",
-    "lib/git_utils.py",
-    "lib/requirements.py",
-    "lib/session.py",
-    "lib/state_storage.py",
-]
 
 
 def out(*args, **kwargs) -> None:
@@ -916,39 +903,6 @@ def _find_repo_dir(explicit: str | None = None) -> Path | None:
     return None
 
 
-def _compare_repo_and_deployed(repo_dir: Path, deployed_dir: Path) -> tuple[list[tuple[str, str]], list[str]]:
-    """Compare repository files to deployed files and suggest actions."""
-
-    results: list[tuple[str, str]] = []
-    actions: set[str] = set()
-
-    for relative in SYNC_FILES:
-        repo_file = repo_dir / "hooks" / relative
-        deployed_file = deployed_dir / relative
-
-        if repo_file.exists() and deployed_file.exists():
-            if filecmp.cmp(repo_file, deployed_file, shallow=False):
-                results.append((relative, "✓ In sync"))
-            else:
-                repo_newer = repo_file.stat().st_mtime > deployed_file.stat().st_mtime
-                if repo_newer:
-                    results.append((relative, "↑ Repository is newer"))
-                    actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
-                else:
-                    results.append((relative, "↓ Deployed is newer"))
-                    actions.add("Copy deployed changes into the repo before deploying")
-        elif repo_file.exists():
-            results.append((relative, "⚠ Not deployed"))
-            actions.add("Deploy repo changes to ~/.claude/hooks (./sync.sh deploy)")
-        elif deployed_file.exists():
-            results.append((relative, "✗ Missing in repository"))
-            actions.add("Copy deployed changes into the repo before deploying")
-        else:
-            results.append((relative, "✗ Missing in both locations"))
-
-    return results, sorted(actions)
-
-
 def cmd_verify(args) -> int:
     """
     Verify requirements framework installation.
@@ -1169,84 +1123,6 @@ def _check_hook_file_exists(hook_name: str, hooks_dir: Path) -> dict:
     }
 
 
-def _check_all_hook_files(hooks_dir: Path) -> list:
-    """Check all hook files."""
-    hooks = [
-        'check-requirements.py',
-        'handle-session-start.py',
-        'handle-stop.py',
-        'handle-session-end.py',
-        'requirements-cli.py',
-        'auto-satisfy-skills.py',
-        'clear-single-use.py',
-        'handle-plan-exit.py',
-    ]
-    return [_check_hook_file_exists(hook, hooks_dir) for hook in hooks]
-
-
-def _check_hook_registered(hook_type: str, settings_file: Path) -> dict:
-    """Check if a specific hook type is registered in settings."""
-    try:
-        if not settings_file.exists():
-            return {
-                'id': f'hook_reg_{hook_type.lower()}',
-                'category': 'hook_registration',
-                'status': 'fail',
-                'severity': 'critical',
-                'message': f'{hook_type} hook: settings.json not found',
-                'fix': {
-                    'description': 'Run ./install.sh to create settings file',
-                    'safe': False,
-                    'command': None
-                }
-            }
-
-        with open(settings_file, 'r') as f:
-            settings = json.load(f)
-
-        if 'hooks' not in settings or hook_type not in settings['hooks']:
-            return {
-                'id': f'hook_reg_{hook_type.lower()}',
-                'category': 'hook_registration',
-                'status': 'fail',
-                'severity': 'critical',
-                'message': f'{hook_type} hook not registered',
-                'fix': {
-                    'description': 'Run ./install.sh to register hooks',
-                    'safe': False,
-                    'command': None
-                }
-            }
-
-        return {
-            'id': f'hook_reg_{hook_type.lower()}',
-            'category': 'hook_registration',
-            'status': 'pass',
-            'severity': 'critical',
-            'message': f'{hook_type} hook registered',
-            'fix': None
-        }
-    except Exception as e:
-        return {
-            'id': f'hook_reg_{hook_type.lower()}',
-            'category': 'hook_registration',
-            'status': 'error',
-            'severity': 'critical',
-            'message': f'{hook_type} hook: Error reading settings ({e})',
-            'fix': {
-                'description': 'Fix settings.json syntax or run ./install.sh',
-                'safe': False,
-                'command': None
-            }
-        }
-
-
-def _check_all_hook_registrations(settings_file: Path) -> list:
-    """Check all required hook registrations."""
-    return [_check_hook_registered(hook, settings_file)
-            for hook in ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']]
-
-
 def _check_path_configured() -> dict:
     """Check if ~/.local/bin is in PATH."""
     local_bin = str(Path.home() / ".local" / "bin")
@@ -1333,87 +1209,112 @@ def _check_plugin_installation() -> dict:
         }
 
 
-def _test_hook_dry_run(hook_name: str, test_input: dict, hooks_dir: Path) -> dict:
-    """Test hook execution with sample input (dry-run)."""
-    import subprocess
-    import json
+def _plugin_hook_script_name(command) -> str | None:
+    """Extract a hook script's basename from a hooks.json command string.
 
-    hook_path = hooks_dir / hook_name
+    Plugin commands look like '${CLAUDE_PLUGIN_ROOT}/hooks/check-requirements.py'.
+    """
+    if not isinstance(command, str):
+        return None
+    for token in command.split():
+        if token.endswith(".py"):
+            return Path(token).name
+    return None
 
-    if not hook_path.exists():
-        return {
-            'id': f'hook_test_{hook_name}',
-            'category': 'hook_functionality',
+
+def _collect_plugin_hook_scripts(hooks_config: dict) -> list:
+    """Collect the distinct script basenames a hooks.json registers, in order."""
+    scripts: list = []
+    seen: set = set()
+    for matchers in hooks_config.get("hooks", {}).values():
+        if not isinstance(matchers, list):
+            continue
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                continue
+            hook_list = matcher.get("hooks", [])
+            if not isinstance(hook_list, list):
+                continue
+            for hook in hook_list:
+                if not isinstance(hook, dict):
+                    continue
+                name = _plugin_hook_script_name(hook.get("command", ""))
+                if name and name not in seen:
+                    seen.add(name)
+                    scripts.append(name)
+    return scripts
+
+
+def _check_plugin_hooks(repo_dir: Path | None) -> list:
+    """Validate the plugin-owned hooks.json and the scripts it registers.
+
+    Hooks are registered by the self-contained plugin via
+    plugins/requirements-framework/hooks/hooks.json (the single source of
+    truth, referenced through ${CLAUDE_PLUGIN_ROOT}). This check replaces the
+    defunct two-location model that compared a ~/.claude/hooks deployment and
+    read hook registration out of ~/.claude/settings.json.
+    """
+    if repo_dir is None:
+        return [{
+            'id': 'plugin_hooks_json',
+            'category': 'plugin_hooks',
             'status': 'fail',
             'severity': 'warning',
-            'message': f'{hook_name}: File not found',
-            'fix': None
-        }
-
-    try:
-        result = subprocess.run(
-            ['python3', str(hook_path)],
-            input=json.dumps(test_input),
-            text=True,
-            capture_output=True,
-            timeout=5
-        )
-
-        if result.returncode == 0:
-            return {
-                'id': f'hook_test_{hook_name}',
-                'category': 'hook_functionality',
-                'status': 'pass',
-                'severity': 'warning',
-                'message': f'{hook_name}: Responds correctly',
-                'fix': None
-            }
-        else:
-            return {
-                'id': f'hook_test_{hook_name}',
-                'category': 'hook_functionality',
-                'status': 'fail',
-                'severity': 'warning',
-                'message': f'{hook_name}: Exited with code {result.returncode}',
-                'fix': {
-                    'description': 'Check hook for errors or reinstall',
-                    'safe': False,
-                    'command': None
-                }
-            }
-    except subprocess.TimeoutExpired:
-        return {
-            'id': f'hook_test_{hook_name}',
-            'category': 'hook_functionality',
-            'status': 'fail',
-            'severity': 'warning',
-            'message': f'{hook_name}: Timed out after 5 seconds',
+            'message': 'Could not locate framework repo to validate plugin hooks.json',
             'fix': {
-                'description': 'Check hook for infinite loops or reinstall',
+                'description': 'Run doctor with --repo pointing at the framework checkout',
                 'safe': False,
                 'command': None
             }
-        }
-    except Exception as e:
-        return {
-            'id': f'hook_test_{hook_name}',
-            'category': 'hook_functionality',
-            'status': 'error',
-            'severity': 'warning',
-            'message': f'{hook_name}: Test error ({e})',
-            'fix': None
-        }
+        }]
 
+    plugin_hooks_dir = repo_dir / "plugins" / "requirements-framework" / "hooks"
+    hooks_json = plugin_hooks_dir / "hooks.json"
 
-def _test_all_hooks(hooks_dir: Path) -> list:
-    """Run dry-run tests on all hooks."""
-    tests = [
-        ('check-requirements.py', {'tool_name': 'Read'}),
-        ('handle-session-start.py', {'hook_event_name': 'SessionStart', 'session_id': 'test1234'}),
-        ('handle-stop.py', {'hook_event_name': 'Stop', 'session_id': 'test1234', 'stop_hook_active': False}),
-        ('handle-session-end.py', {'hook_event_name': 'SessionEnd', 'session_id': 'test1234'}),
-    ]
-    return [_test_hook_dry_run(hook, test_input, hooks_dir) for hook, test_input in tests]
+    if not hooks_json.exists():
+        return [{
+            'id': 'plugin_hooks_json',
+            'category': 'plugin_hooks',
+            'status': 'fail',
+            'severity': 'critical',
+            'message': f'Plugin hooks.json not found at {hooks_json}',
+            'fix': {
+                'description': 'Restore plugins/requirements-framework/hooks/hooks.json',
+                'safe': False,
+                'command': None
+            }
+        }]
+
+    try:
+        hooks_config = json.loads(hooks_json.read_text())
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        return [{
+            'id': 'plugin_hooks_json',
+            'category': 'plugin_hooks',
+            'status': 'fail',
+            'severity': 'critical',
+            'message': f'Plugin hooks.json is not valid JSON: {e}',
+            'fix': {
+                'description': 'Fix the JSON in plugins/requirements-framework/hooks/hooks.json',
+                'safe': False,
+                'command': None
+            }
+        }]
+
+    checks = [{
+        'id': 'plugin_hooks_json',
+        'category': 'plugin_hooks',
+        'status': 'pass',
+        'severity': 'critical',
+        'message': 'Plugin hooks.json present and valid',
+        'fix': None
+    }]
+
+    # Integrity: every script hooks.json registers must exist and be executable.
+    for script in _collect_plugin_hook_scripts(hooks_config):
+        checks.append(_check_hook_file_exists(script, plugin_hooks_dir))
+
+    return checks
 
 
 def cmd_doctor(args) -> int:
@@ -1430,10 +1331,7 @@ def cmd_doctor(args) -> int:
     json_output = hasattr(args, 'json') and args.json
     ci_mode = hasattr(args, 'ci') and args.ci
 
-    claude_dir = Path.home() / ".claude"
-    hooks_dir = claude_dir / "hooks"
-    settings_path, _ = _load_settings_file(claude_dir)
-    settings_file = settings_path or (claude_dir / "settings.json")
+    repo_dir = _find_repo_dir(args.repo if hasattr(args, 'repo') else None)
 
     # Run all checks
     all_checks = []
@@ -1442,12 +1340,11 @@ def cmd_doctor(args) -> int:
     all_checks.append(_check_python_version())
     all_checks.append(_check_pyyaml_available())
 
-    # Hook file checks
-    all_checks.extend(_check_all_hook_files(hooks_dir))
-
-    # Hook registration checks (skip in CI mode - settings files won't exist)
-    if not ci_mode:
-        all_checks.extend(_check_all_hook_registrations(settings_file))
+    # Plugin-owned hook integrity. hooks.json (referenced via
+    # ${CLAUDE_PLUGIN_ROOT}) is the single source of truth for hook
+    # registration, so doctor validates it and the scripts it registers
+    # rather than the defunct ~/.claude/hooks deploy + ~/.claude/settings.json.
+    all_checks.extend(_check_plugin_hooks(repo_dir))
 
     # CLI checks (skip in CI mode - PATH not relevant)
     if not ci_mode:
@@ -1457,54 +1354,6 @@ def cmd_doctor(args) -> int:
     # Plugin check (skip in CI mode - plugin not relevant for code validation)
     if not ci_mode:
         all_checks.append(_check_plugin_installation())
-
-    # Sync status check (if repo is available)
-    repo_dir = _find_repo_dir(args.repo if hasattr(args, 'repo') else None)
-    if repo_dir:
-        results, actions = _compare_repo_and_deployed(repo_dir, hooks_dir)
-        for relative, message in results:
-            if message.startswith("✓"):
-                # In sync
-                all_checks.append({
-                    'id': f'sync_{relative.replace("/", "_")}',
-                    'category': 'sync',
-                    'status': 'pass',
-                    'severity': 'info',
-                    'message': f'{relative}: In sync',
-                    'fix': None
-                })
-            elif message.startswith("↑"):
-                # Repository has newer changes
-                all_checks.append({
-                    'id': f'sync_{relative.replace("/", "_")}',
-                    'category': 'sync',
-                    'status': 'fail',
-                    'severity': 'warning',
-                    'message': f'{relative}: Repository has changes',
-                    'fix': {
-                        'description': 'Run ./sync.sh deploy to sync changes',
-                        'safe': False,
-                        'command': None
-                    }
-                })
-            elif message.startswith("↓"):
-                # Deployed has newer changes
-                all_checks.append({
-                    'id': f'sync_{relative.replace("/", "_")}',
-                    'category': 'sync',
-                    'status': 'fail',
-                    'severity': 'warning',
-                    'message': f'{relative}: Deployed has changes',
-                    'fix': {
-                        'description': 'Copy deployed changes into the repo, then deploy',
-                        'safe': False,
-                        'command': None
-                    }
-                })
-
-    # Hook functionality tests (dry-run) - skip in CI mode as hooks won't have full dependencies
-    if not ci_mode:
-        all_checks.extend(_test_all_hooks(hooks_dir))
 
     # Analyze results
     critical_issues = [c for c in all_checks if c['status'] in ['fail', 'error'] and c['severity'] == 'critical']
