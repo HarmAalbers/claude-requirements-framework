@@ -86,26 +86,21 @@ class RefactorVerdict(BaseModel):
 
 
 class HandoffResult(BaseModel):
-    """Supervisor routing decision — which command to invoke next.
+    """Supervisor routing decision — which workflow phase to hand off to next.
 
-    Targets match the workflow phases owned by the requirements-framework
-    `/req` command (simplification Step 05). Step 18 grew the literal from
-    6 to 7 to surface `writing-plans` separately from `arch-review` — the
-    plan-write phase (design ready, plan not yet written) is a genuinely
-    different action than the plan-validate phase (plan written, needs
-    architectural review).
+    `target` is one of the CONFIGURED workflow phase names — the per-project
+    `workflow:` phase vocabulary surfaced by `config.get_workflow_phases()`
+    and matched 1:1 to `derive_phase`'s output (design, plan-write,
+    plan-validate, implement, review, refactor, ship by default; a project may
+    reorder/rename/add phases). It is an open `str` rather than a `Literal`
+    precisely because that vocabulary is no longer fixed.
 
-    Listed in workflow order (design → plan-write → plan-validate →
-    implement → review → refactor → ship) for readability.
+    The membership check happens at runtime in `supervisor.route()`, which
+    validates `target` against the active phase-name set and clamps a
+    hallucinated value back to the input phase. Keeping the schema field a bare
+    `str` lets the structured-output validator accept any custom phase name; the
+    router owns the semantic guard.
     """
 
-    target: Literal[
-        "brainstorm",
-        "writing-plans",
-        "arch-review",
-        "execute-plan",
-        "deep-review",
-        "refactor-orchestrate",
-        "ship",
-    ]
+    target: str
     rationale: str

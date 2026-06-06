@@ -12009,11 +12009,18 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("no workflow → default phase names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement", "review"])
+                    ["design", "plan-write", "plan-validate", "implement",
+                     "review", "refactor", "ship"])
         runner.test("no workflow → default gates",
                     [p["gate"] for p in wf["phases"]] ==
                     ["design_approved", "plan_written", "solid_reviewed",
-                     "verification_evidence", "pre_pr_review"])
+                     "verification_evidence", "pre_pr_review", None, None])
+        runner.test("no workflow → every default phase carries a description",
+                    all(isinstance(p.get("description"), str) and p["description"]
+                        for p in wf["phases"]))
+        runner.test("no workflow → gateless refactor/ship at the tail",
+                    [(p["name"], p["gate"]) for p in wf["phases"][-2:]] ==
+                    [("refactor", None), ("ship", None)])
         runner.test("no workflow → resolver skill names",
                     wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
                     and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
@@ -12053,7 +12060,8 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("undefined gate → workflow dropped → default names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement", "review"])
+                    ["design", "plan-write", "plan-validate", "implement",
+                     "review", "refactor", "ship"])
         runner.test("undefined gate → validation error recorded",
                     any("workflow" in e for e in config.get_validation_errors()))
 
@@ -12065,7 +12073,7 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("phases not a list → dropped → default_phase=design",
                     wf["default_phase"] == "design"
-                    and len(wf["phases"]) == 5)
+                    and len(wf["phases"]) == 7)
 
     # 5. get_workflow_phases is fail-safe even on raw garbage (bypassing the
     #    validator) — exercises the accessor's own defensive normalization.
@@ -12273,6 +12281,136 @@ def test_derive_phase_with_skill(runner: TestRunner):
         runner.test("with-skill: no flag → phase only (no tab)",
                     buf.getvalue().strip() == "design"
                     and "\t" not in buf.getvalue())
+
+
+def test_workflow_defaults_descriptions(runner: TestRunner):
+    """WORKFLOW_DEFAULTS carry descriptions; validator accepts an optional one.
+
+    Adding `description` + the gateless `refactor`/`ship` phases must NOT change
+    phase derivation, so the tail of this test re-asserts the boundary
+    derivations for the default config.
+    """
+    print("\n📦 Testing workflow phase descriptions...")
+    from config import RequirementsConfig, WorkflowValidator
+
+    # Default phases each carry a non-empty description string.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("default phases all carry a description",
+                    all(isinstance(p.get("description"), str) and p["description"]
+                        for p in wf["phases"]))
+        design = next(p for p in wf["phases"] if p["name"] == "design")
+        runner.test("design description ported from the prompt menu",
+                    design["description"] ==
+                    "design phase: requirements unclear, need exploration")
+
+    # WorkflowValidator: description is OPTIONAL — a phase WITH one and a phase
+    # WITHOUT one both validate; a non-string description is rejected.
+    reqs = {"design_approved": {"enabled": True}}
+    v = WorkflowValidator()
+    ok = {"phases": [
+        {"name": "design", "gate": "design_approved", "description": "hi"},
+        {"name": "later"},  # gateless + description-less → still valid
+    ]}
+    runner.test("validator accepts described AND undescribed phases",
+                v.validate(ok, reqs) is None)
+    bad = {"phases": [
+        {"name": "design", "gate": "design_approved", "description": 123},
+    ]}
+    bad_err = v.validate(bad, reqs)
+    runner.test("validator rejects a non-string description",
+                bad_err is not None and "description" in bad_err)
+
+    # Non-behavioral proof: default-config derivations are unchanged after the
+    # description + gateless-phase additions.
+    from derive_phase import derive_phase
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    def _state(tmpdir, satisfied):
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        state = create_empty_state("feature/desc", tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state("feature/desc", tmpdir, state)
+        return get_state_path("feature/desc", tmpdir)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: no gates → design",
+                    derive_phase(_state(tmpdir, [])) == "design")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: design done → plan-write",
+                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan-write")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: all gates → ship",
+                    derive_phase(_state(tmpdir, [
+                        "design_approved", "plan_written", "solid_reviewed",
+                        "verification_evidence", "pre_pr_review"])) == "ship")
+
+
+def test_supervisor_config_driven(runner: TestRunner):
+    """Supervisor routing mirrors config: str target, config-rendered menu, clamp."""
+    print("\n📦 Testing config-driven req-supervisor...")
+    # The llm package uses absolute `hooks.lib.llm.*` imports, so the repo root
+    # must be importable (the module-level sys.path only carries hooks/lib).
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+    from hooks.lib.llm.prompts import load_prompt
+    from hooks.lib.llm.schemas import HandoffResult
+    from hooks.lib.llm.supervisor import (
+        _default_phases,
+        _resolve_target,
+        route,
+    )
+
+    # (i) target is an open str (Literal removed): any custom phase validates.
+    hr = HandoffResult(target="my-custom-phase", rationale="x")
+    runner.test("HandoffResult accepts a custom (non-default) target string",
+                hr.target == "my-custom-phase")
+    runner.test("HandoffResult still accepts a default phase name",
+                HandoffResult(target="ship", rationale="done").target == "ship")
+
+    # (ii) the menu is rendered from the injected `phases` var (a config mirror),
+    #      not a hardcoded list — a custom phase + its description show up, and a
+    #      description-less phase must not raise (StrictUndefined-safe).
+    custom_phases = [
+        {"name": "triage", "description": "custom"},
+        {"name": "ship"},  # no description, no skill → renders blank, no raise
+    ]
+    prompt = load_prompt("req-supervisor", phase="triage", unsatisfied="(none)",
+                         phases=custom_phases)
+    runner.test("supervisor menu renders the custom phase name", "triage" in prompt)
+    runner.test("supervisor menu renders the custom description", "custom" in prompt)
+    runner.test("supervisor menu tolerates a description-less phase",
+                "ship" in prompt)
+
+    # (iii) clamp logic (the sync helper route() applies after model_validate):
+    #       in-vocab passes through; out-of-vocab clamps to the input phase.
+    runner.test("clamp: in-vocab target passes through",
+                _resolve_target("triage", custom_phases, "ship") == "triage")
+    runner.test("clamp: out-of-vocab target → input phase",
+                _resolve_target("nonexistent", custom_phases, "ship") == "ship")
+    runner.test("clamp: empty phase vocab → input phase (fail-open)",
+                _resolve_target("anything", [], "review") == "review")
+
+    # Default menu (phases=None path) mirrors WORKFLOW_DEFAULTS: 7 names, with
+    # refactor + ship routable (not clamped).
+    default_phases = _default_phases()
+    default_names = {p["name"] for p in default_phases}
+    runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (7)",
+                len(default_phases) == 7
+                and {"design", "refactor", "ship"} <= default_names)
+    runner.test("clamp: 'ship' is routable under the default vocab",
+                _resolve_target("ship", default_phases, "design") == "ship")
+
+    # route() is async and would need a live LLM — assert its shape only.
+    import inspect
+    runner.test("route() is async with an optional phases kwarg",
+                inspect.iscoroutinefunction(route)
+                and inspect.signature(route).parameters["phases"].default is None)
 
 
 def test_count_unsatisfied(runner: TestRunner):
@@ -12881,6 +13019,8 @@ def main():
 
     test_derive_phase(runner)
     test_workflow_config(runner)
+    test_workflow_defaults_descriptions(runner)
+    test_supervisor_config_driven(runner)
     test_derive_phase_workflow(runner)
     test_derive_phase_with_skill(runner)
     test_count_unsatisfied(runner)

@@ -194,6 +194,9 @@ class WorkflowPhaseDict(TypedDict, total=False):
     name: str
     gate: Optional[str]
     skill: Optional[str]
+    # Optional human/LLM-facing hint surfaced in the supervisor's routing menu
+    # (req-supervisor.md.j2). Falls back to the skill name (or empty) when unset.
+    description: Optional[str]
 
 
 class WorkflowConfigDict(TypedDict, total=False):
@@ -751,6 +754,7 @@ class WorkflowValidator:
       * each phase has a unique, non-empty string ``name``.
       * each non-null ``gate`` is a non-empty string AND a key in
         ``config['requirements']``.
+      * each ``description`` (if set) is a string (optional, may be null).
       * ``default_phase`` (if set) resolves to one of the phase names.
       * ``ship_phase`` (if set) is a non-empty string (terminal label — it need
         not be one of the phases).
@@ -789,6 +793,13 @@ class WorkflowValidator:
                         f"workflow phase {name!r} gate {gate!r} is not a "
                         "defined requirement"
                     )
+
+            description = entry.get("description")
+            if description is not None and not isinstance(description, str):
+                return (
+                    f"workflow phase {name!r} description must be a string "
+                    "or null"
+                )
 
         default_phase = workflow.get("default_phase")
         if default_phase is not None and (
@@ -874,11 +885,21 @@ class RequirementsConfig:
             "timeout": 5,
         },
     }
-    # Zero-config workflow: seeded 1:1 from derive_phase.PHASE_GATES so the
-    # default phase sequence (and the /req dispatch skills) reproduce today's
-    # hardcoded behaviour exactly. `phases` is an ordered list; the first phase
-    # whose `gate` requirement is unsatisfied is the current phase, else
-    # `ship_phase`. `skill` names mirror commands/req.md's dispatch table.
+    # Zero-config workflow: the five GATED phases are seeded 1:1 from
+    # derive_phase.PHASE_GATES so the default phase sequence (and the /req
+    # dispatch skills) reproduce today's hardcoded behaviour exactly. `phases`
+    # is an ordered list; the first phase whose `gate` requirement is
+    # unsatisfied is the current phase, else `ship_phase`. `skill` names mirror
+    # commands/req.md's dispatch table. `description` is the LLM-facing hint the
+    # supervisor's routing menu (req-supervisor.md.j2) renders.
+    #
+    # The trailing `refactor` and `ship` phases are GATELESS (gate:null):
+    # derive_phase's first-unsatisfied-gate scan skips them, so they are
+    # transparent to phase derivation (every existing derive_phase test stays
+    # green — that is the proof of non-behavioral). They exist only to complete
+    # the supervisor's default routing vocabulary, mirroring the historical
+    # 7-target menu (`refactor` is a dispatch-only phase; `ship` is the terminal
+    # label that also equals `ship_phase`).
     WORKFLOW_DEFAULTS: WorkflowConfigDict = {
         "default_phase": "design",
         "ship_phase": "ship",
@@ -887,26 +908,56 @@ class RequirementsConfig:
                 "name": "design",
                 "gate": "design_approved",
                 "skill": "requirements-framework:brainstorming",
+                "description": (
+                    "design phase: requirements unclear, need exploration"
+                ),
             },
             {
                 "name": "plan-write",
                 "gate": "plan_written",
                 "skill": "requirements-framework:writing-plans",
+                "description": (
+                    "plan-write phase: design ready, plan not yet written"
+                ),
             },
             {
                 "name": "plan-validate",
                 "gate": "solid_reviewed",
                 "skill": "requirements-framework:arch-review",
+                "description": (
+                    "plan-validate phase: plan written, needs architectural "
+                    "review"
+                ),
             },
             {
                 "name": "implement",
                 "gate": "verification_evidence",
                 "skill": "requirements-framework:executing-plans",
+                "description": "implement phase: plan validated, execute it",
             },
             {
                 "name": "review",
                 "gate": "pre_pr_review",
                 "skill": "requirements-framework:deep-review",
+                "description": (
+                    "review phase: implementation done, needs PR review"
+                ),
+            },
+            {
+                "name": "refactor",
+                "gate": None,
+                "skill": "requirements-framework:refactor-orchestration",
+                "description": (
+                    "refactor phase: explicit multi-layer refactor requested"
+                ),
+            },
+            {
+                "name": "ship",
+                "gate": None,
+                "skill": None,
+                "description": (
+                    "ship phase: all session-scoped requirements satisfied"
+                ),
             },
         ],
     }
