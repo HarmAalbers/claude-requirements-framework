@@ -3772,6 +3772,180 @@ def test_blocked_guard_does_not_trigger(runner: TestRunner):
                     "protected_branch was marked triggered despite the edit being denied")
 
 
+def test_stop_only_does_not_block_pretooluse(runner: TestRunner):
+    """A stop_only requirement never gates a write at PreToolUse, but is armed.
+
+    Models verification_evidence: a blocking req with stop_only=true and an
+    Edit trigger. Unsatisfied, an Edit must be ALLOWED (the gate ignores it),
+    yet the requirement must be marked triggered on the allow path so the Stop
+    hook can later enforce it.
+    """
+    print("\n📦 Testing stop_only requirement does not block PreToolUse...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/stop-only-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "verify_done": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "stop_only": True,
+                    "trigger_tools": ["Edit"],
+                    "message": "Verify before claiming done!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "sonly1"  # <=8 chars: normalize_session_id leaves it intact
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # An unsatisfied stop_only req must NOT deny the edit (no gating).
+        runner.test("Stop-only edit is allowed (empty output)", result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+
+        # ...but the allow path must still arm it for the Stop hook.
+        runner.test("Stop-only requirement is armed (triggered) after allowed edit",
+                    _triggered_anywhere(tmpdir, branch, "verify_done", session_id) is True,
+                    "verify_done was not marked triggered after an allowed stop_only edit")
+
+
+def test_stop_only_enforced_at_stop(runner: TestRunner):
+    """A stop_only requirement, once armed and unsatisfied, blocks at Stop.
+
+    Counterpart to test_stop_only_does_not_block_pretooluse: after a permitted
+    edit arms the requirement, the Stop hook (handle-stop.py) must block the
+    turn from finishing because the session-scoped req is triggered+unsatisfied.
+    """
+    print("\n📦 Testing stop_only requirement is enforced at Stop...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    stop_path = Path(__file__).parent / "handle-stop.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/stop-only-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "stop": {"verify_requirements": True}
+            },
+            "requirements": {
+                "verify_done": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "stop_only": True,
+                    "trigger_tools": ["Edit"],
+                    "message": "Verify before claiming done!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "sonly2"  # <=8 chars: normalize_session_id leaves it intact
+
+        # Arm the requirement via a real allowed edit (allow path marks triggered).
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop-only edit allowed during arming",
+                    result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+        runner.test("Stop-only req triggered+unsatisfied before Stop",
+                    _triggered_anywhere(tmpdir, branch, "verify_done", session_id) is True,
+                    "verify_done not armed prior to Stop")
+
+        # Now the Stop hook must block the turn over the unsatisfied armed req.
+        stop_input = json.dumps({
+            "hook_event_name": "Stop",
+            "stop_hook_active": False,
+            "session_id": session_id,
+        })
+        result = subprocess.run(
+            ["python3", str(stop_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop blocks on armed unsatisfied stop_only req",
+                    '"decision": "block"' in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("Stop reason names the stop_only requirement",
+                    "verify_done" in result.stdout,
+                    f"Got: {result.stdout}")
+
+
+def test_normal_blocking_still_blocks_pretooluse(runner: TestRunner):
+    """Regression: a NORMAL (non-stop_only) blocking req still denies at PreToolUse.
+
+    Ensures the stop_only skip branch did not weaken default gating behavior.
+    """
+    print("\n📦 Testing normal blocking requirement still blocks PreToolUse...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/normal-block-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "trigger_tools": ["Edit"],
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "nblk1"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Normal blocking req still denies edit", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
+
+
 def test_guard_strategy_blocks_protected_branch(runner: TestRunner):
     """Test that guard strategy blocks edits on protected branches."""
     print("\n📦 Testing guard strategy blocks protected branch...")
@@ -9879,11 +10053,18 @@ def test_new_requirement_definitions(runner: TestRunner):
             runner.test("design_approved satisfied by brainstorming",
                        da.get('satisfied_by_skill') == 'requirements-framework:brainstorming')
 
-        # Test: verification_evidence has single_use scope
+        # Test: verification_evidence is a stop_only session requirement.
+        # It must be session-scoped (Stop's verify_scopes default is [session]),
+        # flagged stop_only (never gates an edit at PreToolUse), and armed by
+        # implementation tools so the Stop hook enforces "verify before done".
         if 'verification_evidence' in reqs:
             ve = reqs['verification_evidence']
-            runner.test("verification_evidence has single_use scope",
-                       ve.get('scope') == 'single_use')
+            runner.test("verification_evidence has session scope",
+                       ve.get('scope') == 'session')
+            runner.test("verification_evidence is stop_only",
+                       ve.get('stop_only') is True)
+            runner.test("verification_evidence triggers on Edit",
+                       'Edit' in ve.get('trigger_tools', []))
 
         # Test: debugging_systematic is enabled by default
         if 'debugging_systematic' in reqs:
@@ -11996,6 +12177,11 @@ def main():
     test_blocked_edit_does_not_trigger(runner)
     test_allowed_edit_marks_triggered(runner)
     test_blocked_guard_does_not_trigger(runner)
+
+    # stop_only: armed by edits, never gates PreToolUse, enforced at Stop
+    test_stop_only_does_not_block_pretooluse(runner)
+    test_stop_only_enforced_at_stop(runner)
+    test_normal_blocking_still_blocks_pretooluse(runner)
 
     # Guard strategy tests
     test_guard_strategy_blocks_protected_branch(runner)

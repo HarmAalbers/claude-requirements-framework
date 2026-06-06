@@ -376,9 +376,13 @@ requirements:
   verification_evidence:
     enabled: true
     type: blocking
-    scope: single_use
+    scope: session            # Stop's verify_scopes default is [session]; single_use is skipped there
+    stop_only: true           # Never blocks an edit at PreToolUse; enforced only at Stop
     description: "Ensures fresh verification evidence before claiming work is complete."
-    trigger_tools: []  # Only checked at Stop via handle-stop.py
+    trigger_tools:            # Armed when implementation work happens, not gating it
+      - Edit
+      - Write
+      - MultiEdit
     auto_resolve_skill: "requirements-framework:verification-before-completion"
     satisfied_by_skill: 'requirements-framework:verification-before-completion'
     message: |

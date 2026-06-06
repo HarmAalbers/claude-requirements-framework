@@ -363,6 +363,19 @@ def main() -> int:
             scope = config.get_scope(req_name)
             triggered_candidates.append((req_name, scope))
 
+            # stop_only requirements are armed (staged above, marked on the
+            # allow path below) but never gate a write at PreToolUse: skip the
+            # strategy check so they can never be added to `unsatisfied`. The
+            # Stop hook (handle-stop.py) enforces them at end of turn once a
+            # permitted edit has marked them triggered.
+            if config.get_attribute(req_name, 'stop_only', False):
+                logger.debug(
+                    "Stop-only requirement armed (not gating PreToolUse)",
+                    requirement=req_name,
+                    scope=scope,
+                )
+                continue
+
             # Get strategy for requirement type (blocking, dynamic, etc.)
             req_type = config.get_requirement_type(req_name)
             strategy = STRATEGIES.get(req_type)
