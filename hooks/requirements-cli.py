@@ -717,169 +717,6 @@ def cmd_prune(args) -> int:
     return 0
 
 
-def _load_settings_file(claude_dir: Path) -> tuple[Path | None, dict]:
-    """Load the first available settings file."""
-
-    for filename in ["settings.json", "settings.local.json"]:
-        path = claude_dir / filename
-        if path.exists():
-            try:
-                content = path.read_text()
-                return path, json.loads(content)
-            except PermissionError:
-                out(f"❌ Cannot read {path}: Permission denied", file=sys.stderr)
-                return path, {}
-            except UnicodeDecodeError as e:
-                out(f"❌ {path} contains invalid UTF-8: {e}", file=sys.stderr)
-                return path, {}
-            except json.JSONDecodeError:
-                out(f"❌ {path} is not valid JSON", file=sys.stderr)
-                return path, {}
-            except (OSError, IOError) as e:
-                out(f"❌ Error reading {path}: {e}", file=sys.stderr)
-                return path, {}
-    return None, {}
-
-
-def _extract_path_from_command(command: str, expected_script: str) -> str | None:
-    """
-    Extract file path from a command string.
-
-    Looks for the expected script name in the command tokens and returns
-    the path containing it. Handles various command formats like:
-    - "python3 ~/.claude/hooks/check-requirements.py"
-    - "~/.claude/hooks/check-requirements.py"
-    - "/usr/bin/python3 /home/user/.claude/hooks/check-requirements.py --flag"
-
-    Args:
-        command: Command string from hook configuration
-        expected_script: Script name to look for (e.g., "check-requirements.py")
-
-    Returns:
-        Extracted path if found, None otherwise
-    """
-    if not isinstance(command, str):
-        return None
-
-    # Split command into tokens
-    tokens = command.split()
-
-    # Find the token containing the expected script
-    for token in tokens:
-        if expected_script in token:
-            # Strip common surrounding characters
-            cleaned = token.strip('";,\'')
-
-            # Verify the cleaned token still contains the script name
-            if expected_script in cleaned:
-                return cleaned
-
-    return None
-
-
-def _check_hook_registration(claude_dir: Path) -> tuple[bool, str]:
-    """Verify PreToolUse hook is registered (new format only)."""
-
-    settings_path, settings = _load_settings_file(claude_dir)
-    expected_script = "check-requirements.py"
-
-    # Safely expand path
-    try:
-        expected_path = str((claude_dir / "hooks" / expected_script).expanduser())
-    except (RuntimeError, OSError) as e:
-        return False, f"Failed to expand path for {expected_script}: {e}"
-
-    if not settings_path:
-        return False, "Missing ~/.claude/settings.json"
-
-    hooks = settings.get("hooks", {})
-    hook_value = hooks.get("PreToolUse")
-
-    if not hook_value:
-        return False, f"PreToolUse hook not registered in {settings_path}"
-
-    # Detect old format (string) and show migration message
-    if isinstance(hook_value, str):
-        return False, (
-            f"PreToolUse hook uses old format (string path).\n"
-            f"Please upgrade to new format in {settings_path}.\n"
-            f"See: https://github.com/anthropics/claude-code/releases"
-        )
-
-    # Check if new format (list)
-    if not isinstance(hook_value, list):
-        actual_type = type(hook_value).__name__
-        return False, (
-            f"PreToolUse hook has unexpected format in {settings_path}\n"
-            f"Expected: list of matchers, Found: {actual_type}"
-        )
-
-    # Track validation issues for better diagnostics
-    malformed_matchers = 0
-    malformed_hooks = 0
-
-    # Iterate through matchers to find our hook
-    for matcher_obj in hook_value:
-        if not isinstance(matcher_obj, dict):
-            malformed_matchers += 1
-            continue
-
-        hooks_list = matcher_obj.get("hooks", [])
-
-        # Validate hooks is a list
-        if not isinstance(hooks_list, list):
-            malformed_hooks += 1
-            continue
-
-        for hook_obj in hooks_list:
-            if not isinstance(hook_obj, dict):
-                malformed_hooks += 1
-                continue
-
-            command = hook_obj.get("command", "")
-            found_path = _extract_path_from_command(command, expected_script)
-
-            if found_path:
-                # Normalize and compare - safely handle path expansion
-                try:
-                    normalized = str(Path(found_path).expanduser())
-                except (RuntimeError, OSError) as e:
-                    return False, f"Invalid path in hook configuration '{found_path}': {e}"
-
-                if normalized != expected_path:
-                    return False, f"PreToolUse hook points to {found_path} (expected {expected_path})"
-
-                return True, f"PreToolUse hook registered in {settings_path}"
-
-    # Hook not found - provide diagnostic info
-    diagnostic_msg = f"PreToolUse hook does not reference {expected_script}"
-    if malformed_matchers > 0 or malformed_hooks > 0:
-        diagnostic_msg += f"\nWarning: Found {malformed_matchers} malformed matcher(s) and {malformed_hooks} malformed hook(s) in {settings_path}"
-        diagnostic_msg += "\nExpected format: [{'matcher': '...', 'hooks': [{'type': 'command', 'command': '...'}]}]"
-
-    return False, diagnostic_msg
-
-
-def _check_executable(path: Path) -> tuple[bool, str]:
-    """Check that a script exists and is executable."""
-
-    if not path.exists():
-        return False, f"Missing {path}"
-    if not os.access(path, os.X_OK):
-        return False, f"{path} is not executable"
-    return True, f"{path} is executable"
-
-
-def _check_project_config(project_dir: str) -> tuple[bool, str]:
-    """Ensure project has a requirements config file."""
-
-    config_path = Path(project_dir) / ".claude" / "requirements.yaml"
-    if config_path.exists():
-        return True, f"Found project config at {config_path}"
-
-    return False, "Missing .claude/requirements.yaml in project"
-
-
 def _find_repo_dir(explicit: str | None = None) -> Path | None:
     """Locate the hooks repository directory containing sync.sh."""
 
@@ -907,73 +744,50 @@ def cmd_verify(args) -> int:
     """
     Verify requirements framework installation.
 
-    Runs a comprehensive check of the installation to ensure
-    hooks are properly registered and functioning.
+    Hooks are registered by the self-contained plugin via
+    plugins/requirements-framework/hooks/hooks.json (the single source of
+    truth, referenced through ${CLAUDE_PLUGIN_ROOT}). This command validates
+    that plugin model — it no longer inspects a ~/.claude/hooks deployment or
+    a ~/.claude/settings.json hooks block (the defunct two-location model).
 
     Returns:
         0 if verification passed, 1 if issues found
     """
+    ci_mode = getattr(args, 'ci', False)
+    repo_dir = _find_repo_dir(getattr(args, 'repo', None))
+
     out(header("🧪 Verifying Requirements Framework Installation"))
     out()
 
     issues_found = False
 
-    # Test 1: Check hook files exist
-    out(info("1. Checking hook files..."))
-    hook_files = [
-        "check-requirements.py",
-        "handle-session-start.py",
-        "handle-stop.py",
-        "handle-session-end.py",
-        "requirements-cli.py"
-    ]
-
-    claude_dir = Path.home() / '.claude'
-    hooks_dir = claude_dir / 'hooks'
-    missing_files = []
-    for hook_file in hook_files:
-        hook_path = hooks_dir / hook_file
-        if not hook_path.exists():
-            missing_files.append(hook_file)
-            out(error(f"  ❌ Missing: {hook_file}"))
+    # Test 1: Plugin-owned hooks.json + every script it registers.
+    out(info("1. Checking plugin-owned hooks..."))
+    for check in _check_plugin_hooks(repo_dir):
+        if check['status'] == 'pass':
+            out(success(f"  ✅ {check['message']}"))
+        elif check['severity'] == 'critical':
+            out(error(f"  ❌ {check['message']}"))
+            if check.get('fix'):
+                out(dim(f"     Fix: {check['fix']['description']}"))
             issues_found = True
-        elif not os.access(hook_path, os.X_OK):
-            out(warning(f"  ⚠️  Not executable: {hook_file}"))
-            out(dim(f"     Fix: chmod +x ~/.claude/hooks/{hook_file}"))
-            issues_found = True
+        else:
+            out(warning(f"  ⚠️  {check['message']}"))
+            if check.get('fix'):
+                out(dim(f"     Fix: {check['fix']['description']}"))
 
-    if not missing_files:
-        out(success("  ✅ All hook files present and executable"))
-
-    # Test 2: Check hook registration
+    # Test 2: Smoke-test the registered PreToolUse hook script.
     out()
-    out(info("2. Checking hook registration..."))
-    settings_path, settings = _load_settings_file(claude_dir)
+    out(info("2. Testing PreToolUse hook response..."))
+    hook_path = None
+    if repo_dir is not None:
+        candidate = (
+            repo_dir / "plugins" / "requirements-framework" / "hooks" / "check-requirements.py"
+        )
+        if candidate.exists():
+            hook_path = candidate
 
-    if not settings_path:
-        out(error("  ❌ settings.json not found"))
-        out(dim("     Run: ./install.sh to register hooks"))
-        issues_found = True
-    else:
-        hooks_config = settings.get('hooks', {})
-        expected_hooks = ['PreToolUse', 'SessionStart', 'Stop', 'SessionEnd']
-        missing_hooks = []
-
-        for hook_type in expected_hooks:
-            if hook_type not in hooks_config:
-                missing_hooks.append(hook_type)
-                out(error(f"  ❌ {hook_type} hook not registered"))
-                issues_found = True
-
-        if not missing_hooks:
-            out(success("  ✅ All hooks registered in settings"))
-
-    # Test 3: Test PreToolUse hook responds
-    out()
-    out(info("3. Testing PreToolUse hook response..."))
-    hook_path = hooks_dir / "check-requirements.py"
-
-    if hook_path.exists():
+    if hook_path is not None:
         import subprocess
         result = subprocess.run(
             ["python3", str(hook_path)],
@@ -991,35 +805,33 @@ def cmd_verify(args) -> int:
                 out(dim(f"     Error: {result.stderr[:200]}"))
             issues_found = True
     else:
-        out(warning("  ⚠️  Skipped (hook file missing)"))
+        out(warning("  ⚠️  Skipped (plugin check-requirements.py not found)"))
 
-    # Test 4: Check req command accessibility
-    out()
-    out(info("4. Checking 'req' command..."))
-    req_link = Path.home() / '.local' / 'bin' / 'req'
+    # CLI/runtime checks concern the local Claude Code install, not the
+    # framework code — skip them in --ci mode (mirrors `req doctor --ci`).
+    if not ci_mode:
+        import shutil
 
-    if req_link.exists():
-        out(success("  ✅ 'req' command is accessible"))
-    else:
-        out(warning("  ⚠️  'req' symlink not found"))
-        out(dim("     Run: ./install.sh to create symlink"))
+        # Test 3: Check req command accessibility
+        out()
+        out(info("3. Checking 'req' command..."))
+        req_path = shutil.which('req')
+        if req_path:
+            out(success(f"  ✅ 'req' command is accessible ({req_path})"))
+        else:
+            out(warning("  ⚠️  'req' command not found in PATH"))
+            out(dim("     Run: ./install.sh to set up the 'req' CLI"))
 
-    # Check PATH
-    local_bin = str(Path.home() / '.local' / 'bin')
-    if local_bin not in os.environ.get('PATH', ''):
-        out(warning("  ⚠️  ~/.local/bin not in PATH"))
-        out(dim("     Add: export PATH=\"$HOME/.local/bin:$PATH\""))
+        # Test 4: Check config exists
+        out()
+        out(info("4. Checking configuration..."))
+        global_config = Path.home() / '.claude' / 'requirements.yaml'
 
-    # Test 5: Check config exists
-    out()
-    out(info("5. Checking configuration..."))
-    global_config = Path.home() / '.claude' / 'requirements.yaml'
-
-    if global_config.exists():
-        out(success("  ✅ Global config exists"))
-    else:
-        out(warning("  ⚠️  No global config"))
-        out(dim("     Run: ./install.sh to install default config"))
+        if global_config.exists():
+            out(success("  ✅ Global config exists"))
+        else:
+            out(warning("  ⚠️  No global config"))
+            out(dim("     Run: ./install.sh to install default config"))
 
     # Summary
     out()
@@ -1027,10 +839,10 @@ def cmd_verify(args) -> int:
     if issues_found:
         out(error("❌ Verification failed - issues found"))
         out()
-        out(hint("💡 Run './install.sh' to fix installation issues"))
+        out(hint("💡 Run 'req doctor --verbose' for full diagnostics"))
         return 1
     else:
-        out(success("✅ Framework fully functional!"))
+        out(success("✅ Framework hooks validated!"))
         out()
         out(hint("💡 Next: Run 'req init' in your project to set up requirements"))
         return 0
@@ -3782,7 +3594,9 @@ Environment Variables:
                               help='Show which file each setting comes from')
 
     # verify
-    subparsers.add_parser('verify', help='Verify framework installation is working correctly')
+    verify_parser = subparsers.add_parser('verify', help='Verify framework installation is working correctly')
+    verify_parser.add_argument('--repo', help='Path to hooks repository (defaults to auto-detect)')
+    verify_parser.add_argument('--ci', action='store_true', help='CI-friendly mode: only validate plugin hooks, skip local Claude Code config checks')
 
     # doctor
     doctor_parser = subparsers.add_parser('doctor', help='Run comprehensive framework diagnostics')

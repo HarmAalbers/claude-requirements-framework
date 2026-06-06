@@ -1716,6 +1716,85 @@ def test_cli_doctor_command(runner: TestRunner):
         runner.test("Shows all checks", "All Checks" in result.stdout, result.stdout)
 
 
+def test_cli_verify_command(runner: TestRunner):
+    """`req verify` validates the plugin-owned hook model, not a ~/.claude deploy.
+
+    Hooks are registered by plugins/requirements-framework/hooks/hooks.json (the
+    single source of truth via ${CLAUDE_PLUGIN_ROOT}). verify therefore reuses
+    the same plugin-hook integrity checks as doctor and no longer inspects a
+    ~/.claude/hooks deployment or a ~/.claude/settings.json hooks block.
+    """
+
+    print("\n📦 Testing verify command...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+    repo_root = Path(__file__).parent.parent
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Isolated HOME so verify does not read the developer's real ~/.claude.
+        # With no ~/.claude config present, the CLI/config checks are warnings
+        # (not failures), so verify must still exit 0 against a clean repo.
+        home_dir = Path(tmpdir)
+        env = {**os.environ, "HOME": str(home_dir)}
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "verify", "--repo", str(repo_root)],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        runner.test("verify runs and exits 0", result.returncode == 0, result.stdout + result.stderr)
+        runner.test(
+            "verify validates plugin hooks.json",
+            "hooks.json present and valid" in result.stdout,
+            result.stdout,
+        )
+        runner.test(
+            "verify reports plugin hook scripts",
+            "check-requirements.py exists" in result.stdout,
+            result.stdout,
+        )
+        runner.test(
+            "verify no longer checks ~/.claude/settings.json registration",
+            "hook not registered" not in result.stdout,
+            result.stdout,
+        )
+
+        # --ci mode skips the local CLI/config checks (mirrors doctor --ci).
+        result_ci = subprocess.run(
+            ["python3", str(cli_path), "verify", "--ci", "--repo", str(repo_root)],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        runner.test("verify --ci exits 0", result_ci.returncode == 0, result_ci.stdout + result_ci.stderr)
+        runner.test(
+            "verify --ci skips 'req' command check",
+            "Checking 'req' command" not in result_ci.stdout,
+            result_ci.stdout,
+        )
+
+    # Against a temp repo missing hooks.json, verify reports a critical failure
+    # and exits 1.
+    with tempfile.TemporaryDirectory() as tmpdir2:
+        broken_repo = Path(tmpdir2)
+        (broken_repo / "sync.sh").write_text("#!/bin/sh\n")
+        (broken_repo / "plugins" / "requirements-framework" / "hooks").mkdir(parents=True)
+        env2 = {**os.environ, "HOME": str(broken_repo)}
+
+        result_fail = subprocess.run(
+            ["python3", str(cli_path), "verify", "--repo", str(broken_repo)],
+            capture_output=True,
+            text=True,
+            env=env2,
+        )
+        runner.test(
+            "verify fails (exit 1) when plugin hooks.json is missing",
+            result_fail.returncode == 1,
+            result_fail.stdout + result_fail.stderr,
+        )
+
+
 def test_enhanced_doctor_json_output(runner: TestRunner):
     """Test enhanced doctor JSON output mode."""
     print("\n📦 Testing enhanced doctor --json...")
@@ -12608,6 +12687,7 @@ def main():
     test_cli_status_modes(runner)
     test_cli_sessions_command(runner)
     test_cli_doctor_command(runner)
+    test_cli_verify_command(runner)
     test_enhanced_doctor_json_output(runner)
     test_enhanced_doctor_check_functions(runner)
     test_doctor_plugin_hooks_checks(runner)
