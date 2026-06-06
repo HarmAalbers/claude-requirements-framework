@@ -5,6 +5,104 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.0] — 2026-06-06
+
+> Consolidated entry for the `4.7.0 → 4.15.0` arc — the V3 LLM platform scaffold
+> (Steps 17a–18c) plus the workflow re-enablement and simplification work — landed as
+> one `--no-ff` merge of the 177-patch `refactor/step-08-llm-package-scaffold` branch.
+> Earlier slices of the same effort already have their own `[4.2.0]`–`[4.6.0]` entries
+> below; this entry covers everything since `[4.6.0]` and recaps the platform as a whole.
+
+### ⚠️ Behavior changes (read this)
+
+These change **default live-path behavior for plugin users**. Opt-out keys are listed inline.
+
+- **Brainstorm nudge is now default-ON.** Every substantive first prompt gets a
+  `/brainstorming` nudge while the design gate is unsatisfied. It is **mode-independent**
+  (fires on `UserPromptSubmit`, not just plan mode) and **deduplicated to once per session**.
+  - Opt out: `hooks.prompt_submit.brainstorm_nudge: false` (and the plan-mode path
+    `hooks.plan_enter.brainstorm_on_enter: false`).
+- **Plan / commit gates changed how and when edits are blocked.** When the
+  `design_approved` / `commit_plan` requirements are enabled, they block `Edit`/`Write`
+  until satisfied. The gate UX was reworked (proactive, self-explanatory block messages)
+  and `commit_plan` is now **evidence-gated** (plan artifact + verdict, not a checkbox).
+  - These fire **only when the requirement is enabled** in config — leave them unset/disabled
+    to opt out.
+- **`stop_only` verification gate.** `verification_evidence` is now enforced at session
+  `Stop` (new `stop_only` scope). Fires **only when that requirement is enabled** in config.
+
+### Added — V3 LLM platform (dormant / opt-in scaffolding)
+
+The `hooks/lib/llm/` package landed **tested-but-unwired** — off every live path by default.
+The package `__init__.py` is PEP-562 lazy (importing it does not pull in the SDK or pydantic),
+and the only live touch-points are config-gated off and fail-open.
+
+- **Structured-output schemas** — Pydantic `ReviewReport`/`Finding` models for SDK
+  `output_format` (Step 09).
+- **Self-hosted Langfuse observability** — local 5-service dev docker stack + tracing module
+  with atexit flush; PII masking explicitly out of scope (single-user, self-hosted) (Step 11).
+- **Prompt registry** — `PromptLoader` with TTL caching + version-label rollback, Langfuse-backed
+  with `.md.j2` file fallback (Step 12).
+- **Qdrant retrieval + session memory** — embedder/retrieval/summarizer modules, SessionEnd write
+  + SessionStart read injection. **Off by default** (`hooks.qdrant.enabled`, `hooks.retrieval.enabled`
+  = `false`), hard SIGALRM-timeboxed, fail-open (Steps 13–14).
+- **Ragas eval harness** — `FindingMatch`/`score_case` + 5 synthetic golden cases + JSONL ledger
+  + optional Langfuse score posting (Step 15).
+- **Jinja2 prompt-template engine** — `StrictUndefined` render pipeline; **57-file plugin migration**
+  to `.md.j2` source-of-truth (25 agents + 11 commands + 21 skills), byte-identical rendered output,
+  with a build-time render gate + permanent freshness invariant test (Steps 16/16b/16c).
+- **SDK budget tracker** — per-call usage auto-recorded from the `claude.query` wrapper + `req budget`
+  CLI; config-gated (Step 17a).
+- **Thin `/req` supervisor** — `supervisor.route` phase-name router (Step 18).
+- **Multi-worker review fan-out** — coordinator that dispatches N structured-output review workers
+  in parallel, semantic aggregation with mechanical-merge fallback, deterministic `tool_gate` pre-flight,
+  per-worker error capture (Step 18b).
+- **`/v3-review` command** — wires the fan-out into a slash command + `scripts/v3-review`; can satisfy
+  `pre_pr_review` via `auto-satisfy-skills.py` **only when the user runs it** (never auto-invoked) (Step 18c).
+  - ⚠️ **Cost foot-gun:** `/v3-review` runs at **~$2–12 per run with no per-call cap** (per-call caps are
+    Step 17b, unfinished). Treat as opt-in; do not auto-wire.
+
+### Added / Changed — workflow & re-enablement
+
+- **Per-project configurable workflow order** — new `workflow:` config section defining phase order,
+  consumed by `/req` and the plan-enter hook; `req-phase` conductor reads it.
+- **Config-driven supervisor** — LLM surfaces mirror the `workflow:` section (phase-name routing).
+- **Brainstorm-on-`UserPromptSubmit`** — the mode-independent nudge path (see behavior changes above).
+- **State-write concurrency hardening** — state-file read-modify-write serialized with unique temp writes
+  to prevent corruption under parallel hook invocations.
+- **Self-contained plugin** — hooks build-copied into the plugin tree and registered via a single source
+  (`hooks.json` / `${CLAUDE_PLUGIN_ROOT}`); `install.sh` no longer copies hook scripts or writes a `hooks`
+  block into `~/.claude/settings.json` — it sets up only the `req` CLI, statusline, and shell env. Hooks
+  activate via `/plugin install …` or `claude --plugin-dir`.
+- **README rewritten** for the plugin-owned hook model (drops the stale "installer copies hooks to
+  `~/.claude/hooks/`" / two-location `sync.sh` deploy guidance).
+
+### Fixed
+
+- **Stop-gate deadlock** — a blocked action no longer traps the session at `Stop` (the gate could
+  leave the session unable to complete).
+- **`PermissionRequest` deny shape** — hook now emits the correct deny payload.
+- **Guard-aware unsatisfied check** — prompt-submit + subagent-start no longer misreport guard
+  requirements as unsatisfied.
+- **CI llm-deps** — `.github/workflows/ci.yml` installs `pydantic` + `jinja2` (not the full `.[llm]`
+  extra) so the V3-importing tests run green instead of crashing the runner with `ModuleNotFoundError`.
+- **OTel teardown noise** — benign `Failed to detach context` shutdown messages suppressed;
+  `_run_async` reverted to plain `asyncio.run()` to kill teardown chatter.
+- **Jinja2 `keep_trailing_newline`** confirmed load-bearing for the byte-identical render invariant
+  (see `[4.6.0]` notes).
+- **`ReviewReport.summary` 500-char cap removed** — the constraint propagated into the SDK
+  `output_format` schema and rejected every worker response on large diffs (see `[4.6.0]` dogfood note).
+
+### Internal / housekeeping
+
+- Plugin bumped **4.6.0 → 4.15.0**.
+- Main test suite grew to **1445** tests (`hooks/test_requirements.py`).
+- **~273 V3 unit tests** under `tests/` (schemas, workers, fan-out, eval, memory, templates, budget) —
+  **not yet CI-gated**; the CI job runs only `hooks/test_requirements.py`.
+- Dead `ruff_check.py` hook + its runtime references deleted.
+- Steps 17b/19/20 remain inert plan docs under `.claude/plans/variant3/` — merged as roadmap history,
+  no implementation code.
+
 ## [4.6.0] — 2026-05-24
 
 ### Changed
