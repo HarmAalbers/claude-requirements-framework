@@ -1,0 +1,24 @@
+{% include 'partials/safety.j2' %}
+
+Assess the diff below for test-coverage quality. Look for:
+  - new/changed behavior with no corresponding test
+  - critical paths and edge cases left untested
+  - error/exception paths with no test
+  - weak assertions (asserting nothing meaningful, or only the happy path)
+
+Do not demand 100% coverage or flag trivial getters. Flag meaningful gaps only.
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   test
+  title:      10-120 chars
+  body:       1-3 sentences naming the untested behavior and why it matters
+  suggested_fix: optional test outline or guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='test-analyzer', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

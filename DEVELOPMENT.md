@@ -16,6 +16,8 @@ The framework exists in two locations:
    - Active runtime environment
    - Where the framework actually executes
 
+> **Note on hook registration:** Hooks are registered by the self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` (single source of truth, resolved via `${CLAUDE_PLUGIN_ROOT}`) — **not** by `install.sh`. As of the self-contained-plugin change, `install.sh` no longer copies hook scripts into `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json`; it only configures the `req` CLI, statusline, and shell env. The `sync.sh` deploy flow below remains for any legacy `~/.claude/hooks/` runtime, but installing the plugin is the supported path.
+
 ## Sync Strategy
 
 Use the `sync.sh` script to keep these locations in sync:
@@ -130,7 +132,6 @@ git push
 │   ├── clear-single-use.py            → ~/.claude/hooks/clear-single-use.py
 │   ├── handle-plan-exit.py            → ~/.claude/hooks/handle-plan-exit.py
 │   ├── requirements-cli.py            → ~/.claude/hooks/requirements-cli.py
-│   ├── ruff_check.py                  → ~/.claude/hooks/ruff_check.py
 │   ├── test_requirements.py           → ~/.claude/hooks/test_requirements.py
 │   ├── test_branch_size_calculator.py → ~/.claude/hooks/test_branch_size_calculator.py
 │   └── lib/
@@ -634,6 +635,57 @@ chpwd_functions+=(claude_req_sync_check)  # zsh
 # or
 PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}claude_req_sync_check"  # bash
 ```
+
+## Plugin Prompt Authoring (Steps 16b + 16c)
+
+All dispatched plugin prompts — **25 agents** under `plugins/requirements-framework/agents/`, **11 commands** under `plugins/requirements-framework/commands/`, and **21 skills** under `plugins/requirements-framework/skills/*/SKILL.md` — use a **two-file template + rendered output** pattern:
+
+| File | Role | Edit it? |
+|---|---|---|
+| `<name>.md.j2` | Jinja2 source-of-truth — frontmatter + body + `{% include %}` directives | **Yes** |
+| `<name>.md` | Rendered output that Claude Code dispatches at runtime | **No** — build artifact |
+
+The invariant "every dispatched plugin `.md` has a `.md.j2` source" is enforced at CI time by `tests/test_render_prompts.py::test_all_plugin_md_files_have_j2_source`. Three refactor-orchestration template files (`orchestrator-prompt-template.md`, `plan-template.md`, `retrospective-template.md`) are explicitly excluded — they are skill-internal scaffolding read at runtime, not dispatched prompts.
+
+### Author flow
+
+1. **Edit `<name>.md.j2`** (the source). Use `{% include 'partials/<name>.j2' %}` to pull in shared kernels — currently only `diff_scope_load.j2` qualifies (13 diff-scope review agents share its byte-identical `prepare-diff-scope` boilerplate).
+2. **Render**: `python3 scripts/render_prompts.py` — produces `<name>.md` sibling. Idempotent; only writes when content changes.
+3. **Verify freshness**: `python3 scripts/render_prompts.py --check` — exit 0 means every `.md` matches its source.
+4. **Commit both files** (`.md.j2` and `.md`) atomically in the same patch.
+
+### Pre-commit hook (optional)
+
+Wire `scripts/pre-commit-check.sh` to block commits whose `.md` siblings are stale:
+
+```bash
+ln -sf ../../scripts/pre-commit-check.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+The hook calls `render_prompts.py --check` and aborts the commit with the exact remediation command if any `.md.j2` is unrendered.
+
+### What `sync.sh deploy` does
+
+The deploy step already invokes `render_prompts.py` against the plugin tree, so deployed runtime files always reflect the current `.md.j2` sources. Manual rendering is only needed before committing if you skipped the pre-commit hook.
+
+### Adding a new partial
+
+Partials live under `hooks/lib/llm/prompts/partials/`. Author a new partial only when the kernel is **byte-identical** across **multiple agents** — never normalize an agent's substantive text to fit a partial. The acceptance gate is byte-identical rendered output; a partial that drifts even one agent breaks the gate.
+
+When adding a partial, extend `tests/test_partials.py` with: a content/include test, a no-vars contract test (StrictUndefined doesn't fire), and a boundary-newline test (pin the exact whitespace at include sites).
+
+### When NOT to use `.md.j2`
+
+If an agent template needs runtime variables (anything other than build-time partial composition), it does NOT belong in the plugin tree. Put it under `hooks/lib/llm/prompts/` instead — that's where `load_prompt(name, **vars)` resolves runtime templates. The test `tests/test_render_prompts.py::test_plugin_templates_have_no_runtime_vars` enforces this boundary at CI time.
+
+### `{% include %}` loader-root boundary
+
+Plugin `.md.j2` files CAN use `{% include 'partials/<name>.j2' %}` against `hooks/lib/llm/prompts/partials/`. Both the build-time path (`scripts/render_prompts.py`) and the runtime worker path delegate to the same `hooks.lib.llm.templates.render()` function, which uses a module-level `Environment` configured with `FileSystemLoader(hooks/lib/llm/prompts/)`. `Environment.from_string()` shares that loader, so `{% include %}` resolution works identically in both paths. The 13 diff-scope review agents (`code-reviewer.md.j2`, `appsec-auditor.md.j2`, etc.) demonstrate this — each one includes `{% include 'partials/diff_scope_load.j2' %}` and renders correctly at build time.
+
+What plugin `.md.j2` files CANNOT do is reference runtime variables (`{{ scope }}`, `{% if foo %}`, etc.) — those would render against an empty context and either crash on `StrictUndefined` or produce wrong output. The build-time vs. runtime distinction is **about variable availability, not loader access**: build-time templates render with zero caller vars (enforced by `test_plugin_templates_have_no_runtime_vars`), runtime templates can pass vars via `load_prompt(name, **vars)`.
+
+If you need shared kernels across plugin templates, extract a new partial under `hooks/lib/llm/prompts/partials/` (the discoverability rule above still applies — extract only when the kernel is byte-identical across multiple templates).
 
 ## Contributing
 

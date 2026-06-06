@@ -51,6 +51,24 @@ get_py_files() {
     fi
 }
 
+# Get all Python and bundled-asset files recursively (excluding __pycache__).
+# Used for hooks/lib so subpackages like lib/llm/ deploy without per-step
+# sync.sh edits. Extensions included:
+#   .py     — Python sources
+#   .md.j2  — Jinja2 prompt sources for runtime rendering (Step 16+)
+#   .j2     — Jinja2 partials included by runtime templates
+# Without these the workers' file-fallback path raises FileNotFoundError when
+# Langfuse is unreachable.
+get_py_files_recursive() {
+    local dir="$1"
+    local prefix="$2"
+    if [ -d "$dir" ]; then
+        find "$dir" \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" \) -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
+            echo "${prefix}${f#$dir/}"
+        done
+    fi
+}
+
 # Get all markdown files from a plugin subdirectory
 get_plugin_md_files() {
     local dir="$1"
@@ -131,8 +149,8 @@ get_all_files() {
     {
         get_py_files "$REPO_DIR/hooks" ""
         get_py_files "$DEPLOY_DIR" ""
-        get_py_files "$REPO_DIR/hooks/lib" "lib/"
-        get_py_files "$DEPLOY_DIR/lib" "lib/"
+        get_py_files_recursive "$REPO_DIR/hooks/lib" "lib/"
+        get_py_files_recursive "$DEPLOY_DIR/lib" "lib/"
     } | sort -u
 }
 
@@ -207,8 +225,8 @@ show_status() {
     # Hooks
     local repo_hooks=$(find "$REPO_DIR/hooks" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
     local deploy_hooks=$(find "$DEPLOY_DIR" -maxdepth 1 -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
-    local repo_lib=$(find "$REPO_DIR/hooks/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
-    local deploy_lib=$(find "$DEPLOY_DIR/lib" -name "*.py" -type f 2>/dev/null | wc -l | tr -d ' ')
+    local repo_lib=$(find "$REPO_DIR/hooks/lib" \( -name "*.py" -o -name "*.txt" \) -type f 2>/dev/null | wc -l | tr -d ' ')
+    local deploy_lib=$(find "$DEPLOY_DIR/lib" \( -name "*.py" -o -name "*.txt" \) -type f 2>/dev/null | wc -l | tr -d ' ')
     printf "  %-12s %s → %s\n" "Hooks:" "$repo_hooks" "$deploy_hooks"
     printf "  %-12s %s → %s\n" "Lib:" "$repo_lib" "$deploy_lib"
 
@@ -324,10 +342,22 @@ deploy_to_hooks() {
         [ -f "$f" ] && cp -v "$f" "$DEPLOY_DIR/"
     done
 
-    # Copy library files
+    # Copy library files (recursive — supports subpackages like lib/llm/).
+    # Extensions: .py + .md.j2 + .j2 (see get_py_files_recursive comment).
+    # Clean the prompts/ subtree first so renamed files (e.g. Step 16's
+    # .txt → .md.j2) don't leave orphans in the deployed runtime.
+    echo ""
+    echo "Cleaning bundled prompts subtree (removes orphans)..."
+    rm -rf "$DEPLOY_DIR/lib/llm/prompts"
+
     echo ""
     echo "Copying library files..."
-    cp -v "$REPO_DIR/hooks/lib/"*.py "$DEPLOY_DIR/lib/"
+    (cd "$REPO_DIR/hooks/lib" && find . \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" \) -type f -not -path "*/__pycache__/*") | while read -r relpath; do
+        local stripped="${relpath#./}"
+        local target="$DEPLOY_DIR/lib/$stripped"
+        mkdir -p "$(dirname "$target")"
+        cp -v "$REPO_DIR/hooks/lib/$stripped" "$target"
+    done
 
     # Ensure executable permissions for known entry points
     for f in "$DEPLOY_DIR/"*.py; do
@@ -343,6 +373,18 @@ deploy_plugin() {
     echo -e "${BLUE}🔌 Deploying plugin from repository → ~/.claude/plugins/requirements-framework${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+
+    # Render plugin .md.j2 sources to .md siblings before copying (Step 16+).
+    # No-op for Step 16 (no plugin .md.j2 files exist yet); plumbing in place
+    # so Step 16b's first plugin agent migration drops in clean.
+    if [ -f "$REPO_DIR/scripts/render_prompts.py" ]; then
+        echo "Rendering plugin .md.j2 sources..."
+        if ! python3 "$REPO_DIR/scripts/render_prompts.py" "$PLUGIN_REPO_DIR"; then
+            echo -e "${RED}ERROR: plugin template rendering failed; aborting deploy${NC}"
+            exit 1
+        fi
+        echo ""
+    fi
 
     # Create base plugin directory
     mkdir -p "$PLUGIN_DEPLOY_DIR"

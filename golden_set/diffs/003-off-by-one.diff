@@ -1,0 +1,23 @@
+diff --git a/lib/window.py b/lib/window.py
+index 0000000..1111111 100644
+--- a/lib/window.py
++++ b/lib/window.py
+@@ -1,5 +1,17 @@
+ """Sliding-window utilities."""
+
+-def pairs(items):
+-    return list(zip(items, items[1:]))
++def pairs(items):
++    """Yield (prev, next) tuples for adjacent elements."""
++    return list(zip(items, items[1:]))
++
++
++def deltas(items):
++    """Return consecutive differences between numeric items.
++
++    Used by services.metrics to compute rate-of-change over a sample window.
++    """
++    result = []
++    for i in range(len(items)):
++        result.append(items[i + 1] - items[i])
++    return result

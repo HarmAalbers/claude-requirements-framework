@@ -1,0 +1,14 @@
+{
+  "id": "002-n-plus-one",
+  "agent": "code-reviewer",
+  "diff_path": "golden_set/diffs/002-n-plus-one.diff",
+  "reference_findings": [
+    {
+      "file": "services/feed.py",
+      "line": 22,
+      "category": "performance",
+      "severity": "IMPORTANT"
+    }
+  ],
+  "reference_goal": "Detect N+1 ORM query pattern in services/feed.py around line 22 — iterating users and dereferencing user.posts inside the loop triggers one SQL query per user. Use selectinload / prefetch instead. Severity should be IMPORTANT."
+}

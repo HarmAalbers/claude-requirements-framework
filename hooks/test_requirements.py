@@ -15,6 +15,7 @@ Tests all framework components:
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1679,7 +1680,7 @@ def test_cli_sessions_command(runner: TestRunner):
 
 
 def test_cli_doctor_command(runner: TestRunner):
-    """Test doctor command for environment checks."""
+    """Doctor validates the plugin-owned hooks.json and exits 0 on a clean repo."""
 
     print("\n📦 Testing doctor command...")
 
@@ -1687,96 +1688,8 @@ def test_cli_doctor_command(runner: TestRunner):
     repo_root = Path(__file__).parent.parent
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Isolated HOME so doctor does not read the developer's real ~/.claude.
         home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "handle-session-start.py",
-            "handle-stop.py",
-            "handle-session-end.py",
-            "test_requirements.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py",
-                      "handle-session-start.py", "handle-stop.py", "handle-session-end.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with hook registration (new format - all 4 required hooks)
-        settings_path = claude_dir / "settings.local.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Edit|Write|MultiEdit|Bash",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/check-requirements.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ],
-                        "SessionStart": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-session-start.py"
-                                    }
-                                ]
-                            }
-                        ],
-                        "Stop": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-stop.py"
-                                    }
-                                ]
-                            }
-                        ],
-                        "SessionEnd": [
-                            {
-                                "matcher": "*",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/handle-session-end.py"
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
         project_dir = home_dir / "project"
         (project_dir / ".claude").mkdir(parents=True)
         config = {
@@ -1796,263 +1709,11 @@ def test_cli_doctor_command(runner: TestRunner):
             env=env,
         )
 
-        runner.test("Doctor runs", result.returncode == 0, result.stdout + result.stderr)
-        runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
+        runner.test("Doctor runs and exits 0", result.returncode == 0, result.stdout + result.stderr)
+        runner.test("Validates plugin hooks.json", "hooks.json present and valid" in result.stdout, result.stdout)
+        runner.test("Reports plugin hook scripts", "check-requirements.py exists" in result.stdout, result.stdout)
         # With verbose flag, should show "All Checks" section
-        runner.test("Reports sync status", "All Checks" in result.stdout or "✅" in result.stdout, result.stdout)
-
-
-def test_cli_doctor_old_format_migration(runner: TestRunner):
-    """Test doctor command shows migration message for old format."""
-
-    print("\n📦 Testing doctor with old hook format...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with OLD FORMAT
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {"PreToolUse": "~/.claude/hooks/check-requirements.py"}
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor detects old format", result.returncode != 0, result.stdout + result.stderr)
-        runner.test("Shows migration message", "old format" in result.stdout.lower(), result.stdout)
-        runner.test("Mentions upgrade", "upgrade" in result.stdout.lower() or "new format" in result.stdout.lower(), result.stdout)
-
-
-def test_cli_doctor_wrong_script(runner: TestRunner):
-    """Test doctor command detects wrong script."""
-
-    print("\n📦 Testing doctor with wrong script...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings pointing to WRONG SCRIPT
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Edit|Write",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/other-hook.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root)],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor fails with wrong script", result.returncode != 0, result.stdout + result.stderr)
-        runner.test("Mentions check-requirements.py", "check-requirements.py" in result.stdout, result.stdout)
-
-
-def test_cli_doctor_multiple_matchers(runner: TestRunner):
-    """Test doctor command handles multiple matchers."""
-
-    print("\n📦 Testing doctor with multiple matchers...")
-
-    cli_path = Path(__file__).parent / "requirements-cli.py"
-    repo_root = Path(__file__).parent.parent
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        home_dir = Path(tmpdir)
-        claude_dir = home_dir / ".claude"
-        hooks_dir = claude_dir / "hooks"
-        hooks_dir.mkdir(parents=True)
-
-        # Copy necessary files
-        sync_files = [
-            "check-requirements.py",
-            "requirements-cli.py",
-            "lib/config.py",
-            "lib/git_utils.py",
-            "lib/requirements.py",
-            "lib/session.py",
-            "lib/state_storage.py",
-        ]
-
-        for relative in sync_files:
-            source = Path(__file__).parent / relative
-            destination = hooks_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-
-        # Ensure executables
-        for script in ["check-requirements.py", "requirements-cli.py"]:
-            target = hooks_dir / script
-            target.chmod(0o755)
-
-        # Settings with MULTIPLE MATCHERS
-        settings_path = claude_dir / "settings.json"
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "PreToolUse": [
-                            {
-                                "matcher": "Bash",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/other.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            },
-                            {
-                                "matcher": "Edit|Write",
-                                "hooks": [
-                                    {
-                                        "type": "command",
-                                        "command": "python3 ~/.claude/hooks/check-requirements.py",
-                                        "timeout": 5
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                },
-                indent=2,
-            )
-        )
-
-        # Project configuration
-        project_dir = home_dir / "project"
-        (project_dir / ".claude").mkdir(parents=True)
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "requirements": {"commit_plan": {"enabled": True, "scope": "session"}},
-        }
-        (project_dir / ".claude" / "requirements.yaml").write_text(json.dumps(config))
-
-        env = {**os.environ, "HOME": str(home_dir), "CLAUDE_PROJECT_DIR": str(project_dir)}
-
-        result = subprocess.run(
-            ["python3", str(cli_path), "doctor", "--repo", str(repo_root), "--verbose"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        runner.test("Doctor finds hook in multiple matchers", result.returncode == 0, result.stdout + result.stderr)
-        runner.test("Reports hook registration", "PreToolUse hook registered" in result.stdout, result.stdout)
+        runner.test("Shows all checks", "All Checks" in result.stdout, result.stdout)
 
 
 def test_enhanced_doctor_json_output(runner: TestRunner):
@@ -2163,6 +1824,106 @@ def test_enhanced_doctor_check_functions(runner: TestRunner):
     result = _check_plugin_installation()
     runner.test("Plugin check returns dict", isinstance(result, dict))
     runner.test("Plugin check has status", 'status' in result)
+
+
+def test_doctor_plugin_hooks_checks(runner: TestRunner):
+    """Doctor validates the plugin-owned hooks.json + the scripts it registers.
+
+    Hooks are registered by plugins/requirements-framework/hooks/hooks.json
+    (the single source of truth via ${CLAUDE_PLUGIN_ROOT}), replacing the
+    defunct ~/.claude/hooks deploy + ~/.claude/settings.json registration.
+    """
+    print("\n📦 Testing doctor plugin hooks integrity...")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "requirements_cli_pluginhooks", Path(__file__).parent / "requirements-cli.py"
+    )
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    # The real repo passes: hooks.json present, valid, every script exists.
+    repo_root = Path(__file__).parent.parent
+    results = cli._check_plugin_hooks(repo_root)
+    runner.test("Plugin hooks check returns list", isinstance(results, list) and len(results) > 0)
+    runner.test(
+        "hooks.json reported valid",
+        results[0]['id'] == 'plugin_hooks_json' and results[0]['status'] == 'pass',
+        json.dumps(results[0]),
+    )
+    runner.test(
+        "No critical failures on real repo",
+        all(not (c['status'] in ('fail', 'error') and c['severity'] == 'critical') for c in results),
+        json.dumps(results),
+    )
+
+    # _collect_plugin_hook_scripts extracts every registered script in order,
+    # including multiple matchers and multiple hooks under a single matcher.
+    config = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Edit", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-requirements.py"}
+                ]}
+            ],
+            "PostToolUse": [
+                {"matcher": "Bash", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/clear-single-use.py"},
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-git-events.py"},
+                ]},
+                {"matcher": "Skill", "hooks": [
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-satisfy-skills.py"}
+                ]},
+            ],
+        }
+    }
+    scripts = cli._collect_plugin_hook_scripts(config)
+    runner.test(
+        "Collects scripts across multiple matchers",
+        scripts == [
+            "check-requirements.py",
+            "clear-single-use.py",
+            "handle-git-events.py",
+            "auto-satisfy-skills.py",
+        ],
+        str(scripts),
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        plugin_hooks = repo / "plugins" / "requirements-framework" / "hooks"
+        plugin_hooks.mkdir(parents=True)
+
+        # Missing hooks.json -> critical failure.
+        results = cli._check_plugin_hooks(repo)
+        runner.test(
+            "Missing hooks.json is critical fail",
+            results[0]['status'] == 'fail' and results[0]['severity'] == 'critical',
+            json.dumps(results),
+        )
+
+        # hooks.json registering a script that does not exist -> critical fail.
+        (plugin_hooks / "hooks.json").write_text(json.dumps({
+            "hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [
+                {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-requirements.py"}
+            ]}]}
+        }))
+        results = cli._check_plugin_hooks(repo)
+        has_critical = any(
+            c['status'] in ('fail', 'error') and c['severity'] == 'critical' for c in results
+        )
+        runner.test("Missing registered script is critical fail", has_critical, json.dumps(results))
+
+        # Invalid JSON -> critical fail.
+        (plugin_hooks / "hooks.json").write_text("{not valid json")
+        results = cli._check_plugin_hooks(repo)
+        runner.test(
+            "Invalid hooks.json is critical fail",
+            results[0]['status'] == 'fail'
+            and results[0]['severity'] == 'critical'
+            and 'valid JSON' in results[0]['message'],
+            json.dumps(results),
+        )
 
 
 def test_hook_behavior(runner: TestRunner):
@@ -3584,6 +3345,365 @@ def test_partial_satisfaction(runner: TestRunner):
         runner.test("Only shows remaining requirement",
                    "adr_reviewed" in message and "commit_plan" not in message.replace("req satisfy commit_plan", ""),
                    f"Message: {message[:200]}")
+
+
+def _triggered_anywhere(tmpdir: str, branch: str, req_name: str, session_id: str) -> bool:
+    """Read persisted branch state and report whether req_name is marked triggered.
+
+    Checks both the session-scoped location
+    (requirements[req].sessions[session_id].triggered) and the
+    branch/permanent location (requirements[req].triggered).
+    """
+    from state_storage import load_state
+
+    state = load_state(branch, tmpdir)
+    req_state = state.get('requirements', {}).get(req_name, {})
+    if req_state.get('triggered') is True:
+        return True
+    sess = req_state.get('sessions', {}).get(session_id, {})
+    return sess.get('triggered') is True
+
+
+def test_blocked_edit_does_not_trigger(runner: TestRunner):
+    """Regression: a DENIED edit must not leave the requirement triggered.
+
+    The deadlock: check-requirements.py used to mark_triggered() the moment a
+    tool matched a trigger, BEFORE the strategy decided allow/deny. When the
+    gate denied the edit (nothing written), the requirement was still recorded
+    as triggered, so the Stop hook blocked the turn forever over an edit that
+    never happened. The fix only marks triggered on the allow path.
+    """
+    print("\n📦 Testing blocked edit does not leave phantom trigger...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/deadlock-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dltrap1"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # The hook must DENY the unsatisfied edit.
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Unsatisfied edit is denied", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
+
+        # The regression assertion: commit_plan must NOT be triggered for the
+        # session after a denied edit (no phantom trigger -> Stop never traps).
+        runner.test("Denied edit leaves no phantom trigger",
+                    _triggered_anywhere(tmpdir, branch, "commit_plan", session_id) is not True,
+                    "commit_plan was marked triggered despite the edit being denied")
+
+
+def test_allowed_edit_marks_triggered(runner: TestRunner):
+    """An ALLOWED edit must still mark the requirement triggered.
+
+    Counterpart to the deadlock fix: when the gate permits the edit, the
+    requirement is marked triggered so the Stop hook still verifies it.
+    """
+    print("\n📦 Testing allowed edit marks requirement triggered...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/deadlock-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dlallow"
+
+        # Satisfy commit_plan for this session so the gate allows the edit.
+        subprocess.run(
+            ["python3", str(cli_path), "satisfy", "commit_plan", "--session", session_id],
+            cwd=tmpdir, capture_output=True
+        )
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # Satisfied -> hook allows (empty output).
+        runner.test("Satisfied edit is allowed", result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+
+        # Allowed edit must mark triggered so Stop still verifies real edits.
+        runner.test("Allowed edit marks requirement triggered",
+                    _triggered_anywhere(tmpdir, branch, "commit_plan", session_id) is True,
+                    "commit_plan was not marked triggered after an allowed edit")
+
+
+def test_blocked_guard_does_not_trigger(runner: TestRunner):
+    """Regression: a DENIED guard edit must not leave the guard triggered.
+
+    Same deadlock as test_blocked_edit_does_not_trigger but via a guard
+    requirement (protected_branch on a protected branch).
+    """
+    print("\n📦 Testing blocked guard edit does not leave phantom trigger...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "master"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "protected_branch": {
+                    "enabled": True,
+                    "type": "guard",
+                    "guard_type": "protected_branch",
+                    "protected_branches": ["master", "main"],
+                    "message": "Cannot edit on protected branch"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "dlguard"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # The guard must DENY the edit on the protected branch.
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Guard edit on protected branch is denied", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
+
+        # The guard must NOT be left triggered after the denied edit.
+        runner.test("Denied guard edit leaves no phantom trigger",
+                    _triggered_anywhere(tmpdir, branch, "protected_branch", session_id) is not True,
+                    "protected_branch was marked triggered despite the edit being denied")
+
+
+def test_stop_only_does_not_block_pretooluse(runner: TestRunner):
+    """A stop_only requirement never gates a write at PreToolUse, but is armed.
+
+    Models verification_evidence: a blocking req with stop_only=true and an
+    Edit trigger. Unsatisfied, an Edit must be ALLOWED (the gate ignores it),
+    yet the requirement must be marked triggered on the allow path so the Stop
+    hook can later enforce it.
+    """
+    print("\n📦 Testing stop_only requirement does not block PreToolUse...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/stop-only-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "verify_done": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "stop_only": True,
+                    "trigger_tools": ["Edit"],
+                    "message": "Verify before claiming done!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "sonly1"  # <=8 chars: normalize_session_id leaves it intact
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        # An unsatisfied stop_only req must NOT deny the edit (no gating).
+        runner.test("Stop-only edit is allowed (empty output)", result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+
+        # ...but the allow path must still arm it for the Stop hook.
+        runner.test("Stop-only requirement is armed (triggered) after allowed edit",
+                    _triggered_anywhere(tmpdir, branch, "verify_done", session_id) is True,
+                    "verify_done was not marked triggered after an allowed stop_only edit")
+
+
+def test_stop_only_enforced_at_stop(runner: TestRunner):
+    """A stop_only requirement, once armed and unsatisfied, blocks at Stop.
+
+    Counterpart to test_stop_only_does_not_block_pretooluse: after a permitted
+    edit arms the requirement, the Stop hook (handle-stop.py) must block the
+    turn from finishing because the session-scoped req is triggered+unsatisfied.
+    """
+    print("\n📦 Testing stop_only requirement is enforced at Stop...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    stop_path = Path(__file__).parent / "handle-stop.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/stop-only-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "hooks": {
+                "stop": {"verify_requirements": True}
+            },
+            "requirements": {
+                "verify_done": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "stop_only": True,
+                    "trigger_tools": ["Edit"],
+                    "message": "Verify before claiming done!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "sonly2"  # <=8 chars: normalize_session_id leaves it intact
+
+        # Arm the requirement via a real allowed edit (allow path marks triggered).
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop-only edit allowed during arming",
+                    result.stdout.strip() == "",
+                    f"Expected empty allow output, got: {result.stdout[:200]}")
+        runner.test("Stop-only req triggered+unsatisfied before Stop",
+                    _triggered_anywhere(tmpdir, branch, "verify_done", session_id) is True,
+                    "verify_done not armed prior to Stop")
+
+        # Now the Stop hook must block the turn over the unsatisfied armed req.
+        stop_input = json.dumps({
+            "hook_event_name": "Stop",
+            "stop_hook_active": False,
+            "session_id": session_id,
+        })
+        result = subprocess.run(
+            ["python3", str(stop_path)],
+            input=stop_input,
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("Stop blocks on armed unsatisfied stop_only req",
+                    '"decision": "block"' in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("Stop reason names the stop_only requirement",
+                    "verify_done" in result.stdout,
+                    f"Got: {result.stdout}")
+
+
+def test_normal_blocking_still_blocks_pretooluse(runner: TestRunner):
+    """Regression: a NORMAL (non-stop_only) blocking req still denies at PreToolUse.
+
+    Ensures the stop_only skip branch did not weaken default gating behavior.
+    """
+    print("\n📦 Testing normal blocking requirement still blocks PreToolUse...")
+
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        branch = "feature/normal-block-test"
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", branch], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "type": "blocking",
+                    "scope": "session",
+                    "trigger_tools": ["Edit"],
+                    "message": "Need commit plan!"
+                }
+            }
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        session_id = "nblk1"
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": session_id}),
+            cwd=tmpdir, capture_output=True, text=True
+        )
+
+        try:
+            output_data = json.loads(result.stdout)
+            decision = output_data.get("hookSpecificOutput", {}).get("permissionDecision", "")
+        except (json.JSONDecodeError, KeyError):
+            decision = ""
+        runner.test("Normal blocking req still denies edit", decision == "deny",
+                    f"Expected deny, got stdout: {result.stdout[:200]}")
 
 
 def test_guard_strategy_blocks_protected_branch(runner: TestRunner):
@@ -5663,6 +5783,153 @@ def test_registry_client(runner: TestRunner):
         runner.test("No orphaned temp files", len(tmp_files) == 0)
 
 
+def test_plan_evidence(runner: TestRunner):
+    """Test plan-evidence gating: a satisfied flag needs a real plan artifact."""
+    print("\n📦 Testing plan evidence gating...")
+
+    from plan_evidence import verify_plan_evidence
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # commit_plan has an evidence gate; plain_req has none (back-compat).
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'evidence': {
+                        'dirs': ['.claude/plans'],
+                        'require_markers': ['## Commit Plan'],
+                        'require_verdict': 'APPROVED',
+                        'max_age_seconds': 86400,
+                    },
+                },
+                'plain_req': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                },
+            },
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(os.path.join(tmpdir, '.claude', 'requirements.yaml'), 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        context = {'project_dir': tmpdir}
+
+        plans_dir = Path(tmpdir) / '.claude' / 'plans'
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_file = plans_dir / 'plan.md'
+
+        # (a) fresh plan with markers + '## Verdict\nAPPROVED' section -> qualifies
+        plan_file.write_text(
+            "# My Plan\n\n## Commit Plan\n- do the thing\n\n## Verdict\nAPPROVED\n"
+        )
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(a) qualifying plan -> allowed", ok is True and reason == "")
+
+        # (a') inline '## Verdict APPROVED' heading also qualifies
+        plan_file.write_text("## Commit Plan\n- stuff\n\n## Verdict APPROVED\n")
+        ok_inline, _ = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(a') inline verdict heading qualifies", ok_inline is True)
+
+        # (b) markers present but verdict is not APPROVED -> denied
+        plan_file.write_text("## Commit Plan\n- do the thing\n\n## Verdict\nREJECTED\n")
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(b) missing APPROVED verdict -> denied", ok is False and bool(reason))
+
+        # (c) markers + verdict but mtime older than max_age -> denied
+        plan_file.write_text("## Commit Plan\n- do the thing\n\n## Verdict\nAPPROVED\n")
+        old = time.time() - 200000  # well beyond max_age_seconds (86400)
+        os.utime(plan_file, (old, old))
+        ok, reason = verify_plan_evidence(config, 'commit_plan', context)
+        runner.test("(c) stale plan (mtime too old) -> denied", ok is False and bool(reason))
+
+        # (d) requirement with NO evidence config -> allowed (back-compat)
+        ok, reason = verify_plan_evidence(config, 'plain_req', context)
+        runner.test("(d) no evidence config -> allowed (back-compat)", ok is True and reason == "")
+
+
+def test_blocking_strategy_evidence_gate(runner: TestRunner):
+    """A satisfied flag + evidence config still DENIES until a plan artifact exists."""
+    print("\n📦 Testing blocking strategy evidence gate...")
+
+    from blocking_strategy import BlockingRequirementStrategy
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        config_data = {
+            'version': '1.0',
+            'enabled': True,
+            'requirements': {
+                'commit_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'message': 'Plan required',
+                    'evidence': {
+                        'dirs': ['.claude/plans'],
+                        'require_markers': ['## Commit Plan'],
+                        'require_verdict': 'APPROVED',
+                        'max_age_seconds': 86400,
+                    },
+                },
+                'plain_plan': {
+                    'enabled': True,
+                    'type': 'blocking',
+                    'scope': 'branch',
+                    'message': 'Plain plan required',
+                },
+            },
+        }
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(os.path.join(tmpdir, '.claude', 'requirements.yaml'), 'w') as f:
+            json.dump(config_data, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", "session-1", tmpdir)
+        strategy = BlockingRequirementStrategy()
+        context = {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': 'x.py'},
+            'session_id': 'session-1',
+            'project_dir': tmpdir,
+            'branch': 'feature/test',
+        }
+
+        # Baseline: unsatisfied flag denies.
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test("Unsatisfied flag denies", result is not None)
+
+        # Satisfy the flag, but NO plan artifact yet -> evidence gate still denies.
+        reqs.satisfy('commit_plan', 'branch', method='skill')
+        runner.test("Flag satisfied", reqs.is_satisfied('commit_plan', 'branch'))
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test(
+            "Satisfied flag WITHOUT plan artifact still DENIES",
+            result is not None
+            and result['hookSpecificOutput']['permissionDecision'] == 'deny',
+        )
+
+        # Add a qualifying plan artifact -> now ALLOWS.
+        plans_dir = Path(tmpdir) / '.claude' / 'plans'
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        (plans_dir / 'plan.md').write_text("## Commit Plan\n- ship it\n\n## Verdict\nAPPROVED\n")
+        result = strategy.check('commit_plan', config, reqs, context)
+        runner.test("Satisfied flag + qualifying plan ALLOWS", result is None)
+
+        # Back-compat: satisfied requirement with NO evidence config allows.
+        reqs.satisfy('plain_plan', 'branch', method='skill')
+        result = strategy.check('plain_plan', config, reqs, context)
+        runner.test("No evidence config: satisfied flag allows (back-compat)", result is None)
+
+
 def test_codex_reviewer_requirement(runner: TestRunner):
     """Test codex_reviewer requirement with single_use scope."""
     print("\n📦 Testing codex_reviewer requirement...")
@@ -7117,8 +7384,17 @@ def test_session_start_format_tiers(runner: TestRunner):
         compact = session_start_module.format_compact_status(reqs, config, "test-session", "feature/test-formats")
         runner.test("Compact format has requirements header", "Requirements:" in compact,
                    f"Got: {compact[:200]}")
-        runner.test("Compact format is concise", len(compact) < 500,
+        # Concise budget guard. The bound accommodates the one-line stand-down
+        # gating directive appended when >=1 requirement is unsatisfied.
+        runner.test("Compact format is concise", len(compact) < 800,
                    f"Length: {len(compact)}")
+        # Gating directive present because both requirements are unsatisfied.
+        runner.test("Compact shows gating directive when unsatisfied",
+                   "do NOT attempt Edit/Write/MultiEdit first" in compact,
+                   f"Got: {compact[:400]}")
+        runner.test("Compact gating directive flags req satisfy as user action",
+                   "USER action" in compact and "`req satisfy`" in compact,
+                   f"Got: {compact[:400]}")
 
         # Test standard format
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/test-formats")
@@ -7128,6 +7404,9 @@ def test_session_start_format_tiers(runner: TestRunner):
                    f"Missing Quick Start section")
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
                    f"Missing triggers")
+        runner.test("Standard shows gating directive when unsatisfied",
+                   "do NOT attempt Edit/Write/MultiEdit first" in standard,
+                   f"Got: {standard[:600]}")
 
         # Test format_adaptive_status dispatches by briefing_format (source is ignored)
         config_compact = dict(config_content)
@@ -7184,6 +7463,38 @@ def test_session_start_format_tiers(runner: TestRunner):
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/empty-test")
         runner.test("Standard handles empty requirements", "(none configured)" in standard,
                    f"Got: {standard[:300]}")
+
+    # Test gating directive is OMITTED when all requirements are satisfied
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/all-satisfied"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        sat_config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "type": "blocking", "scope": "session"},
+                "adr_reviewed": {"enabled": True, "type": "blocking", "scope": "branch"},
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(sat_config, f)
+
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/all-satisfied", "sat-session", tmpdir)
+        reqs.satisfy("commit_plan", scope="session")
+        reqs.satisfy("adr_reviewed", scope="branch")
+
+        compact_sat = session_start_module.format_compact_status(reqs, config, "sat-session", "feature/all-satisfied")
+        standard_sat = session_start_module.format_standard_status(reqs, config, "sat-session", "feature/all-satisfied")
+        runner.test("Compact omits gating directive when all satisfied",
+                   "Edit/Write/MultiEdit" not in compact_sat,
+                   f"Got: {compact_sat[:400]}")
+        runner.test("Standard omits gating directive when all satisfied",
+                   "Edit/Write/MultiEdit" not in standard_sat,
+                   f"Got: {standard_sat[:400]}")
 
     # Test guard requirement formatting
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -8130,6 +8441,15 @@ def test_messages_module(runner: TestRunner):
                    isinstance(messages, RequirementMessages))
         runner.test("get_messages uses template defaults",
                    '{req_name}' in messages.blocking_message)
+        # Default blocking template is self-explanatory: explains the block
+        # happened before any write and that req satisfy/clear are user actions.
+        runner.test("Default blocking template explains nothing was written",
+                   'nothing changed on disk' in messages.blocking_message)
+        runner.test("Default blocking template flags req satisfy as user action",
+                   'USER action' in messages.blocking_message)
+        runner.test("Default blocking template only uses supplied placeholders",
+                   set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}', messages.blocking_message))
+                   <= {'req_name', 'session_id', 'branch', 'project_dir', 'auto_resolve_skill'})
 
         # Test 9: get_status_template
         template = loader.get_status_template('compact')
@@ -8526,6 +8846,78 @@ def test_auto_resolve_skill_substitution(runner: TestRunner):
                        'test-session-42' in deny_msg)
             runner.test("Inline fallback substitutes both placeholders",
                        '/my-plugin:my-skill' in deny_msg and 'test-session-42' in deny_msg)
+
+
+def test_batched_denial_substitutes_auto_resolve_skill(runner: TestRunner):
+    """create_batched_denial() substitutes {auto_resolve_skill} (shortened) in inline messages.
+
+    Regression: the single-requirement branch of create_batched_denial() used to
+    append the configured inline message verbatim, so '/{auto_resolve_skill}'
+    leaked into the blocking message literally. It must render the short skill
+    name (e.g. '/arch-review') to match the SessionStart briefing convention.
+    """
+    print("\n📦 Testing create_batched_denial auto_resolve_skill substitution...")
+
+    # check-requirements.py has a hyphen, so import via importlib
+    import importlib.util
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    spec = importlib.util.spec_from_file_location("check_requirements", hook_path)
+    if spec is None or spec.loader is None:
+        runner.test("check-requirements importable", False, "spec load failed")
+        return
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        runner.test("check-requirements loads", False, str(e))
+        return
+
+    create_batched_denial = module.create_batched_denial
+
+    # Single unsatisfied requirement with a namespaced skill + placeholder message
+    req_config = {
+        'enabled': True,
+        'type': 'blocking',
+        'auto_resolve_skill': 'requirements-framework:arch-review',
+        'message': '## Blocked: commit_plan\n\n**Execute**: `/{auto_resolve_skill}`',
+    }
+    response = create_batched_denial(
+        [('commit_plan', req_config)],
+        session_id='sess-batched',
+        project_dir='/tmp/proj',
+        branch='feature/test',
+    )
+    deny_msg = response.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+
+    runner.test("Batched denial substitutes shortened auto_resolve_skill",
+               '/arch-review' in deny_msg, f"Got: {deny_msg}")
+    runner.test("Batched denial does not leak raw placeholder",
+               '{auto_resolve_skill}' not in deny_msg, f"Got: {deny_msg}")
+    runner.test("Batched denial does not leak namespaced skill prefix",
+               'requirements-framework:arch-review' not in deny_msg, f"Got: {deny_msg}")
+    # Stand-down footer is appended even when an inline message is present.
+    runner.test("Batched denial appends stand-down footer",
+               "Blocked before any write" in deny_msg and "USER action" in deny_msg,
+               f"Got: {deny_msg}")
+    runner.test("Batched denial footer keeps fallback command",
+               "Fallback (user action): `req satisfy" in deny_msg, f"Got: {deny_msg}")
+
+    # {session_id} placeholder is also substituted in inline messages
+    req_config_sid = {
+        'enabled': True,
+        'type': 'blocking',
+        'auto_resolve_skill': 'requirements-framework:arch-review',
+        'message': 'Run `/{auto_resolve_skill}` (fallback: `req satisfy x --session {session_id}`)',
+    }
+    response_sid = create_batched_denial(
+        [('commit_plan', req_config_sid)],
+        session_id='sess-xyz',
+        project_dir='/tmp/proj',
+        branch='feature/test',
+    )
+    deny_sid = response_sid.get('hookSpecificOutput', {}).get('permissionDecisionReason', '')
+    runner.test("Batched denial substitutes session_id in inline message",
+               'sess-xyz' in deny_sid and '{session_id}' not in deny_sid, f"Got: {deny_sid}")
 
 
 def test_teammate_idle_hook(runner: TestRunner):
@@ -9421,11 +9813,18 @@ def test_new_requirement_definitions(runner: TestRunner):
             runner.test("design_approved satisfied by brainstorming",
                        da.get('satisfied_by_skill') == 'requirements-framework:brainstorming')
 
-        # Test: verification_evidence has single_use scope
+        # Test: verification_evidence is a stop_only session requirement.
+        # It must be session-scoped (Stop's verify_scopes default is [session]),
+        # flagged stop_only (never gates an edit at PreToolUse), and armed by
+        # implementation tools so the Stop hook enforces "verify before done".
         if 'verification_evidence' in reqs:
             ve = reqs['verification_evidence']
-            runner.test("verification_evidence has single_use scope",
-                       ve.get('scope') == 'single_use')
+            runner.test("verification_evidence has session scope",
+                       ve.get('scope') == 'session')
+            runner.test("verification_evidence is stop_only",
+                       ve.get('stop_only') is True)
+            runner.test("verification_evidence triggers on Edit",
+                       'Edit' in ve.get('trigger_tools', []))
 
         # Test: debugging_systematic is enabled by default
         if 'debugging_systematic' in reqs:
@@ -9468,6 +9867,86 @@ def test_process_skill_message_files(runner: TestRunner):
                        'blocking_message' in data)
             runner.test(f"{filename} has short_message",
                        'short_message' in data)
+
+
+def test_plugin_hooks_bundle_fresh(runner: TestRunner):
+    """Bundle freshness invariant: `build_plugin_hooks.py --check` is clean.
+
+    The plugin ships copies of the hook runtime (hooks/*.py + hooks/lib/) under
+    plugins/requirements-framework/hooks/ so a marketplace / --plugin-dir
+    install is self-contained. The build script's --check mode is the drift
+    guard: exit 0 means the committed bundle matches the repo source of truth.
+    Run it as a subprocess to exercise the real entry point / exit code.
+    """
+    print("\n🎯 Testing plugin hooks bundle freshness...")
+
+    repo_root = Path(__file__).resolve().parent.parent
+    build_script = repo_root / 'scripts' / 'build_plugin_hooks.py'
+
+    if not build_script.exists():
+        runner.test("build_plugin_hooks.py exists", False,
+                    f"missing: {build_script}")
+        return
+
+    result = subprocess.run(
+        [sys.executable, str(build_script), '--check'],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+    )
+    runner.test(
+        "plugin hooks bundle is in sync with source (build --check exit 0)",
+        result.returncode == 0,
+        f"exit={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}",
+    )
+
+
+def test_plugin_hooks_json_self_contained(runner: TestRunner):
+    """hooks.json is plugin-root-relative, not deploy-path-bound.
+
+    Asserts every command uses ${CLAUDE_PLUGIN_ROOT}, none references the
+    deployed ~/.claude/hooks location, every referenced script is bundled, and
+    handle-git-events.py is registered.
+    """
+    print("\n🎯 Testing plugin hooks.json is self-contained...")
+
+    hooks_dir = (Path(__file__).resolve().parent.parent
+                 / 'plugins' / 'requirements-framework' / 'hooks')
+    hooks_json = hooks_dir / 'hooks.json'
+
+    if not hooks_json.exists():
+        runner.test("hooks.json exists", False, f"missing: {hooks_json}")
+        return
+
+    data = json.loads(hooks_json.read_text())
+    commands = [
+        h['command']
+        for event in data.get('hooks', {}).values()
+        for block in event
+        for h in block.get('hooks', [])
+    ]
+    runner.test("hooks.json declares commands", bool(commands))
+
+    # (a) every command is plugin-root-relative
+    plugin_root = '${CLAUDE_PLUGIN_ROOT}'
+    non_root = [c for c in commands if plugin_root not in c]
+    runner.test("every command uses ${CLAUDE_PLUGIN_ROOT}",
+                not non_root, f"offenders={non_root}")
+
+    # (b) no command points at the deployed ~/.claude/hooks location
+    deployed = [c for c in commands if '~/.claude/hooks' in c]
+    runner.test("no command references ~/.claude/hooks",
+                not deployed, f"offenders={deployed}")
+
+    # (c) every referenced script exists in the bundle
+    missing = [c.rsplit('/', 1)[-1] for c in commands
+               if not (hooks_dir / c.rsplit('/', 1)[-1]).exists()]
+    runner.test("every referenced hook script exists in the bundle",
+                not missing, f"missing scripts: {missing}")
+
+    # (d) handle-git-events.py is registered
+    runner.test("handle-git-events.py is registered in hooks.json",
+                any(c.endswith('handle-git-events.py') for c in commands))
 
 
 def test_plugin_skill_files_exist(runner: TestRunner):
@@ -9822,6 +10301,10 @@ def test_plan_enter_hook(runner: TestRunner):
             "session_id": "planenter-test"
         }
 
+        # The once-per-session brainstorm-nudge dedup means re-running the hook
+        # in the SAME session suppresses the directive. Each emit-expecting
+        # sub-test below therefore uses a distinct session_id.
+
         # Test 1: Injects brainstorm directive with config (no design_approved requirement)
         os.makedirs(f"{tmpdir}/.claude")
         config = {
@@ -9835,12 +10318,18 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config, f)
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-emit-1"}, tmpdir)
         ctx = extract_hook_context(result.stdout)
         runner.test("Injects brainstorm directive",
                    "Brainstorm Before Planning" in ctx and "/brainstorming" in ctx,
                    f"Got: {result.stdout[:300]}")
         runner.test("Injects directive exit 0", result.returncode == 0)
+
+        # Dedup: a SECOND EnterPlanMode in the SAME session does not re-emit.
+        result_dup = run_hook({**base_input, "session_id": "pe-emit-1"}, tmpdir)
+        runner.test("Plan-enter dedup suppresses second nudge",
+                   result_dup.stdout.strip() == "",
+                   f"Got: {result_dup.stdout[:200]}")
 
         # Test 2: Fires without design_approved requirement configured
         config_no_design = {
@@ -9852,7 +10341,7 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_no_design, f)
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-emit-2"}, tmpdir)
         ctx = extract_hook_context(result.stdout)
         runner.test("Fires without design_approved requirement",
                    "Brainstorm Before Planning" in ctx,
@@ -9877,12 +10366,13 @@ def test_plan_enter_hook(runner: TestRunner):
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump(config_with_design, f)
 
-        # Satisfy design_approved via BranchRequirements
+        # Satisfy design_approved via BranchRequirements (fresh session so the
+        # skip is driven by gate-satisfaction, not the nudge dedup).
         from requirements import BranchRequirements
-        reqs = BranchRequirements("feature/test", "planenter-test", tmpdir)
+        reqs = BranchRequirements("feature/test", "pe-sat-4", tmpdir)
         reqs.satisfy("design_approved", "session")
 
-        result = run_hook(base_input, tmpdir)
+        result = run_hook({**base_input, "session_id": "pe-sat-4"}, tmpdir)
         runner.test("Skips when design_approved satisfied",
                    result.stdout.strip() == "",
                    f"Expected empty output, got: {result.stdout[:200]}")
@@ -9928,12 +10418,245 @@ def test_plan_enter_hook(runner: TestRunner):
         )
         runner.test("Fails open on bad JSON", result.returncode == 0)
 
+        # Test 9: Config-driven brainstorm phase. A custom workflow flags a
+        # NON-first phase with brainstorm_on_enter; the hook must check THAT
+        # phase's gate and emit THAT phase's skill (not design_approved).
+        config_custom_wf = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "Design!"},
+                "explore_done": {"enabled": True, "scope": "session",
+                                 "type": "blocking", "message": "Explore!"},
+            },
+            "workflow": {
+                "phases": [
+                    {"name": "design", "gate": "design_approved",
+                     "skill": "requirements-framework:brainstorming"},
+                    {"name": "explore", "gate": "explore_done",
+                     "skill": "requirements-framework:writing-plans",
+                     "brainstorm_on_enter": True},
+                ],
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_custom_wf, f)
+
+        result = run_hook({**base_input, "session_id": "pe-wf-9"}, tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Config brainstorm phase emits configured skill",
+                   "Brainstorm Before Planning" in ctx and "/writing-plans" in ctx,
+                   f"Got: {result.stdout[:300]}")
+
+        # Test 10: Skips on the CONFIGURED gate, not design_approved. Satisfy
+        # explore_done (design_approved stays unsatisfied) on a FRESH session →
+        # no directive, proving the gate came from the brainstorm_on_enter phase
+        # (and not the nudge dedup).
+        reqs_wf = BranchRequirements("feature/test", "pe-wf-10", tmpdir)
+        reqs_wf.satisfy("explore_done", "session")
+        result = run_hook({**base_input, "session_id": "pe-wf-10"}, tmpdir)
+        runner.test("Skips when configured brainstorm gate satisfied",
+                   result.stdout.strip() == "",
+                   f"Expected empty, got: {result.stdout[:200]}")
+
     # Test 8: Config default value
     from config import RequirementsConfig
     with tempfile.TemporaryDirectory() as tmpdir:
         cfg = RequirementsConfig(tmpdir)
         val = cfg.get_hook_config('plan_enter', 'brainstorm_on_enter')
         runner.test("Hook default brainstorm_on_enter is True", val is True,
+                   f"Got: {val}")
+
+
+def test_brainstorm_lib(runner: TestRunner):
+    """Test the shared brainstorm helpers (hooks/lib/brainstorm.py)."""
+    print("\n📦 Testing brainstorm lib...")
+    from brainstorm import (
+        resolve_brainstorm_phase,
+        brainstorm_directive,
+        nudge_already_shown,
+        mark_nudge_shown,
+    )
+    from config import RequirementsConfig
+
+    # Default resolution: design_approved / brainstorming
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg = RequirementsConfig(tmpdir)
+        gate, skill = resolve_brainstorm_phase(cfg)
+        runner.test("resolve_brainstorm_phase default gate",
+                   gate == "design_approved", f"Got: {gate}")
+        runner.test("resolve_brainstorm_phase default skill",
+                   skill == "requirements-framework:brainstorming", f"Got: {skill}")
+
+    # Honors a workflow phase flagged brainstorm_on_enter (non-first phase)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "d"},
+                "explore_done": {"enabled": True, "scope": "session",
+                                 "type": "blocking", "message": "e"},
+            },
+            "workflow": {
+                "phases": [
+                    {"name": "design", "gate": "design_approved",
+                     "skill": "requirements-framework:brainstorming"},
+                    {"name": "explore", "gate": "explore_done",
+                     "skill": "requirements-framework:writing-plans",
+                     "brainstorm_on_enter": True},
+                ],
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+        cfg = RequirementsConfig(tmpdir)
+        gate, skill = resolve_brainstorm_phase(cfg)
+        runner.test("resolve_brainstorm_phase honors brainstorm_on_enter gate",
+                   gate == "explore_done", f"Got: {gate}")
+        runner.test("resolve_brainstorm_phase honors brainstorm_on_enter skill",
+                   skill == "requirements-framework:writing-plans", f"Got: {skill}")
+
+    # brainstorm_directive renders the short slash command (skill-agnostic)
+    directive = brainstorm_directive("requirements-framework:brainstorming")
+    runner.test("brainstorm_directive contains short skill name",
+               "/brainstorming" in directive, f"Got: {directive[:120]}")
+    custom = brainstorm_directive("requirements-framework:writing-plans")
+    runner.test("brainstorm_directive is skill-agnostic",
+               "/writing-plans" in custom, f"Got: {custom[:120]}")
+
+    # Dedup marker round-trips; fresh sessions are independent
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("nudge not shown before mark",
+                   nudge_already_shown("sess-a", tmpdir) is False)
+        mark_nudge_shown("sess-a", tmpdir)
+        runner.test("nudge shown after mark",
+                   nudge_already_shown("sess-a", tmpdir) is True)
+        runner.test("fresh session independent of marked session",
+                   nudge_already_shown("sess-b", tmpdir) is False)
+
+
+def test_prompt_submit_brainstorm_nudge(runner: TestRunner):
+    """Test the proactive UserPromptSubmit brainstorm nudge + shared dedup."""
+    print("\n📦 Testing prompt-submit brainstorm nudge...")
+
+    hook_path = Path(__file__).parent / "handle-prompt-submit.py"
+    plan_hook = Path(__file__).parent / "handle-plan-enter.py"
+
+    def run_hook(path, input_data, cwd):
+        return subprocess.run(
+            ["python3", str(path)],
+            input=json.dumps(input_data),
+            cwd=cwd, capture_output=True, text=True,
+            env={**os.environ},
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir,
+                       capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "Design!"}
+            },
+        }
+
+        def write_config(cfg):
+            with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+                json.dump(cfg, f)
+
+        write_config(config)
+
+        def prompt_input(session_id, prompt):
+            return {
+                "session_id": session_id,
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": prompt,
+                "cwd": tmpdir,
+            }
+
+        substantive = "let's implement the new auth flow"
+
+        # 1. Substantive prompt + design_approved unsatisfied -> nudge
+        result = run_hook(hook_path, prompt_input("ps-1", substantive), tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Substantive prompt injects brainstorm nudge",
+                   "/brainstorming" in ctx and "Brainstorm Before Planning" in ctx,
+                   f"Got: {result.stdout[:300]}")
+
+        # 2. Second substantive prompt SAME session -> dedup, no second nudge
+        result2 = run_hook(hook_path,
+                           prompt_input("ps-1", "now refactor the session module too"),
+                           tmpdir)
+        ctx2 = extract_hook_context(result2.stdout)
+        runner.test("Second substantive prompt deduped (no second nudge)",
+                   "Brainstorm Before Planning" not in ctx2,
+                   f"Got: {result2.stdout[:300]}")
+
+        # 3. Trivial prompt -> no nudge (fresh session)
+        result3 = run_hook(hook_path, prompt_input("ps-3", "what does this do?"), tmpdir)
+        ctx3 = extract_hook_context(result3.stdout)
+        runner.test("Trivial prompt -> no nudge",
+                   "Brainstorm Before Planning" not in ctx3,
+                   f"Got: {result3.stdout[:300]}")
+
+        # 4. design_approved satisfied -> no nudge (fresh session)
+        from requirements import BranchRequirements
+        reqs = BranchRequirements("feature/test", "ps-4", tmpdir)
+        reqs.satisfy("design_approved", "session")
+        result4 = run_hook(hook_path, prompt_input("ps-4", substantive), tmpdir)
+        ctx4 = extract_hook_context(result4.stdout)
+        runner.test("Satisfied gate -> no nudge",
+                   "Brainstorm Before Planning" not in ctx4,
+                   f"Got: {result4.stdout[:300]}")
+
+        # 5. Config flag disables the nudge
+        write_config({**config, "hooks": {"prompt_submit": {"brainstorm_nudge": False}}})
+        result5 = run_hook(hook_path, prompt_input("ps-5", substantive), tmpdir)
+        ctx5 = extract_hook_context(result5.stdout)
+        runner.test("brainstorm_nudge=False suppresses nudge",
+                   "Brainstorm Before Planning" not in ctx5,
+                   f"Got: {result5.stdout[:300]}")
+        write_config(config)  # restore
+
+        # 6. Shared dedup across hooks: prompt-submit marks, plan-enter respects it
+        result6 = run_hook(hook_path, prompt_input("ps-6", substantive), tmpdir)
+        ctx6 = extract_hook_context(result6.stdout)
+        runner.test("Prompt-submit emits + marks shared dedup",
+                   "Brainstorm Before Planning" in ctx6,
+                   f"Got: {result6.stdout[:300]}")
+        plan_input = {
+            "tool_name": "EnterPlanMode", "tool_input": {}, "tool_result": {},
+            "session_id": "ps-6", "cwd": tmpdir,
+        }
+        result6b = run_hook(plan_hook, plan_input, tmpdir)
+        runner.test("Plan-enter respects shared dedup from prompt-submit",
+                   result6b.stdout.strip() == "",
+                   f"Got: {result6b.stdout[:200]}")
+
+        # 7. Plan-enter still emits once in a fresh session (shared helper sanity)
+        result7 = run_hook(plan_hook, {**plan_input, "session_id": "ps-7"}, tmpdir)
+        ctx7 = extract_hook_context(result7.stdout)
+        runner.test("Plan-enter emits once in fresh session",
+                   "Brainstorm Before Planning" in ctx7,
+                   f"Got: {result7.stdout[:300]}")
+
+    # Default config value
+    from config import RequirementsConfig
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg = RequirementsConfig(tmpdir)
+        val = cfg.get_hook_config('prompt_submit', 'brainstorm_nudge')
+        runner.test("Hook default brainstorm_nudge is True", val is True,
                    f"Got: {val}")
 
 
@@ -11009,6 +11732,454 @@ def test_derive_phase(runner: TestRunner):
                         derive_phase(f) == DEFAULT_PHASE)
 
 
+# Default gate requirements shared by workflow tests (minimal blocking reqs).
+_WORKFLOW_DEFAULT_GATES = {
+    "design_approved": {"enabled": True},
+    "plan_written": {"enabled": True},
+    "solid_reviewed": {"enabled": True},
+    "verification_evidence": {"enabled": True},
+    "pre_pr_review": {"enabled": True},
+}
+
+
+def _write_workflow_project(tmpdir, requirements, workflow=None):
+    """Write a hermetic project config (inherit:False) with optional workflow."""
+    claude = Path(tmpdir) / ".claude"
+    claude.mkdir(parents=True, exist_ok=True)
+    cfg = {
+        "version": "1.0",
+        "enabled": True,
+        "inherit": False,  # don't merge global ~/.claude — keep tests deterministic
+        "requirements": requirements,
+    }
+    if workflow is not None:
+        cfg["workflow"] = workflow
+    (claude / "requirements.yaml").write_text(json.dumps(cfg))
+
+
+def test_workflow_config(runner: TestRunner):
+    """Test get_workflow_phases accessor + WorkflowValidator drop behavior."""
+    print("\n📦 Testing workflow config (get_workflow_phases)...")
+    from config import RequirementsConfig
+
+    # 1. No workflow section → normalized WORKFLOW_DEFAULTS (today's order).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("no workflow → default phase names",
+                    [p["name"] for p in wf["phases"]] ==
+                    ["design", "plan-write", "plan-validate", "implement",
+                     "review", "refactor", "ship"])
+        runner.test("no workflow → default gates",
+                    [p["gate"] for p in wf["phases"]] ==
+                    ["design_approved", "plan_written", "solid_reviewed",
+                     "verification_evidence", "pre_pr_review", None, None])
+        runner.test("no workflow → every default phase carries a description",
+                    all(isinstance(p.get("description"), str) and p["description"]
+                        for p in wf["phases"]))
+        runner.test("no workflow → gateless refactor/ship at the tail",
+                    [(p["name"], p["gate"]) for p in wf["phases"][-2:]] ==
+                    [("refactor", None), ("ship", None)])
+        runner.test("no workflow → resolver skill names",
+                    wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
+                    and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
+        runner.test("no workflow → default_phase=design", wf["default_phase"] == "design")
+        runner.test("no workflow → ship_phase=ship", wf["ship_phase"] == "ship")
+        runner.test("defaults equal class constant",
+                    [(p["name"], p["gate"]) for p in wf["phases"]] ==
+                    [(p["name"], p["gate"])
+                     for p in RequirementsConfig.WORKFLOW_DEFAULTS["phases"]])
+
+    # 2. Workflow section present → configured phases returned, extras preserved.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        custom = {
+            "ship_phase": "done",
+            "phases": [
+                {"name": "design", "gate": "design_approved", "skill": "x:brainstorm"},
+                {"name": "build", "gate": "verification_evidence",
+                 "skill": "x:build", "alias": "impl"},
+            ],
+        }
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES, workflow=custom)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("workflow present → configured names",
+                    [p["name"] for p in wf["phases"]] == ["design", "build"])
+        runner.test("workflow present → default_phase falls to phases[0]",
+                    wf["default_phase"] == "design")
+        runner.test("workflow present → ship_phase override", wf["ship_phase"] == "done")
+        runner.test("workflow present → preserves unknown keys (alias)",
+                    wf["phases"][1].get("alias") == "impl")
+
+    # 3. Malformed workflow (undefined gate) → validator DROPS it → defaults.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bad = {"phases": [{"name": "design", "gate": "does_not_exist"}]}
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES, workflow=bad)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("undefined gate → workflow dropped → default names",
+                    [p["name"] for p in wf["phases"]] ==
+                    ["design", "plan-write", "plan-validate", "implement",
+                     "review", "refactor", "ship"])
+        runner.test("undefined gate → validation error recorded",
+                    any("workflow" in e for e in config.get_validation_errors()))
+
+    # 4. Malformed workflow (phases not a list) → dropped → defaults.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                                workflow={"phases": "nope"})
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("phases not a list → dropped → default_phase=design",
+                    wf["default_phase"] == "design"
+                    and len(wf["phases"]) == 7)
+
+    # 5. get_workflow_phases is fail-safe even on raw garbage (bypassing the
+    #    validator) — exercises the accessor's own defensive normalization.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        config._config["workflow"] = "totally-not-a-mapping"
+        wf = config.get_workflow_phases()
+        runner.test("accessor fail-safe: garbage → normalized defaults",
+                    [p["name"] for p in wf["phases"]][0] == "design"
+                    and wf["ship_phase"] == "ship")
+
+
+def test_derive_phase_workflow(runner: TestRunner):
+    """Test config-driven phase order via derive_phase self-resolution."""
+    print("\n📦 Testing derive_phase workflow config integration...")
+    from derive_phase import derive_phase
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    branch = "feature/wf"
+
+    def _setup(tmpdir, requirements, satisfied, workflow=None):
+        _write_workflow_project(tmpdir, requirements, workflow=workflow)
+        state = create_empty_state(branch, tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state(branch, tmpdir, state)
+        return get_state_path(branch, tmpdir)
+
+    # Zero-config: same transitions as today, but resolved through config.
+    transitions = [
+        ([], "design"),
+        (["design_approved"], "plan-write"),
+        (["design_approved", "plan_written"], "plan-validate"),
+        (["design_approved", "plan_written", "solid_reviewed"], "implement"),
+        (["design_approved", "plan_written", "solid_reviewed",
+          "verification_evidence"], "review"),
+        (["design_approved", "plan_written", "solid_reviewed",
+          "verification_evidence", "pre_pr_review"], "ship"),
+    ]
+    for satisfied, expected in transitions:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, satisfied)
+            runner.test(f"zero-config: {len(satisfied)} sat → {expected}",
+                        derive_phase(sp) == expected)
+
+    # Reorder: put the review gate first.
+    reordered = {"phases": [
+        {"name": "review", "gate": "pre_pr_review"},
+        {"name": "design", "gate": "design_approved"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=reordered)
+        runner.test("reorder: review gate first → review",
+                    derive_phase(sp) == "review")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["pre_pr_review"],
+                    workflow=reordered)
+        runner.test("reorder: review done → design",
+                    derive_phase(sp) == "design")
+
+    # Add: a brand-new phase with a defined gate slots into the sequence.
+    gates_with_sec = dict(_WORKFLOW_DEFAULT_GATES)
+    gates_with_sec["appsec_reviewed"] = {"enabled": True}
+    added = {"phases": [
+        {"name": "design", "gate": "design_approved"},
+        {"name": "security", "gate": "appsec_reviewed"},
+        {"name": "implement", "gate": "verification_evidence"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, gates_with_sec, ["design_approved"], workflow=added)
+        runner.test("add: design done → new 'security' phase",
+                    derive_phase(sp) == "security")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, gates_with_sec,
+                    ["design_approved", "appsec_reviewed"], workflow=added)
+        runner.test("add: security done → implement",
+                    derive_phase(sp) == "implement")
+
+    # Fail-open: undefined gate → validator drops workflow → default order.
+    bad_gate = {"phases": [
+        {"name": "design", "gate": "design_approved"},
+        {"name": "ghost", "gate": "undefined_requirement"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["design_approved"],
+                    workflow=bad_gate)
+        runner.test("fail-open: undefined gate → default order (plan-write)",
+                    derive_phase(sp) == "plan-write")
+
+    # Fail-open: phases not a list → dropped → default order.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow={"phases": 5})
+        runner.test("fail-open: phases not a list → default order (design)",
+                    derive_phase(sp) == "design")
+
+
+def test_derive_phase_with_skill(runner: TestRunner):
+    """Test --with-skill resolution: phase + its configured resolver skill."""
+    print("\n📦 Testing derive_phase --with-skill...")
+    import contextlib
+    import io
+
+    from derive_phase import (
+        derive_phase_and_skill,
+        main,
+        resolve_named_phase_skill,
+    )
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    branch = "feature/skill"
+
+    def _setup(tmpdir, requirements, satisfied, workflow=None):
+        _write_workflow_project(tmpdir, requirements, workflow=workflow)
+        state = create_empty_state(branch, tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state(branch, tmpdir, state)
+        return get_state_path(branch, tmpdir)
+
+    # Zero-config: derived phase carries its default resolver skill.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: design → brainstorming",
+                    phase == "design"
+                    and skill == "requirements-framework:brainstorming")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                    ["design_approved", "plan_written"])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: plan-validate → arch-review",
+                    phase == "plan-validate"
+                    and skill == "requirements-framework:arch-review")
+
+    # Ship: every gate satisfied → ship phase, empty skill (no resolver).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                    ["design_approved", "plan_written", "solid_reviewed",
+                     "verification_evidence", "pre_pr_review"])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: ship → empty skill",
+                    phase == "ship" and skill == "")
+
+    # Custom workflow whose FIRST phase is review/deep-review (the sanity case):
+    # main() prints exactly "<phase>\t<skill>".
+    custom = {"phases": [
+        {"name": "review", "gate": "pre_pr_review",
+         "skill": "requirements-framework:deep-review"},
+        {"name": "design", "gate": "design_approved",
+         "skill": "requirements-framework:brainstorming"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=custom)
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: custom first phase → review/deep-review",
+                    phase == "review"
+                    and skill == "requirements-framework:deep-review")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp), "--with-skill"])
+        runner.test("with-skill: main prints '<phase>\\t<skill>'",
+                    buf.getvalue().strip() ==
+                    "review\trequirements-framework:deep-review",
+                    f"Got: {buf.getvalue()!r}")
+
+    # Gateless dispatch-only phase: resolvable by name even though derivation
+    # never surfaces it (no gate makes it transparent to derivation).
+    gateless = {"phases": [
+        {"name": "design", "gate": "design_approved",
+         "skill": "requirements-framework:brainstorming"},
+        {"name": "cleanup",
+         "skill": "requirements-framework:refactor-orchestration"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=gateless)
+        runner.test("with-skill: gateless phase resolved by name",
+                    resolve_named_phase_skill(sp, "cleanup") ==
+                    "requirements-framework:refactor-orchestration")
+        phase, _ = derive_phase_and_skill(sp)
+        runner.test("with-skill: gateless phase never auto-derived",
+                    phase == "design")
+        # main() --phase resolves the gateless skill for /req <name> dispatch.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp), "--with-skill", "--phase", "cleanup"])
+        runner.test("with-skill: main --phase resolves gateless skill",
+                    buf.getvalue().strip() ==
+                    "cleanup\trequirements-framework:refactor-orchestration",
+                    f"Got: {buf.getvalue()!r}")
+
+    # Fail-open: unknown phase name → empty skill, no raise.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        runner.test("with-skill: unknown phase → empty skill",
+                    resolve_named_phase_skill(sp, "nonexistent") == "")
+
+    # Legacy: no flag → phase name only (statusline path is unchanged).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp)])
+        runner.test("with-skill: no flag → phase only (no tab)",
+                    buf.getvalue().strip() == "design"
+                    and "\t" not in buf.getvalue())
+
+
+def test_workflow_defaults_descriptions(runner: TestRunner):
+    """WORKFLOW_DEFAULTS carry descriptions; validator accepts an optional one.
+
+    Adding `description` + the gateless `refactor`/`ship` phases must NOT change
+    phase derivation, so the tail of this test re-asserts the boundary
+    derivations for the default config.
+    """
+    print("\n📦 Testing workflow phase descriptions...")
+    from config import RequirementsConfig, WorkflowValidator
+
+    # Default phases each carry a non-empty description string.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("default phases all carry a description",
+                    all(isinstance(p.get("description"), str) and p["description"]
+                        for p in wf["phases"]))
+        design = next(p for p in wf["phases"] if p["name"] == "design")
+        runner.test("design description ported from the prompt menu",
+                    design["description"] ==
+                    "design phase: requirements unclear, need exploration")
+
+    # WorkflowValidator: description is OPTIONAL — a phase WITH one and a phase
+    # WITHOUT one both validate; a non-string description is rejected.
+    reqs = {"design_approved": {"enabled": True}}
+    v = WorkflowValidator()
+    ok = {"phases": [
+        {"name": "design", "gate": "design_approved", "description": "hi"},
+        {"name": "later"},  # gateless + description-less → still valid
+    ]}
+    runner.test("validator accepts described AND undescribed phases",
+                v.validate(ok, reqs) is None)
+    bad = {"phases": [
+        {"name": "design", "gate": "design_approved", "description": 123},
+    ]}
+    bad_err = v.validate(bad, reqs)
+    runner.test("validator rejects a non-string description",
+                bad_err is not None and "description" in bad_err)
+
+    # Non-behavioral proof: default-config derivations are unchanged after the
+    # description + gateless-phase additions.
+    from derive_phase import derive_phase
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    def _state(tmpdir, satisfied):
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        state = create_empty_state("feature/desc", tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state("feature/desc", tmpdir, state)
+        return get_state_path("feature/desc", tmpdir)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: no gates → design",
+                    derive_phase(_state(tmpdir, [])) == "design")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: design done → plan-write",
+                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan-write")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("derive_phase unchanged: all gates → ship",
+                    derive_phase(_state(tmpdir, [
+                        "design_approved", "plan_written", "solid_reviewed",
+                        "verification_evidence", "pre_pr_review"])) == "ship")
+
+
+def test_supervisor_config_driven(runner: TestRunner):
+    """Supervisor routing mirrors config: str target, config-rendered menu, clamp."""
+    print("\n📦 Testing config-driven req-supervisor...")
+    # The llm package uses absolute `hooks.lib.llm.*` imports, so the repo root
+    # must be importable (the module-level sys.path only carries hooks/lib).
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+    try:
+        from hooks.lib.llm.prompts import load_prompt
+        from hooks.lib.llm.schemas import HandoffResult
+        from hooks.lib.llm.supervisor import (
+            _default_phases,
+            _resolve_target,
+            route,
+        )
+    except ModuleNotFoundError as e:
+        # The llm submodules eager-import the optional [llm] extra (pydantic/jinja2).
+        # CI installs them explicitly (ci.yml), but a deps-less dev env skips this
+        # test cleanly rather than crashing the whole runner.
+        print(f"   ⊘ skipped: V3 llm deps absent ({e.name})")
+        return
+
+    # (i) target is an open str (Literal removed): any custom phase validates.
+    hr = HandoffResult(target="my-custom-phase", rationale="x")
+    runner.test("HandoffResult accepts a custom (non-default) target string",
+                hr.target == "my-custom-phase")
+    runner.test("HandoffResult still accepts a default phase name",
+                HandoffResult(target="ship", rationale="done").target == "ship")
+
+    # (ii) the menu is rendered from the injected `phases` var (a config mirror),
+    #      not a hardcoded list — a custom phase + its description show up, and a
+    #      description-less phase must not raise (StrictUndefined-safe).
+    custom_phases = [
+        {"name": "triage", "description": "custom"},
+        {"name": "ship"},  # no description, no skill → renders blank, no raise
+    ]
+    prompt = load_prompt("req-supervisor", phase="triage", unsatisfied="(none)",
+                         phases=custom_phases)
+    runner.test("supervisor menu renders the custom phase name", "triage" in prompt)
+    runner.test("supervisor menu renders the custom description", "custom" in prompt)
+    runner.test("supervisor menu tolerates a description-less phase",
+                "ship" in prompt)
+
+    # (iii) clamp logic (the sync helper route() applies after model_validate):
+    #       in-vocab passes through; out-of-vocab clamps to the input phase.
+    runner.test("clamp: in-vocab target passes through",
+                _resolve_target("triage", custom_phases, "ship") == "triage")
+    runner.test("clamp: out-of-vocab target → input phase",
+                _resolve_target("nonexistent", custom_phases, "ship") == "ship")
+    runner.test("clamp: empty phase vocab → input phase (fail-open)",
+                _resolve_target("anything", [], "review") == "review")
+
+    # Default menu (phases=None path) mirrors WORKFLOW_DEFAULTS: 7 names, with
+    # refactor + ship routable (not clamped).
+    default_phases = _default_phases()
+    default_names = {p["name"] for p in default_phases}
+    runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (7)",
+                len(default_phases) == 7
+                and {"design", "refactor", "ship"} <= default_names)
+    runner.test("clamp: 'ship' is routable under the default vocab",
+                _resolve_target("ship", default_phases, "design") == "ship")
+
+    # route() is async and would need a live LLM — assert its shape only.
+    import inspect
+    runner.test("route() is async with an optional phases kwarg",
+                inspect.iscoroutinefunction(route)
+                and inspect.signature(route).parameters["phases"].default is None)
+
+
 def test_count_unsatisfied(runner: TestRunner):
     """Test count_unsatisfied helper."""
     print("\n📦 Testing count_unsatisfied module...")
@@ -11048,6 +12219,363 @@ def test_count_unsatisfied(runner: TestRunner):
                     f"Got: {count_unsatisfied(mix)}")
 
 
+def test_llm_package_scaffold(runner: TestRunner):
+    """Verify the llm package imports lazily without V3 deps; submodule imports that
+    need an optional [llm] extra (pydantic/jinja2/...) are skipped when that dep is
+    absent rather than failing the suite (CI installs the light extras — see ci.yml)."""
+    print("\n📦 Testing hooks/lib/llm/ scaffold...")
+    import importlib
+
+    try:
+        llm_pkg = importlib.import_module("llm")
+        runner.test("llm package imports", True)
+    except ImportError as e:
+        runner.test("llm package imports", False, str(e))
+        return
+
+    runner.test(
+        "llm.__doc__ documents the V3 step plan",
+        llm_pkg.__doc__ is not None and "Step 09" in llm_pkg.__doc__,
+        "__init__.py docstring should list the steps that populate each submodule",
+    )
+
+    def _import_or_skip(modname: str, label: str):
+        # A missing EXTERNAL dep (pydantic/jinja2/... from the optional [llm] extra)
+        # is a skip, not a failure — the submodule is fine, the dep just isn't
+        # installed. CI installs the light extras (ci.yml). A missing `llm.*`
+        # module, or any other ImportError, is a real failure.
+        try:
+            importlib.import_module(modname)
+            runner.test(f"{label} imports", True)
+        except ModuleNotFoundError as e:
+            if e.name and not e.name.startswith("llm"):
+                print(f"   ⊘ {label} skipped: optional dep absent ({e.name})")
+            else:
+                runner.test(f"{label} imports", False, str(e))
+        except ImportError as e:
+            runner.test(f"{label} imports", False, str(e))
+
+    for name in ("schemas", "observability", "retrieval", "memory", "eval", "templates"):
+        _import_or_skip(f"llm.{name}", f"llm.{name}")
+
+    _import_or_skip("llm.workers", "llm.workers subpackage")
+
+
+def test_ruff_check_removed(runner: TestRunner):
+    """The dead ruff_check.py hook is deleted and no longer referenced at runtime.
+
+    ruff_check.py crashed at import and was registered in no hook config; this
+    guards against it being re-introduced as dead, fail-closed code.
+    """
+    import importlib.util
+
+    print("\n🧹 Testing dead ruff_check.py removal...")
+    repo_hooks = Path(__file__).parent
+
+    runner.test("ruff_check.py deleted", not (repo_hooks / "ruff_check.py").exists())
+
+    # `req doctor`'s plugin hook list (derived from hooks.json) must not
+    # reference the deleted file.
+    spec = importlib.util.spec_from_file_location(
+        "requirements_cli_ruffcheck", repo_hooks / "requirements-cli.py"
+    )
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    results = cli._check_plugin_hooks(repo_hooks.parent)
+    runner.test(
+        "req doctor hook list excludes ruff_check.py",
+        "ruff_check" not in json.dumps(results),
+        json.dumps(results)[:200],
+    )
+
+
+def test_collect_unsatisfied_guard_aware(runner: TestRunner):
+    """collect_unsatisfied must treat a passing guard as satisfied (regression).
+
+    Pre-fix, handle-prompt-submit / handle-subagent-start used bare is_satisfied
+    for every type, so a protected_branch guard on a feature branch (condition
+    passes) was wrongly reported unsatisfied. The shared helper is guard-aware.
+    """
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+    from hook_utils import collect_unsatisfied
+    from session import normalize_session_id
+
+    print("\n🧭 Testing guard-aware collect_unsatisfied...")
+
+    cfg = {
+        "version": "1.0",
+        "enabled": True,
+        "inherit": False,
+        "requirements": {
+            "protected_branch": {
+                "type": "guard",
+                "enabled": True,
+                "guard_type": "protected_branch",
+                "protected_branches": ["master", "main"],
+            },
+            "commit_plan": {"type": "blocking", "enabled": True, "scope": "session"},
+        },
+    }
+    sid = normalize_session_id("guardtest")
+
+    def setup(tmpdir, branch):
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-B", branch], cwd=tmpdir, capture_output=True)
+        with open(f"{tmpdir}/.claude/requirements.yaml", "w") as f:
+            json.dump(cfg, f)
+
+    # On a feature branch the guard condition passes -> NOT unsatisfied.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup(tmpdir, "feature/test")
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/test", sid, tmpdir)
+        unsat = collect_unsatisfied(reqs, config, "feature/test", sid, tmpdir)
+        runner.test(
+            "guard excluded on feature branch (passing condition)",
+            "protected_branch" not in unsat,
+            f"unsatisfied={unsat}",
+        )
+        runner.test(
+            "unsatisfied blocking req still reported",
+            "commit_plan" in unsat,
+            f"unsatisfied={unsat}",
+        )
+
+    # On master the guard condition fails -> IS unsatisfied.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup(tmpdir, "master")
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("master", sid, tmpdir)
+        unsat = collect_unsatisfied(reqs, config, "master", sid, tmpdir)
+        runner.test(
+            "guard included on protected branch (failing condition)",
+            "protected_branch" in unsat,
+            f"unsatisfied={unsat}",
+        )
+
+
+def test_permission_request_hook(runner: TestRunner):
+    """PermissionRequest auto-deny must emit the correct nested schema (regression).
+
+    The old code emitted top-level {"decision":"deny","reason":...}, which Claude
+    Code silently ignores -> the dangerous-command guard no-opped. The fix emits
+    hookSpecificOutput.decision.behavior == "deny" with no message/interrupt.
+    """
+    import importlib.util
+
+    print("\n🛡️  Testing PermissionRequest auto-deny shape...")
+    hook_path = Path(__file__).parent / "handle-permission-request.py"
+    spec = importlib.util.spec_from_file_location("permission_request_hook", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    payload = mod.deny_payload()
+    hso = payload.get("hookSpecificOutput", {})
+    decision = hso.get("decision", {})
+    runner.test("deny: has hookSpecificOutput wrapper", "hookSpecificOutput" in payload)
+    runner.test(
+        "deny: hookEventName is PermissionRequest",
+        hso.get("hookEventName") == "PermissionRequest",
+    )
+    runner.test(
+        "deny: decision.behavior == 'deny'",
+        decision.get("behavior") == "deny",
+        str(payload),
+    )
+    # Regression guard: the OLD broken top-level shape must NOT reappear.
+    runner.test(
+        "deny: no top-level 'decision' key (old broken shape)",
+        "decision" not in payload,
+    )
+    runner.test(
+        "deny: decision carries no message/interrupt (strict-schema safe)",
+        "message" not in decision and "interrupt" not in decision,
+    )
+
+    # Dangerous-pattern matching: real threats flagged...
+    dangerous = [
+        "rm -rf /",
+        "git push origin main --force",
+        "git push -f origin main",
+        "git reset --hard origin/main",
+        "DROP TABLE users",
+        "truncate table logs",
+    ]
+    for cmd in dangerous:
+        runner.test(
+            f"match_dangerous flags: {cmd[:28]}",
+            mod.match_dangerous(cmd) is not None,
+            cmd,
+        )
+    # ...and safe / lease-protected commands allowed through.
+    safe = [
+        "ls -la",
+        "git push --force-with-lease",
+        "rm -rf /tmp/scratch",
+        "git commit -m wip",
+        "echo hello",
+    ]
+    for cmd in safe:
+        runner.test(
+            f"match_dangerous allows: {cmd[:28]}",
+            mod.match_dangerous(cmd) is None,
+            f"{cmd} -> {mod.match_dangerous(cmd)}",
+        )
+
+
+def test_state_write_concurrency(runner: TestRunner):
+    """Regression tests for the state-file concurrency data-loss bugs.
+
+    Covers three confirmed defects:
+      1. save_state used a fixed <branch>.tmp truncated before flock -> a
+         concurrent writer could 0-byte the file (atomic_write_json uses a
+         unique temp + os.replace, so this is structurally impossible).
+      2. BranchRequirements load->mutate->save held no cross-process lock ->
+         last-writer-wins dropped satisfactions (transaction() locks+reloads).
+      3. RegistryClient.update did an unlocked read-modify-write.
+    """
+    import threading
+
+    print("\n🔒 Testing state-write concurrency safety...")
+
+    import state_storage
+    from state_storage import (
+        atomic_write_json,
+        exclusive_file_lock,
+        load_state,
+    )
+    from requirements import BranchRequirements
+
+    # --- New primitives exist ---
+    runner.test(
+        "atomic_write_json is exported",
+        callable(getattr(state_storage, "atomic_write_json", None)),
+    )
+    runner.test(
+        "exclusive_file_lock is exported",
+        callable(getattr(state_storage, "exclusive_file_lock", None)),
+    )
+    runner.test(
+        "state_lock is exported",
+        callable(getattr(state_storage, "state_lock", None)),
+    )
+
+    # --- atomic_write_json: valid output, no stray fixed-name temp ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = Path(tmpdir) / "data.json"
+        atomic_write_json(target, {"a": 1})
+        ok = target.exists() and json.loads(target.read_text()) == {"a": 1}
+        runner.test("atomic_write_json writes valid JSON", ok)
+        # The old shared fixed-name temp (<name>.tmp) must NOT be used/left behind.
+        leftover = list(Path(tmpdir).glob("*.tmp"))
+        runner.test(
+            "atomic_write_json leaves no temp file behind",
+            leftover == [],
+            f"stray temps: {leftover}",
+        )
+
+    # --- exclusive_file_lock: usable + fail-open on a bad path ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        lock_path = Path(tmpdir) / "x.lock"
+        entered = {"v": False}
+        with exclusive_file_lock(lock_path):
+            entered["v"] = True
+        runner.test("exclusive_file_lock enters/exits cleanly", entered["v"])
+        # Fail-open: a lock path under a nonexistent, uncreatable parent must
+        # still run the body rather than raise.
+        entered2 = {"v": False}
+        try:
+            with exclusive_file_lock(Path("/nonexistent_root_dir_xyz/sub/y.lock")):
+                entered2["v"] = True
+            runner.test("exclusive_file_lock fails open on bad path", entered2["v"])
+        except Exception as e:  # noqa: BLE001 - must never raise
+            runner.test("exclusive_file_lock fails open on bad path", False, str(e))
+
+    # --- Lost-update regression (deterministic, two stale instances) ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+        branch = "concurrent/lost-update"
+        # Two managers load the SAME (empty) state, then each satisfies a
+        # different branch-scoped requirement. Pre-fix, the second save
+        # clobbered the first. Post-fix, transaction() reloads under lock.
+        a = BranchRequirements(branch, "sess-a", tmpdir)
+        b = BranchRequirements(branch, "sess-b", tmpdir)
+        a.satisfy("req_a", scope="branch")
+        b.satisfy("req_b", scope="branch")
+        fresh = BranchRequirements(branch, "sess-c", tmpdir)
+        runner.test(
+            "concurrent satisfy: first writer survives",
+            fresh.is_satisfied("req_a", scope="branch"),
+            "req_a was clobbered (last-writer-wins)",
+        )
+        runner.test(
+            "concurrent satisfy: second writer survives",
+            fresh.is_satisfied("req_b", scope="branch"),
+        )
+
+    # --- Threaded stress: N distinct satisfies must ALL survive + no corruption ---
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git", exist_ok=True)
+        branch = "concurrent/stress"
+        N = 20
+
+        def worker(i):
+            r = BranchRequirements(branch, f"s{i:02d}", tmpdir)
+            r.satisfy(f"req_{i:02d}", scope="branch")
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(N)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        fresh = BranchRequirements(branch, "final", tmpdir)
+        present = sum(
+            1 for i in range(N) if fresh.is_satisfied(f"req_{i:02d}", scope="branch")
+        )
+        runner.test(
+            "threaded concurrent writes: all satisfactions survive",
+            present == N,
+            f"only {present}/{N} survived (lost updates / corruption)",
+        )
+        runner.test(
+            "threaded concurrent writes: state file not corrupted",
+            len(load_state(branch, tmpdir)["requirements"]) == N,
+            "load_state fell open to empty/partial (truncation corruption)",
+        )
+
+    # --- RegistryClient.update is lock-serialized (no lost session adds) ---
+    from registry_client import RegistryClient
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        reg_path = Path(tmpdir) / "sessions.json"
+        N = 20
+
+        def reg_worker(i):
+            client = RegistryClient(reg_path)
+
+            def add(registry):
+                registry.setdefault("sessions", {})[f"sid{i:02d}"] = {"pid": i}
+                return registry
+
+            client.update(add)
+
+        threads = [threading.Thread(target=reg_worker, args=(i,)) for i in range(N)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        final = RegistryClient(reg_path).read()
+        runner.test(
+            "RegistryClient.update: all concurrent session adds survive",
+            len(final.get("sessions", {})) == N,
+            f"only {len(final.get('sessions', {}))}/{N} sessions registered",
+        )
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -11082,6 +12610,7 @@ def main():
     test_cli_doctor_command(runner)
     test_enhanced_doctor_json_output(runner)
     test_enhanced_doctor_check_functions(runner)
+    test_doctor_plugin_hooks_checks(runner)
     test_hook_behavior(runner)
     test_checklist_rendering(runner)
 
@@ -11107,6 +12636,16 @@ def main():
     test_cli_satisfy_branch_flag_dynamic(runner)
     test_cli_satisfy_branch_flag_multiple(runner)
     test_partial_satisfaction(runner)
+
+    # Deadlock regression: only mark triggered on the allow path
+    test_blocked_edit_does_not_trigger(runner)
+    test_allowed_edit_marks_triggered(runner)
+    test_blocked_guard_does_not_trigger(runner)
+
+    # stop_only: armed by edits, never gates PreToolUse, enforced at Stop
+    test_stop_only_does_not_block_pretooluse(runner)
+    test_stop_only_enforced_at_stop(runner)
+    test_normal_blocking_still_blocks_pretooluse(runner)
 
     # Guard strategy tests
     test_guard_strategy_blocks_protected_branch(runner)
@@ -11160,6 +12699,10 @@ def main():
     # Permission error fail-open tests
     test_permission_errors_fail_open(runner)
 
+    # Plan-evidence gating tests
+    test_plan_evidence(runner)
+    test_blocking_strategy_evidence_gate(runner)
+
     # Codex reviewer requirement tests
     test_codex_reviewer_requirement(runner)
 
@@ -11199,6 +12742,7 @@ def main():
     test_messages_module(runner)
     test_message_validator_module(runner)
     test_auto_resolve_skill_substitution(runner)
+    test_batched_denial_substitutes_auto_resolve_skill(runner)
 
     # Agent Teams hook tests
     test_teammate_idle_hook(runner)
@@ -11223,6 +12767,8 @@ def main():
     test_process_skill_auto_satisfy_mappings(runner)
     test_new_requirement_definitions(runner)
     test_process_skill_message_files(runner)
+    test_plugin_hooks_bundle_fresh(runner)
+    test_plugin_hooks_json_self_contained(runner)
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
     test_session_start_bootstrap_injection(runner)
@@ -11232,6 +12778,10 @@ def main():
 
     # Plan enter hook tests
     test_plan_enter_hook(runner)
+
+    # Shared brainstorm helpers + proactive prompt-submit nudge
+    test_brainstorm_lib(runner)
+    test_prompt_submit_brainstorm_nudge(runner)
 
     # Plan file skip exemption tests
     test_should_skip_plan_file(runner)
@@ -11247,7 +12797,26 @@ def main():
     test_obsidian_session_logger(runner)
 
     test_derive_phase(runner)
+    test_workflow_config(runner)
+    test_workflow_defaults_descriptions(runner)
+    test_supervisor_config_driven(runner)
+    test_derive_phase_workflow(runner)
+    test_derive_phase_with_skill(runner)
     test_count_unsatisfied(runner)
+
+    test_llm_package_scaffold(runner)
+
+    # State-write concurrency safety (Phase 1a)
+    test_state_write_concurrency(runner)
+
+    # PermissionRequest auto-deny shape (Phase 1b)
+    test_permission_request_hook(runner)
+
+    # Guard-aware unsatisfied collection (Phase 1c)
+    test_collect_unsatisfied_guard_aware(runner)
+
+    # Dead ruff_check.py removal (Phase 1d)
+    test_ruff_check_removed(runner)
 
     return runner.summary()
 

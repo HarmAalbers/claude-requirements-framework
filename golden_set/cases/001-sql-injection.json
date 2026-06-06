@@ -1,0 +1,14 @@
+{
+  "id": "001-sql-injection",
+  "agent": "code-reviewer",
+  "diff_path": "golden_set/diffs/001-sql-injection.diff",
+  "reference_findings": [
+    {
+      "file": "api/users.py",
+      "line": 12,
+      "category": "security",
+      "severity": "CRITICAL"
+    }
+  ],
+  "reference_goal": "Detect SQL injection vulnerability in api/users.py around line 12 — the f-string interpolation of user_id into a raw SQL query allows arbitrary SQL execution. Severity should be CRITICAL."
+}

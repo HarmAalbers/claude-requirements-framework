@@ -1,0 +1,22 @@
+{% include 'partials/safety.j2' %}
+
+Evaluate the new or changed types in the diff below for design quality:
+  - encapsulation: is internal state protected, or can callers violate invariants?
+  - invariant expression: are constraints encoded in the type, or only in comments/docs?
+  - enforcement: are illegal states unrepresentable, or merely discouraged?
+  - primitive obsession: are meaningful concepts modeled as bare str/int/dict?
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   complexity
+  title:      10-120 chars
+  body:       1-3 sentences naming the weak invariant and how it can be violated
+  suggested_fix: optional type-design guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='type-design-analyzer', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

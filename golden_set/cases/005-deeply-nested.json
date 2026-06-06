@@ -1,0 +1,14 @@
+{
+  "id": "005-deeply-nested",
+  "agent": "code-reviewer",
+  "diff_path": "golden_set/diffs/005-deeply-nested.diff",
+  "reference_findings": [
+    {
+      "file": "services/router.py",
+      "line": 10,
+      "category": "complexity",
+      "severity": "SUGGESTION"
+    }
+  ],
+  "reference_goal": "Detect deeply nested conditional structure in services/router.py around line 10 — five levels of `if` nesting makes the control flow hard to follow. Refactor to early returns or extracted helpers. Severity should be SUGGESTION."
+}

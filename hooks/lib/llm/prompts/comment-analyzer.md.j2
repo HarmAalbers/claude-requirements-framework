@@ -1,0 +1,24 @@
+{% include 'partials/safety.j2' %}
+
+Check the comments and docstrings in the diff below for accuracy:
+  - comments that no longer match the code they describe (comment rot)
+  - comments that actively contradict or mislead about the behavior
+  - stale TODO/FIXME or references to removed code
+  - non-obvious behavior with no explanatory comment where one is warranted
+
+Do not flag the absence of comments on self-explanatory code.
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   style
+  title:      10-120 chars
+  body:       1-3 sentences naming the inaccuracy and the correct behavior
+  suggested_fix: optional corrected wording or guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='comment-analyzer', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

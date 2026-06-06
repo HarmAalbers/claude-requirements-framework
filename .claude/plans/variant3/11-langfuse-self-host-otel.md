@@ -1,127 +1,199 @@
-# Step 11 — Self-host Langfuse + OpenInference instrumentation
+# Step 11 — Self-host Langfuse + Claude Agent SDK observability
+
+> **Revised 2026-05-22** per [ADR-016](../../../docs/adr/ADR-016-v3-claude-agent-sdk-substrate.md). The original Instructor/Anthropic-SDK assumptions are gone; this body is the design validated by the brainstorming session on 2026-05-22 and is what Step 11 actually implements.
 
 ## Goal
 
-Stand up a local Langfuse instance and wire the OpenInference Claude Agent SDK instrumentor. Every Claude call from V3 code is traced. No behavior change for users.
+Stand up a local Langfuse v3 instance and wire OpenInference's Claude Agent SDK instrumentor against it. Every `claude_agent_sdk.query()` and `ClaudeSDKClient` call originating from V3 code is auto-traced. No behavior change for callers; observability is opt-in via env vars.
 
-## Why now
+## Why now (Step 11 is foundational)
 
-We have one Instructor-wrapped agent (Step 10). Instrumenting it gives us our first end-to-end trace. Better to validate the trace path on one agent before scaling out.
+The 2026-05-22 spike (`hooks/lib/llm/_spikes/v3_spike.py`) showed 7x latency variance — 80s vs 583s — between two runs of the same workflow on identical inputs. Hypotheses (subprocess contention, Anthropic-side rate limiting under Max auth, invisible internal SDK retries) cannot be distinguished without traces. Without Step 11 in place first, every subsequent V3 step would be tuned against noise.
+
+## Scope
+
+### In scope
+
+- Self-hosted Langfuse v3 + Postgres 16 via `infra/docker-compose.yml`
+- `hooks/lib/llm/observability.py` populated — lazy-init OpenInference Claude Agent SDK instrumentor + OTLP exporter
+- `hooks/lib/llm/_spikes/v3_langfuse_smoke.py` — runnable visual smoke test
+- `tests/test_observability.py` — 6 dep-free unit tests
+- README "Local observability" section with manual Langfuse bootstrap walkthrough
+- Prep patch removing dead `[llm]` extras (`pydantic-ai`, `instructor`, `anthropic`, `llama-index-embeddings-openai`)
+
+### Out of scope
+
+- Prompt registry mirroring (Step 12)
+- Token-cost dashboards (Step 17 territory)
+- CI integration for the smoke script
+- Cloud-hosted Langfuse
+- Tracing of the `anthropic` SDK (no longer used post-ADR-016)
+
+## Validated stack choices
+
+| Layer | Choice | Source |
+|---|---|---|
+| Local Langfuse | `langfuse/langfuse:3` (Docker) | [Langfuse self-hosting docs](https://langfuse.com/self-hosting) |
+| Backing store | `postgres:16` (volume-mounted) | Langfuse v3 requirement |
+| Instrumentor | `openinference-instrumentation-claude-agent-sdk` only | [Langfuse Claude Agent SDK guide](https://langfuse.com/integrations/frameworks/claude-agent-sdk); ADR-016 ruled out Anthropic SDK direct use |
+| Exporter | `opentelemetry-exporter-otlp-proto-http` (already in extras) | Standard OTel HTTP exporter; targets `LANGFUSE_HOST/api/public/otel/v1/traces` |
+| Env contract | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` | Langfuse-native naming; `init_observability()` derives the OTLP URL + Basic-auth header |
+| Init pattern | Lazy: first import of `observability` runs init; `init_observability()` also exported as idempotent explicit call | Honors the `hooks/lib/llm/__init__.py` "no eager third-party imports" rule |
+
+## Architecture & data flow
+
+```
+caller code
+   │
+   │  from hooks.lib.llm.observability import init_observability
+   │  init_observability()         # idempotent; module body also calls it on import
+   ▼
+hooks/lib/llm/observability.py
+   ├─► reads LANGFUSE_PUBLIC_KEY / _SECRET_KEY / _HOST
+   ├─► if any unset → log_once("observability disabled"), return
+   ├─► try import openinference + opentelemetry
+   │     ├─ ImportError → log_once("install with: pip install -e '.[llm]'"), return
+   │     └─ ok → configure TracerProvider + OTLPSpanExporter(host + auth header)
+   ├─► ClaudeAgentSDKInstrumentor().instrument()    # monkey-patches query() + ClaudeSDKClient
+   └─► _initialized = True
+        │
+        ▼
+caller does `from claude_agent_sdk import query; async for msg in query(...)`
+   │
+   │  instrumented wrapper opens span "claude_agent_sdk.query" with attributes:
+   │    model, prompt, output_format schema name, input_tokens, output_tokens, cost_usd
+   ▼
+OTLPSpanExporter batches spans → POST → http://localhost:3000/api/public/otel/v1/traces
+   │
+   ▼
+Langfuse ingests; trace appears in UI under /project/<id>/traces within ~1-5s
+```
+
+### Init point convention
+
+Any V3 module that calls `claude_agent_sdk.query()` or instantiates `ClaudeSDKClient` MUST either:
+
+- `from hooks.lib.llm.observability import init_observability; init_observability()` at module top — explicit, recommended.
+- `from hooks.lib.llm import observability` — side-effect import; module body runs init.
+
+Skipping both yields untraced calls. The smoke script demonstrates the recommended pattern.
+
+### Failure modes
+
+| Condition | Behavior | Surfaced? |
+|---|---|---|
+| Env vars unset | Silent skip; instrumentation never installed | One INFO log line per process |
+| Extras not installed | `try/except ImportError`; log install hint | One INFO log line per process |
+| Langfuse unreachable | OTel exporter buffers + retries with backoff; foreground unaffected | Visible only with `OTEL_LOG_LEVEL=debug` |
+| Invalid keys (401) | Exporter logs retry warnings; eventually drops batch | UI shows no traces — discovered visually |
+| Double init | `_initialized` flag short-circuits | None |
+| Init internals raise | `try/except Exception` swallows; logs failure (full traceback only if `LANGFUSE_DEBUG=1`) | One INFO log line per process |
+
+**Fail-open principle**: every code path that touches Langfuse degrades to "no traces" rather than "raise". Matches existing precedent in `hooks/lib/obsidian.py`.
 
 ## Files touched
 
-- `infra/docker-compose.yml` (new) — Langfuse + Postgres
-- `infra/.env.example` (new) — Langfuse keys placeholders
-- `hooks/lib/llm/observability.py` (populated)
-- `hooks/lib/llm/__init__.py` — call `_init_observability()` on import (guarded)
-- `README.md` — add "Local observability" section
+### Prep patch (`step-11-pyproject-cleanup`)
 
-## Validated APIs (from [Langfuse Claude Agent SDK docs](https://github.com/langfuse/langfuse-docs/blob/main/content/integrations/frameworks/claude-agent-sdk.mdx))
-
-```python
-%pip install langfuse claude-agent-sdk openinference-instrumentation-claude-agent-sdk -q
+```
+pyproject.toml                      -4 lines (drop pydantic-ai, instructor, anthropic,
+                                              llama-index-embeddings-openai)
+                                    +1 comment pointing at ADR-016
 ```
 
-```python
-from openinference.instrumentation.claude_agent_sdk import ClaudeAgentSDKInstrumentor
-ClaudeAgentSDKInstrumentor().instrument()
+### Observability patch (`step-11-observability-module`)
+
+```
+infra/docker-compose.yml            NEW — Langfuse v3 + Postgres 16, port 3000
+infra/.env.example                  NEW — placeholders for the three LANGFUSE_* vars
+hooks/lib/llm/observability.py      POPULATED — ~40 lines: env read, OTel setup,
+                                                instrumentor install, _initialized guard
+.gitignore                          +1 line: infra/.env
 ```
 
-The instrumentor automatically captures spans for `PreToolUse`, `PostToolUse`, `PostToolUseFailure` events from Claude Agent SDK ([Phoenix integration page](https://arize.com/docs/phoenix/integrations/python/claude-agent-sdk)).
+### Smoke + docs patch (`step-11-smoke-and-docs`)
 
-The `@observe()` decorator (from `langfuse.decorators`) wraps arbitrary functions — useful when calling Claude through Instructor (which uses the Anthropic SDK, not the Agent SDK directly). For full coverage we also install `openinference-instrumentation-anthropic`.
-
-## Implementation
-
-### Docker compose
-```yaml
-# infra/docker-compose.yml
-services:
-  langfuse-db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse-db-data:/var/lib/postgresql/data
-
-  langfuse:
-    image: langfuse/langfuse:3
-    depends_on: [langfuse-db]
-    environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      NEXTAUTH_SECRET: change-me-locally
-      SALT: change-me-locally
-      NEXTAUTH_URL: http://localhost:3000
-      TELEMETRY_ENABLED: "false"
-    ports: ["3000:3000"]
-
-volumes:
-  langfuse-db-data:
+```
+hooks/lib/llm/_spikes/v3_langfuse_smoke.py  NEW — ~25 lines, one query() call with
+                                                  output_format=ReviewFinding,
+                                                  prints UI hint
+tests/test_observability.py                 NEW — 6 dep-free tests (see below)
+README.md                                   NEW section: "Local observability"
+                                                  Manual Langfuse bootstrap walkthrough
 ```
 
-### Python wiring
-```python
-# hooks/lib/llm/observability.py
-import os
-from openinference.instrumentation.claude_agent_sdk import ClaudeAgentSDKInstrumentor
-from openinference.instrumentation.anthropic import AnthropicInstrumentor
+## Verification
 
-_initialized = False
+### Layer 1 — existing regression tests (no new wiring needed)
 
-def init_observability() -> None:
-    global _initialized
-    if _initialized:
-        return
-    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
-        return  # silently skip if not configured
-    ClaudeAgentSDKInstrumentor().instrument()
-    AnthropicInstrumentor().instrument()   # also captures Instructor calls
-    _initialized = True
+```bash
+python3 hooks/test_requirements.py    # must still pass 1290/1290
 ```
 
-```python
-# hooks/lib/llm/__init__.py
-from .observability import init_observability
-init_observability()  # idempotent; no-op if not configured
+### Layer 2 — new unit tests (no live Langfuse needed)
+
+`tests/test_observability.py` — runs via the project's hand-rolled `TestRunner`:
+
+```
+test_disabled_when_no_public_key                     env unset → returns None, sets flag
+test_disabled_on_import_error                        monkeypatch openinference → no raise
+test_init_idempotent                                 second call returns immediately
+test_logs_disabled_message_once                      two calls → one log line
+test_module_import_triggers_init                     subprocess `import observability` → no raise
+test_logs_init_failure_with_traceback_only_when_debug_set    LANGFUSE_DEBUG flag respected
 ```
 
-## Example: verifying a trace
+### Layer 3 — manual spike verification
 
-After `docker compose up -d` and setting `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` env vars:
+```bash
+docker compose -f infra/docker-compose.yml up -d
+# Bootstrap Langfuse UI (see README "Local observability"), copy keys
+export LANGFUSE_PUBLIC_KEY=pk-... LANGFUSE_SECRET_KEY=sk-... LANGFUSE_HOST=http://localhost:3000
 
-```python
-from hooks.lib.llm.workers.code_reviewer import review
-report = review("@@ -1,3 +1,3 @@\n-print('hi')\n+os.system(input())\n")
-# Open http://localhost:3000 → traces tab → see the call with prompt + response
+python3 hooks/lib/llm/_spikes/v3_langfuse_smoke.py
+# → expects: one Sonnet call, prints "→ Now open http://localhost:3000/traces"
+
+# Visual verification: trace appears within 5s, span attributes include
+# model + token counts + cost
 ```
 
-## Acceptance
+## Acceptance criteria
 
-- [ ] `docker compose up -d` from `infra/` starts Langfuse on localhost:3000
-- [ ] Logging in to Langfuse UI succeeds (set up a local user once)
-- [ ] After running the Step 10 wrapper, a trace appears in Langfuse with model, tokens, cost
-- [ ] If `LANGFUSE_PUBLIC_KEY` is unset, `init_observability` returns silently — no errors
-- [ ] No existing tests fail
+- [ ] `docker compose -f infra/docker-compose.yml up -d` starts Langfuse on `localhost:3000`
+- [ ] `pyproject.toml [llm]` no longer lists `pydantic-ai`, `instructor`, `anthropic`, `llama-index-embeddings-openai`
+- [ ] `python3 tests/test_observability.py` passes 6/6
+- [ ] `python3 hooks/test_requirements.py` still passes 1290/1290 (no regression)
+- [ ] With env vars set + Langfuse running, smoke script produces a visible trace in the UI
+- [ ] With env vars unset, smoke script still completes — `query()` is unaffected, no exception, single INFO log line
+- [ ] `from hooks.lib.llm import observability` in a fresh shell never raises
+- [ ] README section explains the manual Langfuse bootstrap end-to-end
 
 ## Rollback
 
 ```bash
-docker compose -f infra/docker-compose.yml down -v
-git revert <commit>
+# Granular (per-patch) — within the stg stack:
+stg pop                                           # smoke + docs
+stg pop                                           # observability module
+stg pop                                           # pyproject cleanup
+
+# Local Langfuse teardown:
+docker compose -f infra/docker-compose.yml down -v   # -v drops the postgres volume
 ```
 
 ## Effort
 
-1 day
+~1 day, split as: prep patch (10 min), observability module + docker (3-4 hr), smoke + tests + docs (3-4 hr).
 
-## Depends on
+## Depends on / blocks
 
-Step 10 (the first traced call).
+- **Depends on**: Step 08 (LLM package scaffold), Step 09 (Pydantic schemas — for the smoke script's `output_format`)
+- **Blocks**: Step 10 (worker pattern needs traces to debug latency), Step 12 (prompt registry rides on Langfuse), Step 17 (token-budget enforcement needs cost data from traces)
 
 ## Honest scope notes
 
-- Langfuse uses a Postgres backend. Keep the data volume — it accumulates traces over weeks.
-- Run `docker compose pull` periodically to receive Langfuse updates.
-- For team use later: switch from local Langfuse to Langfuse Cloud or a shared instance — same Python code.
+- Langfuse's first-run bootstrap is manual (web UI: create user, create project, copy keys). The README walkthrough makes this explicit.
+- Trace ingestion has a ~1-5s lag; the smoke script's "open UI" instruction accounts for this implicitly.
+- Postgres data volume (`langfuse-db-data`) is preserved across `docker compose down` and lost only with `down -v`. Treat it like a dev database — usable across weeks for latency-drift analysis.
+- The OTLP exporter's silent-retry behavior is a feature here. If you ever want loud failure for debugging, set `OTEL_LOG_LEVEL=debug` in your shell.
+- Future migration to Langfuse Cloud or a shared team instance is a `LANGFUSE_HOST` change only — no Python code touches.
+- **Anthropic-instrumentor gap (R10)**: OpenInference's `instrumentation-claude-agent-sdk` produces AGENT-level spans around the outer `query()` boundary only. Internal Anthropic API calls (retries, model-side latency, `output_format` re-prompt cycles) are NOT broken out into child spans — that would require `openinference-instrumentation-anthropic`, which we deliberately drop per ADR-016 because the Max-only path doesn't call the Anthropic SDK directly. Consequence: when investigating a slow trace, we see "this query took N seconds" but not WHY at the API-call layer. To diagnose the 7x latency variance from the 2026-05-22 spike, expect to need additional structured logging at the subprocess layer (e.g., wrap `query()` with explicit time-to-first-message capture). This is a known limitation and worth revisiting when an API-key path exists for V3.

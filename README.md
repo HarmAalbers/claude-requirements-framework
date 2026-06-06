@@ -13,9 +13,9 @@ A powerful hook-based system for enforcing development workflow requirements in 
 - **⚡ CLI Tool**: Simple `req` command for managing requirements
 - **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
 - **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 447 passing tests with full TDD coverage
+- **🧪 Comprehensive Tests**: 1445 passing tests with full TDD coverage
 - **📦 Project Inheritance**: Cascade configuration from global → project → local
-- **🔧 Development Tools**: Bidirectional sync.sh for seamless development workflow
+- **🔧 Development Tools**: Plugin-bundle build (`scripts/build_plugin_hooks.py`) mirrors `hooks/` into the plugin tree for a self-contained install
 
 ## Quick Start
 
@@ -30,12 +30,22 @@ cd ~/tools/claude-requirements-framework
 ./install.sh
 ```
 
-The installer will:
-1. Copy hooks to `~/.claude/hooks/`
-2. Install the global configuration to `~/.claude/requirements.yaml`
-3. Register all hooks (PreToolUse, PostToolUse, SessionStart, Stop, SessionEnd) in your Claude Code settings
-4. Add `ENABLE_TOOL_SEARCH=true` to your shell rc (reduces Claude Code's initial context — requires Claude Code v2.0.74+)
-5. Display marketplace installation instructions for the plugin
+The installer sets up only the host-side tooling — it does **not** copy hook scripts to `~/.claude/hooks/` or write a `hooks` block into your Claude Code settings. Specifically, `install.sh`:
+1. Installs the global configuration to `~/.claude/requirements.yaml`
+2. Creates the `req` CLI symlink at `~/.local/bin/req`
+3. Registers the phase-aware statusline in `~/.claude/settings.json` (only when you don't already have a custom one)
+4. Adds `ENABLE_TOOL_SEARCH=true` to your shell rc (reduces Claude Code's initial context — requires Claude Code v2.0.74+)
+5. Displays plugin installation instructions
+
+**Lifecycle hooks ship with the plugin, not the installer.** The plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for hook registration (commands resolved via `${CLAUDE_PLUGIN_ROOT}`). Install the plugin to activate the hooks:
+
+```bash
+# In a Claude Code session — persistent install
+/plugin install requirements-framework@requirements-framework
+
+# Or for development (live reload from your clone)
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
+```
 
 ### Token Efficiency: on-demand tool loading
 
@@ -423,6 +433,8 @@ When enabled, the Stop hook prevents Claude Code sessions from ending until all 
 
 The requirements framework includes a comprehensive plugin with specialized agents, orchestrator commands, and management skills.
 
+> **Authoring note (v4.5.0+):** Plugin agents under `plugins/requirements-framework/agents/` use a two-file pattern — `<name>.md.j2` (Jinja2 source-of-truth, the file you edit) and `<name>.md` (rendered output, what Claude Code dispatches). Run `python3 scripts/render_prompts.py` after editing a `.md.j2`. See DEVELOPMENT.md § "Plugin Agent Authoring" for the full workflow.
+
 ### Agents (10)
 
 **Workflow Enforcement**:
@@ -604,7 +616,7 @@ hooks:
 
 ## Session Lifecycle
 
-The framework uses four hooks to manage the complete session lifecycle:
+The framework registers **thirteen** lifecycle hooks via the plugin's `hooks/hooks.json` (see CLAUDE.md → "Session Lifecycle (Thirteen Hooks)" for the full list). The core flow that gates your work is:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -640,6 +652,8 @@ The framework uses four hooks to manage the complete session lifecycle:
 | PreToolUse | Before Edit/Write | Yes | Block modifications until requirements satisfied |
 | Stop | Claude about to finish | Yes | Final verification before stopping |
 | SessionEnd | Session ends | No | Cleanup session state |
+
+> The table above lists the four core hooks. The plugin also registers `UserPromptSubmit`, `PermissionRequest`, `PostToolUse` (auto-satisfy skills, clear single-use, git events, plan enter/exit), `PostToolUseFailure`, `SubagentStart`, `PreCompact`, `TeammateIdle`, and `TaskCompleted` — thirteen in total. The authoritative registration lives in `plugins/requirements-framework/hooks/hooks.json`.
 
 ### Stop Hook Behavior
 
@@ -762,21 +776,21 @@ req satisfy commit_plan --ttl 3600
 
 ## Testing
 
-The framework includes comprehensive tests (447 tests, 100% passing):
+The framework includes comprehensive tests (1445 tests, 100% passing):
 
 ```bash
-# Run all tests
-cd ~/.claude/hooks
-python3 test_requirements.py
+# Run all tests (from the repo root)
+cd ~/Tools/claude-requirements-framework
+python3 hooks/test_requirements.py
 
 # Expected output:
 # 🧪 Requirements Framework Test Suite
 # ==================================================
 # ...
-# Results: 447/447 tests passed
+# Results: 1445/1445 tests passed
 ```
 
-Test categories:
+Representative test categories include:
 - Session management (31 tests)
 - Configuration loading (13 tests)
 - Hook config (6 tests)
@@ -803,7 +817,7 @@ Test categories:
 │   ├── handle-stop.py              # Stop hook (requirement verification)
 │   ├── handle-session-end.py       # SessionEnd hook (cleanup)
 │   ├── requirements-cli.py         # CLI tool (req command)
-│   ├── test_requirements.py        # Test suite (447 tests)
+│   ├── test_requirements.py        # Test suite (1445 tests)
 │   └── lib/
 │       ├── config.py               # Configuration cascade + hook config
 │       ├── git_utils.py            # Git operations
@@ -872,6 +886,88 @@ SESSION END
     - Optionally clears session-scoped state
 ```
 
+## Local observability (V3)
+
+V3 LLM calls (Step 11+) can be traced into a self-hosted Langfuse instance.
+This is opt-in: with no env vars set, V3 code runs without tracing and no
+errors are raised.
+
+### One-time bootstrap
+
+```bash
+# 1. Bring up Langfuse + Postgres + ClickHouse + Redis + MinIO
+cd infra && docker compose up -d && cd ..
+
+# Wait ~60s for all containers to become healthy
+docker compose -f infra/docker-compose.yml ps
+
+# 2. Open the UI and create a user + project
+open http://localhost:3000
+#    a. Sign up (local-only account — any email works)
+#    b. Create an organization (e.g., "local")
+#    c. Create a project (e.g., "requirements-framework")
+#    d. Settings → API Keys → Create new keys
+#    e. Copy the public + secret key
+
+# 3. Save the keys to an environment file
+cp infra/.env.example infra/.env
+$EDITOR infra/.env    # paste the two keys
+
+# 4. Source the env vars in your shell
+set -a; source infra/.env; set +a
+```
+
+### Host-port remap (heads-up)
+
+`infra/docker-compose.yml` carries intentional **host-port remappings** so the
+local Langfuse stack doesn't collide with other Postgres/Redis instances on
+your machine:
+
+- Postgres: host `55432` → container `5432`
+- Redis: host `56379` → container `6379`
+
+Container-to-container connections inside the compose network are unaffected,
+and `langfuse-web` still listens on the standard `:3000`. See the header
+comment at the top of `infra/docker-compose.yml` for the full list of local
+deviations from the upstream pin.
+
+### Verify the wiring
+
+Run the joint test suite first — all three scripts should exit cleanly:
+
+```bash
+python3 hooks/test_requirements.py \
+  && python3 tests/test_observability.py \
+  && python3 tests/test_schemas.py
+```
+
+Then exercise the runnable smoke spike against your bootstrapped Langfuse:
+
+```bash
+python3 hooks/lib/llm/_spikes/v3_langfuse_smoke.py
+```
+
+Expected: prints `✓ Got ReviewFinding`, then a UI link. Within 5s, a trace
+appears in Langfuse UI → Traces tab.
+
+### Tear down
+
+```bash
+docker compose -f infra/docker-compose.yml down       # stop containers, keep data
+docker compose -f infra/docker-compose.yml down -v    # stop + delete trace history
+```
+
+### Troubleshooting
+
+- **"observability disabled" log line**: one or more of `LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` is unset. Re-source `infra/.env`.
+- **Code runs but no trace appears**: check `OTEL_LOG_LEVEL=debug python3 ...`
+  to see exporter retries.
+- **Init failure with no traceback**: set `LANGFUSE_DEBUG=1` to get the full
+  stack trace.
+- **Container `unhealthy` after `up -d`**: `docker compose logs <service>` and
+  consult [Langfuse self-hosting docs](https://langfuse.com/self-hosting).
+
 ## Development
 
 ### Creating Custom Requirements
@@ -926,18 +1022,19 @@ def test_my_feature(runner: TestRunner):
 
 ### Hook Not Triggering
 
-1. Check hooks are registered in `~/.claude/settings.local.json`:
+Lifecycle hooks are registered by the plugin, not by hand — do not add a `hooks` block to `~/.claude/settings.json` yourself. If hooks aren't firing:
 
-```json
-{
-  "hooks": {
-    "PreToolUse": "~/.claude/hooks/check-requirements.py",
-    "SessionStart": "~/.claude/hooks/handle-session-start.py",
-    "Stop": "~/.claude/hooks/handle-stop.py",
-    "SessionEnd": "~/.claude/hooks/handle-session-end.py"
-  }
-}
+1. Confirm the plugin is installed and enabled:
+
+```bash
+# In a Claude Code session — persistent install
+/plugin install requirements-framework@requirements-framework
+
+# Or run with live reload from your clone
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
 ```
+
+The plugin's `hooks/hooks.json` registers every hook via `${CLAUDE_PLUGIN_ROOT}`.
 
 2. Check the requirement is enabled:
 
@@ -1080,39 +1177,29 @@ The framework now supports the complete Claude Code session lifecycle with four 
 
 **Problem**: Hooks not firing after installation
 
-1. **Check hook registration format**:
+Hooks are registered by the plugin's `hooks/hooks.json` (via `${CLAUDE_PLUGIN_ROOT}`), not by a hand-written `hooks` block in `~/.claude/settings.json`.
+
+1. **Confirm the plugin is installed and enabled**:
    ```bash
-   cat ~/.claude/settings.local.json
+   # In a Claude Code session
+   /plugin install requirements-framework@requirements-framework
    ```
-   Hooks should use the array-of-matchers format:
-   ```json
-   {
-     "hooks": {
-       "PreToolUse": [{
-         "matcher": "*",
-         "hooks": [{"type": "command", "command": "~/.claude/hooks/check-requirements.py"}]
-       }]
-     }
-   }
+   Or run with live reload from your clone:
+   ```bash
+   claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
    ```
 
-2. **Verify hooks are executable**:
+2. **Verify the bundled hooks are present and in sync**:
    ```bash
-   ls -l ~/.claude/hooks/*.py
+   cd ~/Tools/claude-requirements-framework
+   python3 scripts/build_plugin_hooks.py --check
    ```
-   If not executable: `chmod +x ~/.claude/hooks/*.py`
 
-3. **Test hook manually**:
+3. **Test a hook manually** (from the repo):
    ```bash
-   echo '{"tool_name":"Read"}' | python3 ~/.claude/hooks/check-requirements.py
+   echo '{"tool_name":"Read"}' | python3 hooks/check-requirements.py
    ```
    Should return immediately with no errors.
-
-4. **Re-run installation**:
-   ```bash
-   cd ~/tools/claude-requirements-framework
-   ./install.sh
-   ```
 
 **Problem**: `req` command not found
 
@@ -1196,32 +1283,28 @@ This means `req satisfy` couldn't find your Claude Code session. Solutions:
    req doctor  # Full diagnostic
    ```
 
-### Sync Issues (Development)
+### Plugin Changes Not Taking Effect (Development)
 
-**Problem**: Changes not taking effect
+**Problem**: Edits to `hooks/` aren't reflected in a running session
 
-1. **Deploy changes**:
+The repo `hooks/` tree is the source of truth; the copies under `plugins/requirements-framework/hooks/` are build artifacts. After editing a hook or `lib/` module:
+
+1. **Rebuild the plugin bundle**:
    ```bash
-   cd ~/tools/claude-requirements-framework
-   ./sync.sh deploy
+   cd ~/Tools/claude-requirements-framework
+   python3 scripts/build_plugin_hooks.py          # mirror hooks/ into the plugin
+   python3 scripts/build_plugin_hooks.py --check   # report drift without writing
    ```
 
-2. **Check sync status**:
+2. **Reload the plugin** — restart the session, or run with live reload:
    ```bash
-   ./sync.sh status  # Shows files that differ
-   ./sync.sh diff     # Shows actual differences
+   claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
    ```
 
-3. **Verify deployment**:
+3. **Verify**:
    ```bash
-   python3 ~/.claude/hooks/test_requirements.py
+   python3 hooks/test_requirements.py
    ```
-
-**Problem**: Lost work after sync
-
-- The repository is the source of truth
-- Always run `./sync.sh status` before committing
-- If you edited deployed files, copy those changes into the repo before deploying
 
 ### Performance Issues
 
@@ -1256,7 +1339,7 @@ This means `req satisfy` couldn't find your Claude Code session. Solutions:
 
 3. **Test manually**:
    ```bash
-   python3 ~/.claude/hooks/test_requirements.py
+   python3 hooks/test_requirements.py
    ```
 
 4. **Report issues**: https://github.com/anthropics/claude-code/issues
@@ -1265,63 +1348,39 @@ This means `req satisfy` couldn't find your Claude Code session. Solutions:
 
 ## Development Workflow
 
-### Keeping Repository and Deployed Installation in Sync
+### Keeping the Plugin Bundle in Sync
 
-The framework exists in two locations:
-- **Repository**: `~/tools/claude-requirements-framework/` (source of truth, git-controlled)
-- **Deployed**: `~/.claude/hooks/` (active installation, where Claude Code loads hooks)
-
-Use the `sync.sh` script to keep them in sync:
+The repo `hooks/` tree is the **single source of truth**. The hook copies under `plugins/requirements-framework/hooks/` are build artifacts (the `.py` analogue of the rendered prompt templates) so a marketplace / `--plugin-dir` install is self-contained. After editing any hook or `lib/` module, rebuild the bundle:
 
 ```bash
-cd ~/tools/claude-requirements-framework
+cd ~/Tools/claude-requirements-framework
 
-# Check sync status (run this FIRST before committing!)
-./sync.sh status
+# Mirror hooks/ → plugins/requirements-framework/hooks/
+python3 scripts/build_plugin_hooks.py
 
-# Deploy changes from repo → ~/.claude/hooks
-./sync.sh deploy
-
-# See detailed differences
-./sync.sh diff
+# Report drift without writing (this check is wired into the test suite)
+python3 scripts/build_plugin_hooks.py --check
 ```
+
+> There is no user "deploy" step and nothing is copied into `~/.claude/hooks/`. Hooks activate by installing the plugin (`/plugin install requirements-framework@requirements-framework`) or running `claude --plugin-dir …`.
 
 ### Standard Development Workflow
 
 ```bash
-# 1. Make changes in repository
+# 1. Make changes in the repo hooks/ tree (source of truth)
 vim hooks/lib/config.py
 
-# 2. Deploy to test
-./sync.sh deploy
+# 2. Rebuild the plugin bundle
+python3 scripts/build_plugin_hooks.py
 
 # 3. Run tests
-python3 ~/.claude/hooks/test_requirements.py
+python3 hooks/test_requirements.py
 
-# 4. Commit when tests pass
+# 4. Commit when tests pass (bundle in sync via build_plugin_hooks.py --check)
 git add .
 git commit -m "feat: Add feature"
 git push origin master
 ```
-
-### Quick Fix Workflow (Claude-Driven)
-
-```bash
-# 1. Claude edits deployed files (in ~/.claude/hooks/)
-# 2. Copy changes into repository (repeat for each file changed)
-cd ~/tools/claude-requirements-framework
-cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
-
-# 3. Deploy from repo to keep source of truth
-./sync.sh deploy
-
-# 4. Commit
-git add .
-git commit -m "fix: Bug description"
-git push origin master
-```
-
-**Important**: Always run `./sync.sh status` before committing to ensure repo and deployed locations match!
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, TDD practices, and troubleshooting guide.
 
@@ -1338,8 +1397,8 @@ Important architectural decisions are documented in `docs/adr/`:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for your changes (TDD)
-4. Deploy and test: `./sync.sh deploy && python3 ~/.claude/hooks/test_requirements.py`
-5. Ensure sync status is clean: `./sync.sh status`
+4. Build the bundle and test: `python3 scripts/build_plugin_hooks.py && python3 hooks/test_requirements.py`
+5. Ensure the bundle is in sync: `python3 scripts/build_plugin_hooks.py --check`
 6. Commit and submit a pull request
 
 ## License

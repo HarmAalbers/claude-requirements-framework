@@ -1,0 +1,14 @@
+{
+  "id": "003-off-by-one",
+  "agent": "code-reviewer",
+  "diff_path": "golden_set/diffs/003-off-by-one.diff",
+  "reference_findings": [
+    {
+      "file": "lib/window.py",
+      "line": 15,
+      "category": "logic",
+      "severity": "IMPORTANT"
+    }
+  ],
+  "reference_goal": "Detect off-by-one indexing bug in lib/window.py around line 15 — the loop iterates i over range(len(items)) and accesses items[i+1], which is out of bounds on the last iteration. Severity should be IMPORTANT."
+}

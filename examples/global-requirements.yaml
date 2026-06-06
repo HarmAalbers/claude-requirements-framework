@@ -376,9 +376,13 @@ requirements:
   verification_evidence:
     enabled: true
     type: blocking
-    scope: single_use
+    scope: session            # Stop's verify_scopes default is [session]; single_use is skipped there
+    stop_only: true           # Never blocks an edit at PreToolUse; enforced only at Stop
     description: "Ensures fresh verification evidence before claiming work is complete."
-    trigger_tools: []  # Only checked at Stop via handle-stop.py
+    trigger_tools:            # Armed when implementation work happens, not gating it
+      - Edit
+      - Write
+      - MultiEdit
     auto_resolve_skill: "requirements-framework:verification-before-completion"
     satisfied_by_skill: 'requirements-framework:verification-before-completion'
     message: |
@@ -476,6 +480,19 @@ requirements:
 #       ---
 #       Fallback: `req satisfy architecture_review`
 
+# Budget tracking (Step 17a — SDK monthly $-tracker)
+# Captures cost_usd / token counts from every claude-agent-sdk query()
+# into ~/.claude/requirements-framework/usage/<YYYY-MM>.jsonl. Inspect
+# with: `req budget status` (also `req budget tail`, `req budget warn-if-over`).
+# The pool is per user account (not per repo), so this block is global.
+# budgets:
+#   sdk_pool:
+#     enabled: true                # Set false to disable ledger writes
+#     monthly_limit_usd: 100       # Max 5x default; bump to 200 for Max 20x
+#     warn_threshold_pct: 75       # Soft stderr warning at this projection
+#     critical_threshold_pct: 95   # Louder warning (still soft in 17a)
+#     timezone: "Europe/Amsterdam" # Used for month boundary alignment
+
 # Hooks configuration
 hooks:
   # SessionStart hook - injects requirement context at session start/resume
@@ -511,3 +528,31 @@ hooks:
     #   - memories  # .serena/memories/ files
     #   - skills    # Plugin skill files
     #   - commands  # Plugin command files (arguments only)
+
+  # Qdrant session embedding (Step 13 — V3 retrieval write side)
+  # Embeds each session's transcript summary into a local Qdrant collection
+  # so future sessions can retrieve related prior work. Off by default;
+  # opt-in by flipping enabled: true here or in .claude/requirements.yaml.
+  #
+  # Prereqs (one-time):
+  #   docker compose -f infra/docker-compose.qdrant.yml up -d
+  #   pip install -e '.[llm]'
+  #   python3 scripts/bootstrap_qdrant.py
+  qdrant:
+    enabled: false                # Flip to true to enable session embedding
+    # host: "localhost"           # override via QDRANT_HOST env var
+    # port: 6333                  # override via QDRANT_PORT env var
+    # collection: "sessions"      # fixed for now — Step 14 may add more
+
+  # SessionStart retrieval pipeline (Step 14 — V3 retrieval read side)
+  # On every SessionStart, query the Qdrant `sessions` collection with a
+  # heuristic query (branch name + last 3 commit subjects) and prepend a
+  # compact "Similar prior sessions" block to the briefing.
+  #
+  # Requires the qdrant block above to be enabled too (no data → no hits).
+  retrieval:
+    enabled: false                # Flip to true to enable SessionStart injection
+    # top_k: 3                    # Max hits requested from Qdrant
+    # max_hits: 3                 # Max hits rendered in the briefing
+    # min_score: 0.5              # Drop hits with cosine score below this
+    # timeout_s: 1.5              # Hard SIGALRM timeout for the whole query

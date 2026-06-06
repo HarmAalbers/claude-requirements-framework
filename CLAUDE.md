@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Handoff — check FIRST on every session start
+
+**Before doing anything else (before reading the rest of this file, before responding to the user's first prompt), check whether `.claude/handoff.md` exists in the repo root.** It is a cross-session handoff prompt written by a prior session, gitignored, pointing at a specific next step. If present:
+
+1. Read `.claude/handoff.md` in full.
+2. Summarize it in 2–3 lines for the user: where the prior session left off + the recommended next step + the named alternatives.
+3. Ask the user whether to proceed with the proposed next step, pick an alternative, or do something else entirely. Do NOT auto-execute it.
+4. After the user decides (whichever path), MOVE the file to `.claude/handoff.archive/<YYYY-MM-DD-HHMMSS>.md` (`mkdir -p` the archive dir if needed) so the file stays as durable history but never re-prompts in a future session. If the user explicitly says "leave it for later," skip the archive step and tell them you've left it in place.
+
+If `.claude/handoff.md` is absent, do not mention this section or the convention to the user — just proceed normally with the rest of the file.
+
+This convention exists so prior sessions can hand off mid-refactor state without the user copy-pasting prompts. To write one for the next session, save the handoff content to `.claude/handoff.md` (it's gitignored).
+
 ## Version Control: Always Use Stacked Git
 
 This project uses **Stacked Git (`stg`)** for all local commit authoring. Every patch goes through the stack — **never use `git commit` directly**.
@@ -78,7 +91,9 @@ The framework exists in two places that must stay synchronized:
 
 Always run `./sync.sh status` before committing to ensure both locations are in sync.
 
-### Session Lifecycle (Thirteen Hooks)
+> **Hook registration is owned by the plugin.** The self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for registering all lifecycle hooks (via `${CLAUDE_PLUGIN_ROOT}`). `install.sh` no longer copies hook scripts to `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json` — it only sets up the `req` CLI, the statusline, and shell env. Install the plugin to activate hooks.
+
+### Session Lifecycle (Sixteen Hooks)
 ```
 SessionStart (handle-session-start.py)
     → Clean stale sessions
@@ -109,6 +124,10 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
 PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
     → Example: Clears single_use requirements after trigger commands
+
+PostToolUse (handle-git-events.py) - after git Bash commands
+    → Monitor git commit/push and gh pr create completions
+    → Update WipTracker git metrics (WIP tracking)
 
 PostToolUse (handle-plan-enter.py) - after EnterPlanMode
     → Auto-invoke brainstorming skill if design_approved not satisfied
@@ -166,6 +185,7 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 - `handle-plan-exit.py` - PostToolUse hook for ExitPlanMode
 - `auto-satisfy-skills.py` - PostToolUse hook for skill completion
 - `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
+- `handle-git-events.py` - PostToolUse hook for git Bash commands (WIP git metrics tracking)
 - `handle-tool-failure.py` - PostToolUseFailure hook (failure pattern tracking)
 - `handle-subagent-start.py` - SubagentStart hook (review agent context injection)
 - `handle-pre-compact.py` - PreCompact hook (pre-compaction state saving)
@@ -174,8 +194,7 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 - `handle-teammate-idle.py` - TeammateIdle hook (team progress tracking, ADR-012)
 - `handle-task-completed.py` - TaskCompleted hook (team task quality gates, ADR-012)
 - `requirements-cli.py` - `req` command implementation
-- `ruff_check.py` - Ruff linter hook
-- `test_requirements.py` - Test suite (950+ tests)
+- `test_requirements.py` - Test suite (1445 tests)
 - `test_branch_size_calculator.py` - Branch size calculator tests
 
 **Core Library** (in `hooks/lib/`):
@@ -268,7 +287,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 19 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 25 agents, 12 commands, and 21 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 
@@ -424,6 +443,20 @@ Use cases:
 - Pre-planning ADR review (EnterPlanMode)
 - Plan validation against ADRs (ExitPlanMode)
 - Architectural compliance at planning stage
+
+**Caveat — plan-mode triggers are mode-dependent**: `EnterPlanMode`/`ExitPlanMode`
+only fire when the user actually transitions into/out of plan mode. Users who
+live in `acceptEdits`/auto-accept mode never emit these events, so a hook keyed
+solely on them never runs for those users.
+
+**Brainstorm nudge is mode-independent**: the brainstorm auto-invoke therefore
+fires from TWO hooks — `handle-plan-enter.py` (on `EnterPlanMode`, for plan-mode
+users) AND `handle-prompt-submit.py` (on `UserPromptSubmit`, which fires every
+turn in every mode). The proactive prompt-submit nudge fires on a substantive
+prompt while the brainstorm gate is unsatisfied, and is deduplicated to once per
+session (shared marker) so the two hooks never double-nudge. Toggle it with
+`hooks.prompt_submit.brainstorm_nudge` (default `true`); the plan-mode path stays
+on `hooks.plan_enter.brainstorm_on_enter` (default `true`).
 
 See `examples/global-requirements.yaml` for full example configuration.
 

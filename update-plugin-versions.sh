@@ -230,20 +230,38 @@ main() {
 
     local files=()
 
-    # Find all agents
+    # Find all agents — prefer .md.j2 source-of-truth where it exists.
+    # Step 16b introduces .md.j2 templates rendered to .md siblings; the
+    # rendered .md must be excluded so git_hash reflects the template
+    # source change, not the conversion commit.
     while IFS= read -r file; do
+        [ -f "${file}.j2" ] && continue  # .md.j2 sibling wins
         [ -f "$file" ] && files+=("$file")
     done < <(find plugins/requirements-framework/agents/ github-issues-plugin/agents/ -name "*.md" -type f 2>/dev/null)
 
+    while IFS= read -r file; do
+        [ -f "$file" ] && files+=("$file")
+    done < <(find plugins/requirements-framework/agents/ github-issues-plugin/agents/ -name "*.md.j2" -type f 2>/dev/null)
+
     # Find all commands
     while IFS= read -r file; do
+        [ -f "${file}.j2" ] && continue  # .md.j2 sibling wins
         [ -f "$file" ] && files+=("$file")
     done < <(find plugins/requirements-framework/commands/ -name "*.md" -type f 2>/dev/null)
 
-    # Find all skills
     while IFS= read -r file; do
         [ -f "$file" ] && files+=("$file")
-    done < <(find plugins/requirements-framework/skills/ -name "skill.md" -type f 2>/dev/null)
+    done < <(find plugins/requirements-framework/commands/ -name "*.md.j2" -type f 2>/dev/null)
+
+    # Find all skills (uppercase SKILL.md per Anthropic skill convention; lowercase pattern silently skipped all files on case-sensitive filesystems like Linux/CI — codex-review-agent finding, 2026-05-24)
+    while IFS= read -r file; do
+        [ -f "${file}.j2" ] && continue  # SKILL.md.j2 sibling wins
+        [ -f "$file" ] && files+=("$file")
+    done < <(find plugins/requirements-framework/skills/ -name "SKILL.md" -type f 2>/dev/null)
+
+    while IFS= read -r file; do
+        [ -f "$file" ] && files+=("$file")
+    done < <(find plugins/requirements-framework/skills/ -name "SKILL.md.j2" -type f 2>/dev/null)
 
     if [ ${#files[@]} -eq 0 ]; then
         echo -e "${RED}✗ No plugin component files found${NC}"
@@ -342,6 +360,28 @@ main() {
         fi
     else
         echo -e "${YELLOW}⚠${NC} Could not sync marketplace version"
+    fi
+
+    # Re-render plugin templates after git_hash updates (Step 16b).
+    # update_file_hash() writes a new git_hash into the .md.j2 source-of-
+    # truth; the rendered .md sibling is stale until we regenerate. In
+    # --check / --verify modes we only report staleness — don't write.
+    # A non-zero render exit feeds into the verify error counter so CI
+    # treats template drift as a verification failure, not a soft warning.
+    if [ -f "scripts/render_prompts.py" ] && command -v python3 >/dev/null 2>&1; then
+        echo ""
+        if [ "$CHECK_MODE" = true ] || [ "$VERIFY_MODE" = true ]; then
+            echo "Plugin template render check (read-only):"
+            if ! python3 scripts/render_prompts.py --check; then
+                [ "$VERIFY_MODE" = true ] && ((errors++)) || true
+            fi
+        else
+            echo "Re-rendering plugin templates:"
+            if ! python3 scripts/render_prompts.py; then
+                echo -e "${RED}✗ Template re-render failed${NC}"
+                ((errors++)) || true
+            fi
+        fi
     fi
 
     echo ""

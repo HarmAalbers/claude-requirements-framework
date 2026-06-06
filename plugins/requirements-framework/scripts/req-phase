@@ -6,10 +6,32 @@
 # (fail-open) — the statusline and conductor must never refuse to run.
 #
 # Usage:
-#   req-phase
-# Output: one of design | plan-write | plan-validate | implement | review | ship
+#   req-phase                       → prints the current phase (one word)
+#   req-phase --with-skill          → prints "<phase>\t<resolver_skill>"
+#   req-phase --with-skill --phase <name>
+#                                   → prints "<name>\t<resolver_skill>" for an
+#                                     explicitly named (possibly gateless) phase
+# Default output: one of design | plan-write | plan-validate | implement |
+# review | ship (or any phase from the project's configured `workflow:`).
+# All arguments are forwarded verbatim to derive_phase.py.
 
 set -uo pipefail
+
+# Detect --with-skill so the fail-open fallbacks emit the same tab-separated
+# "<phase>\t<skill>" shape the conductor parses.
+with_skill=0
+for arg in "$@"; do
+  [[ "$arg" == "--with-skill" ]] && with_skill=1
+done
+
+# Fail-open output: the statusline and conductor must never see a hard error.
+fallback() {
+  if [[ "$with_skill" -eq 1 ]]; then
+    printf 'design\t\n'
+  else
+    echo "design"
+  fi
+}
 
 # Locate derive_phase.py. Search order:
 #   1. $HOME/.claude/hooks/lib  (deployed runtime — every framework user)
@@ -20,7 +42,7 @@ if [[ -f "$HOME/.claude/hooks/lib/derive_phase.py" ]]; then
 elif [[ -f "$script_dir/../../../hooks/lib/derive_phase.py" ]]; then
   lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
 else
-  echo "design"
+  fallback
   exit 0
 fi
 
@@ -28,7 +50,7 @@ fi
 # framework uses internally (slash → dash, then alnum/dash/underscore).
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 if [[ -z "$branch" ]]; then
-  echo "design"
+  fallback
   exit 0
 fi
 safe_branch=$(printf '%s' "$branch" | tr '/\\' '--' | tr -c '[:alnum:]_-' '_')
@@ -36,5 +58,6 @@ safe_branch=$(printf '%s' "$branch" | tr '/\\' '--' | tr -c '[:alnum:]_-' '_')
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 state_file="$repo_root/.git/requirements/${safe_branch}.json"
 
-PYTHONPATH="$lib_dir" python3 "$lib_dir/derive_phase.py" "$state_file" 2>/dev/null \
-  || echo "design"
+# Forward all caller args (e.g. --with-skill, --phase <name>) verbatim.
+PYTHONPATH="$lib_dir" python3 "$lib_dir/derive_phase.py" "$state_file" "$@" 2>/dev/null \
+  || fallback

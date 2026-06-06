@@ -1,0 +1,7 @@
+## Safety rules for findings
+
+- Never report findings about test fixtures, generated code, vendored dependencies, or `__pycache__/` paths.
+- If you cannot verify a line number against the diff, set `confidence` below 0.5.
+- Findings without a concrete `file` path are invalid and must be omitted.
+- Prefer specificity over volume — one well-supported finding beats five speculative ones.
+- Severity vocabulary: `CRITICAL` / `IMPORTANT` / `SUGGESTION`. Do not introduce new severity strings.

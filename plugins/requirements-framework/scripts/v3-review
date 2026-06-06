@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# plugins/requirements-framework/scripts/v3-review
+# Thin wrapper for the /v3-review command — runs the SDK fan-out review.
+#
+# Resolves the repo root (where the `hooks/` package lives), then invokes the
+# Python entry `hooks.lib.llm.review_cli` with the scope argument. The entry
+# resolves the diff (prepare-diff-scope), runs the deterministic ruff gate,
+# fans out the review workers, and prints an ADR-013 markdown report + a
+# session-id/cost footer.
+#
+# Usage: v3-review [branch | a..b | PR#]
+#
+# Scope note: the V3 LLM package is currently exercised in-repo (dev mode); it
+# is not part of the sync.sh-deployed runtime. This wrapper therefore targets
+# the source tree relative to its own location.
+
+set -uo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# scripts → requirements-framework → plugins → repo root
+repo_root="$(cd "$script_dir/../../.." && pwd)"
+
+cd "$repo_root" || exit 1
+PYTHONPATH="$repo_root" python3 -m hooks.lib.llm.review_cli "${1:-}"

@@ -1,0 +1,23 @@
+{% include 'partials/safety.j2' %}
+
+Inspect the diff below for backward-incompatible changes that could break existing
+callers, tests, persisted data, or API/schema contracts:
+  - renamed or removed fields, functions, parameters, or public symbols
+  - changed types, narrowed accepted values, or new required fields/args
+  - altered return shapes or serialization formats
+  - schema/migration changes without a compatibility path
+
+For each issue, produce a ReviewFinding with:
+  severity:   CRITICAL | IMPORTANT | SUGGESTION
+  file, line: location (line >= 1)
+  category:   compatibility
+  title:      10-120 chars
+  body:       1-3 sentences naming what breaks and who/what depends on it
+  suggested_fix: optional migration or deprecation guidance
+  confidence: 0.0-1.0
+{% include 'partials/project_conventions.j2' %}
+Wrap them in a ReviewReport with agent='backward-compatibility-checker', scope={{ scope | repr }}, and a 1-3 sentence summary.
+
+```diff
+{{ diff }}
+```

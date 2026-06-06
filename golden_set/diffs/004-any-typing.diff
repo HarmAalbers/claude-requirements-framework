@@ -1,0 +1,20 @@
+diff --git a/api/handlers.py b/api/handlers.py
+index 0000000..1111111 100644
+--- a/api/handlers.py
++++ b/api/handlers.py
+@@ -1,7 +1,15 @@
+-from typing import Dict
++from typing import Any
+
+ from fastapi import APIRouter
+
+ router = APIRouter()
+
++
++@router.get("/health")
++def health() -> Any:
++    return {
++        "status": "ok",
++        "uptime_seconds": _uptime(),
++        "version": _version(),
++    }
