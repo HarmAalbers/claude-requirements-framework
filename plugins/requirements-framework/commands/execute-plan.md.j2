@@ -3,7 +3,7 @@ name: execute-plan
 description: "Execute implementation plan with batch checkpoints and review"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: e53947f
+git_hash: c5ba794
 ---
 
 > **Workflow position**: invoked by `/req implement`. Run directly to override the conductor.

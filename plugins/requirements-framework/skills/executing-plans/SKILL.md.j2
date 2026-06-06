@@ -1,7 +1,7 @@
 ---
 name: executing-plans
 description: Use when there is a written implementation plan to execute in a separate session with review checkpoints
-git_hash: e53947f
+git_hash: c5ba794
 ---
 
 # Executing Plans

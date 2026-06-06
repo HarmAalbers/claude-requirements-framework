@@ -1,7 +1,7 @@
 ---
 name: subagent-driven-development
 description: Use when executing implementation plans with independent tasks in the current session
-git_hash: e53947f
+git_hash: c5ba794
 ---
 
 # Subagent-Driven Development
