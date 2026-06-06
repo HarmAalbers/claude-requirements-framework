@@ -20,6 +20,16 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# Optional heavy dep: the supervisor patches the claude-wrapper (hooks.lib.llm.claude),
+# which eager-imports the Claude Agent SDK. CI installs only the light llm extras
+# (pyyaml/pydantic/jinja2), so skip cleanly instead of crashing when the SDK is
+# absent — mirrors the optional-dep skip pattern in hooks/test_requirements.py.
+try:
+    import claude_agent_sdk  # noqa: F401
+except ModuleNotFoundError as e:
+    print(f"   ⊘ skipped: optional dep absent ({e.name})")
+    sys.exit(0)
+
 
 class TestRunner:
     def __init__(self):

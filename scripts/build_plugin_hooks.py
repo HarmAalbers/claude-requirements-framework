@@ -180,9 +180,14 @@ def check() -> int:
             continue
         if dest_py not in expected:
             extra.append(dest_py)
-    stale_cache = _dest_pycache_dirs()
 
-    if not (missing or differing or extra or stale_cache):
+    # __pycache__/*.pyc in the bundle is NOT drift: it is gitignored bytecode
+    # regenerated at runtime whenever anything imports from the bundle tree
+    # (e.g. `req verify` smoke-testing the plugin's check-requirements.py, or the
+    # test suite itself). Flagging it caused false CI failures. Source integrity
+    # is purely about .py CONTENT (missing / content-differs / stale-extra);
+    # `build()` still prunes __pycache__ as housekeeping.
+    if not (missing or differing or extra):
         print(f"Bundle in sync: {len(expected)} file(s) match source.")
         return 0
 
@@ -191,7 +196,6 @@ def check() -> int:
         ("missing", missing),
         ("content-differs", differing),
         ("stale-extra", extra),
-        ("__pycache__", stale_cache),
     ):
         for item in sorted(items):
             print(f"  [{label}] {item.relative_to(REPO_ROOT)}")
