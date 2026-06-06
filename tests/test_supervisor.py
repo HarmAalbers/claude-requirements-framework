@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Tests for hooks.lib.llm.supervisor — Step 18.
 
-Mocks `query` and `ResultMessage` inside the supervisor module so no real
-SDK calls happen and no real budget ledger is touched. Mirrors the
-mocking pattern from tests/test_code_reviewer_worker.py.
+Mocks `query` and `ResultMessage` at the `hooks.lib.llm.claude` wrapper so no
+real SDK calls happen and no real budget ledger is touched. The supervisor
+imports those symbols lazily inside `route()` (deferred so the module stays
+import-safe without the optional SDK), so the patch targets the wrapper's
+import site rather than the supervisor module — the lazy-import analogue of
+the `patch.object(worker, ...)` pattern in tests/test_code_reviewer_worker.py.
 
 Run: python3 tests/test_supervisor.py
 """
@@ -55,6 +58,18 @@ VALID_HANDOFF = {
     "rationale": "Implementation complete; pre_pr_review unsatisfied.",
 }
 
+# Explicit routing vocabulary. The target is now a config-driven phase NAME, and
+# route() clamps any out-of-vocabulary target back to the input phase. Passing
+# `phases` explicitly keeps the parsed target ("deep-review") in the active
+# vocabulary so it survives un-clamped, and makes the test deterministic
+# regardless of whether `config` is importable in the bare-script context (its
+# fail-open default is an empty phase set, which would clamp everything).
+PHASES = [
+    {"name": "review", "description": "cross-validated team review"},
+    {"name": "deep-review", "description": "deep multi-agent review"},
+    {"name": "ship", "description": "branch is shippable"},
+]
+
 
 def test_route_returns_handoff_result(runner):
     print("\n[success path]")
@@ -69,11 +84,12 @@ def test_route_returns_handoff_result(runner):
         yield result_msg
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(
                     phase="review",
                     unsatisfied=["pre_pr_review", "codex_reviewer"],
+                    phases=PHASES,
                 )
 
     result = asyncio.run(run())
@@ -114,8 +130,8 @@ def test_empty_unsatisfied_renders_as_none(runner):
         yield result_msg
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(phase="ship", unsatisfied=[])
 
     asyncio.run(run())
@@ -138,8 +154,8 @@ def test_route_passes_output_format_and_no_tools(runner):
         yield result_msg
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(phase="review", unsatisfied=[])
 
     asyncio.run(run())
@@ -171,8 +187,8 @@ def test_route_labels_options_with_agent_name(runner):
         yield result_msg
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(phase="review", unsatisfied=[])
 
     asyncio.run(run())
@@ -195,8 +211,8 @@ def test_route_raises_on_error_subtype(runner):
         yield err_msg
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(phase="review", unsatisfied=[])
 
     raised = False
@@ -223,8 +239,8 @@ def test_route_raises_when_no_result_message(runner):
         # No ResultMessage ever yielded
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
                 return await sup.route(phase="review", unsatisfied=[])
 
     raised = False
@@ -253,9 +269,10 @@ def test_route_consumes_pre_result_messages(runner):
             yield m
 
     async def run():
-        with patch.object(sup, "query", fake_query):
-            with patch.object(sup, "ResultMessage", SimpleNamespace):
-                return await sup.route(phase="review", unsatisfied=[])
+        with patch("hooks.lib.llm.claude.query", fake_query):
+            with patch("hooks.lib.llm.claude.ResultMessage", SimpleNamespace):
+                return await sup.route(
+                    phase="review", unsatisfied=[], phases=PHASES)
 
     result = asyncio.run(run())
     runner.test(

@@ -234,12 +234,16 @@ def test_handoff_result_ship(r: TestRunner) -> None:
     r.test("HandoffResult accepts ship target", h.target == "ship")
 
 
-def test_handoff_result_invalid_target(r: TestRunner) -> None:
-    try:
-        HandoffResult(target="finishing-a-development-branch", rationale="x")  # type: ignore[arg-type]
-        r.test("HandoffResult rejects deprecated target", False)
-    except ValidationError:
-        r.test("HandoffResult rejects deprecated target", True)
+def test_handoff_result_open_target(r: TestRunner) -> None:
+    # `target` is an open `str` now (config-driven phases), not a Literal: any
+    # custom/non-default phase name validates. The semantic guard (clamping an
+    # out-of-vocabulary target back to the input phase) lives in
+    # supervisor.route(), not in the schema. So a non-default target is ACCEPTED.
+    h = HandoffResult(target="finishing-a-development-branch", rationale="x")
+    r.test(
+        "HandoffResult accepts an open/custom target string",
+        h.target == "finishing-a-development-branch",
+    )
 
 
 def test_handoff_result_writing_plans(r: TestRunner) -> None:
@@ -302,7 +306,7 @@ def main() -> None:
     print("\nHandoffResult:")
     test_handoff_result_valid(r)
     test_handoff_result_ship(r)
-    test_handoff_result_invalid_target(r)
+    test_handoff_result_open_target(r)
     test_handoff_result_writing_plans(r)
     test_handoff_result_all_targets_distinct(r)
 
