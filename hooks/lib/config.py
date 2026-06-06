@@ -190,6 +190,18 @@ class BudgetsConfigDict(TypedDict, total=False):
     sdk_pool: SdkPoolBudgetDict
 
 
+class WorkflowPhaseDict(TypedDict, total=False):
+    name: str
+    gate: Optional[str]
+    skill: Optional[str]
+
+
+class WorkflowConfigDict(TypedDict, total=False):
+    phases: list[WorkflowPhaseDict]
+    default_phase: str
+    ship_phase: str
+
+
 class RequirementsConfigData(TypedDict, total=False):
     version: str
     enabled: bool
@@ -200,6 +212,7 @@ class RequirementsConfigData(TypedDict, total=False):
     hooks: HooksConfigDict
     debug: DebugConfigDict
     budgets: BudgetsConfigDict
+    workflow: WorkflowConfigDict  # advisory only (like 'hooks')
 
 
 RequirementOverrideValue = Union[bool, RequirementConfigDict, Mapping[str, Any]]
@@ -725,6 +738,75 @@ class RequirementValidator:
             )
 
 
+class WorkflowValidator:
+    """Fail-safe structural validator for the optional ``workflow:`` section.
+
+    Returns a human-readable error string describing the FIRST violation, or
+    ``None`` if the workflow section is structurally sound. Never raises — the
+    caller drops the whole ``workflow`` key on any error so the phase derivation
+    falls back to the built-in defaults.
+
+    Rules enforced:
+      * ``phases`` is a non-empty list of mappings.
+      * each phase has a unique, non-empty string ``name``.
+      * each non-null ``gate`` is a non-empty string AND a key in
+        ``config['requirements']``.
+      * ``default_phase`` (if set) resolves to one of the phase names.
+      * ``ship_phase`` (if set) is a non-empty string (terminal label — it need
+        not be one of the phases).
+    """
+
+    def validate(
+        self, workflow: Any, requirements: Mapping[str, Any]
+    ) -> Optional[str]:
+        if not isinstance(workflow, Mapping):
+            return "workflow section must be a mapping"
+
+        phases = workflow.get("phases")
+        if not isinstance(phases, list) or not phases:
+            return "workflow.phases must be a non-empty list"
+
+        names: set[str] = set()
+        for idx, entry in enumerate(phases):
+            if not isinstance(entry, Mapping):
+                return f"workflow.phases[{idx}] must be a mapping"
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                return f"workflow.phases[{idx}] is missing a non-empty 'name'"
+            if name in names:
+                return f"workflow.phases has duplicate phase name: {name!r}"
+            names.add(name)
+
+            gate = entry.get("gate")
+            if gate is not None:
+                if not isinstance(gate, str) or not gate:
+                    return (
+                        f"workflow phase {name!r} gate must be a non-empty "
+                        "string or null"
+                    )
+                if gate not in requirements:
+                    return (
+                        f"workflow phase {name!r} gate {gate!r} is not a "
+                        "defined requirement"
+                    )
+
+        default_phase = workflow.get("default_phase")
+        if default_phase is not None and (
+            not isinstance(default_phase, str) or default_phase not in names
+        ):
+            return (
+                f"workflow.default_phase {default_phase!r} is not a defined phase"
+            )
+
+        ship_phase = workflow.get("ship_phase")
+        if ship_phase is not None and (
+            not isinstance(ship_phase, str) or not ship_phase
+        ):
+            return "workflow.ship_phase must be a non-empty string"
+
+        return None
+
+
 class RequirementsConfig:
     """
     Configuration manager for requirements framework.
@@ -789,6 +871,42 @@ class RequirementsConfig:
             "timeout": 5,
         },
     }
+    # Zero-config workflow: seeded 1:1 from derive_phase.PHASE_GATES so the
+    # default phase sequence (and the /req dispatch skills) reproduce today's
+    # hardcoded behaviour exactly. `phases` is an ordered list; the first phase
+    # whose `gate` requirement is unsatisfied is the current phase, else
+    # `ship_phase`. `skill` names mirror commands/req.md's dispatch table.
+    WORKFLOW_DEFAULTS: WorkflowConfigDict = {
+        "default_phase": "design",
+        "ship_phase": "ship",
+        "phases": [
+            {
+                "name": "design",
+                "gate": "design_approved",
+                "skill": "requirements-framework:brainstorming",
+            },
+            {
+                "name": "plan-write",
+                "gate": "plan_written",
+                "skill": "requirements-framework:writing-plans",
+            },
+            {
+                "name": "plan-validate",
+                "gate": "solid_reviewed",
+                "skill": "requirements-framework:arch-review",
+            },
+            {
+                "name": "implement",
+                "gate": "verification_evidence",
+                "skill": "requirements-framework:executing-plans",
+            },
+            {
+                "name": "review",
+                "gate": "pre_pr_review",
+                "skill": "requirements-framework:deep-review",
+            },
+        ],
+    }
 
     def __init__(
         self,
@@ -823,6 +941,7 @@ class RequirementsConfig:
             field_validators=field_validators,
             type_validators=type_validators,
         )
+        self._workflow_validator = WorkflowValidator()
         self.validation_errors: list[str] = []
         self._config: RequirementsConfigData = self._load_cascade()
         configure_console(self._config.get("console"))
@@ -1020,6 +1139,23 @@ class RequirementsConfig:
             del requirements[issue.requirement]
             get_logger().warning(f"⚠️ Disabled invalid requirement: {issue.requirement}")
 
+    def _validate_workflow(self, config: MutableMapping[str, Any]) -> None:
+        """Validate the optional ``workflow`` section; drop it on any violation.
+
+        Fail-safe like ``_validate_and_prune_requirements``: a malformed
+        ``workflow`` section is removed entirely (with a logged warning) so
+        ``get_workflow_phases`` transparently falls back to ``WORKFLOW_DEFAULTS``.
+        Never raises, never blocks the load.
+        """
+        if "workflow" not in config:
+            return
+        requirements = config.get("requirements", {})
+        error = self._workflow_validator.validate(config.get("workflow"), requirements)
+        if error:
+            self._record_validation_error(ValueError(error))
+            get_logger().warning(f"⚠️ Disabled invalid workflow config: {error}")
+            del config["workflow"]
+
     def _load_cascade(self) -> RequirementsConfigData:
         """
         Load configuration cascade: global → project → local.
@@ -1047,6 +1183,9 @@ class RequirementsConfig:
 
         # 4. Validate requirements (fail-safe: remove invalid ones)
         self._validate_and_prune_requirements(config)
+
+        # 5. Validate optional workflow section (fail-safe: drop if malformed)
+        self._validate_workflow(config)
 
         return config
 
@@ -1419,6 +1558,81 @@ class RequirementsConfig:
         if isinstance(default_value, dict):
             return default_value.copy()
         return default_value
+
+    def _normalize_phase(self, entry: Any) -> dict[str, Any]:
+        """Normalize a single phase descriptor to ``{name, gate, skill, ...}``.
+
+        Unknown keys (e.g. ``brainstorm_on_enter``, ``alias``) are PRESERVED so
+        later builds can consume them. Raises ``ValueError`` on a structurally
+        unusable entry so the caller can fall back to defaults wholesale.
+        """
+        if not isinstance(entry, Mapping):
+            raise ValueError("workflow phase entry must be a mapping")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("workflow phase entry missing non-empty 'name'")
+        gate = entry.get("gate")
+        gate = gate if isinstance(gate, str) and gate else None
+        skill = entry.get("skill")
+        skill = skill if isinstance(skill, str) and skill else None
+        normalized: dict[str, Any] = dict(entry)  # preserve unknown keys
+        normalized["name"] = name
+        normalized["gate"] = gate
+        normalized["skill"] = skill
+        return normalized
+
+    def _normalize_workflow(self, raw: Any) -> dict[str, Any]:
+        """Normalize a raw ``workflow`` mapping into the resolved phase shape.
+
+        Returns ``{phases, default_phase, ship_phase}``. Raises ``ValueError`` on
+        any malformed structure so ``get_workflow_phases`` can fall back to the
+        normalized defaults.
+        """
+        if not isinstance(raw, Mapping):
+            raise ValueError("workflow must be a mapping")
+        phases_raw = raw.get("phases")
+        if not isinstance(phases_raw, list) or not phases_raw:
+            # Section present but lacks usable phases: keep its default_phase/
+            # ship_phase but borrow the default phase list.
+            phases_raw = self.WORKFLOW_DEFAULTS["phases"]
+        phases = [self._normalize_phase(entry) for entry in phases_raw]
+
+        default_phase = raw.get("default_phase")
+        if not isinstance(default_phase, str) or not default_phase:
+            default_phase = phases[0]["name"]
+
+        ship_phase = raw.get("ship_phase")
+        if not isinstance(ship_phase, str) or not ship_phase:
+            ship_phase = self.WORKFLOW_DEFAULTS["ship_phase"]
+
+        return {
+            "phases": phases,
+            "default_phase": default_phase,
+            "ship_phase": ship_phase,
+        }
+
+    def get_workflow_phases(self) -> dict[str, Any]:
+        """Return the resolved workflow phase order for this project.
+
+        Reads the optional ``workflow:`` config section (validated/dropped at
+        load time). With no section configured, returns ``WORKFLOW_DEFAULTS``
+        normalized — i.e. today's hardcoded phase sequence. Fully fail-safe: any
+        malformed structure returns the normalized defaults.
+
+        Returns:
+            ``{phases: [{name, gate, skill, ...}, ...], default_phase, ship_phase}``
+            where ``gate``/``skill`` are ``str`` or ``None``.
+        """
+        raw = self._config.get("workflow")
+        if raw is None:
+            raw = self.WORKFLOW_DEFAULTS
+        try:
+            return self._normalize_workflow(raw)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            get_logger().warning(
+                "⚠️ Malformed workflow config; falling back to defaults"
+            )
+            return self._normalize_workflow(self.WORKFLOW_DEFAULTS)
 
     def get_attribute(self, req_name: str, attr: str, default: Any = None) -> Any:
         """

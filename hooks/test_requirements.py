@@ -11728,6 +11728,197 @@ def test_derive_phase(runner: TestRunner):
                         derive_phase(f) == DEFAULT_PHASE)
 
 
+# Default gate requirements shared by workflow tests (minimal blocking reqs).
+_WORKFLOW_DEFAULT_GATES = {
+    "design_approved": {"enabled": True},
+    "plan_written": {"enabled": True},
+    "solid_reviewed": {"enabled": True},
+    "verification_evidence": {"enabled": True},
+    "pre_pr_review": {"enabled": True},
+}
+
+
+def _write_workflow_project(tmpdir, requirements, workflow=None):
+    """Write a hermetic project config (inherit:False) with optional workflow."""
+    claude = Path(tmpdir) / ".claude"
+    claude.mkdir(parents=True, exist_ok=True)
+    cfg = {
+        "version": "1.0",
+        "enabled": True,
+        "inherit": False,  # don't merge global ~/.claude — keep tests deterministic
+        "requirements": requirements,
+    }
+    if workflow is not None:
+        cfg["workflow"] = workflow
+    (claude / "requirements.yaml").write_text(json.dumps(cfg))
+
+
+def test_workflow_config(runner: TestRunner):
+    """Test get_workflow_phases accessor + WorkflowValidator drop behavior."""
+    print("\n📦 Testing workflow config (get_workflow_phases)...")
+    from config import RequirementsConfig
+
+    # 1. No workflow section → normalized WORKFLOW_DEFAULTS (today's order).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("no workflow → default phase names",
+                    [p["name"] for p in wf["phases"]] ==
+                    ["design", "plan-write", "plan-validate", "implement", "review"])
+        runner.test("no workflow → default gates",
+                    [p["gate"] for p in wf["phases"]] ==
+                    ["design_approved", "plan_written", "solid_reviewed",
+                     "verification_evidence", "pre_pr_review"])
+        runner.test("no workflow → resolver skill names",
+                    wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
+                    and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
+        runner.test("no workflow → default_phase=design", wf["default_phase"] == "design")
+        runner.test("no workflow → ship_phase=ship", wf["ship_phase"] == "ship")
+        runner.test("defaults equal class constant",
+                    [(p["name"], p["gate"]) for p in wf["phases"]] ==
+                    [(p["name"], p["gate"])
+                     for p in RequirementsConfig.WORKFLOW_DEFAULTS["phases"]])
+
+    # 2. Workflow section present → configured phases returned, extras preserved.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        custom = {
+            "ship_phase": "done",
+            "phases": [
+                {"name": "design", "gate": "design_approved", "skill": "x:brainstorm"},
+                {"name": "build", "gate": "verification_evidence",
+                 "skill": "x:build", "alias": "impl"},
+            ],
+        }
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES, workflow=custom)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("workflow present → configured names",
+                    [p["name"] for p in wf["phases"]] == ["design", "build"])
+        runner.test("workflow present → default_phase falls to phases[0]",
+                    wf["default_phase"] == "design")
+        runner.test("workflow present → ship_phase override", wf["ship_phase"] == "done")
+        runner.test("workflow present → preserves unknown keys (alias)",
+                    wf["phases"][1].get("alias") == "impl")
+
+    # 3. Malformed workflow (undefined gate) → validator DROPS it → defaults.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bad = {"phases": [{"name": "design", "gate": "does_not_exist"}]}
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES, workflow=bad)
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("undefined gate → workflow dropped → default names",
+                    [p["name"] for p in wf["phases"]] ==
+                    ["design", "plan-write", "plan-validate", "implement", "review"])
+        runner.test("undefined gate → validation error recorded",
+                    any("workflow" in e for e in config.get_validation_errors()))
+
+    # 4. Malformed workflow (phases not a list) → dropped → defaults.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                                workflow={"phases": "nope"})
+        config = RequirementsConfig(tmpdir)
+        wf = config.get_workflow_phases()
+        runner.test("phases not a list → dropped → default_phase=design",
+                    wf["default_phase"] == "design"
+                    and len(wf["phases"]) == 5)
+
+    # 5. get_workflow_phases is fail-safe even on raw garbage (bypassing the
+    #    validator) — exercises the accessor's own defensive normalization.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_workflow_project(tmpdir, _WORKFLOW_DEFAULT_GATES)
+        config = RequirementsConfig(tmpdir)
+        config._config["workflow"] = "totally-not-a-mapping"
+        wf = config.get_workflow_phases()
+        runner.test("accessor fail-safe: garbage → normalized defaults",
+                    [p["name"] for p in wf["phases"]][0] == "design"
+                    and wf["ship_phase"] == "ship")
+
+
+def test_derive_phase_workflow(runner: TestRunner):
+    """Test config-driven phase order via derive_phase self-resolution."""
+    print("\n📦 Testing derive_phase workflow config integration...")
+    from derive_phase import derive_phase
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    branch = "feature/wf"
+
+    def _setup(tmpdir, requirements, satisfied, workflow=None):
+        _write_workflow_project(tmpdir, requirements, workflow=workflow)
+        state = create_empty_state(branch, tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state(branch, tmpdir, state)
+        return get_state_path(branch, tmpdir)
+
+    # Zero-config: same transitions as today, but resolved through config.
+    transitions = [
+        ([], "design"),
+        (["design_approved"], "plan-write"),
+        (["design_approved", "plan_written"], "plan-validate"),
+        (["design_approved", "plan_written", "solid_reviewed"], "implement"),
+        (["design_approved", "plan_written", "solid_reviewed",
+          "verification_evidence"], "review"),
+        (["design_approved", "plan_written", "solid_reviewed",
+          "verification_evidence", "pre_pr_review"], "ship"),
+    ]
+    for satisfied, expected in transitions:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, satisfied)
+            runner.test(f"zero-config: {len(satisfied)} sat → {expected}",
+                        derive_phase(sp) == expected)
+
+    # Reorder: put the review gate first.
+    reordered = {"phases": [
+        {"name": "review", "gate": "pre_pr_review"},
+        {"name": "design", "gate": "design_approved"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=reordered)
+        runner.test("reorder: review gate first → review",
+                    derive_phase(sp) == "review")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["pre_pr_review"],
+                    workflow=reordered)
+        runner.test("reorder: review done → design",
+                    derive_phase(sp) == "design")
+
+    # Add: a brand-new phase with a defined gate slots into the sequence.
+    gates_with_sec = dict(_WORKFLOW_DEFAULT_GATES)
+    gates_with_sec["appsec_reviewed"] = {"enabled": True}
+    added = {"phases": [
+        {"name": "design", "gate": "design_approved"},
+        {"name": "security", "gate": "appsec_reviewed"},
+        {"name": "implement", "gate": "verification_evidence"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, gates_with_sec, ["design_approved"], workflow=added)
+        runner.test("add: design done → new 'security' phase",
+                    derive_phase(sp) == "security")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, gates_with_sec,
+                    ["design_approved", "appsec_reviewed"], workflow=added)
+        runner.test("add: security done → implement",
+                    derive_phase(sp) == "implement")
+
+    # Fail-open: undefined gate → validator drops workflow → default order.
+    bad_gate = {"phases": [
+        {"name": "design", "gate": "design_approved"},
+        {"name": "ghost", "gate": "undefined_requirement"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["design_approved"],
+                    workflow=bad_gate)
+        runner.test("fail-open: undefined gate → default order (plan-write)",
+                    derive_phase(sp) == "plan-write")
+
+    # Fail-open: phases not a list → dropped → default order.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow={"phases": 5})
+        runner.test("fail-open: phases not a list → default order (design)",
+                    derive_phase(sp) == "design")
+
+
 def test_count_unsatisfied(runner: TestRunner):
     """Test count_unsatisfied helper."""
     print("\n📦 Testing count_unsatisfied module...")
@@ -12329,6 +12520,8 @@ def main():
     test_obsidian_session_logger(runner)
 
     test_derive_phase(runner)
+    test_workflow_config(runner)
+    test_derive_phase_workflow(runner)
     test_count_unsatisfied(runner)
 
     test_llm_package_scaffold(runner)
