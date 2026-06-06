@@ -213,6 +213,16 @@ def test_module_import_triggers_init(runner: TestRunner):
 
 def test_logs_init_failure_with_traceback_only_when_debug_set(runner: TestRunner):
     print("\ntest_logs_init_failure_with_traceback_only_when_debug_set")
+    # This test forces a failure AFTER the OTel provider is built, so it needs
+    # the real opentelemetry stack present; absent it, init_observability() bails
+    # earlier on the missing-dep ImportError branch and never reaches the
+    # traceback path under test. CI installs only the light llm extras, so skip
+    # this one case cleanly (the other tests here are genuinely dep-free).
+    try:
+        import opentelemetry  # noqa: F401
+    except ModuleNotFoundError as e:
+        print(f"   ⊘ skipped: optional dep absent ({e.name})")
+        return
     fake_env = {
         "LANGFUSE_PUBLIC_KEY": "pk-test",
         "LANGFUSE_SECRET_KEY": "sk-test",

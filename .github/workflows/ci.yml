@@ -54,3 +54,23 @@ jobs:
 
       - name: Run test suite
         run: python hooks/test_requirements.py
+
+      - name: Check rendered prompts are fresh
+        # Fails if any *.md rendered sibling is stale vs its *.md.j2 source.
+        # jinja2 is already installed above.
+        run: python scripts/render_prompts.py --check
+
+      - name: Run V3 tests/ suite
+        # Script-style suite (each file has its own TestRunner/main(), NOT pytest).
+        # Heavy-dep files (Claude Agent SDK, OTel, etc.) self-skip cleanly when the
+        # optional [llm] extras are absent — only the light extras are installed in
+        # CI. Aggregate exit codes so one failing file fails the job.
+        env:
+          PYTHONDONTWRITEBYTECODE: 1
+        run: |
+          rc=0
+          for f in tests/test_*.py; do
+            echo "== $f =="
+            python "$f" || rc=1
+          done
+          exit $rc
