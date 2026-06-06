@@ -12358,13 +12358,20 @@ def test_supervisor_config_driven(runner: TestRunner):
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
-    from hooks.lib.llm.prompts import load_prompt
-    from hooks.lib.llm.schemas import HandoffResult
-    from hooks.lib.llm.supervisor import (
-        _default_phases,
-        _resolve_target,
-        route,
-    )
+    try:
+        from hooks.lib.llm.prompts import load_prompt
+        from hooks.lib.llm.schemas import HandoffResult
+        from hooks.lib.llm.supervisor import (
+            _default_phases,
+            _resolve_target,
+            route,
+        )
+    except ModuleNotFoundError as e:
+        # The llm submodules eager-import the optional [llm] extra (pydantic/jinja2).
+        # CI installs them explicitly (ci.yml), but a deps-less dev env skips this
+        # test cleanly rather than crashing the whole runner.
+        print(f"   ⊘ skipped: V3 llm deps absent ({e.name})")
+        return
 
     # (i) target is an open str (Literal removed): any custom phase validates.
     hr = HandoffResult(target="my-custom-phase", rationale="x")
@@ -12453,7 +12460,9 @@ def test_count_unsatisfied(runner: TestRunner):
 
 
 def test_llm_package_scaffold(runner: TestRunner):
-    """Verify hooks/lib/llm/ scaffold imports cleanly without V3 deps installed."""
+    """Verify the llm package imports lazily without V3 deps; submodule imports that
+    need an optional [llm] extra (pydantic/jinja2/...) are skipped when that dep is
+    absent rather than failing the suite (CI installs the light extras — see ci.yml)."""
     print("\n📦 Testing hooks/lib/llm/ scaffold...")
     import importlib
 
@@ -12470,18 +12479,26 @@ def test_llm_package_scaffold(runner: TestRunner):
         "__init__.py docstring should list the steps that populate each submodule",
     )
 
-    for name in ("schemas", "observability", "retrieval", "memory", "eval", "templates"):
+    def _import_or_skip(modname: str, label: str):
+        # A missing EXTERNAL dep (pydantic/jinja2/... from the optional [llm] extra)
+        # is a skip, not a failure — the submodule is fine, the dep just isn't
+        # installed. CI installs the light extras (ci.yml). A missing `llm.*`
+        # module, or any other ImportError, is a real failure.
         try:
-            importlib.import_module(f"llm.{name}")
-            runner.test(f"llm.{name} imports", True)
+            importlib.import_module(modname)
+            runner.test(f"{label} imports", True)
+        except ModuleNotFoundError as e:
+            if e.name and not e.name.startswith("llm"):
+                print(f"   ⊘ {label} skipped: optional dep absent ({e.name})")
+            else:
+                runner.test(f"{label} imports", False, str(e))
         except ImportError as e:
-            runner.test(f"llm.{name} imports", False, str(e))
+            runner.test(f"{label} imports", False, str(e))
 
-    try:
-        importlib.import_module("llm.workers")
-        runner.test("llm.workers subpackage imports", True)
-    except ImportError as e:
-        runner.test("llm.workers subpackage imports", False, str(e))
+    for name in ("schemas", "observability", "retrieval", "memory", "eval", "templates"):
+        _import_or_skip(f"llm.{name}", f"llm.{name}")
+
+    _import_or_skip("llm.workers", "llm.workers subpackage")
 
 
 def test_ruff_check_removed(runner: TestRunner):
