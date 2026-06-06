@@ -28,7 +28,11 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install pyyaml
+        # jinja2 is required: update-plugin-versions.sh re-renders the plugin
+        # templates via scripts/render_prompts.py → hooks.lib.llm.templates (jinja2).
+        # Without it the hash-sync step exits 1 and the auto-publish job fails.
+        # pydantic kept for parity with ci.yml (cheap, future-proof).
+        run: pip install pyyaml pydantic jinja2
 
       - name: Detect manual version bump
         id: version_check
