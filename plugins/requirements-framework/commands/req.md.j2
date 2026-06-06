@@ -10,39 +10,52 @@ git_hash: fe1bf87
 
 You are the requirements-framework workflow conductor. Your job is to (1) resolve the **current phase**, (2) tell the user *which* command/skill matches that phase and *why*, and (3) invoke it. Do not perform the phase's work yourself — delegate.
 
-## Step 1 — Resolve the phase
+The phase order and the skill each phase dispatches to are **configured per project** (the `workflow:` config section). Resolve both at runtime from the helper script below — never hardcode the mapping. The script reads the active project's configuration, so a custom workflow (reordered, added, or renamed phases) just works.
 
-If `$ARGUMENTS` is one of `design`, `plan-write`, `plan-validate`, `implement`, `review`, `refactor`, or `ship`, use that value as the phase. Skip to Step 2.
+## Step 1 — Resolve the phase and its skill
 
-If `$ARGUMENTS` is the friendly alias `plan`, resolve it: derive the current phase (next step) and treat it as `plan-write` if `plan_written` is unsatisfied, otherwise `plan-validate`.
-
-Otherwise, derive the phase by running:
+**No argument (auto-detect).** Run:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/scripts/req-phase
+${CLAUDE_PLUGIN_ROOT}/scripts/req-phase --with-skill
 ```
 
-That script prints a single word — the phase — to stdout. Capture it.
+It prints one line: `<phase>\t<skill>` (tab-separated). The left field is the current phase; the right field is the skill to dispatch (empty when the phase has no skill, e.g. `ship`). Capture both.
+
+**Explicit phase.** If `$ARGUMENTS` names a phase, resolve *that* phase's skill instead:
+
+```
+${CLAUDE_PLUGIN_ROOT}/scripts/req-phase --with-skill --phase "$ARGUMENTS"
+```
+
+This prints `<phase>\t<skill>` for the named phase — including a **gateless dispatch-only** phase (a phase with a skill but no gate, e.g. a `cleanup` or `refactor` phase) that auto-detection never surfaces on its own. If the skill comes back empty, fall back to the default mapping in the note below.
+
+**`plan` alias.** If `$ARGUMENTS` is `plan`, run `${CLAUDE_PLUGIN_ROOT}/scripts/req-phase --with-skill` (no `--phase`): auto-detection already routes to the active plan sub-phase (`plan-write` while `plan_written` is unsatisfied, otherwise `plan-validate`). Dispatch whatever skill it prints.
+
+The accepted phase arguments are the configured workflow's phase names. To list them when unsure, run `${CLAUDE_PLUGIN_ROOT}/scripts/req-phase` with no flags to see the current phase.
 
 ## Step 2 — Dispatch
 
-Look up the resolved phase in this table and act:
+Act on the `<phase>\t<skill>` line from Step 1:
 
-| Phase         | Underlying skill                                | What to do                                                  |
-|---------------|-------------------------------------------------|-------------------------------------------------------------|
-| design        | `requirements-framework:brainstorming`          | Invoke the skill with the Skill tool                        |
-| plan-write    | `requirements-framework:writing-plans`          | Invoke the skill with the Skill tool                        |
-| plan-validate | `requirements-framework:arch-review`            | Invoke the skill with the Skill tool                        |
-| implement     | `requirements-framework:executing-plans`        | Invoke the skill with the Skill tool                        |
-| review        | `requirements-framework:deep-review`            | Invoke the skill with the Skill tool                        |
-| refactor      | `requirements-framework:refactor-orchestration` | Invoke the skill with the Skill tool                        |
-| ship          | *(none)*                                        | Report status and suggest the user finalize commits + open a PR |
+- **Skill is non-empty** → send the user a single line announcing the decision, then invoke that skill via the `Skill` tool. For example:
 
-Before invoking, send the user a single line announcing the dispatch decision, like:
+  > Phase is **plan-validate** — invoking `requirements-framework:arch-review`.
 
-> Phase is **plan-validate** — invoking `requirements-framework:arch-review`.
+- **Skill is empty** (e.g. the `ship` phase, or the script was unavailable) → do not invoke anything. Report the current phase/status. For `ship`, suggest the user finalize commits and open a PR (e.g. `/requirements-framework:codex-review`, then a PR) — shipping is a decision the user makes.
 
-Then invoke the skill via the `Skill` tool.
+> **Default fallback mapping** — use this *only* if `${CLAUDE_PLUGIN_ROOT}/scripts/req-phase` is unavailable and you must route by hand. It mirrors the default (zero-config) workflow; the script is always authoritative when it runs.
+>
+> | Phase         | Skill                                            |
+> |---------------|--------------------------------------------------|
+> | design        | `requirements-framework:brainstorming`           |
+> | plan-write    | `requirements-framework:writing-plans`           |
+> | plan-validate | `requirements-framework:arch-review`             |
+> | implement     | `requirements-framework:executing-plans`         |
+> | review        | `requirements-framework:deep-review`             |
+> | ship          | *(none — report status)*                         |
+>
+> `refactor` is a gateless dispatch-only phase that maps to `requirements-framework:refactor-orchestration`.
 
 ## Step 3 — After dispatch
 
@@ -51,5 +64,5 @@ The target skill takes over from here. Do not continue the workflow yourself in 
 ## Notes
 
 - This is a **deterministic dispatcher**, not an agent. It does not negotiate, summarize, or improvise — it routes attention to the right next step.
-- The phase mapping mirrors the `workflow-index` skill exactly. If the two ever drift, the index is the human-readable source of truth; this command is the executable one.
+- The phase order and skills are read live from the project's `workflow:` config via `req-phase`. The `workflow-index` skill is the human-readable companion; if the two ever drift, the config (surfaced by the script) is the executable source of truth.
 - For the `ship` phase, there is no single canonical skill — the user typically wraps up with `/requirements-framework:codex-review` and a PR. Surface those as suggestions but do not invoke them automatically; shipping is a decision the user makes.

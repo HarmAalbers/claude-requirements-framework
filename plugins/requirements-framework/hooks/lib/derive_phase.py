@@ -16,7 +16,15 @@ never refuse to run.
 
 CLI usage:
     python3 derive_phase.py <state-file-path>
-prints the phase name to stdout. Exits 0 even on errors (fail-open).
+        prints the phase name to stdout.
+    python3 derive_phase.py <state-file-path> --with-skill
+        prints "<phase>\t<resolver_skill>" (tab-separated); the skill is the
+        configured ``skill`` for that phase (empty when the phase has none,
+        e.g. ship).
+    python3 derive_phase.py <state-file-path> --with-skill --phase <name>
+        resolves the resolver skill for an explicitly named phase instead of
+        deriving — used by ``/req <phase>`` to dispatch a gateless phase.
+Exits 0 even on errors (fail-open).
 """
 
 from __future__ import annotations
@@ -171,11 +179,116 @@ def derive_phase(
     return ship_phase
 
 
+def _phase_skill(entry: object) -> str:
+    """Resolver skill for a phase descriptor; empty string when none/unusable.
+
+    Accepts a ``{name, gate, skill, ...}`` mapping (what ``get_workflow_phases``
+    returns). The ``(name, gate)`` tuple fallback (PHASE_GATES) carries no skill,
+    so it transparently yields the empty string. Never raises.
+    """
+    if isinstance(entry, dict):
+        skill = entry.get("skill")
+        if isinstance(skill, str) and skill:
+            return skill
+    return ""
+
+
+def _workflow_for(state_file: Path) -> tuple[list[Any], str, str]:
+    """Resolve ``(phases, default_phase, ship_phase)`` for *state_file*.
+
+    Fail-open: returns the module constants (PHASE_GATES / DEFAULT_PHASE /
+    SHIP_PHASE) on any failure. The constant fallback list carries no skills,
+    so ``--with-skill`` degrades to an empty skill rather than crashing.
+    """
+    try:
+        resolved = _resolve_workflow(state_file)
+    except Exception:
+        resolved = None
+    if resolved is not None:
+        return resolved
+    return PHASE_GATES, DEFAULT_PHASE, SHIP_PHASE
+
+
+def _skill_for_phase(phases: list[Any], phase_name: str) -> str:
+    """Configured resolver skill for *phase_name* within *phases* (empty if none)."""
+    for entry in phases:
+        name, _ = _phase_name_and_gate(entry)
+        if name == phase_name:
+            return _phase_skill(entry)
+    return ""
+
+
+def derive_phase_and_skill(state_file: Path) -> tuple[str, str]:
+    """Return ``(derived_phase, resolver_skill)`` for the project at *state_file*.
+
+    The skill is the configured ``skill`` for the derived phase — empty when the
+    phase has no skill (e.g. ship) or when config can't be resolved (the constant
+    fallback list carries no skills). Phase and skill are read from the SAME
+    resolved phase list, so they never disagree. Never raises.
+    """
+    phases, default_phase, ship_phase = _workflow_for(state_file)
+    phase = derive_phase(state_file, phases, default_phase, ship_phase)
+    return phase, _skill_for_phase(phases, phase)
+
+
+def resolve_named_phase_skill(state_file: Path, phase_name: str) -> str:
+    """Configured resolver skill for an explicitly named phase (empty if none).
+
+    Used by ``/req <phase>`` to dispatch a gateless DISPATCH-ONLY phase (a phase
+    with a skill but no gate) that derivation never surfaces. Fail-open: returns
+    the empty string on any failure.
+    """
+    try:
+        phases, _, _ = _workflow_for(state_file)
+        return _skill_for_phase(phases, phase_name)
+    except Exception:
+        return ""
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print(DEFAULT_PHASE)
+    args = argv[1:]
+    with_skill = "--with-skill" in args
+    phase_override: Optional[str] = None
+    positional: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--with-skill":
+            pass
+        elif arg == "--phase":
+            i += 1
+            if i < len(args):
+                phase_override = args[i]
+        elif arg.startswith("--phase="):
+            phase_override = arg.split("=", 1)[1]
+        else:
+            positional.append(arg)
+        i += 1
+
+    if not positional:
+        # No state-file path: fail-open to the default phase.
+        print(f"{DEFAULT_PHASE}\t" if with_skill else DEFAULT_PHASE)
         return 0
-    print(derive_phase(Path(argv[1])))
+
+    state_file = Path(positional[0])
+
+    if not with_skill:
+        # Unchanged legacy behaviour — phase name only.
+        print(derive_phase(state_file))
+        return 0
+
+    try:
+        if phase_override:
+            phase = phase_override
+            skill = resolve_named_phase_skill(state_file, phase_override)
+        else:
+            phase, skill = derive_phase_and_skill(state_file)
+    except Exception:
+        # Last-resort fail-open: emit the phase with an empty skill rather than
+        # crash — the conductor must always get a parseable tab-separated line.
+        phase = phase_override or DEFAULT_PHASE
+        skill = ""
+    print(f"{phase}\t{skill}")
     return 0
 
 

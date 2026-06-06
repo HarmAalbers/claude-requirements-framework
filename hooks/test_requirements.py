@@ -10647,6 +10647,48 @@ def test_plan_enter_hook(runner: TestRunner):
         )
         runner.test("Fails open on bad JSON", result.returncode == 0)
 
+        # Test 9: Config-driven brainstorm phase. A custom workflow flags a
+        # NON-first phase with brainstorm_on_enter; the hook must check THAT
+        # phase's gate and emit THAT phase's skill (not design_approved).
+        config_custom_wf = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "requirements": {
+                "design_approved": {"enabled": True, "scope": "session",
+                                    "type": "blocking", "message": "Design!"},
+                "explore_done": {"enabled": True, "scope": "session",
+                                 "type": "blocking", "message": "Explore!"},
+            },
+            "workflow": {
+                "phases": [
+                    {"name": "design", "gate": "design_approved",
+                     "skill": "requirements-framework:brainstorming"},
+                    {"name": "explore", "gate": "explore_done",
+                     "skill": "requirements-framework:writing-plans",
+                     "brainstorm_on_enter": True},
+                ],
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_custom_wf, f)
+
+        result = run_hook(base_input, tmpdir)
+        ctx = extract_hook_context(result.stdout)
+        runner.test("Config brainstorm phase emits configured skill",
+                   "Brainstorm Before Planning" in ctx and "/writing-plans" in ctx,
+                   f"Got: {result.stdout[:300]}")
+
+        # Test 10: Skips on the CONFIGURED gate, not design_approved. Satisfy
+        # explore_done (design_approved stays unsatisfied) → no directive,
+        # proving the gate came from the brainstorm_on_enter phase.
+        reqs_wf = BranchRequirements("feature/test", "planenter-test", tmpdir)
+        reqs_wf.satisfy("explore_done", "session")
+        result = run_hook(base_input, tmpdir)
+        runner.test("Skips when configured brainstorm gate satisfied",
+                   result.stdout.strip() == "",
+                   f"Expected empty, got: {result.stdout[:200]}")
+
     # Test 8: Config default value
     from config import RequirementsConfig
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -11919,6 +11961,118 @@ def test_derive_phase_workflow(runner: TestRunner):
                     derive_phase(sp) == "design")
 
 
+def test_derive_phase_with_skill(runner: TestRunner):
+    """Test --with-skill resolution: phase + its configured resolver skill."""
+    print("\n📦 Testing derive_phase --with-skill...")
+    import contextlib
+    import io
+
+    from derive_phase import (
+        derive_phase_and_skill,
+        main,
+        resolve_named_phase_skill,
+    )
+    from state_storage import create_empty_state, get_state_path, save_state
+
+    branch = "feature/skill"
+
+    def _setup(tmpdir, requirements, satisfied, workflow=None):
+        _write_workflow_project(tmpdir, requirements, workflow=workflow)
+        state = create_empty_state(branch, tmpdir)
+        for gate in satisfied:
+            state["requirements"][gate] = {"satisfied": True}
+        save_state(branch, tmpdir, state)
+        return get_state_path(branch, tmpdir)
+
+    # Zero-config: derived phase carries its default resolver skill.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: design → brainstorming",
+                    phase == "design"
+                    and skill == "requirements-framework:brainstorming")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                    ["design_approved", "plan_written"])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: plan-validate → arch-review",
+                    phase == "plan-validate"
+                    and skill == "requirements-framework:arch-review")
+
+    # Ship: every gate satisfied → ship phase, empty skill (no resolver).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
+                    ["design_approved", "plan_written", "solid_reviewed",
+                     "verification_evidence", "pre_pr_review"])
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: ship → empty skill",
+                    phase == "ship" and skill == "")
+
+    # Custom workflow whose FIRST phase is review/deep-review (the sanity case):
+    # main() prints exactly "<phase>\t<skill>".
+    custom = {"phases": [
+        {"name": "review", "gate": "pre_pr_review",
+         "skill": "requirements-framework:deep-review"},
+        {"name": "design", "gate": "design_approved",
+         "skill": "requirements-framework:brainstorming"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=custom)
+        phase, skill = derive_phase_and_skill(sp)
+        runner.test("with-skill: custom first phase → review/deep-review",
+                    phase == "review"
+                    and skill == "requirements-framework:deep-review")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp), "--with-skill"])
+        runner.test("with-skill: main prints '<phase>\\t<skill>'",
+                    buf.getvalue().strip() ==
+                    "review\trequirements-framework:deep-review",
+                    f"Got: {buf.getvalue()!r}")
+
+    # Gateless dispatch-only phase: resolvable by name even though derivation
+    # never surfaces it (no gate makes it transparent to derivation).
+    gateless = {"phases": [
+        {"name": "design", "gate": "design_approved",
+         "skill": "requirements-framework:brainstorming"},
+        {"name": "cleanup",
+         "skill": "requirements-framework:refactor-orchestration"},
+    ]}
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [], workflow=gateless)
+        runner.test("with-skill: gateless phase resolved by name",
+                    resolve_named_phase_skill(sp, "cleanup") ==
+                    "requirements-framework:refactor-orchestration")
+        phase, _ = derive_phase_and_skill(sp)
+        runner.test("with-skill: gateless phase never auto-derived",
+                    phase == "design")
+        # main() --phase resolves the gateless skill for /req <name> dispatch.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp), "--with-skill", "--phase", "cleanup"])
+        runner.test("with-skill: main --phase resolves gateless skill",
+                    buf.getvalue().strip() ==
+                    "cleanup\trequirements-framework:refactor-orchestration",
+                    f"Got: {buf.getvalue()!r}")
+
+    # Fail-open: unknown phase name → empty skill, no raise.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        runner.test("with-skill: unknown phase → empty skill",
+                    resolve_named_phase_skill(sp, "nonexistent") == "")
+
+    # Legacy: no flag → phase name only (statusline path is unchanged).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, [])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["derive_phase.py", str(sp)])
+        runner.test("with-skill: no flag → phase only (no tab)",
+                    buf.getvalue().strip() == "design"
+                    and "\t" not in buf.getvalue())
+
+
 def test_count_unsatisfied(runner: TestRunner):
     """Test count_unsatisfied helper."""
     print("\n📦 Testing count_unsatisfied module...")
@@ -12522,6 +12676,7 @@ def main():
     test_derive_phase(runner)
     test_workflow_config(runner)
     test_derive_phase_workflow(runner)
+    test_derive_phase_with_skill(runner)
     test_count_unsatisfied(runner)
 
     test_llm_package_scaffold(runner)
