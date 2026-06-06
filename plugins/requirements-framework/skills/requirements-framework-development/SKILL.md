@@ -282,7 +282,6 @@ handle-task-completed.py
 requirements-cli.py
 test_requirements.py
 test_branch_size_calculator.py
-ruff_check.py
 ```
 
 ### Library Files Synced

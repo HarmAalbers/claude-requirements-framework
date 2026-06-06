@@ -198,7 +198,6 @@ git add . && git commit -m "merge: resolve conflicts"
 | `clear-single-use.py` | PostToolUse for Bash |
 | `requirements-cli.py` | CLI tool |
 | `test_requirements.py` | Test suite |
-| `ruff_check.py` | Linting hook |
 
 ### Library Files
 

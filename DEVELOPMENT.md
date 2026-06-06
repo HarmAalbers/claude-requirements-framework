@@ -132,7 +132,6 @@ git push
 │   ├── clear-single-use.py            → ~/.claude/hooks/clear-single-use.py
 │   ├── handle-plan-exit.py            → ~/.claude/hooks/handle-plan-exit.py
 │   ├── requirements-cli.py            → ~/.claude/hooks/requirements-cli.py
-│   ├── ruff_check.py                  → ~/.claude/hooks/ruff_check.py
 │   ├── test_requirements.py           → ~/.claude/hooks/test_requirements.py
 │   ├── test_branch_size_calculator.py → ~/.claude/hooks/test_branch_size_calculator.py
 │   └── lib/

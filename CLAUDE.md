@@ -93,7 +93,7 @@ Always run `./sync.sh status` before committing to ensure both locations are in 
 
 > **Hook registration is owned by the plugin.** The self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for registering all lifecycle hooks (via `${CLAUDE_PLUGIN_ROOT}`). `install.sh` no longer copies hook scripts to `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json` — it only sets up the `req` CLI, the statusline, and shell env. Install the plugin to activate hooks.
 
-### Session Lifecycle (Thirteen Hooks)
+### Session Lifecycle (Sixteen Hooks)
 ```
 SessionStart (handle-session-start.py)
     → Clean stale sessions
@@ -124,6 +124,10 @@ PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
 PostToolUse (clear-single-use.py) - after certain Bash commands
     → Clears single_use requirements after trigger commands
     → Example: Clears single_use requirements after trigger commands
+
+PostToolUse (handle-git-events.py) - after git Bash commands
+    → Monitor git commit/push and gh pr create completions
+    → Update WipTracker git metrics (WIP tracking)
 
 PostToolUse (handle-plan-enter.py) - after EnterPlanMode
     → Auto-invoke brainstorming skill if design_approved not satisfied
@@ -181,6 +185,7 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 - `handle-plan-exit.py` - PostToolUse hook for ExitPlanMode
 - `auto-satisfy-skills.py` - PostToolUse hook for skill completion
 - `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
+- `handle-git-events.py` - PostToolUse hook for git Bash commands (WIP git metrics tracking)
 - `handle-tool-failure.py` - PostToolUseFailure hook (failure pattern tracking)
 - `handle-subagent-start.py` - SubagentStart hook (review agent context injection)
 - `handle-pre-compact.py` - PreCompact hook (pre-compaction state saving)
@@ -189,8 +194,7 @@ TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
 - `handle-teammate-idle.py` - TeammateIdle hook (team progress tracking, ADR-012)
 - `handle-task-completed.py` - TaskCompleted hook (team task quality gates, ADR-012)
 - `requirements-cli.py` - `req` command implementation
-- `ruff_check.py` - Ruff linter hook
-- `test_requirements.py` - Test suite (950+ tests)
+- `test_requirements.py` - Test suite (1445 tests)
 - `test_branch_size_calculator.py` - Branch size calculator tests
 
 **Core Library** (in `hooks/lib/`):
@@ -283,7 +287,7 @@ git commit -m "feat: update code-reviewer agent"
 
 ## Testing Plugin Components
 
-The framework includes 19 agents, 8 commands, and 5 skills that extend Claude Code's capabilities.
+The framework includes 25 agents, 12 commands, and 21 skills that extend Claude Code's capabilities.
 
 ### Development Testing (Live Reload)
 

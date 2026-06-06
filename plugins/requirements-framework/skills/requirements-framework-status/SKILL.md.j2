@@ -76,7 +76,6 @@ Provides comprehensive project context and current state of the **Claude Code Re
 | `handle-session-end.py` | SessionEnd | Cleanup sessions |
 | `handle-teammate-idle.py` | TeammateIdle | Team progress tracking |
 | `handle-task-completed.py` | TaskCompleted | Team task quality gates |
-| `ruff_check.py` | PreToolUse | Python linting |
 
 ### Libraries (32 modules)
 

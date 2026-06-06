@@ -20,7 +20,6 @@ Detailed inventory of all Requirements Framework components with line counts and
 | `handle-session-end.py` | SessionEnd | Cleanup stale sessions |
 | `handle-teammate-idle.py` | TeammateIdle | Team progress tracking (disabled by default) |
 | `handle-task-completed.py` | TaskCompleted | Team task quality gates (disabled by default) |
-| `ruff_check.py` | PreToolUse | Python linting integration |
 
 ---
 

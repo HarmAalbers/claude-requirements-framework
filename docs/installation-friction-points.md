@@ -6,11 +6,10 @@
 **Status**: Fixed in commit 63a35d9
 
 **Problem**:
-- `install.sh` was missing 4 hook files in the copy commands:
+- `install.sh` was missing 3 hook files in the copy commands:
   - `auto-satisfy-skills.py`
   - `clear-single-use.py`
   - `handle-plan-exit.py`
-  - `ruff_check.py`
 - These files existed in repo and were made executable by `chmod` commands
 - But they were never copied to `~/.claude/hooks/`
 - Installation would fail with: `chmod: No such file or directory`
@@ -19,7 +18,7 @@
 Files were added to repo but not added to install script's copy section
 
 **Fix Applied**:
-Added missing `cp -v` commands for all 4 files in install.sh:25-36
+Added missing `cp -v` commands for all 3 files in install.sh:25-36
 
 ---
 
