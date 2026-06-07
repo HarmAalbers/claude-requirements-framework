@@ -20,9 +20,10 @@ Two more load-bearing facts:
 
 1. Create/edit `hooks/lib/llm/prompts/<name>.md.j2` (shared fragments go in `partials/`).
 2. Preview the sync: `python3 scripts/sync_prompts_to_langfuse.py --dry-run`
-3. Push: `python3 scripts/sync_prompts_to_langfuse.py` (idempotent — identical content is a no-op; changed content creates a new version and moves the `production` label; use `--label` for a different label).
-4. Runtime pickup: `load_prompt(name, label="production", **vars)` tries Langfuse first (~60s client cache, no local LRU — deliberate, preserves the rollback story), falls back to the bundled file. `label` is a **reserved kwarg**, not a template variable.
-5. Remember the dual-copy rule for the loader code itself: `hooks/lib/llm/prompts.py` and `plugins/requirements-framework/hooks/lib/llm/prompts.py` are identical copies.
+3. Push: `python3 scripts/sync_prompts_to_langfuse.py` — identical content is skipped via a **client-side compare** (Langfuse does NOT dedup server-side; verified 2026-06-07, it mints identical new versions). Changed/missing content creates a new version and moves the `production` label; `--label` for a different label.
+4. Drift gate: `python3 scripts/sync_prompts_to_langfuse.py --check` exits 1 if any local file differs from the registry. A stale registry silently serves old prompts at runtime (the loader prefers Langfuse over bundled files), so check after editing templates.
+5. Runtime pickup: `load_prompt(name, label="production", **vars)` tries Langfuse first (~60s client cache, no local LRU — deliberate, preserves the rollback story), falls back to the bundled file. `label` is a **reserved kwarg**, not a template variable.
+6. Remember the dual-copy rule for the loader code itself: `hooks/lib/llm/prompts.py` and `plugins/requirements-framework/hooks/lib/llm/prompts.py` are identical copies.
 
 ### Rollback
 
