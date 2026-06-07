@@ -55,8 +55,6 @@ Shutdown flush (Gap 1 — 2026-05-22, Langfuse skill audit):
 Design: .claude/plans/variant3/11-langfuse-self-host-otel.md
 """
 
-from __future__ import annotations
-
 import atexit
 import logging
 import os

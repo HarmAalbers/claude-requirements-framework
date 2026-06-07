@@ -16,7 +16,6 @@ via a tiny marker file under the framework state dir. Everything here is
 fail-open: a missing/malformed config or an unreadable/unwritable marker must
 never break prompt submission or plan-mode entry.
 """
-from __future__ import annotations
 
 try:
     from .state_storage import get_state_dir

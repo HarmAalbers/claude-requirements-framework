@@ -12,8 +12,6 @@ similarity but does NOT apply /deep-review's corroboration *escalation* rules,
 so the verdict here may be milder at the severity margin.
 """
 
-from __future__ import annotations
-
 from hooks.lib.llm.schemas import ReviewReport
 
 _SEVERITY_ORDER = ("CRITICAL", "IMPORTANT", "SUGGESTION")

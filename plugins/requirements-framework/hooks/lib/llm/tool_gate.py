@@ -18,8 +18,6 @@ runtime `sys.path` insert, so a file-scoped `pyright` run reports spurious
 repo's actually-enforced linter for the V3 review path.
 """
 
-from __future__ import annotations
-
 import subprocess
 from collections.abc import Sequence
 

@@ -7,7 +7,6 @@ separately from JSON logging. It keeps hooks fail-open by swallowing output
 errors and provides opt-in configuration for destinations and verbosity.
 Defaults are silent unless explicitly enabled in config.
 """
-from __future__ import annotations
 
 import json
 import sys

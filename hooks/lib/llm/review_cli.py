@@ -30,8 +30,6 @@ Step 18c. Two layers (arch-review #1):
 level so tests can `patch.object(review_cli, ...)` them.
 """
 
-from __future__ import annotations
-
 import asyncio
 import subprocess
 import sys

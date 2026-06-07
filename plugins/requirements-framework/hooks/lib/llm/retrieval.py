@@ -38,8 +38,6 @@ Design notes:
    surface without Docker. Production code never sets this var.
 """
 
-from __future__ import annotations
-
 import os
 import uuid
 from typing import Any

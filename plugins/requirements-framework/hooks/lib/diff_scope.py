@@ -10,7 +10,6 @@ git diff themselves.
 
 See docs/plans/2026-04-21-diff-scope-refactor-design.md.
 """
-from __future__ import annotations
 
 import re
 import shutil

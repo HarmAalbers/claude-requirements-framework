@@ -6,12 +6,10 @@ coordinator stays roster-agnostic — callers pass the roster via `fanout_review
 
 Laziness (arch-review #7): worker modules are imported INSIDE `review_workers()`, never at
 module scope, so importing `rosters` doesn't pull in the worker→SDK dependency chain. The
-`WorkerFn` type is imported one-way under `TYPE_CHECKING` only — at runtime the annotation is
-a string (`from __future__ import annotations`), so importing `rosters` does not import
+`WorkerFn` type is imported one-way under `TYPE_CHECKING` only — the annotation referencing it
+is explicitly quoted so it stays a string at runtime, and importing `rosters` does not import
 `fanout`. `fanout.py` must NOT import this module (that would create a cycle).
 """
-
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -19,7 +17,7 @@ if TYPE_CHECKING:
     from hooks.lib.llm.workers.fanout import WorkerFn
 
 
-def review_workers() -> dict[str, WorkerFn]:
+def review_workers() -> "dict[str, WorkerFn]":
     """The 10-worker `/v3-review` roster — `/deep-review`'s non-deprecated
     reviewers plus `solid-reviewer`. The deprecated `code-simplifier` agent is
     intentionally excluded (see ADR-018). Imports are deferred so this is callable

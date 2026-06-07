@@ -70,8 +70,6 @@ Usage:
     python3 scripts/sync_prompts_to_langfuse.py --dry-run  # list, don't push
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import sys

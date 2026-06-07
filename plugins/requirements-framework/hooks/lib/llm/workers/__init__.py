@@ -26,8 +26,6 @@ Attribute access triggers the actual import — and any missing-dep
 ImportError — at the point of first use.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 __all__ = ["FanoutResult", "aggregate", "fanout_review", "review"]

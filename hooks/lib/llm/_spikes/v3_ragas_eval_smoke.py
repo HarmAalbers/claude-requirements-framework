@@ -26,8 +26,6 @@ plus the judge calls — vs ~5 × 12s = 60s of pure startup if we used
 per-call query().
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import sys

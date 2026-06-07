@@ -8,8 +8,6 @@ FileSystemLoader path correctly.
 Run with: python3 tests/test_partials.py
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

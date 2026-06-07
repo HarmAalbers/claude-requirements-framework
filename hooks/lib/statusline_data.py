@@ -9,8 +9,6 @@ CLI usage:
 prints `<phase> <unsatisfied_count>` on one line. Fail-open on errors.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

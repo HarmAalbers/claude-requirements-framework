@@ -12,8 +12,6 @@ not library code — missing diff files must hard-fail, not skip.
 Run with: python3 tests/test_sync_golden_set.py
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import subprocess

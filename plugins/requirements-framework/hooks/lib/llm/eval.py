@@ -43,8 +43,6 @@ Design notes:
    Callers don't need to check the env themselves.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime

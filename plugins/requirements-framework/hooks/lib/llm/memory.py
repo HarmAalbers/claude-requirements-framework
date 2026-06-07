@@ -35,8 +35,6 @@ Design notes:
    if the branch sanitizes to empty.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import signal

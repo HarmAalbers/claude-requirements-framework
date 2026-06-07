@@ -14,8 +14,6 @@ If pydantic is missing (no `[llm]` extras), the whole suite skips cleanly.
 Run with: python3 tests/test_eval.py
 """
 
-from __future__ import annotations
-
 import asyncio
 import os
 import sys

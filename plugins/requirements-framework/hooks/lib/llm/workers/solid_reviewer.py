@@ -6,8 +6,6 @@ Delegates the query-loop to `_base.run_worker()`; keeps its own `query` /
 intercepts the call (see `_base.run_worker` docstring).
 """
 
-from __future__ import annotations
-
 from hooks.lib.llm.claude import ResultMessage, query
 from hooks.lib.llm.prompts import load_prompt
 from hooks.lib.llm.schemas import ReviewReport

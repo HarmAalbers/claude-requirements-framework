@@ -24,8 +24,6 @@ helper serves review workers (ReviewReport, max_turns=5) and, later, the
 supervisor (HandoffResult, max_turns=3) without a second extraction.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 

@@ -14,8 +14,6 @@ as a subprocess (no creds required).
 Run with: python3 tests/test_sync_prompts.py
 """
 
-from __future__ import annotations
-
 import importlib.util
 import subprocess
 import sys

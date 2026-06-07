@@ -33,8 +33,6 @@ Usage:
     python3 scripts/sync_golden_set_to_langfuse.py --dataset NAME
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

@@ -22,8 +22,6 @@ convenience — accessing them triggers the underlying import, so the
 no-eager-import contract above still holds.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 __all__ = ["FanoutResult", "fanout_review"]

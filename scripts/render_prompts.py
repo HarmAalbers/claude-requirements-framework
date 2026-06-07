@@ -29,8 +29,6 @@ Exit codes:
     2  — jinja2 missing
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
