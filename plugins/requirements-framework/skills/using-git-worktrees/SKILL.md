@@ -1,7 +1,7 @@
 ---
 name: using-git-worktrees
 description: Use when starting feature work that needs isolation from current workspace, or before executing implementation plans in a separate branch
-git_hash: c5ba794
+git_hash: 73732a7
 ---
 
 # Using Git Worktrees

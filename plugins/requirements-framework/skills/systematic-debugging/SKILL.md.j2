@@ -1,7 +1,7 @@
 ---
 name: systematic-debugging
 description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
-git_hash: c5ba794
+git_hash: 73732a7
 ---
 
 # Systematic Debugging
