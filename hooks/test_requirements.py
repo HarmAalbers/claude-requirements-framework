@@ -34,6 +34,7 @@ class TestRunner:
     def __init__(self):
         self.passed = 0
         self.failed = 0
+        self.skipped = 0
         self.errors = []
 
     def test(self, name: str, condition: bool, msg: str = ""):
@@ -46,12 +47,23 @@ class TestRunner:
             self.failed += 1
             self.errors.append(f"{name}: {msg}")
 
+    def skip(self, name: str, reason: str = ""):
+        """Record an explicitly-skipped check so it is visible in the summary.
+
+        A skipped guard must be distinguishable from a passed guard — silent
+        early-returns make the totals lie (flagged by /v3-review on the ruff
+        force-exclude regression guard).
+        """
+        print(f"  ⊘ SKIP {name}: {reason}")
+        self.skipped += 1
+
     def summary(self) -> int:
         """Print summary and return exit code."""
         total = self.passed + self.failed
         print()
         print(f"{'='*50}")
-        print(f"Results: {self.passed}/{total} tests passed")
+        skipped_note = f" ({self.skipped} skipped)" if self.skipped else ""
+        print(f"Results: {self.passed}/{total} tests passed{skipped_note}")
         if self.errors:
             print("\nFailures:")
             for err in self.errors:
@@ -10006,6 +10018,65 @@ def test_plugin_hooks_bundle_fresh(runner: TestRunner):
                 pass
 
 
+def test_ruff_force_excludes_bundle(runner: TestRunner):
+    """The generated plugin bundle is force-excluded from ruff for EXPLICIT paths.
+
+    ruff's `extend-exclude` only skips the bundle during directory traversal
+    (`ruff check .`). The /v3-review tool gate runs `ruff check -- <changed files>`
+    (explicit paths), so without `force-exclude = true` it would lint the generated
+    bundle and abort on its deliberate sys.path E402 pattern. This guards that
+    regression (it bit a real `/v3-review` run twice).
+    """
+    import shutil
+    print("\n🧹 Testing ruff force-excludes the generated bundle (explicit paths)...")
+    if not shutil.which("ruff"):
+        # Visible skip, not a silent return — CI always has ruff (pinned in
+        # ci.yml), so this only fires on a dev box without it.
+        runner.skip("ruff force-exclude bundle guard", "ruff not installed")
+        return
+    repo_root = Path(__file__).resolve().parent.parent
+    bundle_file = "plugins/requirements-framework/hooks/requirements-cli.py"
+    if not (repo_root / bundle_file).exists():
+        runner.test("bundle file present for force-exclude check", False, bundle_file)
+        return
+
+    def _ruff(*args: str):
+        r = subprocess.run(
+            ["ruff", "check", *args],
+            cwd=str(repo_root), capture_output=True, text=True,
+        )
+        detail = (f"exit={r.returncode}\nstdout:\n{r.stdout[:2000]}"
+                  f"\nstderr:\n{r.stderr[:2000]}")
+        return r.returncode, detail
+
+    # Step 1 — prove the bundle file WOULD flag without the project config
+    # (--isolated ignores ruff.toml). Without this, exit-0 in step 2 could just
+    # mean the bundle happened to be lint-clean, not that the exclude works.
+    rc_isolated, detail_isolated = _ruff("--isolated", "--", bundle_file)
+    runner.test(
+        "bundle file flags under --isolated (content genuinely lintable)",
+        rc_isolated != 0, detail_isolated,
+    )
+
+    # Step 2 — with the project config, the SAME explicit path is skipped
+    # (force-exclude honored — this is the /v3-review tool-gate invocation).
+    rc_configured, detail_configured = _ruff("--", bundle_file)
+    runner.test(
+        "ruff check -- <generated bundle file> is clean (force-exclude honored)",
+        rc_configured == 0, detail_configured,
+    )
+
+    # Step 3 — the DIRECTORY-TRAVERSAL branch CI relies on (`ruff check .` +
+    # extend-exclude). Scoped to E402: the bundle's 94 deliberate sys.path
+    # violations would flag if extend-exclude were removed, while source stays
+    # clean via the per-file-ignores.
+    rc_traversal, detail_traversal = _ruff(".", "--select", "E402")
+    runner.test(
+        "ruff check . --select E402 is clean (extend-exclude traversal honored)",
+        rc_traversal == 0, detail_traversal,
+    )
+
+
 def test_plugin_hooks_json_self_contained(runner: TestRunner):
     """hooks.json is plugin-root-relative, not deploy-path-bound.
 
@@ -12874,6 +12945,7 @@ def main():
     test_new_requirement_definitions(runner)
     test_process_skill_message_files(runner)
     test_plugin_hooks_bundle_fresh(runner)
+    test_ruff_force_excludes_bundle(runner)
     test_plugin_hooks_json_self_contained(runner)
     test_plugin_skill_files_exist(runner)
     test_plugin_command_files_exist(runner)
