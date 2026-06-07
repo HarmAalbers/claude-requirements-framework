@@ -1,175 +1,66 @@
 ---
 name: langfuse-sdk-upgrade
-description: Upgrade Langfuse SDKs from older versions to the latest. Use when migrating Python SDK v2/v3 to v4, or JS/TS SDK v3/v4 to v5.
+description: Upgrade this project's Langfuse Python SDK from the pinned v3 to v4. Future task — includes the concrete list of files to touch in this repo.
 ---
 
-# Langfuse SDK Upgrade Guide
+# Langfuse SDK Upgrade Guide (Python v3 → v4, project-specific)
 
-Assist users in upgrading their Langfuse SDK to the latest version. The Python and JS/TS SDKs share the same architectural changes but differ in syntax.
+This project pins `langfuse>=3.0` in `pyproject.toml` and uses v3 idioms throughout. This file is the playbook for the eventual v4 migration.
 
 ## Migration Docs
 
-Always fetch the latest migration guide before starting — these pages are the source of truth:
-
-- **Python (v3 → v4):** https://langfuse.com/docs/observability/sdk/upgrade-path/python-v3-to-v4
-- **JS/TS (v4 → v5):** https://langfuse.com/docs/observability/sdk/upgrade-path/js-v4-to-v5
-
-Fetch the relevant page as markdown before implementing any changes:
+Always fetch the latest migration guide before starting — it is the source of truth and may have changed since this file was written:
 
 ```bash
 curl -s "https://langfuse.com/docs/observability/sdk/upgrade-path/python-v3-to-v4.md"
-curl -s "https://langfuse.com/docs/observability/sdk/upgrade-path/js-v4-to-v5.md"
 ```
+
+## This Project's Touch-List
+
+Every file that exercises the Langfuse Python SDK. **Remember the dual-copy rule**: `hooks/lib/llm/` and `plugins/requirements-framework/hooks/lib/llm/` hold identical copies — change both.
+
+| File (×2 where noted) | v3 idioms in use | v4 watch-out |
+|---|---|---|
+| `hooks/lib/llm/prompts.py` (×2) | `Langfuse()` lazy singleton, `get_prompt(name, label=...).prompt` | API surface of prompt client; `.prompt` attribute access on text prompts |
+| `hooks/lib/llm/eval.py` (×2) | `client.create_score(trace_id=, name=, value=)` (v3 rename from `.score()` — the fail-open comment documents this) | Score API namespace changes (`score_v_2` → `scores`); metadata must be `dict[str, str]`, values ≤200 chars |
+| `scripts/sync_prompts_to_langfuse.py` | `create_prompt(name, type, prompt, labels)`, `flush()` | Same prompt-API surface; verify idempotent-upsert behavior unchanged |
+| `scripts/run_eval.py` | drives `post_to_langfuse()` | Indirect — verify after eval.py is migrated |
+| `pyproject.toml` | `langfuse>=3.0` pin | Bump to `>=4.0`; v4 requires Pydantic v2 |
+| `tests/test_eval.py`, `tests/test_prompts.py` | mock the v3 call shapes | Update mocks to v4 shapes — these tests are what proves the migration |
+
+**NOT affected**: `hooks/lib/llm/observability.py` uses OpenInference + OTel exporters, not the Langfuse SDK — tracing keeps working during the SDK migration. But the **pinned self-hosted server** in `infra/docker-compose.yml` must satisfy the v4 SDK's minimum server version — check the migration guide and bump the stack deliberately (separate patch) if needed.
+
+**Convention guard**: the migration must not break the project's raw-Jinja2 prompt convention (prompts stored as opaque text, client-side render, `keep_trailing_newline`). If v4 changes prompt object semantics, the fallback path in `prompts.py` and the sync script need joint verification.
 
 ## Upgrade Checklist
 
-Work through each item in order. Skip items that don't apply to the user's codebase.
+Work through each item in order. Skip items that don't apply.
 
-### Both SDKs
-
-- [ ] **Update the SDK package** to the latest version
-- [ ] **Audit span filtering**: Non-LLM spans (HTTP, DB, queues) no longer export by default. If the user relied on these, configure a custom `should_export_span` / `shouldExportSpan` filter
-- [ ] **Replace `update_current_trace()` / `updateActiveTrace()`**: Split into three calls:
-  - `propagate_attributes()` / `propagateAttributes()` for correlating attributes (`user_id`, `session_id`, `tags`, `metadata`, `trace_name`)
-  - `set_current_trace_io()` / `setActiveTraceIO()` for input/output (deprecated — prefer setting I/O on root observation directly)
-  - `set_current_trace_as_public()` / `setActiveTraceAsPublic()` for public flag
-- [ ] **Replace `.update_trace()` / `.updateTrace()`** on observation objects (same decomposition as above)
-- [ ] **Update API namespace references**: `observations_v_2` / `observationsV2` → `observations`, `score_v_2` / `scoreV2` → `scores`, `metrics_v_2` / `metricsV2` → `metrics`. Legacy v1 APIs moved to `api.legacy.*`
-- [ ] **Validate metadata format**: Must be `dict[str, str]` / `Record<string, string>` with values ≤200 characters
-- [ ] **Move `release` and `environment`** from code parameters to environment variables (`LANGFUSE_RELEASE`, `LANGFUSE_TRACING_ENVIRONMENT`)
-- [ ] **Enable debug logging** during migration to catch issues (`debug=True` in Python, `LANGFUSE_DEBUG="true"` in JS/TS)
-- [ ] **Test trace hierarchies** to verify no spans are unexpectedly dropped
-
-### Python-specific
-
-- [ ] **Replace `start_span()` / `start_generation()`** with `start_observation()` (use `as_type="generation"` for generations)
-- [ ] **Replace `start_as_current_span()` / `start_as_current_generation()`** with `start_as_current_observation()`
-- [ ] **Replace dataset `item.run()`** with `dataset.run_experiment(name=..., task=...)`
-- [ ] **Remove `CallbackHandler(update_trace=...)`** parameter — use `propagate_attributes()` wrapper instead
-- [ ] **Upgrade to Pydantic v2** — the SDK now requires it. Use `pydantic.v1` compatibility shim if migrating gradually
-- [ ] **Update removed types**: `TraceMetadata`, `ObservationParams` removed from `langfuse.types`. Import `MapValue`, `ModelUsage`, `PromptClient` from `langfuse.model`
-
-### JS/TS-specific
-
-- [ ] **Update LangChain `CallbackHandler`** — `traceMetadata` now requires string values; internal behavior uses `propagateAttributes()` instead of direct trace updates
-- [ ] **Update OpenAI integration** — `traceMethod` wrapper now uses `propagateAttributes()` internally; wrap entire execution in `propagateAttributes()` if relying on parent attribute inheritance
-
-## Key API Changes Reference
-
-### Correlating attributes (both SDKs)
-
-**Before:**
-```python
-# Python
-langfuse.update_current_trace(name="trace-name", user_id="user-123", session_id="session-abc", tags=["tag1"])
-```
-```typescript
-// JS/TS
-updateActiveTrace({ name: "trace-name", userId: "user-123", sessionId: "session-456", tags: ["prod"] });
-```
-
-**After:**
-```python
-# Python
-from langfuse import propagate_attributes
-
-with propagate_attributes(trace_name="trace-name", user_id="user-123", session_id="session-abc", tags=["tag1"]):
-    result = call_llm("hello")
-```
-```typescript
-// JS/TS
-import { propagateAttributes } from "langfuse";
-
-await propagateAttributes(
-  { traceName: "trace-name", userId: "user-123", sessionId: "session-456", tags: ["prod"] },
-  async () => { /* traced code */ }
-);
-```
-
-### Span/Generation creation (Python)
-
-**Before:**
-```python
-langfuse.start_span(name="x")
-langfuse.start_generation(name="x", model="gpt-4")
-```
-
-**After:**
-```python
-langfuse.start_observation(name="x")
-langfuse.start_observation(name="x", as_type="generation", model="gpt-4")
-```
-
-### Dataset experiments (Python)
-
-**Before:**
-```python
-for item in dataset.items:
-    with item.run(run_name="my-run") as span:
-        result = my_llm(item.input)
-        span.update(output=result)
-```
-
-**After:**
-```python
-def my_task(*, item, **kwargs):
-    return my_llm(item.input)
-
-dataset.run_experiment(name="my-run", task=my_task)
-```
-
-### Span filtering (both SDKs)
-
-To restore pre-upgrade "export all" behavior:
-
-```python
-# Python
-langfuse = Langfuse(should_export_span=lambda span: True)
-```
-```typescript
-// JS/TS
-const spanProcessor = new LangfuseSpanProcessor({ shouldExportSpan: () => true });
-```
-
-To extend defaults with custom scopes:
-
-```python
-# Python
-from langfuse.span_filter import is_default_export_span
-
-langfuse = Langfuse(
-    should_export_span=lambda span: (
-        is_default_export_span(span)
-        or span.instrumentation_scope.name.startswith("my_framework")
-    )
-)
-```
-```typescript
-// JS/TS
-import { isDefaultExportSpan } from "@langfuse/otel";
-
-shouldExportSpan: ({ otelSpan }) =>
-  isDefaultExportSpan(otelSpan) || otelSpan.instrumentationScope.name.startsWith("my_framework")
-```
+- [ ] **Update the SDK package** to the latest v4
+- [ ] **Audit span filtering**: Non-LLM spans no longer export by default in v4. (Likely moot here — tracing goes through OpenInference, not the Langfuse SDK — but verify nothing started depending on SDK-side spans)
+- [ ] **Replace `update_current_trace()`** if any crept in: split into `propagate_attributes()` (correlating attributes), root-observation I/O, and `set_current_trace_as_public()`
+- [ ] **Update API namespace references**: `observations_v_2` → `observations`, `score_v_2` → `scores`, `metrics_v_2` → `metrics`. Legacy v1 APIs moved to `api.legacy.*`
+- [ ] **Validate metadata format**: must be `dict[str, str]` with values ≤200 characters
+- [ ] **Move `release`/`environment`** from code parameters to env vars (`LANGFUSE_RELEASE`, `LANGFUSE_TRACING_ENVIRONMENT`)
+- [ ] **Replace `start_span()` / `start_generation()`** with `start_observation()` (`as_type="generation"`)
+- [ ] **Replace dataset `item.run()`** with `dataset.run_experiment(name=..., task=...)` — relevant if judge calibration (see `references/judge-calibration.md`) has created Langfuse datasets by then
+- [ ] **Pydantic v2** — the v4 SDK requires it; check what else in the repo pins Pydantic
+- [ ] **Update removed types**: `TraceMetadata`, `ObservationParams` gone from `langfuse.types`; import `MapValue`, `ModelUsage`, `PromptClient` from `langfuse.model`
+- [ ] **Enable debug logging** during migration (`debug=True` / `LANGFUSE_DEBUG`)
+- [ ] **Run the test suite** (`tests/test_eval.py`, `tests/test_prompts.py`, `tests/test_observability.py`) and the smoke spike (`hooks/lib/llm/_spikes/v3_langfuse_smoke.py` — user-run, hard-fails loudly) to verify end-to-end
 
 ## Common Pitfalls
 
 | Pitfall | Impact | Fix |
 | --- | --- | --- |
-| Dropping intermediate spans via filtering | Breaks trace trees — child spans become orphaned | Use `is_default_export_span` as base and only add/remove specific scopes |
+| Editing only one copy of `prompts.py`/`eval.py` | Repo and plugin diverge silently | Always change both copies |
 | Metadata with non-string values | Values silently coerced or dropped | Ensure all metadata values are strings ≤200 characters |
-| Setting attributes outside `propagate_attributes()` callback | Attributes don't attach to observations | Wrap all traced code inside the callback |
-| Using deprecated `set_current_trace_io()` for new code | Will be removed in future versions | Set input/output directly on the root observation |
-| Forgetting Pydantic v2 upgrade (Python) | Import errors or runtime failures | Upgrade Pydantic or use `pydantic.v1` shim |
-| `release`/`environment` still passed as parameters | Silently ignored | Use `LANGFUSE_RELEASE` and `LANGFUSE_TRACING_ENVIRONMENT` env vars |
-| LangChain/OpenAI attribute propagation direction changed | Attributes propagate downward only, not upward to parent traces | Wrap outer call in `propagate_attributes()` |
+| Fail-open masking a broken migration | `create_score` failures are swallowed by design | Run tests + smoke spike; don't trust silence |
+| `release`/`environment` still passed as parameters | Silently ignored | Use `LANGFUSE_RELEASE` / `LANGFUSE_TRACING_ENVIRONMENT` env vars |
+| Server too old for v4 SDK | API errors (swallowed in lib code!) | Check pinned `infra/docker-compose.yml` stack version against the migration guide first |
 
 ## Best Practices
 
-1. **Always fetch the migration docs first** — they are the canonical source and may have been updated since this guide was written
-2. **Enable debug logging during migration** to surface dropped spans and trace hierarchy issues
-3. **Use `propagate_attributes()` as the primary mechanism** for setting trace-level correlating attributes
-4. **Set input/output on root observations directly** rather than using deprecated trace-level setters
-5. **Compose custom span filters** with `is_default_export_span` / `isDefaultExportSpan` to extend defaults rather than replacing them entirely
-6. **Test thoroughly** — run the application with debug logging, check the Langfuse UI for missing or orphaned spans, verify metadata appears correctly
-7. **Migrate incrementally** — upgrade the SDK first, fix breaking changes, then adopt new patterns
+1. **Fetch the migration docs first** — canonical source, may have been updated
+2. **Migrate incrementally** — bump the SDK, fix breaking changes, then adopt new patterns; one stg patch per logical step
+3. **Tests are the proof** — the fail-open design means runtime won't tell you the migration broke; only the test suite and smoke spike will

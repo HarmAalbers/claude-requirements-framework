@@ -1,25 +1,40 @@
 ---
 name: langfuse-prompt-migration
-description: Migrate hardcoded prompts to Langfuse for version control and deployment-free iteration. Use when user wants to externalize prompts, move prompts to Langfuse, or set up prompt management.
+description: Work with this project's Langfuse prompt registry — add/edit prompts via the file-first sync workflow. Migration of existing prompts is DONE; the generic migration flow below applies only to newly discovered hardcoded prompts.
 ---
 
-# Langfuse Prompt Migration
+# Prompt Registry (this project) & Migration
 
-Migrate hardcoded prompts to Langfuse for version control, A/B testing, and deployment-free iteration.
+## Project Convention — read this first
 
-## Prerequisites
+**The migration already happened.** All review prompts live as Jinja2 templates in `hooks/lib/llm/prompts/*.md.j2` (plus `partials/`), mirrored to Langfuse by `scripts/sync_prompts_to_langfuse.py`, and loaded at runtime by `hooks/lib/llm/prompts.py`.
 
-Verify credentials are set before starting. Check existence only — never print the secret key, since the value would land in the agent's context and transcripts:
+This project **deliberately chose Option B** from the decision tree below: prompts are stored in Langfuse as **opaque raw Jinja2 text** (type `text`, label `production`) and compiled **client-side** via `templates.render()` — NOT converted to Langfuse's `{{var}}` mustache syntax. The generic guidance below that says "you MUST convert to `{{var}}`" does **not** apply here. Known trade-off, accepted: no Playground preview / in-UI experiments without SDK-side compile.
 
-```bash
-[ -n "$LANGFUSE_PUBLIC_KEY" ] && echo "LANGFUSE_PUBLIC_KEY: set" || echo "LANGFUSE_PUBLIC_KEY: missing"
-[ -n "$LANGFUSE_SECRET_KEY" ] && echo "LANGFUSE_SECRET_KEY: set" || echo "LANGFUSE_SECRET_KEY: missing"
-[ -n "$LANGFUSE_BASE_URL" ]   && echo "LANGFUSE_BASE_URL: $LANGFUSE_BASE_URL" || echo "LANGFUSE_BASE_URL: missing"
-```
+Two more load-bearing facts:
 
-If not set, ask the user to configure them in their shell or a `.env` file. Do not ask them to paste keys into chat.
+- **`keep_trailing_newline` is active and load-bearing** in the Jinja2 renderer (`from_string()` path) — removing it would silently strip trailing newlines from all rendered templates.
+- **Files are the source of truth.** Never create or edit prompts in the Langfuse UI — the next sync overwrites them.
 
-## Migration Flow
+### Adding or editing a prompt
+
+1. Create/edit `hooks/lib/llm/prompts/<name>.md.j2` (shared fragments go in `partials/`).
+2. Preview the sync: `python3 scripts/sync_prompts_to_langfuse.py --dry-run`
+3. Push: `python3 scripts/sync_prompts_to_langfuse.py` (idempotent — identical content is a no-op; changed content creates a new version and moves the `production` label; use `--label` for a different label).
+4. Runtime pickup: `load_prompt(name, label="production", **vars)` tries Langfuse first (~60s client cache, no local LRU — deliberate, preserves the rollback story), falls back to the bundled file. `label` is a **reserved kwarg**, not a template variable.
+5. Remember the dual-copy rule for the loader code itself: `hooks/lib/llm/prompts.py` and `plugins/requirements-framework/hooks/lib/llm/prompts.py` are identical copies.
+
+### Rollback
+
+Move the `production` label to an older version in Langfuse (UI or API) — the ~60s cache means it takes effect within a minute, no deploy needed. For a durable rollback, also revert the `.md.j2` file and re-sync.
+
+### Credentials
+
+Source `infra/.env` (the sync script and loader read `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST`). Check existence only — never print secret values.
+
+---
+
+## Generic Migration Flow (only for newly discovered hardcoded prompts)
 
 ```
 1. Scan codebase for prompts
@@ -60,7 +75,7 @@ Search for these patterns:
 
 ## Step 2: Check Templating Compatibility
 
-**CRITICAL:** Langfuse only supports simple `{{variable}}` substitution. No conditionals, loops, or filters.
+**CRITICAL:** Langfuse only supports simple `{{variable}}` substitution natively. No conditionals, loops, or filters. **This project bypasses native substitution entirely (Option B, see Project Convention above)** — for new prompts in *this* repo, write Jinja2 and let the sync script + client-side renderer handle it; skip the conversion table below.
 
 | Template Feature | Langfuse Native | Action |
 |------------------|-----------------|--------|
@@ -77,9 +92,9 @@ Search for these patterns:
 Contains {% if %}, {% for %}, or filters?
 ├─ No → Direct migration
 └─ Yes → Choose:
-    ├─ Option A (RECOMMENDED): Move logic to code, pass pre-computed values
-    └─ Option B: Store raw template, compile client-side with Jinja2
-        └─ ⚠️ Loses: Playground preview, UI experiments
+    ├─ Option A: Move logic to code, pass pre-computed values
+    └─ Option B (THIS PROJECT'S CHOICE): Store raw template, compile client-side with Jinja2
+        └─ ⚠️ Loses: Playground preview, UI experiments — accepted trade-off here
 ```
 
 ### Simplifying Complex Templates
@@ -149,6 +164,8 @@ Proceed?
 
 ## Step 5: Create Prompts in Langfuse
 
+**In this repo**: drop the template into `hooks/lib/llm/prompts/<name>.md.j2` and run the sync script (see Project Convention) — don't call `create_prompt()` ad hoc. The generic API, for reference:
+
 Use `langfuse.create_prompt()` with:
 - `name`: Your chosen name
 - `prompt`: Template text (or message array for chat type)
@@ -165,7 +182,7 @@ For full API: fetch https://langfuse.com/docs/prompts/get-started
 
 ## Step 6: Refactor Code
 
-Replace hardcoded prompts with:
+**In this repo**: replace hardcoded prompts with the existing loader — `load_prompt("name", **vars)` from `hooks/lib/llm/prompts.py` (handles Langfuse fetch, file fallback, and Jinja2 render). The generic SDK pattern, for reference:
 
 ```python
 prompt = langfuse.get_prompt("name", label="production")
