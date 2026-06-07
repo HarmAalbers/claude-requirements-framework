@@ -80,6 +80,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-stop.py",
             "statusMessage": "Verifying requirements..."
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/langfuse-trace.py",
+            "statusMessage": "Tracing turn to Langfuse..."
           }
         ]
       }
