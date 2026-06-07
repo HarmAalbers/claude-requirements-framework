@@ -21,7 +21,14 @@ jobs:
         # [llm] extra that the in-suite V3 tests (e.g. test_supervisor_config_driven)
         # import directly — NOT the full extra (which drags torch/sentence-transformers/
         # ragas). Without these the suite ModuleNotFound-crashes on a clean runner.
-        run: pip install pyyaml pydantic jinja2
+        # ruff is PINNED so a future release can't flag new rules on unchanged code.
+        run: pip install pyyaml pydantic jinja2 ruff==0.12.12
+
+      - name: Lint (ruff)
+        # The missing merge gate: lint debt used to accumulate silently because only
+        # the opt-in /v3-review tool gate ran ruff. The generated plugin bundle is
+        # excluded in ruff.toml (byte-identical mirror; build --check enforces equality).
+        run: ruff check .
 
       - name: Prepare Claude home
         run: |
