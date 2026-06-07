@@ -12,6 +12,10 @@ description: Deep-dive error analysis of an LLM pipeline or AI application using
 
 # Error Analysis
 
+## Project Context
+
+The traces to analyse come from **`/v3-review`** runs: each review worker produces a `claude_agent_sdk.query` span (OpenInference + OTLP). Trace-level `input`/`output` is often **null** — the prompt/completion content lives on the GENERATION observation, so annotation queues must target `objectType: OBSERVATION` (see below). Existing eval scores on these traces: `finding_match` (deterministic, 0–1) and `agent_goal_accuracy` (LLM judge, 0–1) — check them before building a new taxonomy; they may already split pass/fail for you. Golden cases live in `golden_set/cases/*.json` and replay via `scripts/run_eval.py`.
+
 ## Primary Guide
 
 **1. Fetch the guide in this blogpost**
@@ -38,13 +42,12 @@ The guide describes the process. These notes cover the Langfuse-specific API and
 
 ### Credentials
 
-```bash
-echo $LANGFUSE_PUBLIC_KEY   # pk-lf-...
-echo $LANGFUSE_SECRET_KEY   # sk-lf-...
-echo $LANGFUSE_BASE_URL     # https://cloud.langfuse.com (EU), https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP) or self-hosted
-```
+Source from `infra/.env` (this project stores `LANGFUSE_HOST`, the CLI wants `LANGFUSE_BASE_URL`). Check existence only — never print the keys:
 
-If not set, check `.env` in the project root: `export $(grep -v '^#' .env | xargs)`. If `LANGFUSE_HOST` is used instead of `LANGFUSE_BASE_URL`, run `export LANGFUSE_BASE_URL="$LANGFUSE_HOST"`.
+```bash
+set -a; source infra/.env; set +a
+export LANGFUSE_BASE_URL="$LANGFUSE_HOST"   # http://localhost:3000
+```
 
 ```bash
 AUTH=$(echo -n "${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}" | base64)
@@ -56,7 +59,7 @@ STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
 echo "Auth check: $STATUS"
 ```
 
-If status is not `200`, stop and ask the user to check their credentials and host before continuing.
+If status is not `200`, the docker stack is probably down — check `docker compose -f infra/docker-compose.yml ps` before suspecting credentials.
 
 ### Annotation target: OBSERVATION versus TRACE
 
@@ -69,20 +72,16 @@ If status is not `200`, stop and ask the user to check their credentials and hos
 
 **Always give the user a direct link immediately after creating a queue:**
 
-| Host | URL pattern |
-|------|-------------|
-| EU cloud | `https://cloud.langfuse.com/project/<projectId>/annotation-queues/<queueId>` |
-| US cloud | `https://us.cloud.langfuse.com/project/<projectId>/annotation-queues/<queueId>` |
-| Self-hosted | `<LANGFUSE_BASE_URL>/project/<projectId>/annotation-queues/<queueId>` |
+```
+http://localhost:3000/project/<projectId>/annotation-queues/<queueId>
+```
 
 Instruction to give: *"Please open code the first ~50 examples. For each trace, write what you observe in the `open_coding` field (describe behaviour, don't diagnose root causes), then set `pass_fail_assessment` to Pass or Fail."*
 
 
 ### Prompt fixes
 
-When a category warrants a prompt fix, always offer the user two options:
-1. Create it as a versioned prompt in Langfuse (tracked, usable via the prompt API)
-2. Draft the specific text change for them to review and apply
+When a category warrants a prompt fix, follow this project's **file-first** workflow: edit the source template in `hooks/lib/llm/prompts/*.md.j2`, then push to the registry with `python3 scripts/sync_prompts_to_langfuse.py` (see `references/prompt-migration.md`). Do NOT create/edit prompts directly in the Langfuse UI — the files are the source of truth and a sync would overwrite UI-only changes.
 
 ### Setup evaluators
 
