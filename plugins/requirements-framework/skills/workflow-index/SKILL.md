@@ -1,7 +1,7 @@
 ---
 name: workflow-index
 description: Use this skill at the start of any non-trivial work in a project that uses the requirements-framework. It maps the current phase to the single next command to run. Triggers on "what next", "where am I", "/req", or when the user is uncertain what workflow to use.
-git_hash: 5c850a5
+git_hash: fd9c9e1
 ---
 
 # Workflow Index
