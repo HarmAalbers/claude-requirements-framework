@@ -10,7 +10,7 @@ To add this strategy:
 3. Configure in requirements.yaml
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from base_strategy import BaseStrategy
 
 

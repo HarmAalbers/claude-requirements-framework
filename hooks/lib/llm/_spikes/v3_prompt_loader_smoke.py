@@ -65,8 +65,8 @@ def main() -> int:
         match = text == on_disk
         print(f"  {name}: {len(text)} bytes, matches disk={match}")
         if not match:
-            print(f"    (Langfuse has different content than disk — likely a "
-                  f"newer version was promoted in the UI; not a failure.)")
+            print("    (Langfuse has different content than disk — likely a "
+                  "newer version was promoted in the UI; not a failure.)")
 
     print("\nStep 3/3: forcing file fallback (clearing LANGFUSE_PUBLIC_KEY) ...")
     saved = os.environ.pop("LANGFUSE_PUBLIC_KEY")

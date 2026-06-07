@@ -166,7 +166,7 @@ async def run_v3_chain(diff: str, scope: str, dry_run: bool):
         print(f"  ✗ code-reviewer failed: {work_error}")
         print(f"  → elapsed={work_elapsed:.1f}s (before failure)")
         if "max_turns" in str(e):
-            print(f"  → hint: diff may be too large for max_turns=5; try --base <closer-sha> to narrow scope")
+            print("  → hint: diff may be too large for max_turns=5; try --base <closer-sha> to narrow scope")
 
     return handoff, report, sup_elapsed, work_elapsed, sup_error, work_error
 

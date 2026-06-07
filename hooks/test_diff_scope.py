@@ -8,7 +8,6 @@ Uses real git repos in tempdirs — no subprocess mocking except for `gh` CLI.
 Run with: python3 hooks/test_diff_scope.py
 """
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,13 +19,9 @@ sys.path.insert(0, str(lib_path))
 
 from diff_scope import (
     DEFAULT_BASE,
-    DEFAULT_DIFF_FILE,
-    DEFAULT_SCOPE_FILE,
     DiffScopeError,
-    Scope,
     ensure_scope,
     prepare_diff_scope,
-    read_scope,
 )
 
 

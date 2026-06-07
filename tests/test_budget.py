@@ -9,7 +9,6 @@ real ledger at ~/.claude/requirements-framework/usage/.
 """
 
 import json
-import os
 import stat
 import sys
 import tempfile

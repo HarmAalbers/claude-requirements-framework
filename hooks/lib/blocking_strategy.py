@@ -10,7 +10,7 @@ These requirements must be manually satisfied via the CLI using
 Examples: commit_plan, adr_reviewed, github_ticket
 """
 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 # Import from sibling modules
 try:
@@ -22,9 +22,6 @@ except ImportError as e:
     # For testing, allow imports to fail gracefully but log warning
     import sys
     sys.stderr.write(f"[WARNING] blocking_strategy import failed: {e}\n")
-
-if TYPE_CHECKING:
-    from messages import MessageLoader
 
 
 class BlockingRequirementStrategy(RequirementStrategy):

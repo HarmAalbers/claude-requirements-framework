@@ -12,7 +12,6 @@ Usage:
     config = selector.build_config_from_features(selected, context='project')
 """
 from typing import Dict, List, Any
-from pathlib import Path
 
 
 # Feature catalog - maps requirement keys to user-friendly descriptions
