@@ -1,27 +1,40 @@
 ---
 name: langfuse-observability
-description: Instrument LLM applications with Langfuse tracing. Use when setting up Langfuse, adding observability to LLM calls, or auditing existing instrumentation.
+description: Work on this project's V3 review tracing (observability.py, OpenInference, OTLP). Use when auditing or extending the existing instrumentation — it is already set up; do not bootstrap a new integration.
 ---
 
 # Langfuse Observability
 
-Instrument LLM applications with Langfuse tracing, following best practices and tailored to your use case.
+Instrumentation guidance for this project's V3 review stack.
 
-## Workflow
+## This Project's Instrumentation Architecture
 
-### 1. Assess Current State
+Tracing is **already set up** — do not bootstrap a new integration. The chain:
 
-Check the project:
+```
+plugins/requirements-framework/scripts/v3-review   (bash wrapper)
+  → hooks/lib/llm/review_cli.py
+      _load_dotenv()            # pulls LANGFUSE_* from infra/.env
+      init_observability()      # arms OpenInference instrumentor BEFORE SDK import
+      → query() calls auto-traced as `claude_agent_sdk.query` spans
+  → OTLP HTTP/protobuf → http://localhost:3000/api/public/otel/v1/traces
+```
 
-- Is Langfuse SDK installed?
-- What LLM frameworks are used? (OpenAI SDK, LangChain, LlamaIndex, Vercel AI SDK, etc.)
-- Is there existing instrumentation?
+Key facts (violating these breaks tracing silently):
 
-**No integration yet:** Set up Langfuse using a framework integration if available. Integrations capture more context automatically and require less code than manual instrumentation.
+- **Import order is load-bearing**: `init_observability()` must run before `claude_agent_sdk` is imported. `hooks/lib/llm/claude.py` is a thin wrapper that guarantees this structurally — import `query` from there, never from the SDK directly.
+- **Env contract**: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` (read in `observability.py`). All three unset → logged once at INFO, tracing skipped, work continues (fail-open). `LANGFUSE_DEBUG=1` enables init-failure tracebacks.
+- **Idempotent late init**: `_instrumented` / `_disabled_logged` are separate flags so dotenv can load after first import and a later explicit `init_observability()` still works.
+- **Tracer provider is passed explicitly** to `instrument()` — don't refactor to rely on the OTel global.
+- **`_DetachNoiseFilter`**: fan-out under `asyncio.gather()` makes OpenInference log benign "Failed to detach context" errors; the filter suppresses those while keeping genuine context errors. Don't remove it, don't broaden it.
+- **Dual copies**: `hooks/lib/llm/observability.py` and `plugins/requirements-framework/hooks/lib/llm/observability.py` are identical copies — edit both.
+- **Scope honesty**: only the Claude Agent SDK is instrumented (no Anthropic-SDK child spans for internal retries). Known limitation, revisit if an API-key path appears.
+- **Never launch `/v3-review` via the Bash tool** to "test tracing" — hand the command to the user (`!`). For a quick end-to-end check use the smoke spike: `hooks/lib/llm/_spikes/v3_langfuse_smoke.py` (hard-fails on missing prereqs, prints the trace URL).
+- **Tests**: `tests/test_observability.py` covers env handling, ImportError swallowing, idempotency, atexit flush. Extend it when touching `observability.py`.
 
-**Integration exists:** Audit against baseline requirements below.
+## Workflow (auditing or extending the instrumentation)
 
-### 2. Verify Baseline Requirements
+### 1. Verify Baseline Requirements
 
 Every trace should have these fundamentals:
 
@@ -32,14 +45,15 @@ Every trace should have these fundamentals:
 | Good trace names          | Are names descriptive? (`chat-response`, not `trace-1`)                                  | Makes traces findable and filterable                   |
 | Span hierarchy            | Are multi-step operations nested properly?                                               | Shows which step is slow or failing                    |
 | Correct observation types | Are generations marked as generations?                                                   | Enables model-specific analytics                       |
-| Sensitive data masked     | Is PII/confidential data excluded or masked?                                             | Prevents data leakage                                  |
-| Trace input/output        | Does the trace capture meaningful input/output? Is input explicitly set to show only relevant data (e.g., user message), not all function args? | Makes traces readable in the UI and avoids leaking sensitive args |
+| Trace input/output        | Does the trace capture meaningful input/output? Is input explicitly set to show only relevant data (e.g., user message), not all function args? | Makes traces readable in the UI |
 
-Framework integrations (OpenAI, LangChain, etc.) handle model name, tokens, and observation types automatically. Prefer integrations over manual instrumentation.
+(No PII-masking requirement here: self-hosted, single-user — masking is explicitly out of scope for this project.)
+
+The OpenInference instrumentor handles model name, tokens, and observation types automatically — prefer extending it over adding manual spans.
 
 Docs: https://langfuse.com/docs/tracing
 
-### 3. Explore Traces First
+### 2. Explore Traces First
 
 Once baseline instrumentation is working, encourage the user to explore their traces in the Langfuse UI before adding more context:
 
@@ -51,39 +65,22 @@ This helps the user:
 - Form opinions about what's missing
 - Ask better questions about what they need
 
-### 4. Discover Additional Context Needs
+### 3. Discover Additional Context Needs
 
 Determine what additional instrumentation would be valuable. **Infer from code when possible, only ask when unclear.**
 
-**Infer from code:**
+Plausible additions **for this project** (single-user CLI — no `user_id`, tenants, or end-user feedback):
 
-| If you see in code...                                | Infer             | Suggest                   |
-| ---------------------------------------------------- | ----------------- | ------------------------- |
-| Conversation history, chat endpoints, message arrays | Multi-turn app    | `session_id`              |
-| User authentication, `user_id` variables             | User-aware app    | `user_id` on traces       |
-| Multiple distinct endpoints/features                 | Multi-feature app | `feature` tag             |
-| Customer/tenant identifiers                          | Multi-tenant app  | `customer_id` or tier tag |
-| Feedback collection, ratings                         | Has user feedback | Capture as scores         |
+| Addition            | Why                                                              | Docs                                                |
+| ------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| `session_id`        | Group all worker spans of one `/v3-review` run together          | https://langfuse.com/docs/tracing-features/sessions |
+| `agent` tag         | Per-review-agent analytics (code-reviewer, solid-reviewer, ...)  | https://langfuse.com/docs/tracing-features/tags     |
+| `branch` metadata   | Correlate traces with the git branch under review                | https://langfuse.com/docs/tracing-features/tags     |
+| Eval scores         | Already implemented — `finding_match`, `agent_goal_accuracy` via `eval.py` | https://langfuse.com/docs/scores/overview           |
 
-**Only ask when not obvious from code:**
+These are NOT baseline requirements—only add what's relevant, and keep any addition fail-open.
 
-- "How do you know when a response is good vs bad?" → Determines scoring approach
-- "What would you want to filter by in a dashboard?" → Surfaces non-obvious tags
-- "Are there different user segments you'd want to compare?" → Customer tiers, plans, etc.
-
-**Additions and their value:**
-
-| Addition            | Why                                         | Docs                                                |
-| ------------------- | ------------------------------------------- | --------------------------------------------------- |
-| `session_id`        | Groups conversations together               | https://langfuse.com/docs/tracing-features/sessions |
-| `user_id`           | Enables user filtering and cost attribution | https://langfuse.com/docs/tracing-features/users    |
-| User feedback score | Enables quality filtering and trends        | https://langfuse.com/docs/scores/overview           |
-| `feature` tag       | Per-feature analytics                       | https://langfuse.com/docs/tracing-features/tags     |
-| `customer_tier` tag | Cost/quality breakdown by segment           | https://langfuse.com/docs/tracing-features/tags     |
-
-These are NOT baseline requirements—only add what's relevant based on inference or user input.
-
-### 5. Guide to UI
+### 4. Guide to UI
 
 After adding context, point users to relevant UI features:
 
@@ -92,34 +89,6 @@ After adding context, point users to relevant UI features:
 - Dashboard: Build filtered views using tags
 - Scores: Filter by quality metrics
 
-## Framework Integrations
-
-Prefer these over manual instrumentation:
-
-| Framework     | Integration            | Docs                                                 |
-| ------------- | ---------------------- | ---------------------------------------------------- |
-| OpenAI SDK    | Drop-in replacement    | https://langfuse.com/docs/integrations/openai        |
-| LangChain     | Callback handler       | https://langfuse.com/docs/integrations/langchain     |
-| LlamaIndex    | Callback handler       | https://langfuse.com/docs/integrations/llama-index   |
-| Vercel AI SDK | OpenTelemetry exporter | https://langfuse.com/docs/integrations/vercel-ai-sdk |
-| LiteLLM       | Callback or proxy      | https://langfuse.com/docs/integrations/litellm       |
-
-Full list: https://langfuse.com/docs/integrations
-
-## Always Explain Why
-
-When suggesting additions, explain the user benefit:
-
-```
-"I recommend adding session_id to your traces.
-
-Why: This groups messages from the same conversation together.
-You'll be able to see full conversation flows in the Sessions view,
-making it much easier to debug multi-turn interactions.
-
-Learn more: https://langfuse.com/docs/tracing-features/sessions"
-```
-
 ## Common Mistakes
 
 | Mistake                                        | Problem                                             | Fix                                                                               |
@@ -127,8 +96,8 @@ Learn more: https://langfuse.com/docs/tracing-features/sessions"
 | No `flush()` in scripts                        | Traces never sent                                   | Call `langfuse.flush()` before exit                                               |
 | Flat traces                                    | Can't see which step failed                         | Use nested spans for distinct steps                                               |
 | Generic trace names                            | Hard to filter                                      | Use descriptive names: `chat-response`, `doc-summary`                             |
-| Logging sensitive data                         | Data leakage risk                                   | Mask PII before tracing                                                           |
-| Not explicitly setting input with `@observe`   | All function args become trace input (including API keys, configs) | Python: use `langfuse.update_current_span(input=...)`. JS/TS: use `updateActiveObservation({ input: ... })`. Set only the relevant input (e.g., user message) |
-| Manual instrumentation when integration exists | More code, less context                             | Use framework integration                                                         |
-| Langfuse import before env vars loaded         | Langfuse initializes with missing/wrong credentials | Import Langfuse AFTER loading environment variables (e.g., after `load_dotenv()`) |
-| Wrong import order with OpenAI                 | Langfuse can't patch the OpenAI client              | Import Langfuse and call its setup BEFORE importing OpenAI client                 |
+| Not explicitly setting input with `@observe`   | All function args become trace input (including API keys, configs) | Python: use `langfuse.update_current_span(input=...)`. Set only the relevant input |
+| Manual instrumentation when integration exists | More code, less context                             | Extend the OpenInference instrumentor path instead                                |
+| Env vars loaded after `init_observability()`   | Instrumentation arms with missing credentials → silently untraced | `_load_dotenv()` runs first in `review_cli.py`; preserve that order in any new entry point |
+| Importing `claude_agent_sdk` directly          | Monkey-patch not yet armed → calls untraced         | Import `query` via `hooks/lib/llm/claude.py` (structural import-order guarantee)  |
+| Editing only one copy of `observability.py`    | Repo and plugin behavior diverge silently           | Edit both `hooks/lib/llm/` and `plugins/requirements-framework/hooks/lib/llm/`    |

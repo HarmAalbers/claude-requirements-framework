@@ -6,6 +6,17 @@ aligned with human judgment, or safe to trust for monitoring decisions.
 
 # Judge Calibration (LLM-as-a-Judge)
 
+## Project Context
+
+The judge to calibrate here is **`agent_goal_accuracy`** — the Ragas async LLM judge wired into `hooks/lib/llm/eval.py` (injected as `judge`; failures set the score to `None`, never crash — fail-open by design). The deterministic companion metric `finding_match` needs no calibration (structural file/line/category match).
+
+Ground truth lives **locally** in `golden_set/cases/*.json` (`reference_findings`, `reference_goal`), replayed via `scripts/run_eval.py` — there is currently **no Langfuse-hosted dataset**. So for calibration:
+
+- **Simple mode (default)**: run locally against the golden cases; no Langfuse dataset needed.
+- **Langfuse experiment mode**: first upload the golden cases as a Langfuse dataset (item `input` = case input, `expectedOutput` = reference label), then follow the experiment workflow below. Worth it only if you want runs comparable in the Experiments UI.
+
+Scores post via `post_to_langfuse()` (`client.create_score()`, v3 SDK — the project pins `langfuse>=3.0`; ignore v4-only experiment APIs in current docs until the SDK is upgraded, see `references/sdk-upgrade.md`).
+
 ## Goal
 
 Validate judge outputs against human labels using the smallest reliable workflow
