@@ -1,0 +1,23 @@
+# Mark machine-generated artifacts as linguist-generated.
+#
+# These are byte-identical, tool-produced mirrors of authored source — they are
+# committed (so the plugin is self-contained / ships rendered), but reviewing or
+# diff-highlighting them is noise: any real change lives in the source twin.
+#
+#   * The plugin hook BUNDLE — scripts/build_plugin_hooks.py mirrors hooks/*.py +
+#     hooks/lib/** into plugins/requirements-framework/hooks/ (its --check test
+#     enforces byte-for-byte equality with the source).
+#   * Rendered plugin prompts — scripts/render_prompts.py renders *.md.j2 -> *.md
+#     for agents / commands / skills (its --check test enforces freshness).
+#
+# Effect: GitHub collapses them in PR diffs and drops them from language stats,
+# and generated-aware review tools (Graphite, and a future /v3-review scope
+# filter) skip them. Querying: `git check-attr linguist-generated -- <file>`.
+#
+# NOT marked (intentionally authored): hooks.json (the hook-registration source
+# of truth), the *.md.j2 sources themselves, and skills/*/references/*.md.
+
+plugins/requirements-framework/hooks/**/*.py       linguist-generated=true
+plugins/requirements-framework/agents/*.md         linguist-generated=true
+plugins/requirements-framework/commands/*.md       linguist-generated=true
+plugins/requirements-framework/skills/*/SKILL.md   linguist-generated=true
