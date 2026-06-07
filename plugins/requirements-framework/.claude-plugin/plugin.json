@@ -1,6 +1,6 @@
 {
   "name": "requirements-framework",
-  "version": "4.15.5",
+  "version": "4.15.6",
   "description": "Claude Code Requirements Framework - Complete development lifecycle from ideation to completion. Enforces workflow requirements through hooks, guides process with 21 development skills (brainstorming, TDD, debugging, verification), and provides comprehensive code review agents.",
   "author": {
     "name": "Harm"

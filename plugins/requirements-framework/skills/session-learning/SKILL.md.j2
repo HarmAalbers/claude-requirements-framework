@@ -1,7 +1,7 @@
 ---
 name: session-learning
 description: This skill should be used when the user asks about "session learning", "learn from session", "improve future sessions", "session reflection", "session metrics", "session analysis", "/session-reflect", "req learning", "learning updates", "rollback learning", or wants to understand how Claude Code can get smarter over time by learning from sessions.
-git_hash: 73732a7
+git_hash: bd5042e
 ---
 
 # Session Learning Guide

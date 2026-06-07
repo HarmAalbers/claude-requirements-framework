@@ -3,7 +3,7 @@ name: brainstorm
 description: "Design-first development: explore requirements before implementation"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: 73732a7
+git_hash: bd5042e
 ---
 
 > **Workflow position**: invoked by `/req design`. Run directly to override the conductor.
