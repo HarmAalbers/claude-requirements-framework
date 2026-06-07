@@ -122,7 +122,6 @@ from hooks.lib.llm.retrieval import (  # noqa: E402 — must follow guards
     query_sessions,
     upsert_session,
 )
-from qdrant_client import QdrantClient  # noqa: E402
 
 
 FIXTURES = [

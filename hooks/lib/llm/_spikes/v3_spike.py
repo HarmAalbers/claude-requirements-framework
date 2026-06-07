@@ -185,7 +185,7 @@ async def main():
     print(f"  rationale: {handoff.rationale}")
     print(f"  elapsed:   {sup_elapsed:.2f}s")
     if handoff.target not in ("deep-review",):
-        print(f"  note:      spike will run review workers regardless of supervisor choice")
+        print("  note:      spike will run review workers regardless of supervisor choice")
     print()
 
     # Phase 2: parallel workers
@@ -224,7 +224,7 @@ async def main():
     print(f"  {raw_count} raw finding(s) → {len(unified.findings)} unified after agent aggregation")
     print(f"  elapsed: {agg_elapsed:.2f}s")
     print()
-    print(f"  Narrative summary (from aggregator):")
+    print("  Narrative summary (from aggregator):")
     print(f"    {unified.summary}")
     print()
 
@@ -252,10 +252,10 @@ async def main():
     print(f"  Dedup:        {raw_count} raw → {len(unified.findings)} unified (saved {dedup_savings} duplicate{'s' if dedup_savings != 1 else ''})")
     print()
     print("Architecture validated:")
-    print(f"  ✓ Supervisor → HandoffResult (typed)")
-    print(f"  ✓ Workers in parallel → ReviewReport (typed)")
-    print(f"  ✓ Aggregator agent → ReviewReport (typed; semantic dedup + narrative)")
-    print(f"  ✓ End-to-end flow under Max auth, no API key required")
+    print("  ✓ Supervisor → HandoffResult (typed)")
+    print("  ✓ Workers in parallel → ReviewReport (typed)")
+    print("  ✓ Aggregator agent → ReviewReport (typed; semantic dedup + narrative)")
+    print("  ✓ End-to-end flow under Max auth, no API key required")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ Guards are different from blocking/dynamic requirements:
 Examples: protected_branch (prevents edits on main/master)
 """
 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 # Import from sibling modules
 try:
@@ -25,9 +25,6 @@ except ImportError as e:
     # For testing, allow imports to fail gracefully but log warning
     import sys
     sys.stderr.write(f"[WARNING] guard_strategy import failed: {e}\n")
-
-if TYPE_CHECKING:
-    from messages import MessageLoader
 
 
 class GuardRequirementStrategy(RequirementStrategy):

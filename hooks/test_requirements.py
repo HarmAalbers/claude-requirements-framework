@@ -475,7 +475,7 @@ def test_git_root_resolution(runner: TestRunner):
 def test_git_worktree_support(runner: TestRunner):
     """Test that state is shared across git worktrees."""
     print("\n📦 Testing git worktree support...")
-    from git_utils import get_git_common_dir, is_git_repo
+    from git_utils import get_git_common_dir
     from state_storage import get_state_dir
     from requirements import BranchRequirements
 
@@ -7478,11 +7478,11 @@ def test_session_start_format_tiers(runner: TestRunner):
         # Test standard format
         standard = session_start_module.format_standard_status(reqs, config, "test-session", "feature/test-formats")
         runner.test("Standard format has table header", "| Requirement |" in standard,
-                   f"Missing table header")
+                   "Missing table header")
         runner.test("Standard format has Quick Start section", "Quick Start" in standard,
-                   f"Missing Quick Start section")
+                   "Missing Quick Start section")
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
-                   f"Missing triggers")
+                   "Missing triggers")
         runner.test("Standard shows gating directive when unsatisfied",
                    "do NOT attempt Edit/Write/MultiEdit first" in standard,
                    f"Got: {standard[:600]}")
@@ -7500,7 +7500,7 @@ def test_session_start_format_tiers(runner: TestRunner):
         )
         runner.test("briefing_format=compact returns compact regardless of source",
                    "Requirements:" in adaptive_compact and "Session Briefing" not in adaptive_compact,
-                   f"Expected compact format")
+                   "Expected compact format")
 
         config_standard = dict(config_content)
         config_standard["hooks"] = {"session_start": {"briefing_format": "standard"}}
@@ -7512,7 +7512,7 @@ def test_session_start_format_tiers(runner: TestRunner):
         )
         runner.test("briefing_format=standard returns standard regardless of source",
                    "| Requirement |" in adaptive_standard and "Session Briefing" not in adaptive_standard,
-                   f"Expected standard format")
+                   "Expected standard format")
 
     # Test empty requirements config
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -9848,7 +9848,7 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     # Test: Deprecated /plan-review mapping removed in plugin v4.0.0
     runner.test("plan-review mapping removed in 4.0.0",
                'requirements-framework:plan-review' not in mappings,
-               f"DEFAULT_SKILL_MAPPINGS should not contain 'requirements-framework:plan-review'")
+               "DEFAULT_SKILL_MAPPINGS should not contain 'requirements-framework:plan-review'")
 
     # Test: Deprecated /quality-check mapping removed in plugin v4.0.0
     runner.test("quality-check not in mappings (deleted in v4.0)",
@@ -9858,8 +9858,6 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
 def test_new_requirement_definitions(runner: TestRunner):
     """Test that new requirement definitions in example config are valid."""
     print("\n🎯 Testing new requirement definitions...")
-
-    from config import RequirementsConfig
 
     # Read the example config to check new requirement definitions exist
     # Try relative to test file first (portable), then hardcoded repo fallback
@@ -11346,7 +11344,7 @@ def test_obsidian_client(runner: TestRunner):
 def test_obsidian_session_logger(runner: TestRunner):
     """Test ObsidianSessionLogger lifecycle orchestrator."""
     print("\n📦 Testing Obsidian session logger...")
-    from unittest.mock import patch, MagicMock, call
+    from unittest.mock import patch, MagicMock
     from obsidian import ObsidianSessionLogger
 
     # Helper: create a mock config
@@ -11410,7 +11408,7 @@ def test_obsidian_session_logger(runner: TestRunner):
     logger_obj = ObsidianSessionLogger(config)
     with patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create, \
          patch.object(logger_obj.client, 'set_properties', return_value=True) as mock_props, \
-         patch.object(logger_obj.client, 'read', return_value=None) as mock_read, \
+         patch.object(logger_obj.client, 'read', return_value=None), \
          patch.object(logger_obj.client, 'prepend', return_value=True) as mock_prepend:
         logger_obj.on_session_start("abc123", "/tmp/project", "feat/auth")
         runner.test("on_session_start calls create_note",
@@ -11544,7 +11542,7 @@ def test_obsidian_session_logger(runner: TestRunner):
     # Test 14: _ensure_index_note creates Dataview note when missing
     config = make_config(enabled=True)
     logger_obj = ObsidianSessionLogger(config)
-    with patch.object(logger_obj.client, 'read', return_value=None) as mock_read, \
+    with patch.object(logger_obj.client, 'read', return_value=None), \
          patch.object(logger_obj.client, 'create_note', return_value=True) as mock_create:
         logger_obj._ensure_index_note()
         runner.test("_ensure_index_note creates when missing",

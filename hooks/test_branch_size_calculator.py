@@ -9,10 +9,8 @@ Run with: python3 test_branch_size_calculator.py
 """
 
 import sys
-import os
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 # Add lib directory to path
@@ -47,7 +45,7 @@ class TestRunner:
         print(f"Results: {self.passed}/{total} passed")
 
         if self.failed_tests:
-            print(f"\nFailed tests:")
+            print("\nFailed tests:")
             for name, msg in self.failed_tests:
                 print(f"  • {name}: {msg}")
 

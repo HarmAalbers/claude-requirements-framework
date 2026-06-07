@@ -28,7 +28,7 @@ from requirements import BranchRequirements
 from config import RequirementsConfig, load_yaml
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
-from session_metrics import list_session_metrics, load_metrics
+from session_metrics import list_session_metrics
 from learning_updates import get_recent_updates, get_learning_stats, mark_rolled_back, get_update_by_id
 from state_storage import list_all_states
 from colors import success, error, warning, info, header, hint, dim, bold
@@ -2469,7 +2469,7 @@ def _cmd_upgrade_scan(args) -> int:
 
     result = registry.update_and_scan(scan_paths)
 
-    out(success(f"✅ Scan complete"))
+    out(success("✅ Scan complete"))
     out()
     out(f"   New projects:     {result['new']}")
     out(f"   Updated:          {result['updated']}")
@@ -2488,13 +2488,6 @@ def _cmd_upgrade_scan(args) -> int:
 
 def _cmd_upgrade_status(args) -> int:
     """Show feature status for a project or all projects."""
-    from feature_catalog import (
-        get_all_features,
-        detect_configured_features,
-        CATEGORY_REQUIREMENTS,
-        CATEGORY_HOOKS,
-        CATEGORY_GUARDS,
-    )
     from project_registry import ProjectRegistry
 
     registry = ProjectRegistry()
@@ -2564,10 +2557,10 @@ def _show_project_status(project_path: str, brief: bool = False) -> int:
         CATEGORY_HOOKS: [],
     }
 
-    for name, info in features.items():
-        cat = info.get('category', CATEGORY_REQUIREMENTS)
+    for name, feature_info in features.items():
+        cat = feature_info.get('category', CATEGORY_REQUIREMENTS)
         status = configured.get(name, False)
-        categories[cat].append((name, info, status))
+        categories[cat].append((name, feature_info, status))
 
     if brief:
         # One-line summary
@@ -2600,18 +2593,17 @@ def _show_project_status(project_path: str, brief: bool = False) -> int:
         out()
         out(bold(f"  {cat_label}:"))
 
-        for name, info, enabled in sorted(items, key=lambda x: x[0]):
+        for name, feature_info, enabled in sorted(items, key=lambda x: x[0]):
             if enabled:
                 status_str = success("✓ Enabled")
             else:
                 status_str = dim("○ Not configured")
                 missing_count += 1
 
-            introduced = info.get('introduced', '1.0')
             name_display = f"{name:<25}"
             out(f"    {name_display} {status_str}")
             if not enabled and not brief:
-                out(dim(f"      └─ {info.get('description', '')}"))
+                out(dim(f"      └─ {feature_info.get('description', '')}"))
 
     out()
     out(dim("─" * 60))
@@ -2631,7 +2623,6 @@ def _cmd_upgrade_recommend(args) -> int:
     """Generate YAML recommendations for missing features."""
     from feature_catalog import (
         get_all_features,
-        detect_configured_features,
         get_missing_features,
         get_feature_yaml,
         get_feature_info,

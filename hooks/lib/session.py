@@ -119,9 +119,9 @@ def get_session_id() -> str:
     sessions = registry.get("sessions", {})
     if not sessions:
         raise SessionNotFoundError(
-            f"❌ No active Claude Code sessions in registry!\n\n"
-            f"💡 Registry exists but contains no sessions\n"
-            f"💡 Try running a command in Claude Code first to populate the registry"
+            "❌ No active Claude Code sessions in registry!\n\n"
+            "💡 Registry exists but contains no sessions\n"
+            "💡 Try running a command in Claude Code first to populate the registry"
         )
 
     # Get current project directory
