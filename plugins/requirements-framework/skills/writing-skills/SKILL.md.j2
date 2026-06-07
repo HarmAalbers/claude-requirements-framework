@@ -1,7 +1,7 @@
 ---
 name: writing-skills
 description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
-git_hash: 50acdeb
+git_hash: 26919b4
 ---
 
 # Writing Skills
