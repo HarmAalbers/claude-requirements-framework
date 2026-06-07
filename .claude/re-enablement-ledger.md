@@ -12,11 +12,37 @@ Legend: ✅ graduated · 🟡 in progress · ⬜ not started · ❌ dropped
 | R1 | Core gating (one requirement) | ✅ graduated | Works end-to-end; no false positives; state integrity holds |
 | R2 | Status injection + statusline | ⬜ | — |
 | R3 | Plugin review commands (/deep-review, /arch-review) | ✅ graduated | --plugin-dir session: hooks fired + gate blocked an edit, zero errors |
-| R4 | /v3-review LIVE (budget rung) | ⬜ | — |
-| R5 | Observability / Langfuse | ⬜ | — |
+| R4 | /v3-review LIVE (budget rung) | ✅ graduated | 2026-06-07 live run end-to-end (see below) |
+| R5 | Observability / Langfuse | 🟡 | traces exported live in the R4 run (session 861c5f9e); always-on validation pending |
 | R6 | Eval harness + golden set | ⬜ | — |
 | R7 | Retrieval / memory / Qdrant | ⬜ | — |
 | aux | Obsidian, session-learning | ⬜ | — |
+
+## R4 — /v3-review LIVE — ✅ GRADUATED (2026-06-07)
+
+**First live run of the re-enablement** (user-run, foreground, on the `force-exclude` branch),
+scope `HEAD~3..HEAD` (140 files — the ruff-cleanup merge):
+
+- **Ran end-to-end**: tool gate passed (after the `force-exclude` fix) → 10-worker fan-out →
+  aggregated ADR-013 report. **9/10 workers survived** (code-reviewer failed
+  `error_max_turns` on the wide scope — proceed-with-survivors by design, ADR-017/018).
+- **Verdict READY**: 0 CRITICAL / 0 IMPORTANT / 4 SUGGESTION — and the suggestions were
+  *genuinely useful*: all four targeted the brand-new `test_ruff_force_excludes_bundle`
+  regression guard (silent skip, swallowed stderr, excluded-vs-incidentally-clean ambiguity,
+  untested traversal branch). **All four were folded back into PR #97 before merge** —
+  the review→fix→merge loop worked on its own enabling change.
+- **Cost $6.84 / 11 calls** on a wide 140-file scope (consistent with the $2–12 model;
+  narrow scopes land $2–3). **Langfuse traces exported** (session `861c5f9e`, self-hosted
+  stack at :3000) — observability live, which also moves R5 to 🟡.
+- Known wrinkles (both pre-documented): the SDK `aclose(): asynchronous generator is
+  already running` teardown noise (upstream, non-fatal), and `error_max_turns` on the
+  widest worker — feeds Step 17b (per-call caps) and Step 20 (sonnet pinning) data needs.
+
+**Graduation gate met**: runs live under Max auth, produces actionable findings, survives a
+worker failure gracefully, exports traces, cost within model. Two aborted-gate runs before
+this one cost $0.00 (the deterministic gate doing its job).
+
+---
 
 ### R1 enhancement — evidence-gated commit_plan (`step-2-evidence-gated-commit-plan`, plugin 4.9.0)
 
