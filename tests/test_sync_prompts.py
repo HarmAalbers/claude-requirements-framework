@@ -163,6 +163,74 @@ def main() -> int:
     r.test("newline-only diff detected", drifted == ["alpha"],
            f"drifted={drifted}")
 
+    # --- flatten: playground-compatible rendering --------------------------
+    import jinja2 as j2
+
+    def _env(partials: dict[str, str]):
+        e = j2.Environment(
+            loader=j2.DictLoader(partials),
+            autoescape=False,
+            keep_trailing_newline=True,
+            undefined=j2.StrictUndefined,
+        )
+        e.filters["repr"] = repr
+        return e
+
+    print("flatten: simple vars stay as mustache placeholders")
+    env = _env({})
+    out = mod.flatten_template("Review this:\n{{ diff }}\n", env)
+    r.test("simple var preserved", out == "Review this:\n{{diff}}\n", repr(out))
+
+    print("flatten: includes are resolved inline")
+    env = _env({"partials/safety.j2": "SAFETY RULES"})
+    out = mod.flatten_template(
+        "{% include 'partials/safety.j2' %}\n{{ diff }}\n", env
+    )
+    r.test("include folded in", out == "SAFETY RULES\n{{diff}}\n", repr(out))
+
+    print("flatten: repr filter pre-applied around placeholder")
+    env = _env({})
+    out = mod.flatten_template("scope={{ scope | repr }}\n", env)
+    r.test("repr quoting survives", out == "scope='{{scope}}'\n", repr(out))
+
+    print("flatten: if-defined section kept with placeholder")
+    env = _env({})
+    out = mod.flatten_template(
+        "{% if project_conventions is defined and project_conventions %}"
+        "CONV: {{ project_conventions }}{% endif %}\n",
+        env,
+    )
+    r.test("conditional section kept",
+           out == "CONV: {{project_conventions}}\n", repr(out))
+
+    print("flatten: phases loop collapses to sentinel line")
+    env = _env({})
+    out = mod.flatten_template(
+        "{% for p in phases %}  {{ p.name }} — "
+        "{{ p.get('description') or p.get('skill') or '' }}\n{% endfor %}",
+        env,
+    )
+    r.test("loop renders one placeholder row",
+           "{{phases}}" in out and out.count("\n") == 1, repr(out))
+
+    print("flatten: trailing newline preserved (keep_trailing_newline)")
+    env = _env({})
+    out = mod.flatten_template("X\n", env)
+    r.test("trailing newline kept", out == "X\n", repr(out))
+
+    # --- playground items: naming + label ---------------------------------
+    print("playground: suffixed names, separate label")
+    d = _make_prompt_dir({"alpha": "{{ diff }}\n"})
+    client = _StubClient({})
+    changed = mod.sync_playground(
+        sorted(d.glob("*.md.j2")), client, env=_env({}), check=False
+    )
+    r.test("playground name suffixed", client.created == ["alpha-playground"],
+           f"created={client.created}")
+    r.test("playground content flattened",
+           client._registry.get("alpha-playground") == "{{diff}}\n",
+           repr(client._registry.get("alpha-playground")))
+
     # --- CLI: dry-run needs no creds --------------------------------------
     print("cli: --dry-run lists without creds")
     proc = subprocess.run(

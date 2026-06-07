@@ -25,6 +25,14 @@ Two more load-bearing facts:
 5. Runtime pickup: `load_prompt(name, label="production", **vars)` tries Langfuse first (~60s client cache, no local LRU — deliberate, preserves the rollback story), falls back to the bundled file. `label` is a **reserved kwarg**, not a template variable.
 6. Remember the dual-copy rule for the loader code itself: `hooks/lib/llm/prompts.py` and `plugins/requirements-framework/hooks/lib/llm/prompts.py` are identical copies.
 
+### Playground variants (UI experimentation)
+
+`python3 scripts/sync_prompts_to_langfuse.py --playground` additionally syncs **flattened** copies as `<name>-playground` (label `playground`): includes resolved, filters pre-applied (`{{ scope | repr }}` → `'{{scope}}'`), loops collapsed to a sentinel row, simple vars kept as native `{{var}}`. These render and substitute correctly in the Langfuse Playground (which can't process raw Jinja2). Rules:
+
+- Playground variants are **UI-only** — the runtime loader must only ever see the raw Jinja2 prompts under `production`. Separate names make a label mix-up impossible.
+- They're regenerated from the `.md.j2` sources — same file-first rule; don't edit `-playground` prompts in the UI expecting persistence.
+- Executing them in the Playground needs an Anthropic **API key** under Project Settings → LLM Connections (separate billing; Max OAuth doesn't apply).
+
 ### Rollback
 
 Move the `production` label to an older version in Langfuse (UI or API) — the ~60s cache means it takes effect within a minute, no deploy needed. For a durable rollback, also revert the `.md.j2` file and re-sync.
