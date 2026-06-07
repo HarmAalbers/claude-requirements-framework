@@ -24,11 +24,19 @@ These are accepted trade-offs. The TTL caching + version-label rollback
 story Step 12 built remains intact (Langfuse caches the raw text; our
 loader bypasses Langfuse's `compile()`).
 
-Why "upsert": `langfuse.create_prompt` is idempotent on content — if the
-prompt text is identical to the latest version it's a no-op on Langfuse's
-side; if different, a new version is created and the `production` label
-moves to it. Clean "edit file → run sync → next workers see new version"
-loop.
+Why the client-side compare: `langfuse.create_prompt` is NOT idempotent —
+the server happily mints a new version for byte-identical content
+(verified empirically 2026-06-07: a re-sync created identical v2s for all
+11 unchanged prompts; an earlier docstring claimed server-side dedup and
+was wrong). So before creating, this script fetches the current labeled
+version and skips files whose content already matches. Changed/missing
+content creates a new version and moves the label. Clean "edit file → run
+sync → next workers see new version" loop, without version-history noise.
+
+`--check` runs the same comparison without writing and exits 1 on any
+drift (loud, pre-commit/CI-suitable): a stale registry silently serves old
+prompts at runtime because the loader prefers Langfuse over the bundled
+files — drift must fail loudly, not fail open.
 
 Why we use `prompt.prompt` (raw) instead of `get_langfuse_prompt()`:
   - `get_langfuse_prompt()` was the subject of [Issue #1912][issue1912]
@@ -129,12 +137,61 @@ def _discover_prompts() -> list[Path]:
     return files
 
 
+def _registry_content(lf, name: str, label: str) -> str | None:
+    """Current prompt text under `label`, or None if absent.
+
+    Any exception from `get_prompt` is treated as "not in registry" —
+    for a missing prompt the SDK raises, and creating is the correct
+    response either way. Genuine connectivity failures will surface
+    loudly on the subsequent `create_prompt` call instead.
+    """
+    try:
+        return lf.get_prompt(name, label=label).prompt
+    except Exception:
+        return None
+
+
+def sync_prompts(files: list[Path], lf, *, label: str, check: bool) -> list[str]:
+    """Compare each file against the registry; create or report drift.
+
+    Returns the names that changed (sync mode: created; check mode:
+    would be created). Identical content is skipped — Langfuse does NOT
+    dedup server-side (see module docstring), so the compare lives here.
+    """
+    changed: list[str] = []
+    for p in files:
+        content = p.read_text()
+        name = _prompt_name(p)
+        current = _registry_content(lf, name, label)
+        if current == content:
+            print(f"unchanged: {name}")
+            continue
+        changed.append(name)
+        if check:
+            state = "MISSING from registry" if current is None else "DRIFTED"
+            print(f"drift: {name}  ({state}, label {label!r})")
+            continue
+        result = lf.create_prompt(
+            name=name,
+            type="text",
+            prompt=content,
+            labels=[label],
+        )
+        version = getattr(result, "version", "?")
+        print(f"synced: {name}  -> version {version}, label {label!r}")
+    return changed
+
+
 def main() -> int:
     description = (__doc__ or "Mirror prompts to Langfuse.").split("\n\n")[0]
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--dry-run", action="store_true",
         help="list what would be synced; don't talk to Langfuse",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="compare only; exit 1 if any prompt drifted from the registry",
     )
     parser.add_argument(
         "--label", default="production",
@@ -155,19 +212,17 @@ def main() -> int:
     from langfuse import Langfuse
     lf = Langfuse()
 
-    for p in files:
-        content = p.read_text()
-        name = _prompt_name(p)
-        result = lf.create_prompt(
-            name=name,
-            type="text",
-            prompt=content,
-            labels=[args.label],
-        )
-        version = getattr(result, "version", "?")
-        print(f"synced: {name}  -> version {version}, label {args.label!r}")
-
+    changed = sync_prompts(files, lf, label=args.label, check=args.check)
     lf.flush()
+
+    if args.check:
+        if changed:
+            sys.stderr.write(
+                f"ERROR: {len(changed)} prompt(s) drifted from the registry; "
+                "run scripts/sync_prompts_to_langfuse.py to publish.\n"
+            )
+            return 1
+        print("registry in sync")
     return 0
 
 
