@@ -32,7 +32,8 @@ This skill covers Langfuse work in **claude-requirements-framework**: the self-h
 | `hooks/lib/llm/prompts.py` | Two-tier prompt loader: Langfuse `get_prompt()` first, bundled `.md.j2` fallback. Client-side Jinja2 render. |
 | `hooks/lib/llm/eval.py` | Eval metrics (`finding_match`, `agent_goal_accuracy`) + `post_to_langfuse()` score posting. |
 | `hooks/lib/llm/review_cli.py` | `/v3-review` orchestrator — loads dotenv, arms observability *before* SDK import, fans out workers. |
-| `scripts/sync_prompts_to_langfuse.py` | Mirrors `hooks/lib/llm/prompts/*.md.j2` → Langfuse registry (`production` label). |
+| `scripts/sync_prompts_to_langfuse.py` | Mirrors `hooks/lib/llm/prompts/*.md.j2` → Langfuse registry (`production` label). `--check` = drift gate; `--playground` = flattened UI variants. |
+| `scripts/sync_golden_set_to_langfuse.py` | Mirrors `golden_set/cases/*.json` → Langfuse dataset `golden-set` (upsert by case id). |
 | `scripts/run_eval.py` | Replays `golden_set/cases/*.json`, scores, optionally posts to Langfuse. |
 | `tests/test_observability.py`, `tests/test_eval.py`, `tests/test_prompts.py` | Dep-free unit tests for the above. |
 
