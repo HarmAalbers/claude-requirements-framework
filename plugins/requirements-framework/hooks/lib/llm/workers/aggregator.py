@@ -15,8 +15,6 @@ Why an agent and not a Python utility:
 Wired into nothing yet. Step 18 (supervisor) consumes this.
 """
 
-from __future__ import annotations
-
 import json
 
 from hooks.lib.llm.claude import ClaudeAgentOptions, ResultMessage, query

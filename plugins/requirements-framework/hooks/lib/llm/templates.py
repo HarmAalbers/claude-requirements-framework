@@ -44,8 +44,6 @@ Design notes:
    but defaults are explicit and predictable.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

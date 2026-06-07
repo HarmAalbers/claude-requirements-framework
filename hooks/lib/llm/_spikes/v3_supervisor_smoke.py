@@ -24,8 +24,6 @@ Then verify cost telemetry:
 Open http://localhost:3000 -> Traces tab -> see 7 supervisor spans.
 """
 
-from __future__ import annotations
-
 import asyncio
 import sys
 import time

@@ -15,8 +15,6 @@ pattern for optional-extras-gated tests.
 Run with: python3 tests/test_retrieval.py
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path

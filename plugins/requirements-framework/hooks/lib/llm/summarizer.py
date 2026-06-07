@@ -32,8 +32,6 @@ Why a Pydantic schema for a single-field summary:
     are cheaper than the parsing fragility.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel, Field
 
 from hooks.lib.llm.claude import ClaudeAgentOptions, ResultMessage, query

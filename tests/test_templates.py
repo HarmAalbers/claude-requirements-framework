@@ -16,8 +16,6 @@ exist; here we exercise the engine surface only.
 Run with: python3 tests/test_templates.py
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

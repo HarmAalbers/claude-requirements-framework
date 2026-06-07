@@ -37,8 +37,6 @@ Design notes:
    one-call-per-session pattern. Add it later if Step 14 needs it.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 EMBED_DIM = 384

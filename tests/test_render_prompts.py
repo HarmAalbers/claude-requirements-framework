@@ -13,8 +13,6 @@ internals.
 Run with: python3 tests/test_render_prompts.py
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 import tempfile

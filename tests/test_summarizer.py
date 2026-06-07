@@ -12,8 +12,6 @@ would risk breaking session teardown.
 Run: python3 tests/test_summarizer.py
 """
 
-from __future__ import annotations
-
 import asyncio
 import importlib
 import sys

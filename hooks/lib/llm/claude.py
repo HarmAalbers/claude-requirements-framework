@@ -29,8 +29,6 @@ Callers using `ClaudeSDKClient` directly will not have their cost recorded
 until a follow-up patch. (The current V3 hot path uses `query()`.)
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from typing import Any
 

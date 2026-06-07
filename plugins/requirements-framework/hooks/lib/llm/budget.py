@@ -25,8 +25,6 @@ The module is intentionally dependency-free at import time. It is safe to
 import even when the `claude-agent-sdk` extras are not installed.
 """
 
-from __future__ import annotations
-
 import calendar
 import json
 import logging

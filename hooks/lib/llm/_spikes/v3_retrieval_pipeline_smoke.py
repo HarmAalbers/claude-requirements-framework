@@ -29,8 +29,6 @@ What it does NOT do:
     - Test the timeout path — the test suite covers that deterministically.
 """
 
-from __future__ import annotations
-
 import json
 import sys
 import tempfile

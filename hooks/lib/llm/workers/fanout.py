@@ -16,8 +16,6 @@ Workers themselves are I/O-free and session-unaware — `_base.run_worker`
 must never enter a session (ADR-017 §2).
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import uuid

@@ -43,8 +43,6 @@ Exit codes
        fatal setup error (missing source tree).
 """
 
-from __future__ import annotations
-
 import argparse
 import shutil
 import stat

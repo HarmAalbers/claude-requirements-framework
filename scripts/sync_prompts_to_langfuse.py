@@ -24,11 +24,19 @@ These are accepted trade-offs. The TTL caching + version-label rollback
 story Step 12 built remains intact (Langfuse caches the raw text; our
 loader bypasses Langfuse's `compile()`).
 
-Why "upsert": `langfuse.create_prompt` is idempotent on content — if the
-prompt text is identical to the latest version it's a no-op on Langfuse's
-side; if different, a new version is created and the `production` label
-moves to it. Clean "edit file → run sync → next workers see new version"
-loop.
+Why the client-side compare: `langfuse.create_prompt` is NOT idempotent —
+the server happily mints a new version for byte-identical content
+(verified empirically 2026-06-07: a re-sync created identical v2s for all
+11 unchanged prompts; an earlier docstring claimed server-side dedup and
+was wrong). So before creating, this script fetches the current labeled
+version and skips files whose content already matches. Changed/missing
+content creates a new version and moves the label. Clean "edit file → run
+sync → next workers see new version" loop, without version-history noise.
+
+`--check` runs the same comparison without writing and exits 1 on any
+drift (loud, pre-commit/CI-suitable): a stale registry silently serves old
+prompts at runtime because the loader prefers Langfuse over the bundled
+files — drift must fail loudly, not fail open.
 
 Why we use `prompt.prompt` (raw) instead of `get_langfuse_prompt()`:
   - `get_langfuse_prompt()` was the subject of [Issue #1912][issue1912]
@@ -61,8 +69,6 @@ Usage:
     python3 scripts/sync_prompts_to_langfuse.py            # publish
     python3 scripts/sync_prompts_to_langfuse.py --dry-run  # list, don't push
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -129,6 +135,136 @@ def _discover_prompts() -> list[Path]:
     return files
 
 
+def _registry_content(lf, name: str, label: str) -> str | None:
+    """Current prompt text under `label`, or None if absent.
+
+    Any exception from `get_prompt` is treated as "not in registry" —
+    for a missing prompt the SDK raises, and creating is the correct
+    response either way. Genuine connectivity failures will surface
+    loudly on the subsequent `create_prompt` call instead.
+    """
+    try:
+        return lf.get_prompt(name, label=label).prompt
+    except Exception:
+        return None
+
+
+def sync_prompts(files: list[Path], lf, *, label: str, check: bool) -> list[str]:
+    """Compare each file against the registry; create or report drift.
+
+    Returns the names that changed (sync mode: created; check mode:
+    would be created). Identical content is skipped — Langfuse does NOT
+    dedup server-side (see module docstring), so the compare lives here.
+    """
+    changed: list[str] = []
+    for p in files:
+        content = p.read_text()
+        name = _prompt_name(p)
+        current = _registry_content(lf, name, label)
+        if current == content:
+            print(f"unchanged: {name}")
+            continue
+        changed.append(name)
+        if check:
+            state = "MISSING from registry" if current is None else "DRIFTED"
+            print(f"drift: {name}  ({state}, label {label!r})")
+            continue
+        result = lf.create_prompt(
+            name=name,
+            type="text",
+            prompt=content,
+            labels=[label],
+        )
+        version = getattr(result, "version", "?")
+        print(f"synced: {name}  -> version {version}, label {label!r}")
+    return changed
+
+
+# Placeholder values for variables that templates iterate or index — a
+# plain "{{var}}" string would be looped char-by-char. One sentinel row
+# keeps the structure visible in the flattened output.
+_SPECIAL_PLACEHOLDERS: dict[str, object] = {
+    "phases": [{
+        "name": "{{phases}}",
+        "description": "(one row per configured workflow phase at runtime)",
+    }],
+}
+
+
+def _template_vars(source: str, env) -> set[str]:
+    """Undeclared variables of `source`, following `{% include %}` targets."""
+    from jinja2 import meta
+    ast = env.parse(source)
+    found = set(meta.find_undeclared_variables(ast))
+    for ref in meta.find_referenced_templates(ast):
+        if ref is None:
+            continue
+        inc_src, _, _ = env.loader.get_source(env, ref)
+        found |= _template_vars(inc_src, env)
+    return found
+
+
+def flatten_template(source: str, env) -> str:
+    """Render a Jinja2 template into Playground-compatible mustache text.
+
+    Every variable is rendered with the literal string ``{{var}}`` so the
+    output keeps native Langfuse placeholders while includes resolve,
+    filters pre-apply (e.g. ``{{ scope | repr }}`` → ``'{{scope}}'``), and
+    `is defined` guards stay truthy. List-shaped variables come from
+    `_SPECIAL_PLACEHOLDERS` (a placeholder *string* would be iterated
+    character-by-character).
+
+    The Langfuse Playground only auto-renders native ``{{var}}`` syntax —
+    raw Jinja2 prompts show literal ``{% %}`` blocks there. This flattened
+    form is for UI experimentation only; runtime always uses the raw
+    Jinja2 prompts under the `production` label.
+    """
+    placeholders = {
+        v: _SPECIAL_PLACEHOLDERS.get(v, "{{" + v + "}}")
+        for v in _template_vars(source, env)
+    }
+    return env.from_string(source).render(**placeholders)
+
+
+def sync_playground(files: list[Path], lf, *, env, check: bool) -> list[str]:
+    """Sync flattened `<name>-playground` variants under the `playground` label.
+
+    Separate prompt names (not just a label on the raw prompt) so the
+    `production` label can never accidentally point at a flattened
+    version — the runtime loader must only ever see raw Jinja2.
+    """
+    changed: list[str] = []
+    for p in files:
+        flat = flatten_template(p.read_text(), env)
+        name = _prompt_name(p) + "-playground"
+        current = _registry_content(lf, name, "playground")
+        if current == flat:
+            print(f"unchanged: {name}")
+            continue
+        changed.append(name)
+        if check:
+            state = "MISSING from registry" if current is None else "DRIFTED"
+            print(f"drift: {name}  ({state}, label 'playground')")
+            continue
+        result = lf.create_prompt(
+            name=name,
+            type="text",
+            prompt=flat,
+            labels=["playground"],
+        )
+        version = getattr(result, "version", "?")
+        print(f"synced: {name}  -> version {version}, label 'playground'")
+    return changed
+
+
+def _prompts_env():
+    """The real prompts Environment (FileSystemLoader at PROMPTS_DIR) for
+    flattening — same include resolution and filters as runtime rendering."""
+    sys.path.insert(0, str(REPO_ROOT))
+    from hooks.lib.llm import templates
+    return templates._ENV
+
+
 def main() -> int:
     description = (__doc__ or "Mirror prompts to Langfuse.").split("\n\n")[0]
     parser = argparse.ArgumentParser(description=description)
@@ -137,8 +273,17 @@ def main() -> int:
         help="list what would be synced; don't talk to Langfuse",
     )
     parser.add_argument(
+        "--check", action="store_true",
+        help="compare only; exit 1 if any prompt drifted from the registry",
+    )
+    parser.add_argument(
         "--label", default="production",
         help="label to attach (default: production)",
+    )
+    parser.add_argument(
+        "--playground", action="store_true",
+        help="also sync flattened <name>-playground variants (label "
+             "'playground') for Langfuse UI use",
     )
     args = parser.parse_args()
 
@@ -155,19 +300,19 @@ def main() -> int:
     from langfuse import Langfuse
     lf = Langfuse()
 
-    for p in files:
-        content = p.read_text()
-        name = _prompt_name(p)
-        result = lf.create_prompt(
-            name=name,
-            type="text",
-            prompt=content,
-            labels=[args.label],
-        )
-        version = getattr(result, "version", "?")
-        print(f"synced: {name}  -> version {version}, label {args.label!r}")
-
+    changed = sync_prompts(files, lf, label=args.label, check=args.check)
+    if args.playground:
+        changed += sync_playground(files, lf, env=_prompts_env(), check=args.check)
     lf.flush()
+
+    if args.check:
+        if changed:
+            sys.stderr.write(
+                f"ERROR: {len(changed)} prompt(s) drifted from the registry; "
+                "run scripts/sync_prompts_to_langfuse.py to publish.\n"
+            )
+            return 1
+        print("registry in sync")
     return 0
 
 

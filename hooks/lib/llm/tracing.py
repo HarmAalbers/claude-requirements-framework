@@ -12,8 +12,6 @@ single fan-out run into one filterable Langfuse session. The fan-out
 coordinator (`workers/fanout.py`) owns it — individual workers never enter it.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from contextlib import contextmanager
 

@@ -46,8 +46,6 @@ Output:
 See: .claude/plans/variant3/V3-dogfood-step-16c-shadow.md
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json

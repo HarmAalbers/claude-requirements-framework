@@ -13,8 +13,6 @@ Instead we monkey-patch `embedder._model` with a fake `.encode()` callable
 that returns a deterministic 384-element numpy-like list.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

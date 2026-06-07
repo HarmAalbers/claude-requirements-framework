@@ -15,8 +15,6 @@ tests run; the round-trip / timeout tests skip gracefully.
 Run with: python3 tests/test_memory.py
 """
 
-from __future__ import annotations
-
 import json
 import os
 import sys

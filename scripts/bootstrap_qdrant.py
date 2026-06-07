@@ -23,8 +23,6 @@ Env overrides (optional):
     QDRANT_PORT  (default: 6333)
 """
 
-from __future__ import annotations
-
 import os
 import sys
 

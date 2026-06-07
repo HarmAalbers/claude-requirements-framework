@@ -25,8 +25,6 @@ Verify:
     new content (which is the rollback story we wanted).
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys
