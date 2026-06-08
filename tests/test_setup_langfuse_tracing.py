@@ -9,7 +9,6 @@ Dependency-free: invokes the script as a subprocess with a controlled env
 for --write cache-warming tests. Never touches the network or a real Langfuse.
 """
 
-import base64
 import json
 import os
 import stat
@@ -54,24 +53,29 @@ class TestRunner:
 
 
 def expected_env_block(pk=PK, sk=SK, host=HOST):
-    """The 11-key env block the script must produce (host normalized)."""
+    """The 5-key Layer-1 env block the script must produce (host normalized).
+
+    The 6 former Layer-2 OTEL keys are no longer emitted (ADR-019).
+    """
     host = host.rstrip("/")
-    b64 = base64.b64encode(f"{pk}:{sk}".encode()).decode()
     return {
         "TRACE_TO_LANGFUSE": "true",
         "LANGFUSE_PUBLIC_KEY": pk,
         "LANGFUSE_SECRET_KEY": sk,
         "LANGFUSE_HOST": host,
         "CC_LANGFUSE_MAX_CHARS": "100000",
-        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
-        "OTEL_TRACES_EXPORTER": "otlp",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": f"{host}/api/public/otel",
-        "OTEL_EXPORTER_OTLP_HEADERS": (
-            f"Authorization=Basic {b64},x-langfuse-ingestion-version=4"
-        ),
     }
+
+
+# The 6 deprecated Layer-2 OTEL keys the script must drop + prune.
+DEPRECATED_OTEL_KEYS = (
+    "CLAUDE_CODE_ENABLE_TELEMETRY",
+    "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA",
+    "OTEL_TRACES_EXPORTER",
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+)
 
 
 def make_fake_uv(dir_path: Path, exit_code=0, record_to=None, stderr_line=None):
@@ -166,8 +170,13 @@ def test_happy_path_print_mode(runner):
         expected = expected_env_block()
         block = payload.get("env", {})
         runner.test(
-            "env block has exactly the 11 expected keys",
+            "env block has exactly the 5 expected keys",
             set(block.keys()) == set(expected.keys()),
+            f"got={sorted(block.keys())}",
+        )
+        runner.test(
+            "no deprecated Layer-2 OTEL keys present",
+            all(k not in block for k in DEPRECATED_OTEL_KEYS),
             f"got={sorted(block.keys())}",
         )
         for key, value in expected.items():
@@ -178,11 +187,10 @@ def test_happy_path_print_mode(runner):
             )
 
 
-def test_header_and_endpoint_normalization(runner):
-    print("\ntest_header_and_endpoint_normalization")
-    b64 = base64.b64encode(f"{PK}:{SK}".encode()).decode()
+def test_host_normalization(runner):
+    print("\ntest_host_normalization")
     with tempfile.TemporaryDirectory() as tmp:
-        # Host WITH trailing slash must not produce a double slash.
+        # Host WITH trailing slash must be normalized (no trailing slash).
         env = dict(CRED_ENV, LANGFUSE_HOST="http://localhost:3000/")
         result = run_script(args=["--skip-ping"], env_overrides=env, cwd=tmp)
         runner.test(
@@ -193,18 +201,6 @@ def test_header_and_endpoint_normalization(runner):
         block = parse_env_block(runner, result, "stdout parses (trailing slash)")
         if block is None:
             return
-        runner.test(
-            "OTLP headers exact",
-            block["OTEL_EXPORTER_OTLP_HEADERS"]
-            == f"Authorization=Basic {b64},x-langfuse-ingestion-version=4",
-            f"got={block['OTEL_EXPORTER_OTLP_HEADERS']!r}",
-        )
-        runner.test(
-            "endpoint has no double slash",
-            block["OTEL_EXPORTER_OTLP_ENDPOINT"]
-            == "http://localhost:3000/api/public/otel",
-            f"got={block['OTEL_EXPORTER_OTLP_ENDPOINT']!r}",
-        )
         runner.test(
             "LANGFUSE_HOST normalized (no trailing slash)",
             block["LANGFUSE_HOST"] == "http://localhost:3000",
@@ -288,7 +284,7 @@ def test_write_merges_existing_settings(runner):
             + "\n"
         )
         result = run_script(
-            args=["--write", "--skip-ping"],
+            args=["--write", "--skip-ping", "--skip-model-sync"],
             env_overrides=CRED_ENV,
             cwd=tmp,
             path_dirs=[uv_dir],
@@ -341,7 +337,7 @@ def test_write_rejects_corrupt_settings(runner):
             settings_path = claude_dir / "settings.local.json"
             settings_path.write_text(content)
             result = run_script(
-                args=["--write", "--skip-ping"],
+                args=["--write", "--skip-ping", "--skip-model-sync"],
                 env_overrides=CRED_ENV,
                 cwd=tmp,
                 path_dirs=[uv_dir],
@@ -369,7 +365,7 @@ def test_write_creates_settings(runner):
             tempfile.TemporaryDirectory() as uv_dir:
         make_fake_uv(Path(uv_dir))
         result = run_script(
-            args=["--write", "--skip-ping"],
+            args=["--write", "--skip-ping", "--skip-model-sync"],
             env_overrides=CRED_ENV,
             cwd=tmp,
             path_dirs=[uv_dir],
@@ -399,7 +395,7 @@ def test_write_no_secrets_on_stdout(runner):
             tempfile.TemporaryDirectory() as uv_dir:
         make_fake_uv(Path(uv_dir))
         result = run_script(
-            args=["--write", "--skip-ping"],
+            args=["--write", "--skip-ping", "--skip-model-sync"],
             env_overrides=CRED_ENV,
             cwd=tmp,
             path_dirs=[uv_dir],
@@ -418,8 +414,8 @@ def test_write_no_secrets_on_stdout(runner):
             f"stdout={result.stdout!r}",
         )
         runner.test(
-            "confirmation mentions var count (11)",
-            "11" in result.stdout,
+            "confirmation mentions var count (5)",
+            "5" in result.stdout,
             f"stdout={result.stdout!r}",
         )
 
@@ -431,7 +427,7 @@ def test_write_warms_uv_cache(runner):
             tempfile.TemporaryDirectory() as record_dir:
         make_fake_uv(Path(uv_dir), exit_code=0, record_to=record_dir)
         result = run_script(
-            args=["--write", "--skip-ping"],
+            args=["--write", "--skip-ping", "--skip-model-sync"],
             env_overrides=CRED_ENV,
             cwd=tmp,
             path_dirs=[uv_dir],
@@ -467,7 +463,7 @@ def test_write_warm_failure_not_fatal(runner):
             tempfile.TemporaryDirectory() as uv_dir:
         make_fake_uv(Path(uv_dir), exit_code=1, stderr_line="uv stderr: mock resolution error")
         result = run_script(
-            args=["--write", "--skip-ping"],
+            args=["--write", "--skip-ping", "--skip-model-sync"],
             env_overrides=CRED_ENV,
             cwd=tmp,
             path_dirs=[uv_dir],
@@ -495,12 +491,153 @@ def test_write_warm_failure_not_fatal(runner):
         )
 
 
+def test_env_block_is_five_keys(runner):
+    print("\ntest_env_block_is_five_keys")
+    with tempfile.TemporaryDirectory() as tmp:
+        result = run_script(
+            args=["--skip-ping"], env_overrides=CRED_ENV, cwd=tmp
+        )
+        block = parse_env_block(runner, result, "stdout parses")
+        if block is None:
+            return
+        runner.test(
+            "exactly 5 keys",
+            len(block) == 5 and set(block) == set(expected_env_block()),
+            f"got={sorted(block)}",
+        )
+        for k in DEPRECATED_OTEL_KEYS:
+            runner.test(f"{k} absent", k not in block, f"present in {sorted(block)}")
+
+
+def test_write_prunes_deprecated_otel_keys(runner):
+    print("\ntest_write_prunes_deprecated_otel_keys")
+    with tempfile.TemporaryDirectory() as tmp, \
+            tempfile.TemporaryDirectory() as uv_dir:
+        make_fake_uv(Path(uv_dir))
+        claude_dir = Path(tmp) / ".claude"
+        claude_dir.mkdir()
+        settings_path = claude_dir / "settings.local.json"
+        # Pre-seed the 6 deprecated keys + an unrelated key (simulates a project
+        # onboarded with the old 11-key block).
+        seeded_env = {k: "stale" for k in DEPRECATED_OTEL_KEYS}
+        seeded_env["UNRELATED_KEY"] = "keep-me"
+        settings_path.write_text(
+            json.dumps({"env": seeded_env}, indent=2) + "\n"
+        )
+        result = run_script(
+            args=["--write", "--skip-ping", "--skip-model-sync"],
+            env_overrides=CRED_ENV,
+            cwd=tmp,
+            path_dirs=[uv_dir],
+        )
+        runner.test("exits 0", result.returncode == 0, f"stderr={result.stderr!r}")
+        env_block = json.loads(settings_path.read_text()).get("env", {})
+        for k in DEPRECATED_OTEL_KEYS:
+            runner.test(f"{k} pruned", k not in env_block, "still present")
+        runner.test(
+            "unrelated key preserved",
+            env_block.get("UNRELATED_KEY") == "keep-me",
+            f"got={env_block.get('UNRELATED_KEY')!r}",
+        )
+        for k in expected_env_block():
+            runner.test(f"new key {k} present", k in env_block, "missing")
+
+
+def test_prune_preserves_v3_traces_keys(runner):
+    """The prune is exact-match: the V3 stack's OTEL_EXPORTER_OTLP_TRACES_* keys
+    (a DIFFERENT namespace) must SURVIVE — a prefix match would wrongly strip them."""
+    print("\ntest_prune_preserves_v3_traces_keys")
+    with tempfile.TemporaryDirectory() as tmp, \
+            tempfile.TemporaryDirectory() as uv_dir:
+        make_fake_uv(Path(uv_dir))
+        claude_dir = Path(tmp) / ".claude"
+        claude_dir.mkdir()
+        settings_path = claude_dir / "settings.local.json"
+        v3_keys = {
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://localhost:3000/otel/v1/traces",
+            "OTEL_EXPORTER_OTLP_TRACES_HEADERS": "Authorization=Basic zzz",
+            "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+        }
+        seeded = {**{k: "stale" for k in DEPRECATED_OTEL_KEYS}, **v3_keys}
+        settings_path.write_text(json.dumps({"env": seeded}, indent=2) + "\n")
+        result = run_script(
+            args=["--write", "--skip-ping", "--skip-model-sync"],
+            env_overrides=CRED_ENV,
+            cwd=tmp,
+            path_dirs=[uv_dir],
+        )
+        runner.test("exits 0", result.returncode == 0, f"stderr={result.stderr!r}")
+        env_block = json.loads(settings_path.read_text()).get("env", {})
+        for k, v in v3_keys.items():
+            runner.test(
+                f"V3 key {k} survives prune",
+                env_block.get(k) == v,
+                f"got={env_block.get(k)!r}",
+            )
+        for k in DEPRECATED_OTEL_KEYS:
+            runner.test(f"{k} still pruned", k not in env_block, "present")
+
+
+def test_write_warns_but_continues_on_model_sync_failure(runner):
+    """--write with an unreachable host: model sync fails but setup still exits 0
+    with settings written (warn-but-continue contract)."""
+    print("\ntest_write_warns_but_continues_on_model_sync_failure")
+    with tempfile.TemporaryDirectory() as tmp, \
+            tempfile.TemporaryDirectory() as uv_dir:
+        make_fake_uv(Path(uv_dir))
+        # localhost:1 → connection refused (no real Langfuse touched). --skip-ping
+        # so the unreachable host doesn't fail at the ping stage instead.
+        env = dict(CRED_ENV, LANGFUSE_HOST="http://localhost:1")
+        result = run_script(
+            args=["--write", "--skip-ping"],  # NB: model sync NOT skipped
+            env_overrides=env,
+            cwd=tmp,
+            path_dirs=[uv_dir],
+        )
+        runner.test(
+            "exits 0 despite model-sync failure",
+            result.returncode == 0,
+            f"rc={result.returncode} stderr={result.stderr!r}",
+        )
+        runner.test(
+            "stderr warns about model-sync failure",
+            "model-price sync failed" in result.stderr,
+            f"stderr={result.stderr!r}",
+        )
+        settings_path = Path(tmp) / ".claude" / "settings.local.json"
+        runner.test(
+            "settings still written",
+            settings_path.exists(),
+            f"missing: {settings_path}",
+        )
+
+
+def test_print_mode_notes_model_sync_skipped(runner):
+    print("\ntest_print_mode_notes_model_sync_skipped")
+    with tempfile.TemporaryDirectory() as tmp:
+        result = run_script(
+            args=["--skip-ping"], env_overrides=CRED_ENV, cwd=tmp
+        )
+        runner.test("exits 0", result.returncode == 0, f"stderr={result.stderr!r}")
+        runner.test(
+            "stderr notes model defs were NOT registered in print mode",
+            "model-price definitions were NOT registered" in result.stderr,
+            f"stderr={result.stderr!r}",
+        )
+        runner.test(
+            "stderr points to --write follow-up",
+            "--write" in result.stderr,
+            f"stderr={result.stderr!r}",
+        )
+
+
 def main():
     runner = TestRunner()
     print("Testing scripts/setup_langfuse_tracing.py")
     test_loud_failure_names_all_missing(runner)
     test_happy_path_print_mode(runner)
-    test_header_and_endpoint_normalization(runner)
+    test_env_block_is_five_keys(runner)
+    test_host_normalization(runner)
     test_infra_env_sourcing(runner)
     test_write_merges_existing_settings(runner)
     test_write_rejects_corrupt_settings(runner)
@@ -508,6 +645,10 @@ def main():
     test_write_no_secrets_on_stdout(runner)
     test_write_warms_uv_cache(runner)
     test_write_warm_failure_not_fatal(runner)
+    test_write_prunes_deprecated_otel_keys(runner)
+    test_prune_preserves_v3_traces_keys(runner)
+    test_write_warns_but_continues_on_model_sync_failure(runner)
+    test_print_mode_notes_model_sync_skipped(runner)
     return runner.summary()
 
 
