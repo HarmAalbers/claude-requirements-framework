@@ -1,7 +1,7 @@
 ---
 name: dispatching-parallel-agents
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
-git_hash: fd9c9e1
+git_hash: 28ca1dd
 ---
 
 # Dispatching Parallel Agents
