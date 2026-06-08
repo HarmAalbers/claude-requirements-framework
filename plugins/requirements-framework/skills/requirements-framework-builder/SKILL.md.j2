@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-builder
 description: This skill should be used when the user asks to "extend requirements framework", "add new requirement type", "create custom strategy", "add custom calculator", "modify framework architecture", "create requirement plugin", or wants to build new requirement strategies. Also triggers on questions about strategy registration, calculator implementation, or auto-satisfaction mappings.
-git_hash: 17f5988
+git_hash: c0773c0
 ---
 
 # Requirements Framework - Extension Guide
