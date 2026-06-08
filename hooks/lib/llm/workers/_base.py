@@ -33,6 +33,12 @@ from hooks.lib.llm.claude import ClaudeAgentOptions
 
 T = TypeVar("T", bound=BaseModel)
 
+# Model for all V3 review fan-out workers AND the aggregator (Step 20). Pinned
+# to the Sonnet alias to cut $/run on /v3-review without behaviour change; the
+# supervisor (own _build_options) stays on the inherited Opus default. Unpin by
+# editing this single constant if a quality regression ever surfaces.
+REVIEW_MODEL = "sonnet"
+
 
 def build_options(
     *,
@@ -54,6 +60,7 @@ def build_options(
         system_prompt=system,
         allowed_tools=[],
         max_turns=max_turns,
+        model=REVIEW_MODEL,
     )
     setattr(options, "output_format", {
         "type": "json_schema",

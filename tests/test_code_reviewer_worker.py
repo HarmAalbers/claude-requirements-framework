@@ -129,6 +129,8 @@ def test_review_passes_output_format_and_no_tools(runner):
     opts = captured["options"]
     runner.test("allowed_tools is empty list",
                 getattr(opts, "allowed_tools", None) == [])
+    runner.test("worker pinned to sonnet (Step 20)",
+                getattr(opts, "model", None) == "sonnet")
     of = getattr(opts, "output_format", None)
     runner.test("output_format is json_schema",
                 isinstance(of, dict) and of.get("type") == "json_schema",

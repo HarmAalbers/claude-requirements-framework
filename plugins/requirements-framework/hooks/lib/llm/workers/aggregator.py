@@ -20,6 +20,7 @@ import json
 from hooks.lib.llm.claude import ClaudeAgentOptions, ResultMessage, query
 from hooks.lib.llm.prompts import load_prompt
 from hooks.lib.llm.schemas import ReviewReport
+from hooks.lib.llm.workers._base import REVIEW_MODEL
 
 
 _SYSTEM = (
@@ -33,6 +34,7 @@ def _build_options() -> ClaudeAgentOptions:
         system_prompt=_SYSTEM,
         allowed_tools=[],
         max_turns=5,
+        model=REVIEW_MODEL,
     )
     setattr(options, "output_format", {
         "type": "json_schema",

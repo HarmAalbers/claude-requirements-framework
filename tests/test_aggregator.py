@@ -276,6 +276,8 @@ def test_aggregate_options_shape(runner):
     opts = captured["options"]
     runner.test("allowed_tools is empty list",
                 getattr(opts, "allowed_tools", None) == [])
+    runner.test("aggregator pinned to sonnet (Step 20)",
+                getattr(opts, "model", None) == "sonnet")
     of = getattr(opts, "output_format", None)
     runner.test("output_format is json_schema for ReviewReport",
                 isinstance(of, dict) and of.get("type") == "json_schema"
