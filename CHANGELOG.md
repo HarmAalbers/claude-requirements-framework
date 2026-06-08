@@ -5,6 +5,45 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.0] — 2026-06-08
+
+R5 Observability Hardening (ADR-019 amendment). R5 Langfuse tracing becomes a
+single-layer design: the Stop-hook content trace is the one enriched source of truth,
+now cost-accurate and enriched for every opted-in project.
+
+### Removed
+
+- **The 6 Layer-2 native-OTEL beta-trace env keys** are no longer emitted by
+  `scripts/setup_langfuse_tracing.py`, and are **pruned** from an existing
+  `.claude/settings.local.json` on `--write` (clean removal, no shim):
+  `CLAUDE_CODE_ENABLE_TELEMETRY`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`,
+  `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  `OTEL_EXPORTER_OTLP_HEADERS`. Introduced with R5 (4.16.0). The env block goes 11 → 5
+  keys. Migration: none — re-run `setup_langfuse_tracing.py --write` (it prunes them) and
+  restart affected sessions; Layer-2 traces (`claude_code.interaction`) simply stop.
+  - **Why minor, not major:** these are generated **local env in a gitignored file**, not
+    an ADR-015 enumerated public artifact (command / agent / manifest entry / documented
+    config key). The clean-removal-with-prune (no backwards-compat shim) is the intended
+    cadence; per ADR-015 a minor bump is correct for this surface. The prune is an
+    **exact-name** delete and deliberately spares the V3 review stack's
+    `OTEL_EXPORTER_OTLP_TRACES_*` namespace.
+
+### Added
+
+- `scripts/sync_langfuse_models.py` — registers project-scoped Langfuse model-price
+  definitions (`claude-opus-4-8` / `claude-haiku-4-5` / `claude-sonnet-4-6`, per-token,
+  incl. cache-read/-write tiers) so traces carry non-zero cost. Idempotent
+  (create-if-absent; reports drift). Called by `setup_langfuse_tracing.py --write`; also
+  backs `/v3-review` cost attribution.
+- Trace enrichment on each turn (`# VENDOR-PATCH (e)` in `hooks/_langfuse_hook.py`):
+  `userId` (OS-user proxy), `version` (Claude Code version), and `project`/`branch` tags.
+
+### Notes
+
+- `ttft` (per-call first-token latency) lived only in the removed Layer-2 metadata and is
+  not recoverable from the transcript — **deferred**.
+- Existing sessions must be restarted to load the new 5-key env block.
+
 ## [4.15.0] — 2026-06-06
 
 > Consolidated entry for the `4.7.0 → 4.15.0` arc — the V3 LLM platform scaffold

@@ -2,7 +2,70 @@
 
 ## Status
 
-Approved (2026-06-07)
+Approved (2026-06-07). **Amended 2026-06-08** (R5 Observability Hardening) — Layer 2
+removed; see the Amendment section below, which supersedes the Layer-2 content of
+Context, Coexistence, and the relevant Consequences. Decisions 1–3 stand unchanged.
+
+## Amendment (2026-06-08): R5 Observability Hardening — single-layer R5
+
+The R5 observability-hardening work (`.claude/plans/2026-06-08-r5-observability-hardening-design.md`
+and `…-plan.md`) makes three changes that supersede parts of this ADR. **R5 is now a
+single-layer design: the Stop-hook content trace is the one enriched source of truth.**
+
+1. **Layer 2 (native OTEL beta traces) is removed.** Every reference below framing R5 as
+   "two layers" (Context) is superseded: `setup_langfuse_tracing.py` no longer emits the 6
+   Layer-2 env keys (`CLAUDE_CODE_ENABLE_TELEMETRY`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`,
+   `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+   `OTEL_EXPORTER_OTLP_HEADERS`) — the env block is now 5 keys (Layer 1 only) — and on
+   `--write` it PRUNES those keys from an existing `settings.local.json` (clean removal, no
+   shim). Rationale: Layer-2 generations were hollow (`usageDetails={}`, no content) and only
+   doubled trace volume; the sole datum unique to Layer 2, per-call `ttft`, is not
+   recoverable from the transcript and is **deferred** (accepted loss). The breaking removal
+   of the 6 emitted env keys is recorded in `CHANGELOG.md`; it ships as a **minor** bump
+   (4.18.0) because these are generated local env in a gitignored file, not an ADR-015
+   enumerated public artifact (command/agent/manifest/config surface).
+
+2. **Decisions 1–3 are layer-independent and remain in force, unchanged.** Decision 1
+   (fail-hard for opt-in observability, never exit 2), Decision 2 (vendored-upstream pattern
+   + `# VENDOR-PATCH` hunk convention + coverage count), and Decision 3 (uv as an
+   opted-in-only prerequisite) all govern the Layer-1 Stop hook, which is unaffected by the
+   Layer-2 removal. Removing Layer 2 does **not** retire this ADR.
+
+3. **Two Layer-1 enrichments are added** (productized into the R5 setup path, then
+   backfilled per project):
+   - **Model-price registry** (`scripts/sync_langfuse_models.py`, called by
+     `setup_langfuse_tracing.py --write`): registers project-scoped Langfuse model
+     definitions so traces carry non-zero cost (previously `calculatedTotalCost=0` for
+     `claude-opus-4-8`/`claude-haiku-4-5`/`claude-sonnet-4-6`). This registry is **shared
+     infrastructure**: besides R5 turn traces it also backs `/v3-review` (ADR-018)
+     Sonnet-worker cost attribution — scope changes to it accordingly; it is not R5-only.
+   - **Trace enrichment** (`# VENDOR-PATCH (e)` in `_langfuse_hook.py`): each turn trace
+     gets `userId` (best-effort OS-user proxy — transcripts carry no Claude account id),
+     `version` (the Claude Code version), and `project`/`branch` tags, all via
+     `propagate_attributes`. Enumerated as VENDOR-PATCH hunk (e); the fail-hard hunk (d)
+     coverage count stays at 5 (enrichment adds no failure point).
+
+### Coexistence with the V3 review stack (superseded)
+
+With Layer 2 removed, the original "parallel, non-overlapping env-var namespaces" framing no
+longer applies: the **generic** `OTEL_EXPORTER_OTLP_*` namespace is now **unused** by this
+framework (no consumer writes or reads it), so the generic-vs-signal-specific precedence
+contest disappears. The V3 review stack's **signal-specific** `OTEL_EXPORTER_OTLP_TRACES_*`
+keys (set programmatically by `hooks/lib/llm/observability.py`) now stand alone. The
+`settings.local.json` prune is deliberately an **exact-name** delete of the 6 generic keys
+and never touches the `_TRACES_` namespace. (If a future change reintroduces a generic-OTEL
+consumer, restore the precedence analysis from the original Coexistence section below.)
+
+The accepted overlap — a `/v3-review` run appearing twice in Langfuse — **persists and is
+unrelated to Layer 2**: it was always V3's own OpenInference traces vs. the Stop-hook turn
+trace, not anything to do with Layer-2's `claude_code.interaction` traces. Single-user
+deployment; still accepted.
+
+---
+
+> The sections below are the original 2026-06-07 ADR. Where they describe Layer 2 (Context
+> bullet 2, the Coexistence section, Layer-2 Consequences), they are superseded by the
+> amendment above. Decisions 1–3 remain authoritative.
 
 ## Context
 
@@ -200,9 +263,17 @@ worth recording:
   the full decision log and architecture diagrams.
 - `hooks/langfuse-trace.py` — stdlib wrapper (gate + failure policy).
 - `hooks/_langfuse_hook.py` — vendored upstream hook (provenance header at top).
-- `scripts/setup_langfuse_tracing.py` — opt-in env-block generator (`--write`).
+- `scripts/setup_langfuse_tracing.py` — opt-in env-block generator (`--write`); since the
+  2026-06-08 amendment, emits the 5-key Layer-1 block, prunes the deprecated Layer-2 keys,
+  and registers model prices.
+- `scripts/sync_langfuse_models.py` — project-scoped model-price registry (2026-06-08
+  amendment); shared with `/v3-review` cost attribution.
 - `tests/test_langfuse_trace_hook.py` — dep-free wrapper tests (incl. never-exit-2
   invariant).
+- `tests/test_langfuse_hook_enrichment.py` — pure-helper tests for VENDOR-PATCH (e)
+  enrichment (2026-06-08 amendment).
+- `.claude/plans/2026-06-08-r5-observability-hardening-{design,plan}.md` — the amendment's
+  design + implementation plan.
 - `ruff.toml` — vendored-file exclusion + `force-exclude` rationale.
 
 ## Decider
