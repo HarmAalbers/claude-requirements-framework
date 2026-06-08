@@ -552,6 +552,42 @@ Properties are set atomically via `obsidian eval` using Obsidian's JS API (`app.
 - Integrates into: `handle-session-start.py`, `handle-session-end.py`, `auto-satisfy-skills.py`, `clear-single-use.py`
 - **Fail-open**: Obsidian errors never block Claude Code. If Obsidian isn't running, logging is silently skipped.
 
+## Langfuse Session Tracing (R5)
+
+Every Claude Code turn in an opted-in project is traced to the self-hosted Langfuse
+(`http://localhost:3000`) via a bundled Stop hook, plus structural OTEL beta-trace
+telemetry (Layer 2). Opt-in per project; inert everywhere else.
+
+### Enable (per project)
+
+Prerequisite: `uv` on PATH (the hook runs the vendored script under `uv run` with
+isolated deps; projects that never opt in need nothing).
+
+```bash
+python3 scripts/setup_langfuse_tracing.py --write   # creds from env or infra/.env
+# restart the Claude Code session to pick up the env block
+```
+
+Writes `TRACE_TO_LANGFUSE=true` + creds + OTEL config into the project's gitignored
+`.claude/settings.local.json` and warms the uv cache.
+
+### Architecture
+
+- `hooks/langfuse-trace.py` — stdlib Stop-hook wrapper: gate + failure policy.
+- `hooks/_langfuse_hook.py` — VENDORED upstream (langfuse/Claude-Observability-Plugin@1266914),
+  runs under `uv run` with isolated `langfuse>=4,<5` (the repo's global langfuse v3 pin is
+  untouched). Update by re-vendoring at a new pinned commit; hunks marked `# VENDOR-PATCH`.
+- **Fail-hard by default** when tracing is enabled: failures print a one-line stderr warning
+  and exit 1 (never 2 — the Stop event is never blocked). Set `CC_LANGFUSE_FAIL_OPEN=true`
+  in the project env to silence. Activity log: `~/.claude/state/langfuse_hook.log`
+  (always written by the vendored hook; `CC_LANGFUSE_DEBUG=true` for verbose).
+- Layer 2 uses the generic `OTEL_EXPORTER_OTLP_*` env vars; the V3 review stack uses the
+  signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` vars — parallel namespaces, no conflict (see ADR-019's coexistence section if either namespace is refactored).
+- Stop hooks in the same matcher currently run in parallel: turns blocked by requirement verification
+  may still be traced; re-fired Stop events do not duplicate traces (watermark state).
+
+See ADR-019 and `.claude/plans/2026-06-07-r5-stop-hook-observability-design.md`.
+
 ## Agent Teams (ADR-012)
 
 The framework uses Claude Code Agent Teams as the **primary review approach**. Agents collaborate, cross-validate findings, and produce unified verdicts.
@@ -684,4 +720,5 @@ $ req upgrade recommend --feature session_learning
   - ADR-010: Cross-project feature upgrade system
   - ADR-011: Externalize messages to YAML files
   - ADR-012: Agent Teams integration
+  - ADR-019: Stop-hook observability (vendored hook, fail-hard opt-in)
 - `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills

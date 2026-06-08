@@ -24,6 +24,8 @@ This skill covers Langfuse work in **claude-requirements-framework**: the self-h
 
 **Credentials**: Live in `infra/.env` (gitignored; `infra/.env.example` documents the variable names). The project uses `LANGFUSE_HOST` (e.g. `http://localhost:3000`), not `LANGFUSE_BASE_URL`. Never print secret values; check existence only.
 
+**Session tracing (R5)**: every Claude Code turn in an opted-in project is traced to this Langfuse instance via a bundled Stop hook — enable per project with `python3 scripts/setup_langfuse_tracing.py --write`; see ADR-019.
+
 **Key integration files** (note: `hooks/lib/llm/` and `plugins/requirements-framework/hooks/lib/llm/` hold *identical copies* — edits must land in both):
 
 | File | Role |
@@ -36,6 +38,8 @@ This skill covers Langfuse work in **claude-requirements-framework**: the self-h
 | `scripts/sync_golden_set_to_langfuse.py` | Mirrors `golden_set/cases/*.json` → Langfuse dataset `golden-set` (upsert by case id). |
 | `scripts/run_eval.py` | Replays `golden_set/cases/*.json`, scores, optionally posts to Langfuse. |
 | `tests/test_observability.py`, `tests/test_eval.py`, `tests/test_prompts.py` | Dep-free unit tests for the above. |
+| `hooks/langfuse-trace.py` | Stop-hook wrapper tracing every CC turn to Langfuse (R5). Fail-hard default, `CC_LANGFUSE_FAIL_OPEN` override. (Lives in `hooks/`; mirrored into the plugin automatically by `scripts/build_plugin_hooks.py`.) |
+| `hooks/_langfuse_hook.py` | Vendored upstream hook (SDK v4 via uv isolation — exempt from the project's v3 pin). (Same automatic plugin mirror.) |
 
 **SDK**: `langfuse>=3.0` (Python v3 idioms: `create_score()`, `get_prompt()`, `create_prompt()`). See `references/sdk-upgrade.md` before any v4 migration.
 

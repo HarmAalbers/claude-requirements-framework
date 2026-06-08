@@ -7,12 +7,17 @@ target-version = "py39"
 # enforced by its --check freshness test). Linting the source of truth covers it —
 # don't double-lint the generated copy, which would only re-flag the same deliberate
 # sys.path-then-import (E402) pattern already ignored for the source layer.
-extend-exclude = ["plugins/requirements-framework/hooks"]
+extend-exclude = [
+    "plugins/requirements-framework/hooks",
+    # Vendored upstream code (langfuse/Claude-Observability-Plugin) — not our style domain.
+    "hooks/_langfuse_hook.py",
+]
 
-# Honor the exclude even when files are passed to ruff EXPLICITLY (not just via
+# Honor the excludes even when files are passed to ruff EXPLICITLY (not just via
 # directory traversal). Without this, `extend-exclude` only applies to `ruff check .`
 # — the /v3-review tool gate runs `ruff check -- <changed files>`, so it would still
-# lint the generated bundle and abort on its deliberate sys.path E402 pattern.
+# lint the generated bundle (re-flagging its deliberate sys.path E402 pattern) and
+# the vendored upstream file (whose style is not ours to fix).
 force-exclude = true
 
 [lint]
