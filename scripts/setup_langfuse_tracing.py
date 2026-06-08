@@ -51,7 +51,8 @@ def _resolve_creds():
 
     4th hand-rolled infra/.env reader (stdlib-only constraint; siblings:
     sync_prompts_to_langfuse.py, sync_golden_set_to_langfuse.py,
-    review_cli.py) — extraction target if a 5th appears.
+    review_cli.py). Extraction trigger RETIRED: sync_langfuse_models.py REUSES
+    this function (imports it) rather than adding a 5th reader.
     """
     creds = {}
     env_file = Path.cwd() / "infra" / ".env"
