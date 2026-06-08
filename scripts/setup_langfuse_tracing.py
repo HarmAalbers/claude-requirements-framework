@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Opt a project into R5 Langfuse tracing by generating its env block.
 
-Generates the 11-key env block (Layer 1: TRACE_TO_LANGFUSE Stop hook;
-Layer 2: native OTEL beta traces) that points Claude Code at the
+Generates the 5-key Layer-1 env block (``TRACE_TO_LANGFUSE`` Stop hook +
+credentials + ``CC_LANGFUSE_MAX_CHARS``) that points Claude Code at the
 self-hosted Langfuse instance, and either prints it as JSON (default)
 or merges it into the project's gitignored ``.claude/settings.local.json``
-(``--write``). In ``--write`` mode the script also warms the uv cache for
-the vendored ``hooks/_langfuse_hook.py`` so the first real Stop-hook run
-doesn't pay dependency-resolution latency.
+(``--write``). The former Layer-2 native-OTEL beta-trace keys are no longer
+emitted; on ``--write`` any of those deprecated keys present in an existing
+settings file are PRUNED (clean removal, no shim — see ADR-019).
+
+In ``--write`` mode the script also warms the uv cache for the vendored
+``hooks/_langfuse_hook.py`` so the first real Stop-hook run doesn't pay
+dependency-resolution latency, and registers project-scoped model-price
+definitions (``sync_langfuse_models.register_models``) so traces get
+non-zero cost. A model-sync failure only warns — creds are already
+written and the sync can be re-run. Pass ``--skip-model-sync`` to suppress
+it (used by the test suite to stay offline).
 
 Credentials are resolved from the process environment first, falling back
 to ``infra/.env`` in the current working directory (per-key precedence:
@@ -29,7 +37,6 @@ Usage:
 """
 
 import argparse
-import base64
 import json
 import os
 import shutil
@@ -41,6 +48,22 @@ from pathlib import Path
 REQUIRED_VARS = ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST")
 SETTINGS_RELPATH = Path(".claude") / "settings.local.json"
 
+# Layer-2 native-OTEL beta-trace keys, removed in R5 hardening (ADR-019). These
+# are PRUNED from an existing settings file on --write — clean removal, no shim.
+# This is an EXACT-NAME set: it deliberately does NOT match the V3 review stack's
+# signal-specific OTEL_EXPORTER_OTLP_TRACES_* keys (different namespace), so a
+# prefix match must never be substituted here.
+_DEPRECATED_ENV_KEYS = frozenset(
+    {
+        "CLAUDE_CODE_ENABLE_TELEMETRY",
+        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA",
+        "OTEL_TRACES_EXPORTER",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+    }
+)
+
 
 def _resolve_creds():
     """Resolve the three Langfuse credentials: process env, then infra/.env.
@@ -51,7 +74,8 @@ def _resolve_creds():
 
     4th hand-rolled infra/.env reader (stdlib-only constraint; siblings:
     sync_prompts_to_langfuse.py, sync_golden_set_to_langfuse.py,
-    review_cli.py) — extraction target if a 5th appears.
+    review_cli.py). Extraction trigger RETIRED: sync_langfuse_models.py REUSES
+    this function (imports it) rather than adding a 5th reader.
     """
     creds = {}
     env_file = Path.cwd() / "infra" / ".env"
@@ -108,25 +132,20 @@ def _ping(host):
 
 
 def _build_env_block(creds):
-    """Build the 11-key env block (Layer 1 Stop hook + Layer 2 OTEL beta)."""
+    """Build the 5-key Layer-1 env block (TRACE_TO_LANGFUSE Stop hook + creds).
+
+    Layer-2 native-OTEL beta-trace keys are no longer emitted (ADR-019); R5 is
+    the single enriched trace source.
+    """
     pk = creds["LANGFUSE_PUBLIC_KEY"]
     sk = creds["LANGFUSE_SECRET_KEY"]
     host = creds["LANGFUSE_HOST"].rstrip("/")
-    basic = base64.b64encode(f"{pk}:{sk}".encode()).decode()
     return {
         "TRACE_TO_LANGFUSE": "true",
         "LANGFUSE_PUBLIC_KEY": pk,
         "LANGFUSE_SECRET_KEY": sk,
         "LANGFUSE_HOST": host,
         "CC_LANGFUSE_MAX_CHARS": "100000",
-        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
-        "OTEL_TRACES_EXPORTER": "otlp",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": f"{host}/api/public/otel",
-        "OTEL_EXPORTER_OTLP_HEADERS": (
-            f"Authorization=Basic {basic},x-langfuse-ingestion-version=4"
-        ),
     }
 
 
@@ -154,6 +173,10 @@ def _write_settings(env_block):
             sys.exit(1)
     merged_env = dict(settings.get("env", {}))
     merged_env.update(env_block)
+    # Prune the deprecated Layer-2 OTEL keys (exact-name match only — must not
+    # touch the V3 stack's OTEL_EXPORTER_OTLP_TRACES_* namespace).
+    for key in _DEPRECATED_ENV_KEYS:
+        merged_env.pop(key, None)
     settings["env"] = merged_env
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -205,6 +228,33 @@ def _warm_uv_cache():
     print("uv cache warmed (Stop hook dependencies resolved).")
 
 
+def _sync_models(creds):
+    """Register project-scoped model-price defs; warn (never fatal) on failure.
+
+    Creds are already written by this point, so a sync failure must not abort
+    setup — it only warns, and the sync can be re-run. Mirrors the uv-cache-warm
+    stance.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from sync_langfuse_models import LangfuseModelSyncError, register_models
+
+    print("Registering project-scoped model-price definitions...")
+    try:
+        actions = register_models(creds)
+    except LangfuseModelSyncError as exc:
+        print(
+            f"WARNING: model-price sync failed ({exc}). Credentials are written "
+            "and tracing will still work, but trace cost may read $0 until the "
+            "models are registered. Re-run manually:\n"
+            "  python3 scripts/sync_langfuse_models.py",
+            file=sys.stderr,
+        )
+        return
+    for line in actions:
+        print(f"  {line}")
+    print("Model-price definitions registered.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -216,6 +266,11 @@ def main():
         "--skip-ping",
         action="store_true",
         help="skip the Langfuse health check",
+    )
+    parser.add_argument(
+        "--skip-model-sync",
+        action="store_true",
+        help="skip registering project-scoped model-price definitions",
     )
     args = parser.parse_args()
 
@@ -231,11 +286,15 @@ def main():
             f"({settings_path})"
         )
         _warm_uv_cache()
+        if not args.skip_model_sync:
+            _sync_models(creds)
     else:
         print(json.dumps({"env": env_block}, indent=2))
         print(
             "Paste the block above (which contains your credentials) into your "
-            "project's .claude/settings.local.json (or re-run with --write).",
+            "project's .claude/settings.local.json (or re-run with --write).\n"
+            "NOTE: model-price definitions were NOT registered (print mode). "
+            "Run with --write to register them, or cost will read $0 on traces.",
             file=sys.stderr,
         )
 

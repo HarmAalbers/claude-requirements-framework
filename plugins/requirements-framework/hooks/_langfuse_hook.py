@@ -17,9 +17,17 @@ Local modifications are marked with `# VENDOR-PATCH`:
   (c) this provenance header
   (d) fail-hard policy: upstream returns 0 on every failure; we emit
       stderr + exit 1 unless CC_LANGFUSE_FAIL_OPEN=true
+  (e) R5 trace enrichment (_enrichment/_trace_attrs): per-turn userId
+      (OS-user proxy — Claude Code transcripts carry no account id),
+      version (the Claude Code version), and project/branch tags, all
+      passed through propagate_attributes. Sourced from the turn's user
+      row (always in the emitted batch, so unaffected by the incremental
+      reader's offset). ttft is NOT recovered: per-call first-token timing
+      lived only in the removed Layer-2 OTEL metadata and is absent from
+      the transcript (deferred — ADR-019).
 VENDOR-PATCH (d) coverage: 5 patched failure points (import guard,
 missing creds, client init, emit loop, unexpected exception) —
-re-verify this count on every re-vendor.
+re-verify this count on every re-vendor. (e) adds NO failure point.
 To update: re-fetch from upstream at a new pinned commit and re-apply
 the VENDOR-PATCH hunks (diff against this file to find them).
 """
@@ -554,6 +562,64 @@ def _start_backdated(langfuse: Langfuse, *, name: str, as_type: str,
     )
 
 
+# VENDOR-PATCH (e): R5 trace enrichment helpers (pure — no I/O, no client).
+def _enrichment(user_msg: Dict[str, Any], os_user: Optional[str] = None) -> Dict[str, Any]:
+    """Derive trace enrichment from a turn's starting user transcript row.
+
+    Pure: reads only top-level fields off ``user_msg`` (and the passed-in
+    ``os_user``), returns a dict with optional keys ``user_id``, ``version`` and
+    ``tags`` (project/branch tags to append to the base trace tags). The user row
+    is present in every emitted turn's batch, so this is unaffected by the
+    incremental reader's offset.
+
+    ``user_id`` is a best-effort OS-user proxy: Claude Code transcripts carry no
+    account id (only ``userType``), so the Layer-2 account UUID is not
+    recoverable. Omitted when ``os_user`` is falsy. ``version`` is the Claude Code
+    client version (transcript ``version`` field).
+    """
+    enr: Dict[str, Any] = {}
+    if isinstance(user_msg, dict):
+        version = user_msg.get("version")
+        if isinstance(version, str) and version:
+            enr["version"] = version
+        tags: List[str] = []
+        cwd = user_msg.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            tags.append(f"project:{Path(cwd).name}")
+        branch = user_msg.get("gitBranch")
+        if isinstance(branch, str) and branch:
+            tags.append(f"branch:{branch}")
+        if tags:
+            enr["tags"] = tags
+    if os_user:
+        enr["user_id"] = os_user
+    return enr
+
+
+def _trace_attrs(session_id: str, turn_num: int, user_msg: Dict[str, Any],
+                 os_user: Optional[str] = None) -> Dict[str, Any]:
+    """Build the exact kwargs passed to ``propagate_attributes`` for a turn.
+
+    This is the single source of the trace's propagated attributes: base
+    ``session_id``/``trace_name``/``tags=["claude-code"]`` plus the (e)
+    enrichment (project/branch tags, ``user_id``, ``version``). Pure and
+    SDK-free so the enrichment-wiring contract is unit-testable without langfuse.
+    All keys here are confirmed-supported propagate_attributes kwargs — adding an
+    unsupported one would crash every turn under the fail-hard policy.
+    """
+    enr = _enrichment(user_msg, os_user=os_user)
+    attrs: Dict[str, Any] = {
+        "session_id": session_id,
+        "trace_name": f"Claude Code - Turn {turn_num}",
+        "tags": ["claude-code"] + list(enr.get("tags", [])),
+    }
+    if enr.get("user_id"):
+        attrs["user_id"] = enr["user_id"]
+    if enr.get("version"):
+        attrs["version"] = enr["version"]
+    return attrs
+
+
 def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path) -> None:
     user_text_raw = extract_text(get_content(turn.user_msg))
     user_text, user_text_meta = truncate_text(user_text_raw)
@@ -571,11 +637,9 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
             candidate_end_ts.append(t)
     turn_end_ts = max(candidate_end_ts) if candidate_end_ts else None
 
-    with propagate_attributes(
-        session_id=session_id,
-        trace_name=f"Claude Code - Turn {turn_num}",
-        tags=["claude-code"],
-    ):
+    # VENDOR-PATCH (e): enrich the trace (userId/version/project+branch tags).
+    os_user = os.environ.get("USER") or os.environ.get("LOGNAME")
+    with propagate_attributes(**_trace_attrs(session_id, turn_num, turn.user_msg, os_user)):
         trace_span = _start_backdated(
             langfuse,
             name=f"Claude Code - Turn {turn_num}",

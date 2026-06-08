@@ -555,8 +555,10 @@ Properties are set atomically via `obsidian eval` using Obsidian's JS API (`app.
 ## Langfuse Session Tracing (R5)
 
 Every Claude Code turn in an opted-in project is traced to the self-hosted Langfuse
-(`http://localhost:3000`) via a bundled Stop hook, plus structural OTEL beta-trace
-telemetry (Layer 2). Opt-in per project; inert everywhere else.
+(`http://localhost:3000`) via a bundled Stop hook. As of the 2026-06-08 hardening
+(ADR-019 amendment) this is a **single-layer** design — the former Layer-2 native-OTEL
+beta traces are removed (they were hollow and doubled trace volume). Opt-in per project;
+inert everywhere else.
 
 ### Enable (per project)
 
@@ -568,8 +570,13 @@ python3 scripts/setup_langfuse_tracing.py --write   # creds from env or infra/.e
 # restart the Claude Code session to pick up the env block
 ```
 
-Writes `TRACE_TO_LANGFUSE=true` + creds + OTEL config into the project's gitignored
-`.claude/settings.local.json` and warms the uv cache.
+Writes the **5-key Layer-1 env block** (`TRACE_TO_LANGFUSE=true` + the three
+`LANGFUSE_*` creds + `CC_LANGFUSE_MAX_CHARS`) into the project's gitignored
+`.claude/settings.local.json`, **prunes** any deprecated Layer-2 OTEL keys still present
+(clean removal, no shim), warms the uv cache, and **registers project-scoped model-price
+definitions** so traces carry non-zero cost. A model-sync failure only warns (creds are
+already written; re-run `scripts/sync_langfuse_models.py`). Print mode (no `--write`)
+does NOT register model prices — it says so and points at `--write`.
 
 ### Architecture
 
@@ -581,12 +588,20 @@ Writes `TRACE_TO_LANGFUSE=true` + creds + OTEL config into the project's gitigno
   and exit 1 (never 2 — the Stop event is never blocked). Set `CC_LANGFUSE_FAIL_OPEN=true`
   in the project env to silence. Activity log: `~/.claude/state/langfuse_hook.log`
   (always written by the vendored hook; `CC_LANGFUSE_DEBUG=true` for verbose).
-- Layer 2 uses the generic `OTEL_EXPORTER_OTLP_*` env vars; the V3 review stack uses the
-  signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` vars — parallel namespaces, no conflict (see ADR-019's coexistence section if either namespace is refactored).
+- `scripts/sync_langfuse_models.py` — project-scoped model-price registry (opus-4-8 /
+  haiku-4-5 / sonnet-4-6, per-token, incl. cache tiers). Create-if-absent + drift report;
+  also backs `/v3-review` cost attribution. Called by `setup --write`; re-runnable.
+- **Trace enrichment** (`# VENDOR-PATCH (e)`): each turn trace carries `userId` (OS-user
+  proxy — transcripts have no Claude account id), `version` (Claude Code version), and
+  `project`/`branch` tags. `ttft` is not recoverable post-Layer-2 (deferred).
+- **Layer 2 is removed** (no more `OTEL_EXPORTER_OTLP_*` generic keys). The V3 review stack
+  still uses the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` vars; the prune is exact-name
+  and never touches that namespace.
 - Stop hooks in the same matcher currently run in parallel: turns blocked by requirement verification
   may still be traced; re-fired Stop events do not duplicate traces (watermark state).
 
-See ADR-019 and `.claude/plans/2026-06-07-r5-stop-hook-observability-design.md`.
+See ADR-019 (incl. the 2026-06-08 amendment) and
+`.claude/plans/2026-06-08-r5-observability-hardening-design.md`.
 
 ## Agent Teams (ADR-012)
 
