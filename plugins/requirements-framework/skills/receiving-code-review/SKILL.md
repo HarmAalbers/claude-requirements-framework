@@ -1,7 +1,7 @@
 ---
 name: receiving-code-review
 description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear, technically questionable, or comes from multiple reviewers
-git_hash: 28ca1dd
+git_hash: 17f5988
 ---
 
 # Code Review Reception
