@@ -14,6 +14,17 @@
 
 ## Verified API contract (resolved in plan phase — do NOT re-derive)
 
+> **CORRECTION (2026-06-08, live verification):** the contract below was derived from the
+> **GET** response shape and is WRONG for **create**. The `POST /api/public/models` endpoint
+> rejects a top-level `prices` dict (HTTP 400: "Must provide either flat prices OR
+> pricingTiers"). Per-usage-type pricing (incl. cache tiers) must be sent via
+> **`pricingTiers`**: a single default tier whose `prices` is a flat `{usageKey: pricePerUnit}`
+> map. The GET `prices` field is a computed/nested (`{key: {"price": n}}`) view. The shipped
+> `sync_langfuse_models.py` was fixed accordingly (`_model_payload` builds `pricingTiers`;
+> `_spec_differs` compares only our per-token prices, normalizing the nested GET shape, so
+> Langfuse-managed defs that already price correctly read `ok`, not drift). The usage KEY
+> names below are still correct.
+
 Live self-hosted Langfuse v3 (`/api/public/models`) model-definition shape:
 
 ```json

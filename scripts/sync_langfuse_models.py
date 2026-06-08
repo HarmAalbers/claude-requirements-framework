@@ -15,11 +15,18 @@ This script is idempotent and CREATE-IF-ABSENT ONLY:
     and keys them by ``modelName``.
   * Absent name  -> POST the canonical def (or, in ``--check``, report "would
     create").
-  * Present + identical spec -> skip ("ok").
-  * Present but spec differs (prices/matchPattern/unit) -> report DRIFT and do
-    NOTHING. ``register_models`` deliberately does NOT correct a stale def and
-    never POSTs a duplicate for an existing name. To re-register with corrected
-    prices, delete the stale def in Langfuse manually, then re-run.
+  * Present + matching per-token prices -> skip ("ok"). A Langfuse-managed def
+    that already prices the keys R5 emits counts as a match (its broader
+    matchPattern / extra alias keys are ignored).
+  * Present but per-token prices differ -> report DRIFT and do NOTHING.
+    ``register_models`` deliberately does NOT correct a stale def and never POSTs
+    a duplicate for an existing name. To re-register with corrected prices,
+    delete the stale def in Langfuse manually, then re-run.
+
+Create bodies use ``pricingTiers`` (a single default tier whose ``prices`` is a
+flat ``{usageKey: pricePerUnit}`` map) — the create endpoint rejects a top-level
+``prices`` dict, and the deprecated flat ``inputPrice``/``outputPrice`` cannot
+carry cache pricing.
 
 The model-pricing registry is SHARED infrastructure: besides the R5 Stop-hook
 turn traces it also backs ``/v3-review`` (ADR-018) Sonnet-worker cost
@@ -146,12 +153,38 @@ def _list_existing(creds):
     return existing
 
 
+def _model_payload(model):
+    """Build the CreateModelRequest body from a MODELS entry.
+
+    The Langfuse create endpoint does NOT accept a top-level ``prices`` dict
+    (the ``prices`` field in GET responses is a computed/derived view). Per
+    CreateModelRequest, per-usage-type pricing — including the cache tiers — is
+    expressed via ``pricingTiers``: a single default tier whose ``prices`` is a
+    flat ``{usageKey: pricePerUnit}`` map. The flat ``inputPrice``/``outputPrice``
+    fields are deprecated and cannot carry cache pricing.
+    """
+    return {
+        "modelName": model["modelName"],
+        "matchPattern": model["matchPattern"],
+        "unit": model["unit"],
+        "pricingTiers": [
+            {
+                "name": "Standard",
+                "isDefault": True,
+                "priority": 0,
+                "conditions": [],
+                "prices": dict(model["prices"]),
+            }
+        ],
+    }
+
+
 def _post_model(creds, model):
     host = creds["LANGFUSE_HOST"].rstrip("/")
     auth = _auth_header(creds)
     opener = urllib.request.build_opener()
     url = f"{host}/api/public/models"
-    data = json.dumps(model).encode()
+    data = json.dumps(_model_payload(model)).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Authorization", auth)
     req.add_header("Content-Type", "application/json")
@@ -174,13 +207,38 @@ def _post_model(creds, model):
         )
 
 
+def _existing_prices(existing):
+    """Normalize a GET model def's ``prices`` to ``{usageKey: float}``.
+
+    The list endpoint returns ``prices`` as a nested ``{key: {"price": n}}`` view
+    (and may also expose flat numbers); accept either.
+    """
+    raw = existing.get("prices")
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            price = v.get("price") if isinstance(v, dict) else v
+            if isinstance(price, (int, float)):
+                out[k] = float(price)
+    return out
+
+
 def _spec_differs(existing, model):
-    """True if the existing def drifts from our canonical spec."""
-    if existing.get("unit") != model["unit"]:
-        return True
-    if existing.get("matchPattern") != model["matchPattern"]:
-        return True
-    return existing.get("prices") != model["prices"]
+    """True if the existing def's pricing drifts from our canonical spec.
+
+    Compares ONLY our ``USAGE_DETAIL_KEYS`` prices against the existing
+    (normalized) prices. ``matchPattern``/``unit`` are intentionally not
+    compared: a Langfuse-managed def legitimately carries a broader regex and
+    extra alias usage keys (``input_tokens``, ``input_cache_read``, …) — only
+    the per-token prices for the keys R5 emits matter for cost. So a managed def
+    that already prices these keys correctly reports ``ok``, not drift.
+    """
+    existing_prices = _existing_prices(existing)
+    for key, want in model["prices"].items():
+        got = existing_prices.get(key)
+        if got is None or abs(got - float(want)) > 1e-12:
+            return True
+    return False
 
 
 def register_models(creds, *, check=False):

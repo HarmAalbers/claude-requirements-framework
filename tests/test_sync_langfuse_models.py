@@ -179,15 +179,29 @@ def test_register_models_posts_three_when_absent(runner):
             body.get("matchPattern") == EXPECTED_PATTERNS[name],
             f"got={body.get('matchPattern')!r}",
         )
+        # Create body uses pricingTiers (NOT a top-level prices dict — the
+        # create endpoint rejects that). A single default tier carries the map.
         runner.test(
-            f"{name}: prices keyed by USAGE_DETAIL_KEYS",
-            set(body.get("prices", {}).keys()) == set(slm.USAGE_DETAIL_KEYS),
-            f"got={set(body.get('prices', {}).keys())}",
+            f"{name}: no top-level prices field on create",
+            "prices" not in body,
+            f"body keys={sorted(body)}",
+        )
+        tiers = body.get("pricingTiers")
+        runner.test(
+            f"{name}: one default pricingTier",
+            isinstance(tiers, list) and len(tiers) == 1 and tiers[0].get("isDefault") is True,
+            f"got={tiers}",
+        )
+        tier_prices = tiers[0].get("prices", {}) if tiers else {}
+        runner.test(
+            f"{name}: tier prices keyed by USAGE_DETAIL_KEYS",
+            set(tier_prices.keys()) == set(slm.USAGE_DETAIL_KEYS),
+            f"got={set(tier_prices.keys())}",
         )
         runner.test(
-            f"{name}: prices values correct",
-            body.get("prices") == EXPECTED_PRICES[name],
-            f"got={body.get('prices')}",
+            f"{name}: tier prices values correct",
+            tier_prices == EXPECTED_PRICES[name],
+            f"got={tier_prices}",
         )
     runner.test(
         "returns a list of action strings",
@@ -353,6 +367,64 @@ def test_non_2xx_post_raises_domain_error(runner):
         _restore_opener(orig)
 
 
+def _managed_style_def(name, prices, *, broad_pattern=True):
+    """Mimic a Langfuse-managed GET def: nested {price: n} map, broad regex,
+    extra alias keys, unit=null — the real list-endpoint shape."""
+    nested = {}
+    for k, v in prices.items():
+        nested[k] = {"price": v}
+    # extra alias keys the managed defs carry (ignored by our comparison)
+    nested["input_tokens"] = {"price": prices["input"]}
+    nested["input_cache_read"] = {"price": prices["cache_read_input_tokens"]}
+    return {
+        "modelName": name,
+        "matchPattern": r"(?i)^(anthropic/)?" + name + r"$" if broad_pattern else EXPECTED_PATTERNS[name],
+        "unit": None,
+        "isLangfuseManaged": True,
+        "prices": nested,
+    }
+
+
+def test_managed_nested_prices_recognized(runner):
+    """A managed def with the real nested {price:n} shape + matching per-token
+    prices must read as present (0 POSTs), not spurious drift."""
+    print("\ntest_managed_nested_prices_recognized")
+    existing = [_managed_style_def(n, EXPECTED_PRICES[n]) for n in EXPECTED_PRICES]
+    opener = _FakeOpener(pages=[(existing, 1)])
+    orig = _install_opener(slm, opener)
+    try:
+        actions = slm.register_models(CREDS)
+    finally:
+        _restore_opener(orig)
+    runner.test("0 POSTs for matching managed defs", len(opener.posts) == 0, f"posts={opener.posts}")
+    runner.test(
+        "no drift reported when nested prices match",
+        not any("drift" in a.lower() for a in actions),
+        f"actions={actions}",
+    )
+
+
+def test_managed_nested_prices_drift_detected(runner):
+    print("\ntest_managed_nested_prices_drift_detected")
+    bad = dict(EXPECTED_PRICES["claude-opus-4-8"])
+    bad["output"] = 0.999  # wrong output price in nested form
+    existing = [_managed_style_def("claude-opus-4-8", bad)] + [
+        _managed_style_def(n, EXPECTED_PRICES[n]) for n in ("claude-haiku-4-5", "claude-sonnet-4-6")
+    ]
+    opener = _FakeOpener(pages=[(existing, 1)])
+    orig = _install_opener(slm, opener)
+    try:
+        actions = slm.register_models(CREDS)
+    finally:
+        _restore_opener(orig)
+    runner.test("0 POSTs (drift not auto-updated)", len(opener.posts) == 0, f"posts={opener.posts}")
+    runner.test(
+        "drift detected through nested price shape",
+        any("drift" in a.lower() and "claude-opus-4-8" in a for a in actions),
+        f"actions={actions}",
+    )
+
+
 def main():
     runner = TestRunner()
     print("Testing scripts/sync_langfuse_models.py")
@@ -365,6 +437,8 @@ def main():
     test_missing_creds_hard_fails(runner)
     test_drift_reported_not_updated(runner)
     test_non_2xx_post_raises_domain_error(runner)
+    test_managed_nested_prices_recognized(runner)
+    test_managed_nested_prices_drift_detected(runner)
     return runner.summary()
 
 
