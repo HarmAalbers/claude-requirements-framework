@@ -1,5 +1,6 @@
 ---
 name: tenant-isolation-auditor
+model: sonnet
 description: Use this agent to audit code for multi-tenant data leakage vulnerabilities. Specialized for .NET Core + EF Core + Angular + Azure platforms serving multiple tenants. Checks for missing tenant filters on DB queries, shared caches without tenant-scoped keys, global query filter bypasses, cross-tenant background job execution, singleton/DI scope leaks, and Azure storage without tenant partitioning. Should be used when reviewing any code that touches data access, caching, background processing, or service-to-service communication in multi-tenant systems.
 
 Examples:

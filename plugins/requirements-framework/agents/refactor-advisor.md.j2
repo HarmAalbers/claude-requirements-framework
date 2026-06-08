@@ -1,5 +1,6 @@
 ---
 name: refactor-advisor
+model: sonnet
 description: |
   Use this agent when reviewing a plan to identify preparatory refactoring opportunities in the existing codebase. Analyzes the planned change and the code it will touch, then identifies structural improvements that would make the planned change easier, simpler, or more natural to implement. Follows Martin Fowler's principle: "first refactor the program to make it easy to add the feature, then add the feature." This agent is advisory by default but can block in extreme cases where proceeding would create severe, avoidable tech debt.
 

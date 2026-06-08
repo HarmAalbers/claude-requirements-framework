@@ -1,5 +1,6 @@
 ---
 name: session-analyzer
+model: sonnet
 description: Analyzes session metrics to identify patterns, friction points, and improvement opportunities. This agent reviews tool usage, requirement satisfaction, errors, and workflows to suggest improvements to memories, skills, and commands for future sessions.
 
 Examples:

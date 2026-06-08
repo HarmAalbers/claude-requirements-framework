@@ -1,5 +1,6 @@
 ---
 name: tool-validator
+model: sonnet
 description: Execute linting and type-checking tools on staged changes to catch CI errors locally. Use this agent to run pyright, ruff, eslint, and other CI tools before committing to catch errors early.
 
 Examples:

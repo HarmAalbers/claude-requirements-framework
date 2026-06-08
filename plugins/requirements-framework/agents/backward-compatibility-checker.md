@@ -1,5 +1,6 @@
 ---
 name: backward-compatibility-checker
+model: sonnet
 description: Detect breaking changes in schemas, APIs, and contracts that break existing tests. Use this agent when modifying Pydantic models, database schemas, or API contracts to ensure changes don't break existing code.
 
 Examples:

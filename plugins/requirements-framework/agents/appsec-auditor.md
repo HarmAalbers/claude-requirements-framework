@@ -1,5 +1,6 @@
 ---
 name: appsec-auditor
+model: sonnet
 description: Use this agent to audit code for application security vulnerabilities aligned with OWASP Top 10. Specialized for .NET Core + Angular + Python + Azure platforms. Checks for injection flaws (SQL, command, template, LDAP, path traversal, XXE, SSRF), authentication/authorization gaps (missing [Authorize], Angular route guards, JWT validation, CORS), secrets management (Key Vault usage, hardcoded credentials), cryptographic weaknesses (MD5/SHA1/DES, hardcoded keys), and security misconfiguration. Should be used when reviewing any code that handles user input, authentication, authorization, secrets, or external communication.
 
 Examples:

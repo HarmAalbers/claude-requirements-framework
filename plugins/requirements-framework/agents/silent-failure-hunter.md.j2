@@ -1,5 +1,6 @@
 ---
 name: silent-failure-hunter
+model: sonnet
 description: Use this agent to check error handling before committing code that involves try-catch blocks, error callbacks, fallback logic, or any code that could potentially suppress errors. This agent should be invoked proactively after completing a logical chunk of work that involves error handling.
 
 <example>

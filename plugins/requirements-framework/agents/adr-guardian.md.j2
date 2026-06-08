@@ -1,5 +1,6 @@
 ---
 name: adr-guardian
+model: sonnet
 description: Use this agent when: (1) Planning code changes to validate plans against existing Architecture Decision Records, (2) Reviewing code to ensure compliance with ADRs, (3) A new architectural pattern, tool choice, or code organization decision needs to be documented, (4) Updating existing ADRs when requirements change. This is a BLOCKING agent - code should not be written or merged if it violates ADRs.
 
 Examples:

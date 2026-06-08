@@ -1,5 +1,6 @@
 ---
 name: code-reviewer
+model: sonnet
 description: Use this agent to review code before committing for adherence to project guidelines, style guides, and best practices. This agent should be used proactively after writing or modifying code, especially before committing changes. It will check for style violations, potential issues, and ensure code follows the established patterns in CLAUDE.md. The agent needs to know which files to focus on - by default it reviews unstaged changes from git diff.
 
 Examples:

@@ -1,5 +1,6 @@
 ---
 name: solid-reviewer
+model: sonnet
 description: Use this agent when reviewing a plan to validate SOLID design principles. Checks for Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion violations with Python-specific guidance. Scales strictness proportionally to plan size. This is a BLOCKING agent - plans with egregious SOLID violations should not proceed.
 
 Examples:

@@ -1,5 +1,6 @@
 ---
 name: tdd-validator
+model: sonnet
 description: Use this agent when reviewing a plan to validate TDD readiness. Checks that the plan includes a testing strategy section, identifies test types per feature/component, and describes a TDD sequence (tests written first). This is a BLOCKING agent - plans should not proceed without TDD elements.
 
 Examples:

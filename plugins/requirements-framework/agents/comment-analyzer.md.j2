@@ -1,5 +1,6 @@
 ---
 name: comment-analyzer
+model: sonnet
 description: Use this agent to check comment accuracy before committing. This includes verifying that comments accurately reflect the code they describe, identifying comment rot or technical debt, and ensuring documentation completeness.
 
 <example>

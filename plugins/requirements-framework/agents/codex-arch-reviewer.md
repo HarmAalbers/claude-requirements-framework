@@ -1,5 +1,6 @@
 ---
 name: codex-arch-reviewer
+model: sonnet
 description: |
   Orchestrates OpenAI Codex CLI for architecture-focused plan and code review. Uses `codex exec` non-interactively to analyze branch changes through an architectural lens: coupling/cohesion, module dependencies, API surface design, scalability, separation of concerns. Skips silently when Codex CLI is unavailable (teammate mode).
 

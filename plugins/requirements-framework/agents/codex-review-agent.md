@@ -1,5 +1,6 @@
 ---
 name: codex-review-agent
+model: sonnet
 description: Orchestrates OpenAI Codex code review workflow. Use this agent for AI-powered code review using OpenAI's Codex CLI for advanced static analysis.
 
 Examples:

@@ -1,5 +1,6 @@
 ---
 name: frontend-reviewer
+model: sonnet
 description: |
   Use this agent to review React/frontend code for best practices, accessibility, performance, and project-specific checklist compliance. Triggers when changes include .tsx, .jsx, .css, .scss, or .ts files with React imports. The agent loads project-configurable checklists from .claude/requirements.yaml when available.
 

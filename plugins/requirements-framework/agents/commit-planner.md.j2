@@ -1,5 +1,6 @@
 ---
 name: commit-planner
+model: sonnet
 description: Use this agent after a plan has been created and validated by adr-guardian. Creates an atomic commit strategy by analyzing the plan structure, identifying logical commit boundaries, and appending the commit sequence to the plan file. Ensures each commit is independently reviewable and follows dependency ordering.
 
 Examples:

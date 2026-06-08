@@ -1,5 +1,6 @@
 ---
 name: test-analyzer
+model: sonnet
 description: Use this agent to review test coverage quality and completeness before committing. This agent should be invoked when tests have been added or modified to ensure they adequately cover functionality and edge cases.
 
 <example>

@@ -1,5 +1,6 @@
 ---
 name: type-design-analyzer
+model: sonnet
 description: Use this agent to analyze type design before committing new types. Specifically use it when introducing a new type to ensure it follows best practices for encapsulation and invariant expression, or when refactoring existing types. The agent provides ratings on encapsulation, invariant expression, usefulness, and enforcement.
 
 <example>

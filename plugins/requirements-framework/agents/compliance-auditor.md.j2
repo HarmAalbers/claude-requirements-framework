@@ -1,5 +1,6 @@
 ---
 name: compliance-auditor
+model: sonnet
 description: Use this agent to audit code for regulatory compliance with GDPR/AVG (Dutch privacy law), audit trail requirements, PII handling, legal professional privilege (verschoningsrecht), and NOvA (Netherlands Bar Association) requirements. Specialized for Dutch law firm SaaS platforms handling privileged attorney-client communications, BSN (citizen service numbers), and derdengelden (third-party funds). Checks for missing audit logging, PII in logs/URLs/localStorage, unencrypted PII at rest, missing verwerkingsregister entries, retention enforcement (bewaartermijnen), and geheimhoudingsplicht violations.
 
 Examples:
