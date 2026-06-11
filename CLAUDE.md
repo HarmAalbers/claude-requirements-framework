@@ -603,6 +603,63 @@ does NOT register model prices — it says so and points at `--write`.
 See ADR-019 (incl. the 2026-06-08 amendment) and
 `.claude/plans/2026-06-08-r5-observability-hardening-design.md`.
 
+## Strict Global Preflight (ADR-020)
+
+An **opt-in, fail-CLOSED** adoption gate. When enabled, a globally-installed plugin blocks
+all work in any non-compliant project until it's fixed or opted out — the deliberate inverse
+of the framework's fail-open/inert-when-unconfigured default, scoped to strict mode only.
+It exists because a loaded-but-misconfigured plugin otherwise does nothing silently (a real
+`solarmonkey-app` adoption ran 41 turns with the gated workflow entirely absent and no
+signal). **OFF by default** — inert until you turn it on.
+
+### Global install (from GitHub)
+
+```
+/plugin marketplace add HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+This caches from GitHub (independent of the local `~/Tools` dev checkout). Enable
+per-marketplace auto-update so master pushes land at session startup (UI toggle, or
+`extraKnownMarketplaces.<name>.autoUpdate: true` in `~/.claude/settings.json`).
+
+### Enable
+
+```yaml
+# ~/.claude/requirements.yaml  (global — the master switch lives here)
+strict_preflight: true
+```
+
+Default is `false`; the whole strict regime is inert until this is set.
+
+### Compliance (all three must hold, else every edit/bash is BLOCKED)
+
+1. `.claude/requirements.local.yaml` exists, parses, has ≥1 enabled requirement.
+2. Langfuse env structurally valid: the 5 Layer-1 keys present, **none** of the 6 deprecated
+   Layer-2 keys present, creds non-empty. **Structural only** — no reachability/model check
+   in the blocking gate (that stays the R5 trace-time warning).
+3. `uv` resolvable on PATH.
+
+Non-compliance is surfaced loudly at SessionStart, each failure with its exact fix command.
+
+### Escape (always allowed, precedence over ALL gates)
+
+- Scaffold a config: `/req-init` (writes `.claude/requirements.local.yaml`).
+- Opt a project out: `/req-optout` (creates `.claude/.rf-optout` → project goes fully inert).
+- Editing the config / opt-out sentinel and running `req` init/optout are always permitted,
+  so you can never lock yourself out of reaching compliance.
+
+### Emergency bailout
+
+```bash
+RF_STRICT_OFF=true   # disables strict mode instantly, no config edit needed
+```
+
+The kill-switch is checked first and the evaluator is fail-SAFE (any exception → allow), so a
+preflight bug can never globally lock you out — the worst case degrades to ordinary fail-open.
+
+See ADR-020 and `.claude/plans/2026-06-11-strict-global-preflight-design.md`.
+
 ## Agent Teams (ADR-012)
 
 The framework uses Claude Code Agent Teams as the **primary review approach**. Agents collaborate, cross-validate findings, and produce unified verdicts.
@@ -736,4 +793,5 @@ $ req upgrade recommend --feature session_learning
   - ADR-011: Externalize messages to YAML files
   - ADR-012: Agent Teams integration
   - ADR-019: Stop-hook observability (vendored hook, fail-hard opt-in)
+  - ADR-020: Strict global preflight (opt-in, fail-closed adoption gate)
 - `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills
