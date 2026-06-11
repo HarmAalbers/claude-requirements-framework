@@ -368,6 +368,63 @@ def test_escape_allowed(r: TestRunner) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Task 5: loud SessionStart briefing formatter (hooks/lib/preflight.py)
+# ---------------------------------------------------------------------------
+
+def test_strict_warning(r: TestRunner) -> None:
+    print("\npreflight.format_strict_warning — lists failures + fixes")
+
+    verdict = preflight.ComplianceResult(
+        strict_active=True,
+        compliant=False,
+        failures=[
+            ("no_config", "no .claude/requirements.local.yaml", "/req-init"),
+            ("no_uv", "uv not on PATH", "install uv"),
+        ],
+    )
+    out = preflight.format_strict_warning(verdict)
+    r.test(
+        "warning contains STRICT MODE banner",
+        "STRICT MODE" in out,
+        f"got {out!r}",
+    )
+    r.test(
+        "warning lists both failure messages",
+        "no .claude/requirements.local.yaml" in out and "uv not on PATH" in out,
+        f"got {out!r}",
+    )
+    r.test(
+        "warning lists both fix strings",
+        "/req-init" in out and "install uv" in out,
+        f"got {out!r}",
+    )
+    r.test(
+        "warning carries opt-out / RF_STRICT_OFF footer",
+        "/req-optout" in out and "RF_STRICT_OFF" in out,
+        f"got {out!r}",
+    )
+
+    print("\npreflight.format_strict_warning — empty when not applicable")
+    compliant = preflight.ComplianceResult(
+        strict_active=True, compliant=True, failures=[]
+    )
+    r.test(
+        "empty string when compliant",
+        preflight.format_strict_warning(compliant) == "",
+        f"got {preflight.format_strict_warning(compliant)!r}",
+    )
+
+    inactive = preflight.ComplianceResult(
+        strict_active=False, compliant=True, failures=[]
+    )
+    r.test(
+        "empty string when strict inactive",
+        preflight.format_strict_warning(inactive) == "",
+        f"got {preflight.format_strict_warning(inactive)!r}",
+    )
+
+
 def main() -> int:
     r = TestRunner()
     print("strict_preflight_enabled — RequirementsConfig")
@@ -411,6 +468,7 @@ def main() -> int:
 
     test_preflight(r)
     test_escape_allowed(r)
+    test_strict_warning(r)
 
     return r.summary()
 

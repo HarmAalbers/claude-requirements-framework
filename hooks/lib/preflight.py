@@ -214,3 +214,19 @@ def is_escape_allowed(tool_name, tool_input, project_dir) -> bool:
         return bool(_ESCAPE_BASH_RE.search(cmd))
 
     return False
+
+
+def format_strict_warning(verdict) -> str:
+    """Loud SessionStart banner when strict mode is active and the project is
+    non-compliant. Empty string otherwise (compliant, or strict inactive)."""
+    if not (verdict.strict_active and not verdict.compliant):
+        return ""
+    lines = ["## ⛔ STRICT MODE — project not compliant (edits are BLOCKED)", ""]
+    for code, msg, fix in verdict.failures:
+        lines.append(f"- ❌ {msg} → `{fix}`")
+    lines += [
+        "",
+        "Fix the above, opt out with `/req-optout`, or set `RF_STRICT_OFF=true` "
+        "to disable strict mode.",
+    ]
+    return "\n".join(lines)
