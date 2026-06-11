@@ -171,14 +171,23 @@ def main() -> int:
     (claude_dir / "requirements.local.yaml").write_text(
         "requirements:\n  commit_plan:\n    enabled: true\n"
     )
+    # Provide a FAKE `uv` on PATH so the uv check resolves deterministically in
+    # any environment (CI runners have no real uv) — shutil.which reads PATH at
+    # call time, so prepending a dir holding an executable `uv` stub makes the
+    # project fully compliant → the gate must stay inert (None).
+    fake_bin = Path(compliant_dir) / "bin"
+    fake_bin.mkdir(parents=True, exist_ok=True)
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text("#!/bin/sh\nexit 0\n")
+    fake_uv.chmod(0o755)
     saved_environ = dict(os.environ)
     try:
-        # Drop any deprecated Layer-2 keys + add the 5 Layer-1 keys, but PRESERVE
-        # PATH so the uv check (shutil.which at call-time) still resolves the real
-        # uv on this host → fully compliant → the gate must stay inert (None).
+        # Drop any deprecated Layer-2 keys + add the 5 Layer-1 keys, and prepend
+        # the fake-uv dir to PATH so the uv check passes regardless of host.
         for k in preflight.DEPRECATED_L2_KEYS:
             os.environ.pop(k, None)
         os.environ.update(_compliant_env())
+        os.environ["PATH"] = f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"
         out = CR.strict_preflight_block(
             FakeConfig(strict=True), "Write", {"file_path": f"{compliant_dir}/src/x.py"},
             compliant_dir,
