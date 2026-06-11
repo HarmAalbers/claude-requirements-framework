@@ -271,6 +271,103 @@ def test_preflight(r: TestRunner) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Task 3: escape allowlist (hooks/lib/preflight.py)
+# ---------------------------------------------------------------------------
+
+def test_escape_allowed(r: TestRunner) -> None:
+    print("\npreflight.is_escape_allowed — edit/write to config + optout")
+    tmp = tempfile.mkdtemp()
+
+    cfg_input = {"file_path": f"{tmp}/.claude/requirements.local.yaml"}
+    r.test(
+        "Write to requirements.local.yaml allowed",
+        preflight.is_escape_allowed("Write", cfg_input, tmp) is True,
+        "expected True",
+    )
+    r.test(
+        "Edit to requirements.local.yaml allowed",
+        preflight.is_escape_allowed("Edit", cfg_input, tmp) is True,
+        "expected True",
+    )
+    r.test(
+        "MultiEdit to requirements.local.yaml allowed",
+        preflight.is_escape_allowed("MultiEdit", cfg_input, tmp) is True,
+        "expected True",
+    )
+
+    optout_input = {"file_path": f"{tmp}/.claude/.rf-optout"}
+    r.test(
+        "Write to .rf-optout allowed",
+        preflight.is_escape_allowed("Write", optout_input, tmp) is True,
+        "expected True",
+    )
+
+    print("\npreflight.is_escape_allowed — arbitrary / traversal NOT allowed")
+    r.test(
+        "Write to arbitrary source file NOT allowed",
+        preflight.is_escape_allowed("Write", {"file_path": f"{tmp}/src/app.py"}, tmp)
+        is False,
+        "expected False",
+    )
+    r.test(
+        "Write to /etc/passwd (outside project) NOT allowed",
+        preflight.is_escape_allowed("Write", {"file_path": "/etc/passwd"}, tmp)
+        is False,
+        "expected False",
+    )
+    r.test(
+        "Write via ../ traversal outside project NOT allowed",
+        preflight.is_escape_allowed(
+            "Write",
+            {"file_path": f"{tmp}/../other/.claude/requirements.local.yaml"},
+            tmp,
+        )
+        is False,
+        "expected False",
+    )
+
+    print("\npreflight.is_escape_allowed — Bash req init/optout")
+    for cmd, expect in (
+        ("req init", True),
+        ("req optout", True),
+        ("python3 hooks/requirements-cli.py optout", True),
+        ("python3 hooks/requirements-cli.py init", True),
+        ("/req-init", True),
+        ("/req-optout", True),
+        ("rm -rf x", False),
+        ("git commit -m x", False),
+        ("requirements", False),
+    ):
+        r.test(
+            f"Bash {cmd!r} -> {expect}",
+            preflight.is_escape_allowed("Bash", {"command": cmd}, tmp) is expect,
+            f"expected {expect}",
+        )
+
+    print("\npreflight.is_escape_allowed — defensive / unknown")
+    r.test(
+        "tool_input=None NOT allowed (no raise)",
+        preflight.is_escape_allowed("Write", None, tmp) is False,
+        "expected False",
+    )
+    r.test(
+        "tool_input={} NOT allowed (no raise)",
+        preflight.is_escape_allowed("Write", {}, tmp) is False,
+        "expected False",
+    )
+    r.test(
+        "Bash tool_input=None NOT allowed (no raise)",
+        preflight.is_escape_allowed("Bash", None, tmp) is False,
+        "expected False",
+    )
+    r.test(
+        "unknown tool_name (Read) NOT allowed",
+        preflight.is_escape_allowed("Read", cfg_input, tmp) is False,
+        "expected False",
+    )
+
+
 def main() -> int:
     r = TestRunner()
     print("strict_preflight_enabled — RequirementsConfig")
@@ -313,6 +410,7 @@ def main() -> int:
     )
 
     test_preflight(r)
+    test_escape_allowed(r)
 
     return r.summary()
 

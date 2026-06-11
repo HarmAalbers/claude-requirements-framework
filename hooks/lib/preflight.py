@@ -21,6 +21,7 @@ try/except and treat any exception as "allow".
 """
 
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +54,13 @@ OPTOUT_RELPATH = Path(".claude") / ".rf-optout"
 LOCAL_CFG_RELPATH = Path(".claude") / "requirements.local.yaml"
 
 _SETUP_FIX = "python3 scripts/setup_langfuse_tracing.py --write"
+
+# Bash commands that are part of the escape hatch: invoking the framework CLI's
+# init/optout, by any of its invocation spellings (`req init`, `req optout`,
+# `requirements-cli.py init|optout`, `req-init`, `req-optout`).
+_ESCAPE_BASH_RE = re.compile(
+    r"\breq(uirements-cli\.py)?\s+(init|optout)\b|\breq-(init|optout)\b"
+)
 
 
 @dataclass
@@ -168,3 +176,41 @@ def _check_uv(which_fn) -> list:
     if which_fn("uv") is None:
         return [("no_uv", "uv not on PATH", "install uv: https://docs.astral.sh/uv/")]
     return []
+
+
+def is_escape_allowed(tool_name, tool_input, project_dir) -> bool:
+    """The escape hatch: calls that MUST be allowed even when the project is
+    non-compliant, so a stranded user can always repair or opt out.
+
+    SECURITY: this bypasses ALL strict-mode gates. It must stay TIGHT — matched
+    by exact target only, never a broad prefix. An over-broad rule here is a hole
+    that lets arbitrary edits slip past strict mode. Defensive throughout:
+    ``tool_input`` may be None or missing keys; never raise — treat as not-allowed.
+
+    Allowed:
+      - ``Edit`` / ``Write`` / ``MultiEdit`` whose ``file_path``, resolved and
+        taken RELATIVE TO ``project_dir``, equals exactly ``.claude/requirements
+        .local.yaml`` or ``.claude/.rf-optout``. Any path outside ``project_dir``
+        (incl. ``../`` traversal) or any other file → not allowed.
+      - ``Bash`` whose ``command`` invokes the framework CLI's init/optout.
+      - Everything else → not allowed.
+    """
+    data = tool_input or {}
+    if not isinstance(data, dict):
+        return False
+
+    if tool_name in ("Edit", "Write", "MultiEdit"):
+        fp = data.get("file_path")
+        if not fp:
+            return False
+        try:
+            rel = Path(fp).resolve().relative_to(Path(project_dir).resolve())
+        except (ValueError, OSError):
+            return False
+        return rel in (LOCAL_CFG_RELPATH, OPTOUT_RELPATH)
+
+    if tool_name == "Bash":
+        cmd = data.get("command") or ""
+        return bool(_ESCAPE_BASH_RE.search(cmd))
+
+    return False
