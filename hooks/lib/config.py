@@ -278,6 +278,9 @@ class ConfigStateAccess(Protocol):
     def is_enabled(self) -> bool:
         ...
 
+    def strict_preflight_enabled(self) -> bool:
+        ...
+
     def get_validation_errors(self) -> list[str]:
         ...
 
@@ -390,6 +393,9 @@ class ConfigStateView(ConfigStateAccess):
 
     def is_enabled(self) -> bool:
         return self._config.is_enabled()
+
+    def strict_preflight_enabled(self) -> bool:
+        return self._config.strict_preflight_enabled()
 
     def get_validation_errors(self) -> list[str]:
         return self._config.get_validation_errors()
@@ -1255,6 +1261,18 @@ class RequirementsConfig:
             True if enabled, False if disabled
         """
         return self._config.get("enabled", True)
+
+    def strict_preflight_enabled(self) -> bool:
+        """
+        Check if strict preflight is enabled for this project.
+
+        Strict preflight is opt-in (top-level `strict_preflight` key,
+        mirroring `enabled`); defaults to False when unset.
+
+        Returns:
+            True if strict preflight enabled, False otherwise
+        """
+        return bool(self._config.get("strict_preflight", False))
 
     def write_local_override(
         self,

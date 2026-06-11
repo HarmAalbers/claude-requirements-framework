@@ -216,6 +216,46 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
     }
 
 
+def _strict_denial_payload(verdict, project_dir: str) -> dict:
+    """Build the PreToolUse deny payload listing each compliance failure + fix,
+    plus the escape-hatch + RF_STRICT_OFF kill-switch footer."""
+    lines = ["## ⛔ Strict mode — project not compliant (blocked)", ""]
+    for code, msg, fix in verdict.failures:
+        lines.append(f"- ❌ {msg} → `{fix}`")
+    lines += [
+        "",
+        "Allowed while non-compliant: edit `.claude/requirements.local.yaml`, "
+        "`/req-init`, or opt out with `/req-optout`.",
+        "Emergency bypass: set `RF_STRICT_OFF=true` in the environment.",
+    ]
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "\n".join(lines),
+        }
+    }
+
+
+def strict_preflight_block(config, tool_name, tool_input, project_dir):
+    """Return a deny-payload dict if strict mode must BLOCK this call, else None.
+
+    FAIL-SAFE: any exception → None (never block on a preflight bug).
+    """
+    try:
+        from preflight import evaluate, is_escape_allowed
+        verdict = evaluate(
+            project_dir, strict_enabled=config.strict_preflight_enabled()
+        )
+        if not (verdict.strict_active and not verdict.compliant):
+            return None  # inert or compliant → no strict block
+        if is_escape_allowed(tool_name, tool_input, project_dir):
+            return None  # escape hatch
+        return _strict_denial_payload(verdict, project_dir)
+    except Exception:
+        return None  # fail-safe: a bug here must never lock the user out
+
+
 def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str, branch: str) -> None:
     """
     Output 'deny' decision to block until requirement is satisfied.
@@ -320,6 +360,13 @@ def main() -> int:
         # Skip if no project context or config
         if not project_dir or not branch or not config:
             logger.info("Skipping requirements (no project context)")
+            return 0
+
+        # --- STRICT PREFLIGHT GATE (fail-closed; fail-SAFE on its own errors) ---
+        _strict_block = strict_preflight_block(config, tool_name, tool_input, project_dir)
+        if _strict_block is not None:
+            logger.info("strict preflight blocking", tool=tool_name)
+            emit_json(_strict_block)
             return 0
 
         # Update session registry early (before other checks)

@@ -672,6 +672,18 @@ See `req init --help` for options.""")
         if parts:
             emit_hook_context("SessionStart", "\n\n".join(parts))
 
+        # --- strict preflight: loud non-compliance briefing (fail-open) ---
+        try:
+            from preflight import evaluate, format_strict_warning
+            _verdict = evaluate(
+                project_dir, strict_enabled=config.strict_preflight_enabled()
+            )
+            _warn = format_strict_warning(_verdict)
+            if _warn:
+                emit_hook_context("SessionStart", _warn)
+        except Exception as e:
+            logger.debug("strict preflight briefing skipped", error=str(e))
+
         return 0
 
     except Exception as e:

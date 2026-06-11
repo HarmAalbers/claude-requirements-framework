@@ -5,6 +5,40 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.19.0] — 2026-06-11
+
+Strict Global Preflight (ADR-020) — an **opt-in, fail-CLOSED** adoption gate that blocks all
+work in a non-compliant project until it's configured or opted out. The deliberate inverse of
+the framework's fail-open/inert-when-unconfigured default, scoped to strict mode only, with a
+guaranteed kill-switch and a fail-SAFE evaluator. **OFF by default.**
+
+### Added
+
+- **`strict_preflight: true` master switch** (global `~/.claude/requirements.yaml`, read via
+  the config cascade; `config.strict_preflight_enabled()`). Default `false` — the entire
+  strict regime is inert until set.
+- **Fail-closed PreToolUse gate** (`hooks/check-requirements.py`): when strict mode is active
+  and the project is non-compliant, every Edit/Write/MultiEdit/Bash is denied except the
+  escape allowlist.
+- **Compliance evaluator** (`hooks/lib/preflight.py`, pure + dependency-injectable): all three
+  invariants must hold — `.claude/requirements.local.yaml` exists/parses with ≥1 enabled
+  requirement; Langfuse env structurally valid (5 Layer-1 keys present, none of the 6
+  deprecated Layer-2 keys, creds non-empty — structural only, no network); `uv` on PATH.
+- **Loud SessionStart briefing** (`hooks/handle-session-start.py`): lists each failed
+  invariant with its exact fix command when non-compliant.
+- **Surgical escape allowlist** (precedence over ALL gates): editing
+  `.claude/requirements.local.yaml` / `.claude/.rf-optout`, and `req` init/optout —
+  project-root-confined, exact-target matched, so you can never lock yourself out of reaching
+  compliance.
+- **`.claude/.rf-optout` sentinel** — opts a project fully inert (today's behavior).
+- **`RF_STRICT_OFF=true` env kill-switch** — disables strict mode instantly, no config edit;
+  checked first, paired with a fail-SAFE evaluator (any exception → allow) so a preflight bug
+  can never globally lock the user out.
+- **`/req-init` and `/req-optout` commands** — scaffold a `requirements.local.yaml` / create
+  the opt-out sentinel; ride the marketplace install (no `install.sh`).
+
+See ADR-020 and `.claude/plans/2026-06-11-strict-global-preflight-{design,plan}.md`.
+
 ## [4.18.0] — 2026-06-08
 
 R5 Observability Hardening (ADR-019 amendment). R5 Langfuse tracing becomes a
