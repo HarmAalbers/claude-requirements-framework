@@ -12891,6 +12891,25 @@ def test_session_pause(runner: TestRunner):
                     "paused" in pause.paused_banner('dddd4444', tmp).lower())
 
 
+def test_cli_pause_resume(runner: TestRunner):
+    """`req pause` / `req resume` round-trip the marker for an explicit session."""
+    print("\n⏸  Testing req pause/resume CLI...")
+    import pause
+    cli = os.path.join(os.path.dirname(__file__), 'requirements-cli.py')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        r = subprocess.run(['python3', cli, 'pause', '--session', 'dddd4444'],
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("cli pause rc 0", r.returncode == 0, r.stderr)
+        runner.test("cli pause sets marker", pause.is_paused('dddd4444', tmp) is True)
+
+        r = subprocess.run(['python3', cli, 'resume', '--session', 'dddd4444'],
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("cli resume rc 0", r.returncode == 0, r.stderr)
+        runner.test("cli resume clears marker", pause.is_paused('dddd4444', tmp) is False)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13139,6 +13158,7 @@ def main():
 
     # Session-scoped pause marker (Task 1)
     test_session_pause(runner)
+    test_cli_pause_resume(runner)
 
     return runner.summary()
 

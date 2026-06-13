@@ -656,6 +656,58 @@ def cmd_clear(args) -> int:
     return 0
 
 
+def _resolve_pause_session(args):
+    """Resolve the session for pause/resume: explicit --session, else registry
+    auto-detect. Returns the session id, or None if it cannot be determined."""
+    if getattr(args, 'session', None):
+        return args.session
+    try:
+        return get_session_id()
+    except SessionNotFoundError:
+        return None
+
+
+def cmd_pause(args) -> int:
+    """Pause the framework's BLOCKING gates for the current session.
+
+    Writes a session-scoped marker that the PreToolUse and Stop gates honor.
+    Does NOT bypass strict-preflight (use RF_STRICT_OFF for that). Auto-clears
+    at session end; clear manually with `req resume`.
+    """
+    import pause as pause_lib
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+    session_id = _resolve_pause_session(args)
+    if not session_id:
+        out(error("❌ No Claude session detected. Pass --session <id>."), file=sys.stderr)
+        return 1
+    if pause_lib.set_paused(session_id, project_dir, reason=getattr(args, 'reason', '') or ''):
+        out(success(f"⏸  Framework paused for session {session_id}."))
+        out(dim("   Blocking gates are off for this session. Run `req resume` (or /req-resume) to re-enable."))
+        out(dim("   Note: strict-preflight is NOT bypassed; use RF_STRICT_OFF for that."))
+        return 0
+    out(error("❌ Could not write pause marker"), file=sys.stderr)
+    return 1
+
+
+def cmd_resume(args) -> int:
+    """Resume (clear the pause marker) for the current session."""
+    import pause as pause_lib
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+    session_id = _resolve_pause_session(args)
+    if not session_id:
+        out(error("❌ No Claude session detected. Pass --session <id>."), file=sys.stderr)
+        return 1
+    pause_lib.clear_paused(session_id, project_dir)
+    out(success(f"▶  Framework resumed for session {session_id}."))
+    return 0
+
+
 def cmd_list(args) -> int:
     """
     List all tracked branches.
@@ -3527,6 +3579,14 @@ Environment Variables:
     clear_parser.add_argument('--all', '-a', action='store_true', help='Clear all')
     clear_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
 
+    # pause / resume (session-scoped suppression of blocking gates)
+    pause_parser = subparsers.add_parser('pause', help='Pause blocking gates for this session')
+    pause_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
+    pause_parser.add_argument('--reason', '-r', help='Optional reason note')
+
+    resume_parser = subparsers.add_parser('resume', help='Resume blocking gates for this session')
+    resume_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
+
     # list
     subparsers.add_parser('list', help='List tracked branches')
 
@@ -3712,6 +3772,8 @@ Environment Variables:
         'satisfy': cmd_satisfy,
         'approve': cmd_satisfy,  # Alias — argparse routes via args.command string
         'clear': cmd_clear,
+        'pause': cmd_pause,
+        'resume': cmd_resume,
         'list': cmd_list,
         'prune': cmd_prune,
         'sessions': cmd_sessions,
