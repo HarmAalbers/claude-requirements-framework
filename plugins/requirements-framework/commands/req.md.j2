@@ -3,7 +3,7 @@ name: req
 description: "Workflow conductor — derives the current requirements-framework phase and dispatches to the matching skill/command. Run with no arguments to be guided, or pass an explicit phase. The default phases are design, plan-write, plan-validate, implement, review, refactor, ship (these are the default phases; a project may configure others — run `req-phase` to see the active set). Also accepts `plan` as a friendly alias that auto-picks the active plan sub-phase."
 argument-hint: "[phase]"
 allowed-tools: ["Bash", "Read", "Skill"]
-git_hash: 54ba528
+git_hash: 95d0dbf
 ---
 
 # `/req` — Workflow Conductor

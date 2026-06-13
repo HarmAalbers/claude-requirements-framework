@@ -11,7 +11,7 @@ allowed-tools:
   - WebFetch
   - mcp__plugin_context7-plugin_context7__query-docs
   - mcp__plugin_context7-plugin_context7__resolve-library-id
-git_hash: 54ba528
+git_hash: 95d0dbf
 ---
 
 # Refactor Orchestration

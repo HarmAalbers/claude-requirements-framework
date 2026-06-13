@@ -3,7 +3,7 @@ name: codex-review
 description: "AI-powered code review using OpenAI Codex"
 argument-hint: "[focus]"
 allowed-tools: ["Bash", "Task"]
-git_hash: 54ba528
+git_hash: 95d0dbf
 ---
 
 > **Workflow position**: suggested by `/req ship` after `/req review`, as the second-opinion external review. Run directly any time for an independent AI check.

@@ -3,7 +3,7 @@ name: req-pause
 description: "Pause the framework's blocking gates for this session only (auto-resumes at session end)"
 argument-hint: "[reason]"
 allowed-tools: ["Bash"]
-git_hash: uncommitted
+git_hash: e07b620
 ---
 
 > **Workflow position**: escape-hatch (session-scoped). Suppresses the framework's BLOCKING gates (the PreToolUse edit/commit gate and the end-of-turn Stop verification) for the CURRENT session only. Does NOT bypass strict-preflight — use `RF_STRICT_OFF=true` for that. Nudges and status injection keep firing (you will see a `⏸ paused` banner). Auto-resumes when the session ends.
