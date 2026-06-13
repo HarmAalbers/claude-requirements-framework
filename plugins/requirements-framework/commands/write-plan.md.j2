@@ -3,7 +3,7 @@ name: write-plan
 description: "Create detailed implementation plan from requirements or spec"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: 88b65f3
+git_hash: 54ba528
 ---
 
 > **Workflow position**: invoked by `/req plan` (writing phase). Run directly to override the conductor.

@@ -3,7 +3,7 @@ name: arch-review
 description: "Multi-perspective team-based architecture review with agent debate and commit planning"
 argument-hint: "[plan-file-path]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: 88b65f3
+git_hash: 54ba528
 ---
 
 > **Workflow position**: invoked by `/req plan`. Run directly to override the conductor.
