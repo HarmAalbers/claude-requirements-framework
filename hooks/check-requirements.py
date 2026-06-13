@@ -34,6 +34,7 @@ Design:
     - Register session in registry when project context exists (for CLI discovery)
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -56,6 +57,19 @@ try:
     from messages import MessageLoader
 except ImportError:
     MessageLoader = None
+
+
+# Exact `req pause` / `req resume` CLI invocation. Tight match so the pause
+# command can never be blocked by the gate it is about to disable (mirrors the
+# strict escape-hatch philosophy).
+_PAUSE_CMD_RE = re.compile(r'\b(?:req|requirements-cli\.py)\s+(?:pause|resume)\b')
+
+
+def is_pause_command(command: str) -> bool:
+    """True if *command* invokes the framework CLI's pause/resume subcommand."""
+    if not command:
+        return False
+    return bool(_PAUSE_CMD_RE.search(command))
 
 
 def should_skip_plan_file(file_path: str) -> bool:
@@ -369,6 +383,13 @@ def main() -> int:
             emit_json(_strict_block)
             return 0
 
+        # Self-unblock: never block the pause/resume command itself, so a paused
+        # state can always be entered/exited even when the normal gate would deny.
+        # Placed AFTER the strict gate so strict mode still governs it.
+        if tool_name == 'Bash' and is_pause_command((tool_input or {}).get('command', '') or ''):
+            logger.info("Allowing pause/resume command (self-unblock)")
+            return 0
+
         # Update session registry early (before other checks)
         # This allows CLI to discover sessions on any branch
         try:
@@ -382,6 +403,17 @@ def main() -> int:
         if not config.is_enabled():
             logger.info("Requirements disabled via config")
             return 0
+
+        # Session pause: suppress BLOCKING gates only for this session. The strict
+        # gate already ran above (and still blocks); nudges/status live in other
+        # hooks, so they keep firing. Fail-open: any error -> not paused.
+        try:
+            from pause import is_paused
+            if is_paused(session_id, project_dir):
+                logger.info("Requirements paused for session", session=session_id)
+                return 0
+        except Exception as e:
+            logger.debug("pause check failed (fail-open)", error=str(e))
 
         # Initialize requirements manager
         reqs = BranchRequirements(branch, session_id, project_dir)

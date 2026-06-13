@@ -12910,6 +12910,78 @@ def test_cli_pause_resume(runner: TestRunner):
         runner.test("cli resume clears marker", pause.is_paused('dddd4444', tmp) is False)
 
 
+def test_pretooluse_pause(runner: TestRunner):
+    """PreToolUse gate: a paused session allows otherwise-blocking edits, and
+    the `req pause` command itself is never blocked."""
+    print("\n⏸  Testing PreToolUse pause short-circuit...")
+    import pause
+    hook_path = Path(__file__).parent / "check-requirements.py"
+    if not hook_path.exists():
+        runner.test("check-requirements.py exists", False, "missing")
+        return
+
+    def denied(stdout):
+        # PreToolUse blocks emit permissionDecision "deny" (exit 0), not "block".
+        return '"permissionDecision": "deny"' in stdout
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
+        os.makedirs(f"{tmp}/.claude")
+        config = {
+            "version": "1.0", "enabled": True, "inherit": False,
+            "requirements": {
+                "commit_plan": {"enabled": True, "type": "blocking",
+                                "scope": "session", "trigger_tools": ["Edit", "Write"],
+                                "message": "Plan!"},
+                # gates ANY Bash command, so the self-allow for `req pause` is meaningful
+                "bash_gate": {"enabled": True, "type": "blocking", "scope": "session",
+                              "trigger_tools": [{"tool": "Bash", "command_pattern": "."}],
+                              "message": "BashGate!"},
+            },
+        }
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump(config, f)
+
+        sid = "test1234"
+        edit_input = json.dumps({
+            "session_id": sid, "tool_name": "Edit",
+            "tool_input": {"file_path": f"{tmp}/src.py"},
+        })
+
+        # Baseline: unsatisfied + not paused -> Edit DENIED
+        r = subprocess.run(["python3", str(hook_path)], input=edit_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("blocks edit when unsatisfied (baseline)", denied(r.stdout), f"Got: {r.stdout}")
+
+        # Paused -> Edit ALLOWED (no deny, rc 0)
+        pause.set_paused(sid, tmp)
+        r = subprocess.run(["python3", str(hook_path)], input=edit_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("paused allows otherwise-blocking edit",
+                    r.returncode == 0 and not denied(r.stdout), f"Got: {r.stdout}")
+        pause.clear_paused(sid, tmp)
+
+        # Control: a normal Bash command IS denied by bash_gate when unsatisfied
+        ctrl_input = json.dumps({
+            "session_id": sid, "tool_name": "Bash",
+            "tool_input": {"command": "echo hi"},
+        })
+        r = subprocess.run(["python3", str(hook_path)], input=ctrl_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("control: normal bash denied (bash_gate)", denied(r.stdout), f"Got: {r.stdout}")
+
+        # Self-unblock: `req pause` Bash command is NOT denied even with bash_gate active
+        pause_input = json.dumps({
+            "session_id": sid, "tool_name": "Bash",
+            "tool_input": {"command": "req pause --session test1234"},
+        })
+        r = subprocess.run(["python3", str(hook_path)], input=pause_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("req pause command self-allowed",
+                    r.returncode == 0 and not denied(r.stdout), f"Got: {r.stdout}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13159,6 +13231,7 @@ def main():
     # Session-scoped pause marker (Task 1)
     test_session_pause(runner)
     test_cli_pause_resume(runner)
+    test_pretooluse_pause(runner)
 
     return runner.summary()
 
