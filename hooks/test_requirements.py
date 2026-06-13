@@ -12852,6 +12852,45 @@ def test_state_write_concurrency(runner: TestRunner):
         )
 
 
+def test_session_pause(runner: TestRunner):
+    """Session-scoped pause marker (Approach A)."""
+    print("\n⏸  Testing session pause marker...")
+    import pause
+    from session_metrics import get_sessions_dir, ensure_sessions_dir
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(['git', 'init'], cwd=tmp, capture_output=True)
+
+        runner.test("not paused initially", pause.is_paused('aaaa1111', tmp) is False)
+        pause.set_paused('aaaa1111', tmp, reason='manual')
+        runner.test("paused after set", pause.is_paused('aaaa1111', tmp) is True)
+
+        pause.clear_paused('aaaa1111', tmp)
+        runner.test("not paused after clear", pause.is_paused('aaaa1111', tmp) is False)
+
+        pause.set_paused('aaaa1111', tmp)
+        runner.test("session A paused", pause.is_paused('aaaa1111', tmp) is True)
+        runner.test("session B not paused", pause.is_paused('bbbb2222', tmp) is False)
+
+        ensure_sessions_dir(tmp)
+        (get_sessions_dir(tmp) / 'cccc3333.paused').write_text('{not json')
+        runner.test("garbled marker still paused", pause.is_paused('cccc3333', tmp) is True)
+
+        runner.test("no project dir -> not paused (fail-open)",
+                    pause.is_paused('aaaa1111', None) is False)
+
+        try:
+            pause.clear_paused('nonexistent', tmp)
+            runner.test("clear idempotent (no raise)", True)
+        except Exception as e:
+            runner.test("clear idempotent (no raise)", False, str(e))
+
+        runner.test("no banner when not paused", pause.paused_banner('dddd4444', tmp) == "")
+        pause.set_paused('dddd4444', tmp)
+        runner.test("banner present when paused",
+                    "paused" in pause.paused_banner('dddd4444', tmp).lower())
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13097,6 +13136,9 @@ def main():
 
     # Dead ruff_check.py removal (Phase 1d)
     test_ruff_check_removed(runner)
+
+    # Session-scoped pause marker (Task 1)
+    test_session_pause(runner)
 
     return runner.summary()
 
