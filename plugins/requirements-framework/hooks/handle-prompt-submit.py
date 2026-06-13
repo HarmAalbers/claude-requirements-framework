@@ -136,6 +136,17 @@ def main() -> int:
         if not config.is_enabled():
             return 0
 
+        # Session pause: surface a visible banner every turn so a paused session
+        # is never silently off. Blocking gates are suppressed elsewhere; nudges
+        # and status (this hook) keep firing. Fail-open: any error -> no banner.
+        try:
+            from pause import paused_banner
+            _pb = paused_banner(session_id, project_dir)
+            if _pb:
+                emit_hook_context("UserPromptSubmit", _pb)
+        except Exception as e:
+            logger.debug("pause banner skipped (fail-open)", error=str(e))
+
         # Track prompt in session metrics
         try:
             metrics = SessionMetrics(session_id, project_dir, branch)

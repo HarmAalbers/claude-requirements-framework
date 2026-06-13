@@ -669,6 +669,16 @@ See `req init --help` for options.""")
             except Exception as e:
                 logger.error("Failed to format status", error=str(e))
 
+        # Session pause: prepend a visible banner so a paused session is never
+        # silently off (the gates are suppressed but status still shows).
+        try:
+            from pause import paused_banner
+            _pb = paused_banner(session_id, project_dir)
+            if _pb:
+                parts.insert(0, _pb)
+        except Exception:
+            pass
+
         if parts:
             emit_hook_context("SessionStart", "\n\n".join(parts))
 

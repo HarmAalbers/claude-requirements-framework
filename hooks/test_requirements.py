@@ -13055,6 +13055,41 @@ def test_session_end_clears_pause(runner: TestRunner):
         runner.test("marker cleared after session end", pause.is_paused(sid, tmp) is False)
 
 
+def test_prompt_submit_pause_banner(runner: TestRunner):
+    """UserPromptSubmit surfaces the paused banner while a session is paused."""
+    print("\n⏸  Testing prompt-submit paused banner...")
+    import pause
+    hook_path = Path(__file__).parent / "handle-prompt-submit.py"
+    if not hook_path.exists():
+        runner.test("handle-prompt-submit.py exists", False, "missing")
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
+        os.makedirs(f"{tmp}/.claude")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+
+        sid = "test1234"
+        prompt_input = json.dumps({"session_id": sid, "prompt": "let's edit some code",
+                                   "cwd": tmp})
+
+        # Not paused -> no banner
+        r = subprocess.run(["python3", str(hook_path)], input=prompt_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("no banner when not paused", "Framework paused" not in r.stdout,
+                    f"Got: {r.stdout}")
+
+        # Paused -> banner present
+        pause.set_paused(sid, tmp)
+        r = subprocess.run(["python3", str(hook_path)], input=prompt_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("banner present when paused", "Framework paused" in r.stdout,
+                    f"Got: {r.stdout}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13307,6 +13342,7 @@ def main():
     test_pretooluse_pause(runner)
     test_stop_pause(runner)
     test_session_end_clears_pause(runner)
+    test_prompt_submit_pause_banner(runner)
 
     return runner.summary()
 
