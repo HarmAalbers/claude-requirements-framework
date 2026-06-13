@@ -193,6 +193,16 @@ def main() -> int:
             logger.debug("Stop verification disabled by config")
             return 0
 
+        # Session pause: do not block stop when paused (blocking gate).
+        # Fail-open: any error -> not paused.
+        try:
+            from pause import is_paused
+            if is_paused(session_id, project_dir):
+                logger.info("Stop not blocked - session paused", session=session_id)
+                return 0
+        except Exception as e:
+            logger.debug("pause check failed in stop (fail-open)", error=str(e))
+
         # Get which scopes to verify (default: session only)
         verify_scopes = config.get_hook_config('stop', 'verify_scopes', ['session'])
 

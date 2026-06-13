@@ -12982,6 +12982,51 @@ def test_pretooluse_pause(runner: TestRunner):
                     r.returncode == 0 and not denied(r.stdout), f"Got: {r.stdout}")
 
 
+def test_stop_pause(runner: TestRunner):
+    """Stop gate: a paused session is not blocked even with an unsatisfied
+    triggered requirement."""
+    print("\n⏸  Testing Stop pause skip...")
+    import pause
+    from requirements import BranchRequirements
+    hook_path = Path(__file__).parent / "handle-stop.py"
+    if not hook_path.exists():
+        runner.test("handle-stop.py exists", False, "missing")
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
+        os.makedirs(f"{tmp}/.claude")
+        config = {
+            "version": "1.0", "enabled": True, "inherit": False,
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            },
+        }
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump(config, f)
+
+        sid = "test1234"
+        BranchRequirements("feature/test", sid, tmp).mark_triggered("commit_plan", "session")
+        stop_input = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
+                                 "session_id": sid})
+
+        # Baseline: unsatisfied triggered req -> Stop BLOCKS
+        r = subprocess.run(["python3", str(hook_path)], input=stop_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("stop blocks when unsatisfied (baseline)",
+                    '"decision": "block"' in r.stdout, f"Got: {r.stdout}")
+
+        # Paused -> Stop does NOT block
+        pause.set_paused(sid, tmp)
+        r = subprocess.run(["python3", str(hook_path)], input=stop_input,
+                           cwd=tmp, capture_output=True, text=True)
+        runner.test("paused -> stop not blocked",
+                    r.returncode == 0 and '"decision": "block"' not in r.stdout,
+                    f"Got: {r.stdout}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13232,6 +13277,7 @@ def main():
     test_session_pause(runner)
     test_cli_pause_resume(runner)
     test_pretooluse_pause(runner)
+    test_stop_pause(runner)
 
     return runner.summary()
 
