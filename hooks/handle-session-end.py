@@ -74,6 +74,14 @@ def main() -> int:
 
         logger.info("Session ending", reason=reason)
 
+        # Clear any session pause marker (auto-resume on session end).
+        # Fail-open: cleanup must never crash session end.
+        try:
+            from pause import clear_paused
+            clear_paused(session_id, project_dir)
+        except Exception:
+            pass
+
         # 0. Read session start time before registry removal (for WIP time tracking)
         session_started_at = None
         try:

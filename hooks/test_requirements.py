@@ -13027,6 +13027,34 @@ def test_stop_pause(runner: TestRunner):
                     f"Got: {r.stdout}")
 
 
+def test_session_end_clears_pause(runner: TestRunner):
+    """SessionEnd auto-clears the pause marker (auto-resume)."""
+    print("\n⏸  Testing SessionEnd auto-clear...")
+    import pause
+    hook_path = Path(__file__).parent / "handle-session-end.py"
+    if not hook_path.exists():
+        runner.test("handle-session-end.py exists", False, "missing")
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
+        os.makedirs(f"{tmp}/.claude")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+
+        sid = "test1234"
+        pause.set_paused(sid, tmp)
+        runner.test("paused before session end", pause.is_paused(sid, tmp) is True)
+
+        end_input = json.dumps({"session_id": sid, "hook_event_name": "SessionEnd",
+                                "reason": "clear", "cwd": tmp})
+        subprocess.run(["python3", str(hook_path)], input=end_input,
+                       cwd=tmp, capture_output=True, text=True)
+        runner.test("marker cleared after session end", pause.is_paused(sid, tmp) is False)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -13278,6 +13306,7 @@ def main():
     test_cli_pause_resume(runner)
     test_pretooluse_pause(runner)
     test_stop_pause(runner)
+    test_session_end_clears_pause(runner)
 
     return runner.summary()
 
