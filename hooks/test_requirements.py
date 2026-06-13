@@ -12395,6 +12395,106 @@ def test_count_unsatisfied(runner: TestRunner):
                     f"Got: {count_unsatisfied(mix)}")
 
 
+def test_statusline_bundled_libs_present(runner: TestRunner):
+    """The self-contained plugin must bundle the libs statusline.sh reads."""
+    print("\n📦 Testing statusline bundled libs present...")
+    repo_root = Path(__file__).resolve().parent.parent
+    bundled = repo_root / "plugins" / "requirements-framework" / "hooks" / "lib"
+    for name in ("statusline_data.py", "derive_phase.py", "count_unsatisfied.py"):
+        runner.test(f"bundled {name} exists",
+                    (bundled / name).is_file(),
+                    f"missing: {bundled / name}")
+
+
+def test_statusline_script_end_to_end(runner: TestRunner):
+    """statusline.sh must render real phase/count, not the fail-open placeholder.
+
+    Runs both lib-resolution paths: CLAUDE_PLUGIN_ROOT set (plugin-loader
+    invocation) AND unset (the install.sh / settings-runner production path,
+    which relies on the $(dirname "$0") fallback). HOME is pinned to the
+    throwaway dir so the RED state can't be masked by a real ~/.claude/hooks/lib
+    on a machine where the framework was deployed.
+    """
+    print("\n📦 Testing statusline.sh end-to-end...")
+    repo_root = Path(__file__).resolve().parent.parent
+    plugin_root = repo_root / "plugins" / "requirements-framework"
+    script = plugin_root / "statusline.sh"
+    if not script.is_file():
+        runner.test("statusline.sh exists", False, f"missing: {script}")
+        return
+
+    def _clean_env(home, **extra):
+        # Minimal env: pinned HOME (kills any real ~/.claude/hooks/lib) plus a
+        # PATH/locale allow-list. Spreading os.environ would let an ambient
+        # GIT_DIR / GIT_WORK_TREE / BASH_ENV redirect the throwaway repo or
+        # perturb bash/python startup, eroding the guard's trustworthiness.
+        env = {k: os.environ[k] for k in ("PATH", "LANG", "LC_ALL", "LC_CTYPE")
+               if k in os.environ}
+        env["HOME"] = str(home)
+        env.update(extra)
+        return env
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        git_env = _clean_env(repo)
+        # A throwaway git repo with a born branch so `git rev-parse --abbrev-ref
+        # HEAD` resolves the way statusline.sh expects.
+        subprocess.run(["git", "init", "-b", "wip", str(repo)],
+                       check=True, capture_output=True, env=git_env)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t",
+                        "-c", "user.name=t", "commit", "--allow-empty",
+                        "-m", "init"], check=True, capture_output=True, env=git_env)
+
+        state_dir = repo / ".git" / "requirements"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        # design_approved satisfied → phase advances past "design" to
+        # "plan-write"; one triggered-unsatisfied req → count == 1. Both differ
+        # from the placeholder ([design] / [? req]).
+        (state_dir / "wip.json").write_text(json.dumps({"requirements": {
+            "design_approved": {"satisfied": True},
+            "plan_written": {"triggered": True},
+        }}))
+
+        payload = json.dumps({
+            "workspace": {"current_dir": str(repo)},
+            "context_window": {"used_percentage": 7},
+            "session": {"cost_usd": 0.5},
+        })
+
+        # The settings-runner invokes the script directly (no `bash` prefix),
+        # relying on the shebang + exec bit — assert that's intact.
+        runner.test("statusline.sh is executable",
+                    os.access(script, os.X_OK), f"not +x: {script}")
+
+        def _render(cmd, plugin_root_env):
+            env = _clean_env(repo)
+            if plugin_root_env is not None:
+                env["CLAUDE_PLUGIN_ROOT"] = plugin_root_env
+            return subprocess.run(cmd, input=payload,
+                                  capture_output=True, text=True, env=env)
+
+        # Path A: plugin-loader invocation (CLAUDE_PLUGIN_ROOT set), via bash.
+        # Path B: settings-runner / install.sh invocation — CLAUDE_PLUGIN_ROOT
+        # unset, script run DIRECTLY (shebang + exec bit), so the
+        # $(dirname "$0") fallback must resolve $PLUGIN_ROOT/hooks/lib.
+        for label, proc in (
+            ("plugin-root", _render(["bash", str(script)], str(plugin_root))),
+            ("dirname-fallback", _render([str(script)], None)),
+        ):
+            out = proc.stdout
+            # Fail-open contract: the statusline must always exit 0 (Claude Code
+            # hides a non-zero-exit statusline) and must not leak a traceback.
+            runner.test(f"{label}: exits 0 (fail-open contract)",
+                        proc.returncode == 0,
+                        f"rc={proc.returncode} stderr={proc.stderr!r}")
+            runner.test(f"{label}: no traceback leaked to stderr",
+                        "Traceback" not in proc.stderr, f"stderr={proc.stderr!r}")
+            runner.test(f"{label}: phase is real, not [design]",
+                        "[plan-write]" in out, f"Got: {out!r}")
+            runner.test(f"{label}: req count numeric, not '?'",
+                        "[? req" not in out and "[1 req" in out, f"Got: {out!r}")
+
+
 def test_llm_package_scaffold(runner: TestRunner):
     """Verify the llm package imports lazily without V3 deps; submodule imports that
     need an optional [llm] extra (pydantic/jinja2/...) are skipped when that dep is
@@ -12981,6 +13081,8 @@ def main():
     test_derive_phase_workflow(runner)
     test_derive_phase_with_skill(runner)
     test_count_unsatisfied(runner)
+    test_statusline_bundled_libs_present(runner)
+    test_statusline_script_end_to_end(runner)
 
     test_llm_package_scaffold(runner)
 
