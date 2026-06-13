@@ -11,15 +11,13 @@ set -uo pipefail
 
 INPUT=$(cat)
 
-# Locate the plugin's hook libs.
-# $CLAUDE_PLUGIN_ROOT is set when invoked through Claude Code's plugin loader.
+# Locate the plugin's bundled hook libs. The plugin is self-contained
+# (commit 652141b): the libs live under $PLUGIN_ROOT/hooks/lib in both the
+# --plugin-dir dev layout and the global cached install.
+# $CLAUDE_PLUGIN_ROOT is set when invoked through Claude Code's plugin loader;
+# otherwise (e.g. the install.sh settings-runner path) we anchor on $0.
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
-HOOK_LIB="${PLUGIN_ROOT}/../../../hooks/lib"
-if [[ ! -d "$HOOK_LIB" ]]; then
-  # Deployed layout: ~/.claude/plugins/requirements-framework/statusline.sh
-  # alongside ~/.claude/hooks/lib/
-  HOOK_LIB="${HOME}/.claude/hooks/lib"
-fi
+HOOK_LIB="${PLUGIN_ROOT}/hooks/lib"
 
 # CWD detection: prefer Claude's reported workspace.
 CWD=$(printf '%s' "$INPUT" | jq -r '.workspace.current_dir // .cwd // "."' 2>/dev/null || echo ".")
