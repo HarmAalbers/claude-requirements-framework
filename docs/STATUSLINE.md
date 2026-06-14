@@ -7,15 +7,22 @@ instead of asking the model.
 ## Format
 
 ```
-[phase] [ctx N%] [$cost] [N req⬜]
+[⏸ paused] [phase] [ctx N%] [$cost] [N req⬜]
 ```
 
-| Field    | Meaning                                                      |
-|----------|--------------------------------------------------------------|
-| `phase`  | Derived workflow phase: `design`, `plan-write`, `plan-validate`, `implement`, `review`, `ship`, or `?` when outside a git repo |
-| `ctx N%` | Input-side context window usage reported by Claude Code     |
-| `$cost`  | Session cost in USD                                          |
-| `N req⬜` | Count of triggered-but-unsatisfied requirements             |
+| Field      | Meaning                                                      |
+|------------|--------------------------------------------------------------|
+| `⏸ paused` | Shown ONLY when this session has paused the framework (`/req-pause`). Prefixes the line so the gates-off state is never silently forgotten. Absent otherwise. |
+| `phase`    | Derived workflow phase: `design`, `plan-write`, `plan-validate`, `implement`, `review`, `ship`, or `?` when outside a git repo |
+| `ctx N%`   | Input-side context window usage reported by Claude Code     |
+| `$cost`    | Session cost in USD                                          |
+| `N req⬜`   | Count of triggered-but-unsatisfied requirements             |
+
+The pause field reads the session-scoped marker
+`<git-common-dir>/requirements/sessions/<session_id>.paused` (the same marker
+`hooks/lib/pause.py` writes). The statusline normalizes the JSON `session_id`
+exactly like `normalize_session_id()` — strip dashes, first 8 hex chars — so it
+matches the marker key. Fail-open: any error → no pause field.
 
 ## Phase derivation
 

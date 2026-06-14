@@ -26,6 +26,22 @@ CWD=$(printf '%s' "$INPUT" | jq -r '.workspace.current_dir // .cwd // "."' 2>/de
 PHASE="design"
 UNSAT="?"
 
+# Pause marker: gates are suppressed for THIS session when
+# <git-common-dir>/requirements/sessions/<session_id>.paused exists.
+# Session id is normalized exactly like normalize_session_id() in
+# hooks/lib/session.py: strip dashes, keep the first 8 hex chars.
+PAUSED=""
+SID=$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)
+SID="${SID//-/}"; SID="${SID:0:8}"
+if [[ -n "$SID" ]]; then
+  GIT_COMMON=$(git -C "$CWD" rev-parse --git-common-dir 2>/dev/null)
+  if [[ -n "$GIT_COMMON" ]]; then
+    # --git-common-dir is relative to CWD inside the main worktree; resolve it.
+    case "$GIT_COMMON" in /*) ;; *) GIT_COMMON="$CWD/$GIT_COMMON" ;; esac
+    [[ -f "$GIT_COMMON/requirements/sessions/${SID}.paused" ]] && PAUSED="⏸ paused "
+  fi
+fi
+
 BRANCH=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 if [[ -n "$BRANCH" ]]; then
   # Mirror branch_to_filename() in hooks/lib/state_storage.py:
@@ -52,4 +68,4 @@ CTX=$(printf '%s' "$INPUT" | jq -r '.context_window.used_percentage // 0' 2>/dev
 COST=$(printf '%s' "$INPUT" | jq -r '.session.cost_usd // 0' 2>/dev/null | awk '{printf "%.2f", $1}')
 [[ -z "$COST" ]] && COST="0.00"
 
-printf "[%s] [ctx %s%%] [\$%s] [%s req⬜]" "$PHASE" "$CTX" "$COST" "$UNSAT"
+printf "%s[%s] [ctx %s%%] [\$%s] [%s req⬜]" "$PAUSED" "$PHASE" "$CTX" "$COST" "$UNSAT"
