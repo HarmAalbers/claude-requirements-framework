@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-development
 description: This skill should be used when the user asks to "develop requirements framework", "fix requirements framework bug", "sync requirements framework", "deploy requirements changes", "update framework code", "test framework changes", or needs help with the framework development workflow including sync.sh usage, TDD for framework itself, and contributing changes.
-git_hash: 95d0dbf
+git_hash: aaf8973
 ---
 
 # Requirements Framework Development
