@@ -489,6 +489,13 @@ See `req init --help` for options.""")
         if not config.is_enabled():
             return 0
 
+        # Pause state (gates suppressed): drives a pause-aware briefing below.
+        try:
+            from pause import is_paused as _is_paused
+            session_paused = _is_paused(session_id, project_dir)
+        except Exception:
+            session_paused = False
+
         logger.info("Session starting", source=source)
 
         # 1. Clean stale sessions
@@ -667,7 +674,7 @@ See `req init --help` for options.""")
                     except Exception as e:
                         logger.warning("Carry-over failed (fail-open)", error=str(e))
 
-                status = format_adaptive_status(reqs, config, session_id, branch, source)
+                status = format_adaptive_status(reqs, config, session_id, branch, source, paused=session_paused)
                 parts.append(status)
             except Exception as e:
                 logger.error("Failed to format status", error=str(e))
@@ -686,16 +693,19 @@ See `req init --help` for options.""")
             emit_hook_context("SessionStart", "\n\n".join(parts))
 
         # --- strict preflight: loud non-compliance briefing (fail-open) ---
-        try:
-            from preflight import evaluate, format_strict_warning
-            _verdict = evaluate(
-                project_dir, strict_enabled=config.strict_preflight_enabled()
-            )
-            _warn = format_strict_warning(_verdict)
-            if _warn:
-                emit_hook_context("SessionStart", _warn)
-        except Exception as e:
-            logger.debug("strict preflight briefing skipped", error=str(e))
+        # Skipped while paused: the gates are suppressed, so nagging about
+        # strict-mode non-compliance would contradict the pause-aware briefing.
+        if not session_paused:
+            try:
+                from preflight import evaluate, format_strict_warning
+                _verdict = evaluate(
+                    project_dir, strict_enabled=config.strict_preflight_enabled()
+                )
+                _warn = format_strict_warning(_verdict)
+                if _warn:
+                    emit_hook_context("SessionStart", _warn)
+            except Exception as e:
+                logger.debug("strict preflight briefing skipped", error=str(e))
 
         return 0
 
