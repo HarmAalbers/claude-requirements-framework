@@ -7660,6 +7660,29 @@ def test_session_start_pause_aware(runner: TestRunner):
                     "do NOT attempt Edit/Write/MultiEdit first" not in std_paused, f"Got: {std_paused[:400]}")
 
 
+def test_best_effort_runner(runner: TestRunner):
+    """_best_effort runs the callable and swallows exceptions without raising."""
+    print("\n📦 Testing _best_effort runner...")
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook_be", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    from logger import get_logger
+    log = get_logger(base_context={"hook": "test"})
+
+    calls = []
+    mod._best_effort("ok-step", lambda: calls.append("ran"), log)
+    runner.test("_best_effort runs the callable", calls == ["ran"], f"Got: {calls}")
+
+    raised = False
+    try:
+        mod._best_effort("bad-step", lambda: (_ for _ in ()).throw(RuntimeError("kaboom")), log)
+    except Exception:
+        raised = True
+    runner.test("_best_effort swallows exceptions", not raised, "Should not have raised")
+
+
 def test_session_start_quick_start_helpers(runner: TestRunner):
     """Test Quick Start helper functions for session start formatting."""
     print("\n📦 Testing Quick Start helper functions...")
@@ -13280,6 +13303,7 @@ def main():
     test_get_requirement_description(runner)
     test_session_start_format_tiers(runner)
     test_session_start_pause_aware(runner)
+    test_best_effort_runner(runner)
     test_session_start_quick_start_helpers(runner)
 
     # Session learning module tests
