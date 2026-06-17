@@ -7683,6 +7683,21 @@ def test_best_effort_runner(runner: TestRunner):
     runner.test("_best_effort swallows exceptions", not raised, "Should not have raised")
 
 
+def test_session_start_fallback_constant(runner: TestRunner):
+    """A status-render failure has a visible fallback breadcrumb, not silence."""
+    print("\n📦 Testing session-start total-failure fallback...")
+    import importlib.util
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook_fb", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    runner.test("Fallback constant defined", hasattr(mod, "_BRIEFING_FALLBACK"),
+                "Expected module-level _BRIEFING_FALLBACK")
+    runner.test("Fallback mentions req status",
+                "req status" in getattr(mod, "_BRIEFING_FALLBACK", ""),
+                f"Got: {getattr(mod, '_BRIEFING_FALLBACK', None)}")
+
+
 def test_session_start_quick_start_helpers(runner: TestRunner):
     """Test Quick Start helper functions for session start formatting."""
     print("\n📦 Testing Quick Start helper functions...")
@@ -13304,6 +13319,7 @@ def main():
     test_session_start_format_tiers(runner)
     test_session_start_pause_aware(runner)
     test_best_effort_runner(runner)
+    test_session_start_fallback_constant(runner)
     test_session_start_quick_start_helpers(runner)
 
     # Session learning module tests

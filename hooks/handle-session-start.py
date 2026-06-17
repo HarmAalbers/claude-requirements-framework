@@ -52,6 +52,14 @@ _GATING_DIRECTIVE = (
 )
 
 
+# Visible breadcrumb appended when the status-briefing formatter throws, so a
+# render bug degrades to a one-liner instead of injecting nothing (silence).
+_BRIEFING_FALLBACK = (
+    "## Requirements Framework active — run `req status` for details "
+    "(briefing failed to render)."
+)
+
+
 def _best_effort(label: str, fn, logger) -> None:
     """Run an opportunistic side-effect; never let it break session start."""
     try:
@@ -683,6 +691,7 @@ See `req init --help` for options.""")
                 parts.append(status)
             except Exception as e:
                 logger.error("Failed to format status", error=str(e))
+                parts.append(_BRIEFING_FALLBACK)
 
         # Session pause: prepend a visible banner so a paused session is never
         # silently off (the gates are suppressed but status still shows).
