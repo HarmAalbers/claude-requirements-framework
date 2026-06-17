@@ -363,6 +363,8 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
         branch: Current git branch
         source: Hook source ('startup', 'resume', 'compact', 'clear') — accepted but unused
             since briefing_format selects the formatter directly.
+        paused: When True the session has paused the framework's gates; the
+            briefing omits the "edits are blocked" gating directive.
 
     Returns:
         Formatted status string appropriate for the context
@@ -383,6 +385,22 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
     elif mode != 'compact':
         get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
     return prefix + format_compact_status(reqs, config, session_id, branch, paused=paused)
+
+
+def _status_or_fallback(reqs: BranchRequirements, config: RequirementsConfig,
+                        session_id: str, branch: str, source: str,
+                        paused: bool, logger) -> str:
+    """Render the status briefing, degrading to a visible breadcrumb on failure.
+
+    The status formatter must never leave the session silent: if rendering
+    throws, return `_BRIEFING_FALLBACK` instead of nothing. Kept as a seam so
+    the fallback wiring (not just the constant) is unit-testable.
+    """
+    try:
+        return format_adaptive_status(reqs, config, session_id, branch, source, paused=paused)
+    except Exception as e:
+        logger.error("Failed to format status", error=str(e))
+        return _BRIEFING_FALLBACK
 
 
 def check_other_sessions_warning(config: RequirementsConfig, project_dir: str,
@@ -687,10 +705,11 @@ See `req init --help` for options.""")
                     except Exception as e:
                         logger.warning("Carry-over failed (fail-open)", error=str(e))
 
-                status = format_adaptive_status(reqs, config, session_id, branch, source, paused=session_paused)
-                parts.append(status)
+                parts.append(_status_or_fallback(
+                    reqs, config, session_id, branch, source, session_paused, logger))
             except Exception as e:
-                logger.error("Failed to format status", error=str(e))
+                # Setup/carry-over failed before rendering — still never go silent.
+                logger.error("Failed to build status briefing", error=str(e))
                 parts.append(_BRIEFING_FALLBACK)
 
         # Session pause: prepend a visible banner so a paused session is never

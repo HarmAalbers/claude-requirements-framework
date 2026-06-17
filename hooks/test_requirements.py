@@ -7697,6 +7697,23 @@ def test_session_start_fallback_constant(runner: TestRunner):
                 "req status" in getattr(mod, "_BRIEFING_FALLBACK", ""),
                 f"Got: {getattr(mod, '_BRIEFING_FALLBACK', None)}")
 
+    # Drive the actual wiring: when the formatter throws, the seam degrades to
+    # the breadcrumb instead of propagating (which would leave the session silent).
+    from logger import get_logger
+    log = get_logger(base_context={"hook": "test"})
+    orig = mod.format_adaptive_status
+    try:
+        mod.format_adaptive_status = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        on_error = mod._status_or_fallback(None, None, "s", "b", "startup", False, log)
+        mod.format_adaptive_status = lambda *a, **k: "OK-STATUS"
+        on_success = mod._status_or_fallback(None, None, "s", "b", "startup", False, log)
+    finally:
+        mod.format_adaptive_status = orig
+    runner.test("_status_or_fallback returns breadcrumb when formatter raises",
+                on_error == mod._BRIEFING_FALLBACK, f"Got: {on_error!r}")
+    runner.test("_status_or_fallback returns status on success",
+                on_success == "OK-STATUS", f"Got: {on_success!r}")
+
 
 def test_session_start_quick_start_helpers(runner: TestRunner):
     """Test Quick Start helper functions for session start formatting."""
