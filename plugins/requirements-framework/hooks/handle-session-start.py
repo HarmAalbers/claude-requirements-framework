@@ -34,7 +34,6 @@ from config import RequirementsConfig
 from config_utils import summarize_triggers, get_requirement_description
 from requirements import BranchRequirements
 from session import update_registry, cleanup_stale_sessions, normalize_session_id, get_active_sessions
-from session_metrics import SessionMetrics
 from logger import get_logger
 from hook_utils import early_hook_setup
 from console import emit_hook_context
@@ -51,6 +50,46 @@ _GATING_DIRECTIVE = (
     "(you may run it). Do NOT run `req satisfy`/`req clear` yourself — those are USER "
     "actions (the permission layer blocks Claude from running them)."
 )
+
+
+# Visible breadcrumb appended when the status-briefing formatter throws, so a
+# render bug degrades to a one-liner instead of injecting nothing (silence).
+_BRIEFING_FALLBACK = (
+    "## Requirements Framework active — run `req status` for details "
+    "(briefing failed to render)."
+)
+
+
+def _best_effort(label: str, fn, logger) -> None:
+    """Run an opportunistic side-effect; never let it break session start."""
+    try:
+        fn()
+    except Exception as e:
+        logger.debug(f"{label} failed (fail-open)", error=str(e))
+
+
+def _init_session_metrics(session_id, project_dir, branch, logger):
+    from session_metrics import SessionMetrics
+    SessionMetrics(session_id, project_dir, branch).save()
+    logger.debug("Session metrics initialized")
+
+
+def _register_project(config, project_dir, logger):
+    from project_registry import ProjectRegistry
+    from feature_catalog import detect_configured_features
+    raw = config.get_raw_config()
+    features = detect_configured_features(raw)
+    ProjectRegistry().register_project(
+        project_dir, [f for f, e in features.items() if e], raw.get("inherit", False))
+    logger.debug("Project registered in upgrade registry")
+
+
+def _log_obsidian_start(config, session_id, project_dir, branch, logger):
+    if not config.get_hook_config('obsidian', 'enabled', False):
+        return
+    from obsidian import ObsidianSessionLogger
+    ObsidianSessionLogger(config).on_session_start(session_id, project_dir, branch)
+    logger.debug("Obsidian session note created")
 
 
 def _get_requirement_status_data(reqs: BranchRequirements, config: RequirementsConfig,
@@ -204,7 +243,7 @@ def _format_quick_start(req_data: list[dict]) -> list[str]:
 
 
 def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
-                          session_id: str, branch: str) -> str:
+                          session_id: str, branch: str, paused: bool = False) -> str:
     """
     Format compact status (targets ~150 tokens for typical configurations) for context compaction.
 
@@ -241,13 +280,14 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     unsatisfied = [r for r in req_data if not r['satisfied']]
     if unsatisfied:
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`")
-        lines.append(_GATING_DIRECTIVE)
+        if not paused:
+            lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(line for line in lines if line)
 
 
 def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
-                           session_id: str, branch: str) -> str:
+                           session_id: str, branch: str, paused: bool = False) -> str:
     """
     Format standard status (targets ~400 tokens for typical configurations) for session resume.
 
@@ -299,14 +339,16 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
     if unsatisfied_reqs:
         lines.append("")
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied_reqs)} --session {session_id}`")
-        lines.append("")
-        lines.append(_GATING_DIRECTIVE)
+        if not paused:
+            lines.append("")
+            lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(lines)
 
 
 def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
-                           session_id: str, branch: str, source: str) -> str:
+                           session_id: str, branch: str, source: str,
+                           paused: bool = False) -> str:
     """
     Select and apply the appropriate format based on config.
 
@@ -321,6 +363,8 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
         branch: Current git branch
         source: Hook source ('startup', 'resume', 'compact', 'clear') — accepted but unused
             since briefing_format selects the formatter directly.
+        paused: When True the session has paused the framework's gates; the
+            briefing omits the "edits are blocked" gating directive.
 
     Returns:
         Formatted status string appropriate for the context
@@ -337,10 +381,26 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
         )
         # Fall through to compact
     elif mode == 'standard':
-        return prefix + format_standard_status(reqs, config, session_id, branch)
+        return prefix + format_standard_status(reqs, config, session_id, branch, paused=paused)
     elif mode != 'compact':
         get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
-    return prefix + format_compact_status(reqs, config, session_id, branch)
+    return prefix + format_compact_status(reqs, config, session_id, branch, paused=paused)
+
+
+def _status_or_fallback(reqs: BranchRequirements, config: RequirementsConfig,
+                        session_id: str, branch: str, source: str,
+                        paused: bool, logger) -> str:
+    """Render the status briefing, degrading to a visible breadcrumb on failure.
+
+    The status formatter must never leave the session silent: if rendering
+    throws, return `_BRIEFING_FALLBACK` instead of nothing. Kept as a seam so
+    the fallback wiring (not just the constant) is unit-testable.
+    """
+    try:
+        return format_adaptive_status(reqs, config, session_id, branch, source, paused=paused)
+    except Exception as e:
+        logger.error("Failed to format status", error=str(e))
+        return _BRIEFING_FALLBACK
 
 
 def check_other_sessions_warning(config: RequirementsConfig, project_dir: str,
@@ -486,6 +546,13 @@ See `req init --help` for options.""")
         if not config.is_enabled():
             return 0
 
+        # Pause state (gates suppressed): drives a pause-aware briefing below.
+        try:
+            from pause import is_paused as _is_paused
+            session_paused = _is_paused(session_id, project_dir)
+        except Exception:
+            session_paused = False
+
         logger.info("Session starting", source=source)
 
         # 1. Clean stale sessions
@@ -500,28 +567,10 @@ See `req init --help` for options.""")
             logger.error("Failed to update registry", error=str(e))
 
         # 2a. Initialize session metrics for learning system
-        try:
-            metrics = SessionMetrics(session_id, project_dir, branch)
-            metrics.save()  # Creates metrics file if it doesn't exist
-            logger.debug("Session metrics initialized")
-        except Exception as e:
-            logger.warning("Failed to initialize session metrics", error=str(e))
+        _best_effort("session metrics", lambda: _init_session_metrics(session_id, project_dir, branch, logger), logger)
 
         # 2b. Auto-register project in project registry (for upgrade discovery)
-        try:
-            from project_registry import ProjectRegistry
-            from feature_catalog import detect_configured_features
-
-            registry = ProjectRegistry()
-            raw_config = config.get_raw_config()
-            features = detect_configured_features(raw_config)
-            enabled = [f for f, e in features.items() if e]
-            has_inherit = raw_config.get("inherit", False)
-            registry.register_project(project_dir, enabled, has_inherit)
-            logger.debug("Project registered in upgrade registry", features=len(enabled))
-        except Exception as e:
-            # Fail silently - this is opportunistic
-            logger.debug("Failed to register project", error=str(e))
+        _best_effort("project registry", lambda: _register_project(config, project_dir, logger), logger)
 
         # 2c. WIP tracking: register session and detect merged branches
         wip_summary = None
@@ -567,15 +616,7 @@ See `req init --help` for options.""")
             logger.debug("WIP tracking failed (fail-open)", error=str(e))
 
         # 2e. Obsidian session logging: create session note
-        try:
-            obsidian_enabled = config.get_hook_config('obsidian', 'enabled', False)
-            if obsidian_enabled:
-                from obsidian import ObsidianSessionLogger
-                obs_logger = ObsidianSessionLogger(config)
-                obs_logger.on_session_start(session_id, project_dir, branch)
-                logger.debug("Obsidian session note created")
-        except Exception as e:
-            logger.debug("Obsidian logging failed (fail-open)", error=str(e))
+        _best_effort("obsidian session note", lambda: _log_obsidian_start(config, session_id, project_dir, branch, logger), logger)
 
         # 2d. Check for other sessions and warn if single_session guard is enabled
         other_sessions_warning = check_other_sessions_warning(
@@ -664,10 +705,12 @@ See `req init --help` for options.""")
                     except Exception as e:
                         logger.warning("Carry-over failed (fail-open)", error=str(e))
 
-                status = format_adaptive_status(reqs, config, session_id, branch, source)
-                parts.append(status)
+                parts.append(_status_or_fallback(
+                    reqs, config, session_id, branch, source, session_paused, logger))
             except Exception as e:
-                logger.error("Failed to format status", error=str(e))
+                # Setup/carry-over failed before rendering — still never go silent.
+                logger.error("Failed to build status briefing", error=str(e))
+                parts.append(_BRIEFING_FALLBACK)
 
         # Session pause: prepend a visible banner so a paused session is never
         # silently off (the gates are suppressed but status still shows).
@@ -683,16 +726,19 @@ See `req init --help` for options.""")
             emit_hook_context("SessionStart", "\n\n".join(parts))
 
         # --- strict preflight: loud non-compliance briefing (fail-open) ---
-        try:
-            from preflight import evaluate, format_strict_warning
-            _verdict = evaluate(
-                project_dir, strict_enabled=config.strict_preflight_enabled()
-            )
-            _warn = format_strict_warning(_verdict)
-            if _warn:
-                emit_hook_context("SessionStart", _warn)
-        except Exception as e:
-            logger.debug("strict preflight briefing skipped", error=str(e))
+        # Skipped while paused: the gates are suppressed, so nagging about
+        # strict-mode non-compliance would contradict the pause-aware briefing.
+        if not session_paused:
+            try:
+                from preflight import evaluate, format_strict_warning
+                _verdict = evaluate(
+                    project_dir, strict_enabled=config.strict_preflight_enabled()
+                )
+                _warn = format_strict_warning(_verdict)
+                if _warn:
+                    emit_hook_context("SessionStart", _warn)
+            except Exception as e:
+                logger.debug("strict preflight briefing skipped", error=str(e))
 
         return 0
 
