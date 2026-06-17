@@ -7623,6 +7623,43 @@ def test_session_start_format_tiers(runner: TestRunner):
                    f"Got: {standard[:400]}")
 
 
+def test_session_start_pause_aware(runner: TestRunner):
+    """Paused sessions show status but omit the 'edits blocked' gating directive."""
+    print("\n📦 Testing pause-aware session-start briefing...")
+    import importlib.util
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    hook_path = Path(__file__).parent / "handle-session-start.py"
+    spec = importlib.util.spec_from_file_location("session_start_hook_pause", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    from config import RequirementsConfig
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/pause-test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        cfg = {"version": "1.0", "enabled": True, "inherit": False, "requirements": {
+            "commit_plan": {"enabled": True, "type": "blocking", "scope": "session",
+                            "auto_resolve_skill": "requirements-framework:arch-review"}}}
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(cfg, f)
+        config = RequirementsConfig(tmpdir)
+        reqs = BranchRequirements("feature/pause-test", "s1", tmpdir)
+
+        active = mod.format_compact_status(reqs, config, "s1", "feature/pause-test", paused=False)
+        runner.test("Unpaused compact keeps gating directive",
+                    "do NOT attempt Edit/Write/MultiEdit first" in active, f"Got: {active[:300]}")
+        paused = mod.format_compact_status(reqs, config, "s1", "feature/pause-test", paused=True)
+        runner.test("Paused compact still shows requirement status",
+                    "Requirements:" in paused, f"Got: {paused[:300]}")
+        runner.test("Paused compact omits gating directive",
+                    "do NOT attempt Edit/Write/MultiEdit first" not in paused, f"Got: {paused[:300]}")
+        std_paused = mod.format_standard_status(reqs, config, "s1", "feature/pause-test", paused=True)
+        runner.test("Paused standard omits gating directive",
+                    "do NOT attempt Edit/Write/MultiEdit first" not in std_paused, f"Got: {std_paused[:400]}")
+
+
 def test_session_start_quick_start_helpers(runner: TestRunner):
     """Test Quick Start helper functions for session start formatting."""
     print("\n📦 Testing Quick Start helper functions...")
@@ -13242,6 +13279,7 @@ def main():
     test_summarize_triggers(runner)
     test_get_requirement_description(runner)
     test_session_start_format_tiers(runner)
+    test_session_start_pause_aware(runner)
     test_session_start_quick_start_helpers(runner)
 
     # Session learning module tests

@@ -204,7 +204,7 @@ def _format_quick_start(req_data: list[dict]) -> list[str]:
 
 
 def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
-                          session_id: str, branch: str) -> str:
+                          session_id: str, branch: str, paused: bool = False) -> str:
     """
     Format compact status (targets ~150 tokens for typical configurations) for context compaction.
 
@@ -241,13 +241,14 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     unsatisfied = [r for r in req_data if not r['satisfied']]
     if unsatisfied:
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`")
-        lines.append(_GATING_DIRECTIVE)
+        if not paused:
+            lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(line for line in lines if line)
 
 
 def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
-                           session_id: str, branch: str) -> str:
+                           session_id: str, branch: str, paused: bool = False) -> str:
     """
     Format standard status (targets ~400 tokens for typical configurations) for session resume.
 
@@ -299,14 +300,16 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
     if unsatisfied_reqs:
         lines.append("")
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied_reqs)} --session {session_id}`")
-        lines.append("")
-        lines.append(_GATING_DIRECTIVE)
+        if not paused:
+            lines.append("")
+            lines.append(_GATING_DIRECTIVE)
 
     return "\n".join(lines)
 
 
 def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
-                           session_id: str, branch: str, source: str) -> str:
+                           session_id: str, branch: str, source: str,
+                           paused: bool = False) -> str:
     """
     Select and apply the appropriate format based on config.
 
@@ -337,10 +340,10 @@ def format_adaptive_status(reqs: BranchRequirements, config: RequirementsConfig,
         )
         # Fall through to compact
     elif mode == 'standard':
-        return prefix + format_standard_status(reqs, config, session_id, branch)
+        return prefix + format_standard_status(reqs, config, session_id, branch, paused=paused)
     elif mode != 'compact':
         get_logger().warning(f"Unknown briefing_format '{mode}', using 'compact'")
-    return prefix + format_compact_status(reqs, config, session_id, branch)
+    return prefix + format_compact_status(reqs, config, session_id, branch, paused=paused)
 
 
 def check_other_sessions_warning(config: RequirementsConfig, project_dir: str,
