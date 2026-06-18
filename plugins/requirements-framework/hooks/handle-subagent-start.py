@@ -42,7 +42,6 @@ REVIEW_AGENTS = {
     'requirements-framework:test-analyzer',
     'requirements-framework:type-design-analyzer',
     'requirements-framework:comment-analyzer',
-    'requirements-framework:code-simplifier',
     'requirements-framework:backward-compatibility-checker',
     'requirements-framework:adr-guardian',
     'requirements-framework:codex-review-agent',
