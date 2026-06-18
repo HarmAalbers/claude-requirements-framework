@@ -68,6 +68,17 @@ def _best_effort(label: str, fn, logger) -> None:
         logger.debug(f"{label} failed (fail-open)", error=str(e))
 
 
+def _ladder_block(config) -> str:
+    """The lazy-dev ladder for injection, or '' when disabled/unavailable."""
+    try:
+        if not config.get_hook_config('lazy_dev', 'enabled'):
+            return ""
+        from lazy_dev.rules import get_ruleset
+        return get_ruleset()
+    except Exception:
+        return ""
+
+
 def _init_session_metrics(session_id, project_dir, branch, logger):
     from session_metrics import SessionMetrics
     SessionMetrics(session_id, project_dir, branch).save()
@@ -711,6 +722,12 @@ See `req init --help` for options.""")
                 # Setup/carry-over failed before rendering — still never go silent.
                 logger.error("Failed to build status briefing", error=str(e))
                 parts.append(_BRIEFING_FALLBACK)
+
+            # Lazy-dev ladder: ride the single SessionStart emit (fires once/
+            # session, so no dedup needed). Flag-gated + fail-open in the helper.
+            _ladder = _ladder_block(config)
+            if _ladder:
+                parts.append(_ladder)
 
         # Session pause: prepend a visible banner so a paused session is never
         # silently off (the gates are suppressed but status still shows).
