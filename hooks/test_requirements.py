@@ -2308,6 +2308,40 @@ def test_lazy_ladder_marker(runner: TestRunner):
                 f"Got: {ruleset_marker.shown(sid, None)}")
 
 
+def test_subagent_ladder(runner: TestRunner):
+    """SubagentStart ladder helper is flag-gated; refactor-executor is code-touching."""
+    print("\n📦 Testing SubagentStart lazy-dev ladder...")
+    import sys, tempfile, os, json, importlib.util
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from config import RequirementsConfig
+
+    hook_path = Path(__file__).parent / "handle-subagent-start.py"
+    spec = importlib.util.spec_from_file_location("subagent_start_hook_ladder", hook_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    runner.test("refactor-executor is code-touching",
+                'requirements-framework:refactor-executor' in mod.CODE_TOUCHING_AGENTS,
+                f"Got: {mod.CODE_TOUCHING_AGENTS}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(f"{tmp}/.claude")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {}}, f)
+        cfg = RequirementsConfig(tmp)
+        runner.test("subagent ladder injected when enabled",
+                    "stop at the first rung" in mod._ladder_for_subagent(cfg),
+                    f"Got: {mod._ladder_for_subagent(cfg)[:120]}")
+
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {},
+                       "hooks": {"lazy_dev": {"enabled": False}}}, f)
+        cfg2 = RequirementsConfig(tmp)
+        runner.test("subagent ladder empty when disabled",
+                    mod._ladder_for_subagent(cfg2) == "",
+                    f"Got: {mod._ladder_for_subagent(cfg2)[:120]!r}")
+
+
 def test_hook_config(runner: TestRunner):
     """Test hook configuration method."""
     print("\n📦 Testing hook configuration...")
@@ -13299,6 +13333,7 @@ def main():
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)
     test_lazy_ladder_marker(runner)
+    test_subagent_ladder(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
     test_cli_enable_disable(runner)

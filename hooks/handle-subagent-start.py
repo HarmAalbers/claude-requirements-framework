@@ -52,6 +52,23 @@ REVIEW_AGENTS = {
     'requirements-framework:refactor-advisor',
 }
 
+# Agents that write/edit code and therefore benefit from the lazy-dev ladder
+# (injected only when hooks.lazy_dev.enabled).
+CODE_TOUCHING_AGENTS = {
+    'requirements-framework:refactor-executor',
+}
+
+
+def _ladder_for_subagent(config) -> str:
+    """The lazy-dev ladder for a subagent, or '' when disabled/unavailable."""
+    try:
+        if not config.get_hook_config('lazy_dev', 'enabled'):
+            return ""
+        from lazy_dev.rules import get_ruleset
+        return get_ruleset()
+    except Exception:
+        return ""
+
 
 def main() -> int:
     """Hook entry point."""
@@ -93,30 +110,45 @@ def main() -> int:
         except Exception as e:
             logger.debug("Failed to record subagent metric", error=str(e))
 
-        # Only inject context into review agents
-        if agent_type not in REVIEW_AGENTS:
+        # Only inject context into review agents OR code-touching agents
+        if agent_type not in REVIEW_AGENTS and agent_type not in CODE_TOUCHING_AGENTS:
             return 0
 
-        # Build requirement context for review agents
-        # (guard-aware: a passing guard is not reported as unsatisfied)
-        reqs = BranchRequirements(branch, session_id, project_dir)
-        unsatisfied = collect_unsatisfied(reqs, config, branch, session_id, project_dir)
+        sections = []
 
-        lines = [
-            "## Requirements Framework Context",
-            "",
-            f"**Branch**: `{branch}` | **Project**: `{project_dir}`",
-        ]
+        # Review agents keep their requirement context (guard-aware: a passing
+        # guard is not reported as unsatisfied).
+        if agent_type in REVIEW_AGENTS:
+            reqs = BranchRequirements(branch, session_id, project_dir)
+            unsatisfied = collect_unsatisfied(reqs, config, branch, session_id, project_dir)
 
-        if unsatisfied:
-            lines.append(f"**Unsatisfied requirements**: {', '.join(unsatisfied)}")
-            lines.append("")
-            lines.append("Focus your review on issues that relate to these requirements.")
-        else:
-            lines.append("**All requirements satisfied.**")
+            lines = [
+                "## Requirements Framework Context",
+                "",
+                f"**Branch**: `{branch}` | **Project**: `{project_dir}`",
+            ]
 
-        emit_hook_context("SubagentStart", "\n".join(lines))
-        logger.debug("Injected context into review agent", agent_type=agent_type)
+            if unsatisfied:
+                lines.append(f"**Unsatisfied requirements**: {', '.join(unsatisfied)}")
+                lines.append("")
+                lines.append("Focus your review on issues that relate to these requirements.")
+            else:
+                lines.append("**All requirements satisfied.**")
+
+            sections.append("\n".join(lines))
+
+        # Lazy-dev ladder: appended for review agents AND given to code-touching
+        # agents (flag-gated + fail-open in the helper).
+        ladder = _ladder_for_subagent(config)
+        if ladder:
+            sections.append(ladder)
+
+        if not sections:
+            # Code-touching agent with lazy_dev disabled → nothing to inject.
+            return 0
+
+        emit_hook_context("SubagentStart", "\n\n".join(sections))
+        logger.debug("Injected context into subagent", agent_type=agent_type)
 
         return 0
 
