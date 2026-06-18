@@ -50,9 +50,12 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 _PROMPTS_ROOT = Path(__file__).parent / "prompts"
+# Also resolve includes against the lazy_dev package so skill/agent templates can
+# `{% include 'RULESET.md' %}` the single canonical lazy-dev ladder.
+_LAZY_DEV_ROOT = Path(__file__).parent.parent / "lazy_dev"
 
 _ENV = Environment(
-    loader=FileSystemLoader(_PROMPTS_ROOT),
+    loader=FileSystemLoader([str(_PROMPTS_ROOT), str(_LAZY_DEV_ROOT)]),
     autoescape=False,
     keep_trailing_newline=True,
     undefined=StrictUndefined,
