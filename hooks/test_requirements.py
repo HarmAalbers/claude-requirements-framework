@@ -2282,6 +2282,32 @@ def test_session_start_ladder_block(runner: TestRunner):
                     f"Got: {mod._ladder_block(cfg2)[:120]!r}")
 
 
+def test_lazy_ladder_marker(runner: TestRunner):
+    """ruleset_marker dedups once-per-session and is fail-open on bad input."""
+    print("\n📦 Testing lazy-ladder once-per-session marker...")
+    import sys, tempfile, subprocess
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    import importlib
+    import ruleset_marker
+    importlib.reload(ruleset_marker)
+
+    sid = "laddersess1"
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        runner.test("marker not shown initially",
+                    ruleset_marker.shown(sid, tmp) is False,
+                    f"Got: {ruleset_marker.shown(sid, tmp)}")
+        ruleset_marker.mark_shown(sid, tmp)
+        runner.test("marker shown after mark_shown",
+                    ruleset_marker.shown(sid, tmp) is True,
+                    f"Got: {ruleset_marker.shown(sid, tmp)}")
+
+    # Fail-open: a bogus project_dir must never raise, just return False.
+    runner.test("shown fail-open on bad input",
+                ruleset_marker.shown(sid, None) is False,
+                f"Got: {ruleset_marker.shown(sid, None)}")
+
+
 def test_hook_config(runner: TestRunner):
     """Test hook configuration method."""
     print("\n📦 Testing hook configuration...")
@@ -13272,6 +13298,7 @@ def main():
     test_lazy_dev_ruleset(runner)
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)
+    test_lazy_ladder_marker(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
     test_cli_enable_disable(runner)

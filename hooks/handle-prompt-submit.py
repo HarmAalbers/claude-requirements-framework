@@ -157,6 +157,21 @@ def main() -> int:
 
         reqs = BranchRequirements(branch, session_id, project_dir)
 
+        # Lazy-dev compact reminder (once per session). Fires on a substantive
+        # prompt when lazy_dev is enabled; own try/except + fail-open so it never
+        # breaks prompt submission and never early-returns (the brainstorm nudge
+        # and status injection below must still run).
+        try:
+            if (prompt and config.get_hook_config('lazy_dev', 'enabled')
+                    and _prompt_is_substantive(prompt)):
+                from ruleset_marker import shown as _ladder_shown, mark_shown as _mark_ladder
+                if not _ladder_shown(session_id, project_dir):
+                    from lazy_dev.rules import COMPACT_REMINDER
+                    emit_hook_context('UserPromptSubmit', COMPACT_REMINDER)
+                    _mark_ladder(session_id, project_dir)
+        except Exception:
+            pass
+
         # PROACTIVE brainstorm nudge (mode-independent). UserPromptSubmit fires
         # every turn in every mode, so this reaches auto-accept users who never
         # enter plan mode (where handle-plan-enter would otherwise nudge). Fires
