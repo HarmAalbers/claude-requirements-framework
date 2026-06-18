@@ -236,6 +236,32 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       ---
       Fallback: `req satisfy codex_reviewer`""",
     },
+    "pre_push_verification": {
+        "name": "Pre-Push Verification",
+        "category": CATEGORY_REQUIREMENTS,
+        "config_path": "requirements.pre_push_verification",
+        "description": "Gate git push on verification evidence (tests/build)",
+        "introduced": "2.8",
+        "default_enabled": True,
+        "example_yaml": """requirements:
+  pre_push_verification:
+    enabled: true
+    type: blocking
+    scope: single_use
+    description: "Verification evidence (tests/build) required before pushing."
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "git\\\\s+push"
+    auto_resolve_skill: "requirements-framework:verification-before-completion"
+    satisfied_by_skill: 'requirements-framework:verification-before-completion'
+    message: |
+      ## Blocked: pre_push_verification
+
+      **Execute**: `/requirements-framework:verification-before-completion`
+
+      ---
+      Fallback: `req satisfy pre_push_verification`""",
+    },
     "github_ticket": {
         "name": "GitHub Ticket",
         "category": CATEGORY_REQUIREMENTS,

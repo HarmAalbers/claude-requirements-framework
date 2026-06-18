@@ -304,6 +304,37 @@ requirements:
       - "Codex CLI installed (npm install -g @openai/codex)"
       - "AI review completed"
 
+  # Pre-Push Verification Requirement
+  # Gates `git push` on verification evidence (tests/build). Shares the
+  # /verification-before-completion satisfier with verification_evidence, so a
+  # single skill run satisfies both. single_use: re-armed after each push by
+  # clear-single-use.
+  # NOTE: command_pattern is a substring regex — any Bash command containing the
+  # literal text "git push" (even an echo or grep) also trips this gate, the same
+  # naive matching used by the commit/PR gates above.
+  pre_push_verification:
+    enabled: true
+    type: blocking
+    scope: single_use  # Must re-satisfy for each push
+    description: "Verification evidence (tests/build) required before pushing."
+    trigger_tools:
+      - tool: Bash
+        command_pattern: "git\\s+push"
+    auto_resolve_skill: "requirements-framework:verification-before-completion"
+    satisfied_by_skill: 'requirements-framework:verification-before-completion'
+    message: |
+      ## Blocked: pre_push_verification
+
+      **Execute**: `/{auto_resolve_skill}`
+
+      Run tests/build and capture verification evidence before pushing.
+
+      ---
+      Fallback: `req satisfy pre_push_verification`
+    checklist:
+      - "Tests/build run and passing"
+      - "Verification evidence captured"
+
   # ============================================================================
   # PROCESS SKILLS REQUIREMENTS
   # ============================================================================
