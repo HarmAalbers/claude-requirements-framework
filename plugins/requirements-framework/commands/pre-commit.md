@@ -32,7 +32,6 @@ Run three essential checks:
 - **types** - Type design analysis (type-design-analyzer agent)
 - **comments** - Comment accuracy (comment-analyzer agent)
 - **frontend** - React/frontend best practices (frontend-reviewer agent)
-- **simplify** - Code simplification (code-simplifier agent)
 - **all** - Run all reviews (includes tools + compat + frontend)
 - **parallel** - Backward-compatible no-op (teams are inherently parallel)
 
@@ -84,9 +83,6 @@ Initialize all flags to false, then set based on arguments:
 
 **RUN_FRONTEND_REVIEWER**=false
 - Set to true if: $ARGUMENTS contains "frontend" OR contains "all"
-
-**RUN_CODE_SIMPLIFIER**=false
-- Set to true if: $ARGUMENTS contains "simplify" OR contains "all"
 
 Now compute derived values:
 
@@ -203,13 +199,7 @@ After applying rules:
 2. **Group**: Organize by file and severity (CRITICAL first)
 3. **Note corroborations**: Mark which agents confirmed each finding
 
-### Step 9: Code Simplifier + Subagent Fallback
-
-**Code Simplifier** (if RUN_CODE_SIMPLIFIER is true):
-  1. Use the Task tool to launch subagent_type="requirements-framework:code-simplifier"
-  2. This MUST run after all other agents complete
-  3. Code simplifier polishes code that has passed review
-  4. Add any simplification suggestions to the report
+### Step 9: Subagent Fallback
 
 **Subagent Fallback** — handles cases where team mode was not used:
 - If USE_TEAM was false (single review agent): run the single enabled review agent as a subagent
@@ -262,8 +252,7 @@ If a team was created (USE_TEAM was true and TeamCreate succeeded):
 - If `types` specified → type-design-analyzer (teammate when 2+ review agents)
 - If `comments` specified → comment-analyzer (teammate when 2+ review agents)
 - If `frontend` specified → frontend-reviewer (teammate when 2+ review agents)
-- If `simplify` specified → code-simplifier (always subagent, runs last)
-- If `all` specified → all applicable agents (tool-validator + code-simplifier as subagents, rest as teammates)
+- If `all` specified → all applicable agents (tool-validator as subagent, rest as teammates)
 - If `parallel` specified → backward-compatible no-op (teams are inherently parallel)
 
 ## Output Format:
@@ -295,9 +284,6 @@ When team mode was used (USE_TEAM=true):
 
 ## Disputed Findings
 - [description] — [agent1] says X, [agent2] says Y
-
-## Code Simplification
-- [suggestions from code-simplifier, if enabled]
 
 ## Recommendation
 [READY TO COMMIT / MINOR ISSUES FOUND / REVIEW IMPORTANT ISSUES / FIX ISSUES FIRST]
@@ -332,7 +318,7 @@ When subagent fallback was used (USE_TEAM=false or TeamCreate failed):
 /requirements-framework:pre-commit code               # Single agent: subagent fallback (no team value)
 /requirements-framework:pre-commit code errors        # Team: 2 teammates cross-validate
 /requirements-framework:pre-commit compat             # Single agent: subagent fallback
-/requirements-framework:pre-commit all                # Team: up to 6 review teammates + tool-validator + code-simplifier subagents
+/requirements-framework:pre-commit all                # Team: up to 7 review teammates + tool-validator subagent
 /requirements-framework:pre-commit all parallel       # Same as `all` (parallel is no-op with teams)
 /requirements-framework:pre-commit tests types        # Team: 2 teammates cross-validate
 /requirements-framework:pre-commit frontend             # Single agent: subagent fallback
@@ -356,7 +342,6 @@ When subagent fallback was used (USE_TEAM=false or TeamCreate failed):
 - **Use compat** - when renaming fields or changing schemas
 - Run early, run often - catch issues before they compound
 - Address critical issues before committing
-- Use `simplify` only after code passes other reviews
 - For TDD: run `tests` first to verify test quality
 - **tools + compat together** catch most CI failures locally
 - The default (no args) now uses team cross-validation for higher-quality reviews
