@@ -80,7 +80,7 @@ IF conflicts with prior decisions:
 Our framework uses specialized agents (code-reviewer, test-analyzer, silent-failure-hunter, etc.) that may produce findings from different perspectives. When receiving multi-agent review:
 
 - **Cross-reference findings** — if two agents flag the same region, priority increases
-- **Check agent expertise** — a test-analyzer finding about test quality carries more weight than the same finding from a code-simplifier
+- **Check agent expertise** — a test-analyzer finding about test quality carries more weight than the same finding from a comment-analyzer
 - **Verify independently** — agent findings are suggestions, not orders
 
 ## YAGNI Check for "Professional" Features

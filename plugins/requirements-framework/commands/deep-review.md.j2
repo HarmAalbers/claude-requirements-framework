@@ -89,13 +89,12 @@ Create tasks on the shared task list — core agents always run, conditional age
 4. **Task**: "Backward compatibility check" — assigned to backward-compatibility-checker
 5. **Task**: "Type design analysis" — assigned to type-design-analyzer
 6. **Task**: "Comment accuracy check" — assigned to comment-analyzer
-7. **Task**: "Code simplification analysis" — assigned to code-simplifier
-8. **Task**: "Codex AI review" — assigned to codex-reviewer, ONLY if HAS_CODEX is true
-9. **Task**: "Frontend best practices review" — assigned to frontend-reviewer, ONLY if HAS_FRONTEND is true
-10. **Task**: "Tenant isolation audit" — assigned to tenant-isolation-auditor
-11. **Task**: "Application security audit" — assigned to appsec-auditor
-12. **Task**: "Compliance audit (GDPR/AVG/NOvA)" — assigned to compliance-auditor
-13. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
+7. **Task**: "Codex AI review" — assigned to codex-reviewer, ONLY if HAS_CODEX is true
+8. **Task**: "Frontend best practices review" — assigned to frontend-reviewer, ONLY if HAS_FRONTEND is true
+9. **Task**: "Tenant isolation audit" — assigned to tenant-isolation-auditor
+10. **Task**: "Application security audit" — assigned to appsec-auditor
+11. **Task**: "Compliance audit (GDPR/AVG/NOvA)" — assigned to compliance-auditor
+12. **Task**: "Cross-validate and synthesize findings" — blocked by all above tasks, assigned to lead
 
 ### Step 5: Spawn Teammates
 
@@ -125,12 +124,11 @@ Mark your task as complete using TaskUpdate.
 4. `subagent_type`: "requirements-framework:backward-compatibility-checker", `name`: "compat-checker"
 5. `subagent_type`: "requirements-framework:type-design-analyzer", `name`: "type-analyzer"
 6. `subagent_type`: "requirements-framework:comment-analyzer", `name`: "comment-analyzer"
-7. `subagent_type`: "requirements-framework:code-simplifier", `name`: "code-simplifier"
-8. `subagent_type`: "requirements-framework:codex-review-agent", `name`: "codex-reviewer" — ONLY if HAS_CODEX is true
-9. `subagent_type`: "requirements-framework:frontend-reviewer", `name`: "frontend-reviewer" — ONLY if HAS_FRONTEND is true
-10. `subagent_type`: "requirements-framework:tenant-isolation-auditor", `name`: "tenant-auditor"
-11. `subagent_type`: "requirements-framework:appsec-auditor", `name`: "appsec-auditor"
-12. `subagent_type`: "requirements-framework:compliance-auditor", `name`: "compliance-auditor"
+7. `subagent_type`: "requirements-framework:codex-review-agent", `name`: "codex-reviewer" — ONLY if HAS_CODEX is true
+8. `subagent_type`: "requirements-framework:frontend-reviewer", `name`: "frontend-reviewer" — ONLY if HAS_FRONTEND is true
+9. `subagent_type`: "requirements-framework:tenant-isolation-auditor", `name`: "tenant-auditor"
+10. `subagent_type`: "requirements-framework:appsec-auditor", `name`: "appsec-auditor"
+11. `subagent_type`: "requirements-framework:compliance-auditor", `name`: "compliance-auditor"
 
 Each teammate prompt must include the diff context: "Review the following changed files: [file list from scope]"
 
@@ -164,8 +162,6 @@ Read all teammate findings received via messages. Apply these **domain-specific 
 | Suppressed breaks | silent-failure-hunter + backward-compat | Breaking change + silent suppression | Escalate to CRITICAL |
 | AI corroboration | codex-review-agent + any | Same location | Corroborate with "confirmed by external AI" |
 | AI unique finding | codex-review-agent alone | Unique finding | Keep standalone with "verify manually" note |
-| Simplification validates concern | code-simplifier + code-reviewer | Simplifier targets reviewer-flagged area | Corroborate: complexity contributes to bug |
-| Simplifiable error paths | code-simplifier + silent-failure-hunter | Same region flagged | Note: simplifying may fix error handling |
 | Untested components | frontend-reviewer + test-analyzer | Component issue + no component tests | Escalate both to CRITICAL |
 | Frontend + error handling | frontend-reviewer + silent-failure-hunter | a11y/error boundary gap in same region | Escalate to CRITICAL |
 | Frontend + code quality | frontend-reviewer + code-reviewer | Both flag same component region | Corroborate with note |
@@ -229,7 +225,6 @@ Else:
 - backward-compatibility-checker: [status]
 - type-design-analyzer: [status]
 - comment-analyzer: [status]
-- code-simplifier: [status]
 - codex-review-agent: [status or "skipped (CLI not available)"]
 - frontend-reviewer: [status or "skipped (no frontend files)"]
 - tenant-isolation-auditor: [status]

@@ -31,7 +31,7 @@ This plugin provides workflow enforcement, code review agents, and management to
 
 ### 🛠️ Pre-Commit Review Suite
 
-8 specialized agents available via `/requirements-framework:pre-commit`:
+7 specialized agents available via `/requirements-framework:pre-commit`:
 
 **1. Tool Validator** (`tool-validator`)
 - Runs pyright, ruff, eslint to catch CI errors locally
@@ -69,13 +69,7 @@ This plugin provides workflow enforcement, code review agents, and management to
 - **Precise**: Validates comments match actual code behavior
 - Detects: Outdated comments, missing docs, misleading descriptions
 
-**7. Code Simplifier** (`code-simplifier`)
-- Final polish for clarity and maintainability
-- **Conservative**: Preserves all functionality while improving readability
-- **Best practices**: Follows project conventions from CLAUDE.md
-- Improves: Complex logic, naming, structure
-
-**8. Backward Compatibility Checker** (`backward-compatibility-checker`)
+**7. Backward Compatibility Checker** (`backward-compatibility-checker`)
 - Detects schema migrations and verifies Alembic migrations exist
 - **Database-aware**: Prevents breaking changes without migrations
 - **Safe**: Ensures reversible database changes
@@ -439,11 +433,10 @@ See [Plugin vs. Hooks](../../docs/PLUGIN-INSTALLATION.md#plugin-vs-hooks) for ar
 ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/
 ├── .claude-plugin/
 │   └── plugin.json (v2.1.0)
-├── agents/ (16 agents)
+├── agents/ (15 agents)
 │   ├── adr-guardian.md
 │   ├── backward-compatibility-checker.md
 │   ├── code-reviewer.md
-│   ├── code-simplifier.md
 │   ├── codex-review-agent.md
 │   ├── comment-analyzer.md
 │   ├── comment-cleaner.md
@@ -507,7 +500,6 @@ See [CLAUDE.md](../../CLAUDE.md#plugin-component-versioning) for complete workfl
 | test-analyzer | Sonnet | Code understanding | CRITICAL for gaps |
 | type-design-analyzer | Sonnet | Type system analysis | Rating-based |
 | comment-analyzer | Sonnet | Doc accuracy | None (all issues) |
-| code-simplifier | Sonnet | Code transformation | None (safe changes) |
 | backward-compat | Sonnet | Schema analysis | None (breaking changes) |
 | adr-guardian | Opus | Architectural decisions | BLOCKING |
 | codex-review | External | Codex CLI | N/A (external tool) |

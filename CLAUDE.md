@@ -327,7 +327,7 @@ For testing the installed plugin:
 **Test agents** (via Task tool or commands):
 - code-reviewer, tool-validator, silent-failure-hunter
 - test-analyzer, type-design-analyzer, comment-analyzer
-- code-simplifier, backward-compatibility-checker
+- backward-compatibility-checker
 - adr-guardian, codex-review-agent, solid-reviewer
 - tenant-isolation-auditor, appsec-auditor, compliance-auditor
 
