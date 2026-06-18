@@ -8115,6 +8115,25 @@ def test_session_metrics_module(runner: TestRunner):
         runner.test("SessionMetrics records errors",
                    len(loaded.get('errors', [])) == 1)
 
+        # Test 10b: SessionMetrics - record_compaction (regression: the
+        # PreCompact hook formerly used a nonexistent metrics.data attribute,
+        # so compaction_count never persisted).
+        first = sm.record_compaction("auto")
+        sm.save()
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("record_compaction returns incremented count",
+                   first == 1, f"Got: {first}")
+        runner.test("record_compaction persists compaction_count",
+                   loaded.get('compaction_count') == 1,
+                   f"Got: {loaded.get('compaction_count')}")
+
+        second = sm.record_compaction("manual")
+        sm.save()
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("record_compaction accumulates across calls",
+                   second == 2 and loaded.get('compaction_count') == 2,
+                   f"Got: return={second}, persisted={loaded.get('compaction_count')}")
+
         # Test 11: SessionMetrics - get_summary
         summary = sm.get_summary()
         runner.test("get_summary returns dict",

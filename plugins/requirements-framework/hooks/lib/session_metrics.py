@@ -109,6 +109,9 @@ def create_empty_metrics(session_id: str, project_dir: str, branch: str) -> dict
         "ended_at": None,
         "duration_seconds": None,
 
+        # Context-compaction counter (incremented by the PreCompact hook)
+        "compaction_count": 0,
+
         # Tool usage patterns
         "tools": {},
 
@@ -358,6 +361,28 @@ class SessionMetrics:
 
         except Exception as e:
             get_logger().warning(f"Failed to record tool use: {e}")
+
+    def record_compaction(self, source: str = 'unknown') -> int:
+        """
+        Record a context-compaction event and increment the compaction counter.
+
+        Args:
+            source: Compaction trigger ('manual', 'auto', or 'unknown')
+
+        Returns:
+            The new compaction count (0 if recording failed).
+        """
+        try:
+            self._ensure_loaded()
+
+            count = self._metrics.get('compaction_count', 0) + 1
+            self._metrics['compaction_count'] = count
+            self._dirty = True
+            return count
+
+        except Exception as e:
+            get_logger().warning(f"Failed to record compaction: {e}")
+            return 0
 
     def record_requirement_trigger(self, req_name: str, blocked: bool = True) -> None:
         """

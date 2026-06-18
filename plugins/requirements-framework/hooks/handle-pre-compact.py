@@ -70,8 +70,7 @@ def main() -> int:
 
         # Track compaction count
         try:
-            compaction_count = metrics.data.get('compaction_count', 0) + 1
-            metrics.data['compaction_count'] = compaction_count
+            compaction_count = metrics.record_compaction(source)
             metrics.save()
             logger.info(
                 "Pre-compaction state saved",
