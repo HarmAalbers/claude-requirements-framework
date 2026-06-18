@@ -873,6 +873,9 @@ class RequirementsConfig:
         "prompt_submit": {
             "brainstorm_nudge": True,
         },
+        "lazy_dev": {
+            "enabled": True,
+        },
         "wip_tracking": {
             "enabled": False,
             "prompt_on_stop": True,

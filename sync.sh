@@ -63,7 +63,7 @@ get_py_files_recursive() {
     local dir="$1"
     local prefix="$2"
     if [ -d "$dir" ]; then
-        find "$dir" \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" \) -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
+        find "$dir" \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" -o -name "*.md" \) -type f -not -path "*/__pycache__/*" 2>/dev/null | while read -r f; do
             echo "${prefix}${f#$dir/}"
         done
     fi
@@ -352,7 +352,7 @@ deploy_to_hooks() {
 
     echo ""
     echo "Copying library files..."
-    (cd "$REPO_DIR/hooks/lib" && find . \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" \) -type f -not -path "*/__pycache__/*") | while read -r relpath; do
+    (cd "$REPO_DIR/hooks/lib" && find . \( -name "*.py" -o -name "*.md.j2" -o -name "*.j2" -o -name "*.md" \) -type f -not -path "*/__pycache__/*") | while read -r relpath; do
         local stripped="${relpath#./}"
         local target="$DEPLOY_DIR/lib/$stripped"
         mkdir -p "$(dirname "$target")"

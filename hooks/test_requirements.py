@@ -2216,6 +2216,41 @@ def test_checklist_rendering(runner: TestRunner):
         runner.test("Missing checklist no header", "**Checklist**:" not in message, f"Message: {message}")
 
 
+def test_lazy_dev_ruleset(runner: TestRunner):
+    """The lazy-dev ruleset loads and the compact reminder is sane."""
+    print("\n📦 Testing lazy-dev ruleset loader...")
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from lazy_dev.rules import get_ruleset, COMPACT_REMINDER
+    text = get_ruleset()
+    runner.test("Ruleset has the ladder", "stop at the first rung" in text, f"Got: {text[:120]}")
+    runner.test("Ruleset has safety carve-outs", "Never lazy about" in text, f"Got: {text[:200]}")
+    runner.test("Compact reminder mentions least code", "least code" in COMPACT_REMINDER, COMPACT_REMINDER)
+
+
+def test_lazy_dev_flag_default(runner: TestRunner):
+    """hooks.lazy_dev.enabled defaults true; cascade can disable it."""
+    print("\n📦 Testing lazy_dev flag default...")
+    import sys, tempfile, os, json
+    sys.path.insert(0, str(Path(__file__).parent / 'lib'))
+    from config import RequirementsConfig
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(f"{tmp}/.claude")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {}}, f)
+        cfg = RequirementsConfig(tmp)
+        runner.test("lazy_dev.enabled defaults True",
+                    cfg.get_hook_config('lazy_dev', 'enabled') is True,
+                    f"Got: {cfg.get_hook_config('lazy_dev','enabled')}")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {},
+                       "hooks": {"lazy_dev": {"enabled": False}}}, f)
+        cfg2 = RequirementsConfig(tmp)
+        runner.test("lazy_dev.enabled can be disabled",
+                    cfg2.get_hook_config('lazy_dev', 'enabled') is False,
+                    f"Got: {cfg2.get_hook_config('lazy_dev','enabled')}")
+
+
 def test_hook_config(runner: TestRunner):
     """Test hook configuration method."""
     print("\n📦 Testing hook configuration...")
@@ -13203,6 +13238,8 @@ def main():
     test_not_in_git_repo_fallback(runner)
     test_state_storage_module(runner)
     test_config_module(runner)
+    test_lazy_dev_ruleset(runner)
+    test_lazy_dev_flag_default(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
     test_cli_enable_disable(runner)
