@@ -15,7 +15,6 @@
     "./agents/test-analyzer.md",
     "./agents/type-design-analyzer.md",
     "./agents/comment-analyzer.md",
-    "./agents/code-simplifier.md",
     "./agents/backward-compatibility-checker.md",
     "./agents/adr-guardian.md",
     "./agents/codex-review-agent.md",
