@@ -12,3 +12,17 @@ def get_ruleset() -> str:
         return _RULESET.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def ladder_text(config) -> str:
+    """The ladder for injection, or '' when disabled/unavailable.
+
+    Single source of the flag-gate + fail-open used by every injection seam
+    (SessionStart, SubagentStart). `config` is a RequirementsConfig.
+    """
+    try:
+        if not config.get_hook_config('lazy_dev', 'enabled'):
+            return ""
+        return get_ruleset()
+    except Exception:
+        return ""

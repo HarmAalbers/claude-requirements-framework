@@ -68,17 +68,6 @@ def _best_effort(label: str, fn, logger) -> None:
         logger.debug(f"{label} failed (fail-open)", error=str(e))
 
 
-def _ladder_block(config) -> str:
-    """The lazy-dev ladder for injection, or '' when disabled/unavailable."""
-    try:
-        if not config.get_hook_config('lazy_dev', 'enabled'):
-            return ""
-        from lazy_dev.rules import get_ruleset
-        return get_ruleset()
-    except Exception:
-        return ""
-
-
 def _init_session_metrics(session_id, project_dir, branch, logger):
     from session_metrics import SessionMetrics
     SessionMetrics(session_id, project_dir, branch).save()
@@ -725,7 +714,8 @@ See `req init --help` for options.""")
 
             # Lazy-dev ladder: ride the single SessionStart emit (fires once/
             # session, so no dedup needed). Flag-gated + fail-open in the helper.
-            _ladder = _ladder_block(config)
+            from lazy_dev.rules import ladder_text
+            _ladder = ladder_text(config)
             if _ladder:
                 parts.append(_ladder)
 

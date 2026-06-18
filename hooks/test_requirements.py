@@ -2252,23 +2252,19 @@ def test_lazy_dev_flag_default(runner: TestRunner):
 
 
 def test_session_start_ladder_block(runner: TestRunner):
-    """_ladder_block returns the ladder when enabled, '' when disabled (fail-open)."""
+    """ladder_text returns the ladder when enabled, '' when disabled (fail-open)."""
     print("\n📦 Testing SessionStart lazy-dev ladder block...")
-    import sys, tempfile, os, json, importlib.util
+    import sys, tempfile, os, json
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     from config import RequirementsConfig
-
-    hook_path = Path(__file__).parent / "handle-session-start.py"
-    spec = importlib.util.spec_from_file_location("session_start_hook_ladder", hook_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    from lazy_dev.rules import ladder_text
 
     with tempfile.TemporaryDirectory() as tmp:
         os.makedirs(f"{tmp}/.claude")
         with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
             json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {}}, f)
         cfg = RequirementsConfig(tmp)
-        block = mod._ladder_block(cfg)
+        block = ladder_text(cfg)
         runner.test("ladder block injected when enabled",
                     "stop at the first rung" in block,
                     f"Got: {block[:120]}")
@@ -2278,8 +2274,8 @@ def test_session_start_ladder_block(runner: TestRunner):
                        "hooks": {"lazy_dev": {"enabled": False}}}, f)
         cfg2 = RequirementsConfig(tmp)
         runner.test("ladder block empty when disabled",
-                    mod._ladder_block(cfg2) == "",
-                    f"Got: {mod._ladder_block(cfg2)[:120]!r}")
+                    ladder_text(cfg2) == "",
+                    f"Got: {ladder_text(cfg2)[:120]!r}")
 
 
 def test_lazy_ladder_marker(runner: TestRunner):
@@ -2314,6 +2310,7 @@ def test_subagent_ladder(runner: TestRunner):
     import sys, tempfile, os, json, importlib.util
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     from config import RequirementsConfig
+    from lazy_dev.rules import ladder_text
 
     hook_path = Path(__file__).parent / "handle-subagent-start.py"
     spec = importlib.util.spec_from_file_location("subagent_start_hook_ladder", hook_path)
@@ -2330,16 +2327,16 @@ def test_subagent_ladder(runner: TestRunner):
             json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {}}, f)
         cfg = RequirementsConfig(tmp)
         runner.test("subagent ladder injected when enabled",
-                    "stop at the first rung" in mod._ladder_for_subagent(cfg),
-                    f"Got: {mod._ladder_for_subagent(cfg)[:120]}")
+                    "stop at the first rung" in ladder_text(cfg),
+                    f"Got: {ladder_text(cfg)[:120]}")
 
         with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
             json.dump({"version": "1.0", "enabled": True, "inherit": False, "requirements": {},
                        "hooks": {"lazy_dev": {"enabled": False}}}, f)
         cfg2 = RequirementsConfig(tmp)
         runner.test("subagent ladder empty when disabled",
-                    mod._ladder_for_subagent(cfg2) == "",
-                    f"Got: {mod._ladder_for_subagent(cfg2)[:120]!r}")
+                    ladder_text(cfg2) == "",
+                    f"Got: {ladder_text(cfg2)[:120]!r}")
 
 
 def test_hook_config(runner: TestRunner):
