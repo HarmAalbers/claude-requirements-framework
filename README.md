@@ -441,14 +441,13 @@ The requirements framework includes a comprehensive plugin with specialized agen
 - **adr-guardian** - Validates plans and code against Architecture Decision Records (BLOCKING authority)
 - **codex-review-agent** - Orchestrates OpenAI Codex CLI for AI-powered code review
 
-**Pre-Commit Review Suite** (8 specialized reviewers):
+**Pre-Commit Review Suite** (7 specialized reviewers):
 - **tool-validator** - Executes pyright/ruff/eslint to catch CI errors locally (Haiku model)
 - **code-reviewer** - CLAUDE.md compliance, bug detection, code quality (Opus model, confidence ≥80)
 - **silent-failure-hunter** - Error handling audit with zero tolerance for silent failures (Sonnet model)
 - **test-analyzer** - Test coverage quality with CRITICAL gap detection for code without tests
 - **type-design-analyzer** - Type invariants and encapsulation analysis with 4-dimensional rating
 - **comment-analyzer** - Documentation accuracy and comment rot detection
-- **code-simplifier** - Final code polish for clarity and maintainability (Sonnet model)
 - **backward-compatibility-checker** - Schema migration detection with Alembic verification (Sonnet model)
 
 ### Commands (3)

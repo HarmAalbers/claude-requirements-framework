@@ -148,7 +148,7 @@ Stop → SessionEnd → TeammateIdle → TaskCompleted
 
 **Workflow**: `adr-guardian`, `codex-review-agent`, `codex-arch-reviewer`, `commit-planner`, `solid-reviewer`, `tdd-validator`
 
-**Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`, `refactor-advisor`
+**Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`, `refactor-advisor`
 
 **Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`, `tenant-isolation-auditor`, `appsec-auditor`, `compliance-auditor`
 

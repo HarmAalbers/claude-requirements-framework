@@ -130,14 +130,13 @@ Detailed inventory of all Requirements Framework components with line counts and
 
 ## Plugin Components
 
-### Agents (19 total)
+### Agents (18 total)
 
 | Agent | Purpose |
 |-------|---------|
 | `adr-guardian.md` | ADR compliance validation |
 | `backward-compatibility-checker.md` | Breaking change detection |
 | `code-reviewer.md` | General code review |
-| `code-simplifier.md` | Complexity reduction |
 | `codex-arch-reviewer.md` | Codex architecture review |
 | `codex-review-agent.md` | OpenAI Codex integration |
 | `comment-analyzer.md` | Comment quality review |
