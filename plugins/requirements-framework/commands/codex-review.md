@@ -67,64 +67,29 @@ The agent will autonomously:
 
 **Wait for agent completion** before proceeding to Step 3.
 
-### Step 3: Check Agent Exit Status
+### Step 3: Report Results
 
-After agent completes, evaluate whether it succeeded or encountered errors.
+After the agent completes, present its findings to the user.
 
-**Success conditions** (agent found issues OR no issues found):
-- Agent completed review successfully
-- Codex CLI ran without critical errors
-- Results were parsed and presented
+If the agent's output indicates the review could **not** actually run — it contains any of:
+- "❌ Codex CLI not found" (prerequisite not met)
+- "🔐 Codex authentication required" (prerequisite not met)
+- "❌ Codex API Error" (API issue)
+- "⏱️  Rate Limit Reached" (rate limit)
 
-**Failure conditions** (do NOT satisfy requirement):
-- Codex CLI not installed
-- Not authenticated (user needs to run `codex login`)
-- API errors or rate limit exceeded
-- Agent encountered unrecoverable error
+then tell the user the review did not complete and they should fix the issue and re-run `/requirements-framework:codex-review`. Otherwise, present the review results normally.
 
-**Determination**: Based on agent output, determine if review was successful.
+### Step 4: Requirement Satisfaction (Automatic)
 
-If agent output contains:
-- "❌ Codex CLI not found" → FAILED (prerequisite not met)
-- "🔐 Codex authentication required" → FAILED (prerequisite not met)
-- "❌ Codex API Error" → FAILED (API issue)
-- "⏱️  Rate Limit Reached" → FAILED (rate limit)
-- Any other output with review results → SUCCESS
+You do **not** run `req satisfy` — it is a user-only action (the permission layer blocks Claude from running it). The `codex_reviewer` requirement is auto-satisfied by the framework's PostToolUse hook (`auto-satisfy-skills.py`) when this command **completes**, consistent with `/deep-review`, `/arch-review`, and `/pre-commit`.
 
-Set AGENT_SUCCESS flag:
-- If successful review: AGENT_SUCCESS=true
-- If failed with prerequisite/API error: AGENT_SUCCESS=false
-
-### Step 4: Auto-Satisfy Requirement (Conditional)
-
-**Only satisfy if agent succeeded** (AGENT_SUCCESS=true).
-
-If AGENT_SUCCESS is true:
-  ```bash
-  req satisfy codex_reviewer
-  ```
-
-  Output to user:
-  ```
-  ✅ Auto-satisfied 'codex_reviewer' requirement
-  ```
-
-If AGENT_SUCCESS is false:
-  Output to user:
-  ```
-  ⚠️  Codex review incomplete - requirement NOT satisfied
-
-  **Reason**: Agent encountered an error (see output above)
-  **To proceed**: Fix the issue and run `/requirements-framework:codex-review` again
-  ```
-
-**Do not run `req satisfy` if agent failed** - this ensures requirements are only satisfied when actual review occurred.
+**Satisfaction is completion-based, not success-gated.** Even if the review could not actually run (e.g. Codex not installed), the gate still flips. If that happens, tell the user to either re-run the command after fixing the issue or run `req clear codex_reviewer` to re-gate.
 
 ## Integration with Requirements Framework
 
 **Satisfies**: `codex_reviewer` requirement
 **Scope**: Configured in project's `.claude/requirements.yaml` (typically single_use or session)
-**Auto-satisfaction**: Via `req satisfy codex_reviewer` command after successful agent completion
+**Auto-satisfaction**: Hook-based — `auto-satisfy-skills.py` satisfies `codex_reviewer` when this command completes (completion-based, not success-gated)
 **Check status**: Run `req status` to verify requirement state
 
 ## Integration with Other Commands
@@ -167,7 +132,7 @@ The codex-review-agent handles all error cases autonomously - you don't need to 
 | Rate limits | Provides wait guidance (5-10 minutes) with retry instructions |
 | Empty output | Reports "✅ No Issues Found" (Codex found no problems) |
 
-All error cases result in AGENT_SUCCESS=false in Step 3, preventing requirement satisfaction.
+When the agent reports a prerequisite/API failure, surface it to the user per Step 3. Note that the `codex_reviewer` gate is still auto-satisfied on completion (see Step 4); a user who wants to re-gate after a failed run can `req clear codex_reviewer`.
 
 ## TDD Workflow Integration
 
@@ -207,7 +172,7 @@ The agent will provide structured output like:
 ✅ Review complete! No critical issues found. Ready to proceed!
 ```
 
-After this output, if successful, the command will output:
+After this output, the framework's auto-satisfy hook records:
 ```
 ✅ Auto-satisfied 'codex_reviewer' requirement
 ```
@@ -218,12 +183,11 @@ After this output, if successful, the command will output:
 - Commands reduce session context pressure vs skill wrappers
 - Direct agent invocation (no extra indirection layer)
 - Follows ADR-006 unified plugin architecture pattern
-- Uses explicit `req satisfy` CLI (not hook-based auto-satisfaction)
+- Requirement satisfaction is hook-based (`auto-satisfy-skills.py`), consistent with the other review commands
 
 **Why deterministic steps**:
 - Follows ADR-007 deterministic command orchestrator pattern
 - Explicit bash commands for argument parsing
-- Clear conditionals for success/failure detection
 - Predictable, testable, reliable execution
 
 **Agent autonomy**:
