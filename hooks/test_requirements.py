@@ -2231,7 +2231,10 @@ def test_lazy_dev_ruleset(runner: TestRunner):
 def test_lazy_dev_flag_default(runner: TestRunner):
     """hooks.lazy_dev.enabled defaults true; cascade can disable it."""
     print("\n📦 Testing lazy_dev flag default...")
-    import sys, tempfile, os, json
+    import sys
+    import tempfile
+    import os
+    import json
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     from config import RequirementsConfig
     with tempfile.TemporaryDirectory() as tmp:
@@ -2254,7 +2257,10 @@ def test_lazy_dev_flag_default(runner: TestRunner):
 def test_session_start_ladder_block(runner: TestRunner):
     """ladder_text returns the ladder when enabled, '' when disabled (fail-open)."""
     print("\n📦 Testing SessionStart lazy-dev ladder block...")
-    import sys, tempfile, os, json
+    import sys
+    import tempfile
+    import os
+    import json
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     from config import RequirementsConfig
     from lazy_dev.rules import ladder_text
@@ -2281,7 +2287,9 @@ def test_session_start_ladder_block(runner: TestRunner):
 def test_lazy_ladder_marker(runner: TestRunner):
     """ruleset_marker dedups once-per-session and is fail-open on bad input."""
     print("\n📦 Testing lazy-ladder once-per-session marker...")
-    import sys, tempfile, subprocess
+    import sys
+    import tempfile
+    import subprocess
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     import importlib
     import ruleset_marker
@@ -2307,7 +2315,11 @@ def test_lazy_ladder_marker(runner: TestRunner):
 def test_subagent_ladder(runner: TestRunner):
     """SubagentStart ladder helper is flag-gated; refactor-executor is code-touching."""
     print("\n📦 Testing SubagentStart lazy-dev ladder...")
-    import sys, tempfile, os, json, importlib.util
+    import sys
+    import tempfile
+    import os
+    import json
+    import importlib.util
     sys.path.insert(0, str(Path(__file__).parent / 'lib'))
     from config import RequirementsConfig
     from lazy_dev.rules import ladder_text
