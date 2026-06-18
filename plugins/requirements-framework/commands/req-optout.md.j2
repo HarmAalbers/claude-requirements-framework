@@ -3,7 +3,7 @@ name: req-optout
 description: "Mark the project inert under strict mode via the .rf-optout sentinel"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit"]
-git_hash: a165daf
+git_hash: 7966aea
 ---
 
 > **Workflow position**: escape-hatch command. Always allowed even when strict preflight is blocking the project. Run this to make a project fully inert so the framework stops gating it.
