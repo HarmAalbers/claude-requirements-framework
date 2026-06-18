@@ -3,7 +3,7 @@ name: session-reflect
 description: "Review current session and suggest improvements for future sessions"
 argument-hint: "[scope]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "Task", "AskUserQuestion"]
-git_hash: ee3eedd
+git_hash: a165daf
 ---
 
 > **Workflow position**: retrospective tool, not part of the `/req` phase pipeline. Run directly at the end of a session to harvest learnings.
