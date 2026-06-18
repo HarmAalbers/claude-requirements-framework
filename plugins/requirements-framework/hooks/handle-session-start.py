@@ -712,6 +712,13 @@ See `req init --help` for options.""")
                 logger.error("Failed to build status briefing", error=str(e))
                 parts.append(_BRIEFING_FALLBACK)
 
+            # Lazy-dev ladder: ride the single SessionStart emit (fires once/
+            # session, so no dedup needed). Flag-gated + fail-open in the helper.
+            from lazy_dev.rules import ladder_text
+            _ladder = ladder_text(config)
+            if _ladder:
+                parts.append(_ladder)
+
         # Session pause: prepend a visible banner so a paused session is never
         # silently off (the gates are suppressed but status still shows).
         try:
