@@ -995,6 +995,47 @@ def test_config_module(runner: TestRunner):
         runner.test("Legacy get_attribute still works", attr_value == 'branch_size_calculator')
 
 
+def test_project_has_config(runner: TestRunner):
+    """project_has_config recognizes both requirements.yaml and requirements.local.yaml.
+
+    Regression guard: /req-init scaffolds .claude/requirements.local.yaml, so a
+    .local.yaml-only project must count as configured (previously hook existence-gates
+    only checked requirements.yaml and treated such projects as unconfigured).
+    """
+    print("\n📦 Testing project_has_config predicate...")
+    from config import project_has_config
+
+    def _write(tmpdir, filename):
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        with open(f"{tmpdir}/.claude/{filename}", 'w') as f:
+            f.write("version: '1.0'\nenabled: true\n")
+
+    # No .claude dir / no config at all → False
+    with tempfile.TemporaryDirectory() as tmpdir:
+        runner.test("No config → False", project_has_config(tmpdir) is False)
+
+    # requirements.yaml only → True
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write(tmpdir, "requirements.yaml")
+        runner.test("Project config only → True", project_has_config(tmpdir) is True)
+
+    # requirements.local.yaml only → True (the /req-init case)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write(tmpdir, "requirements.local.yaml")
+        runner.test("Local override only → True", project_has_config(tmpdir) is True)
+
+    # Both present → True
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write(tmpdir, "requirements.yaml")
+        _write(tmpdir, "requirements.local.yaml")
+        runner.test("Both present → True", project_has_config(tmpdir) is True)
+
+    # Empty .claude dir but no config files → False
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+        runner.test("Empty .claude dir → False", project_has_config(tmpdir) is False)
+
+
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""
     print("\n📝 Testing write_local_config and write_local_override...")
@@ -13357,6 +13398,7 @@ def main():
     test_not_in_git_repo_fallback(runner)
     test_state_storage_module(runner)
     test_config_module(runner)
+    test_project_has_config(runner)
     test_lazy_dev_ruleset(runner)
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)
