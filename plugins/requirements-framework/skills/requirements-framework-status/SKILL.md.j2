@@ -4,100 +4,59 @@ description: This skill should be used when the user asks to "requirements frame
 git_hash: 6575454
 ---
 
-# Requirements Framework - Status Report
+# Requirements Framework — Status Report
 
-Provides comprehensive project context and current state of the **Claude Code Requirements Framework**.
+Report the current state of the **Claude Code Requirements Framework** by deriving
+every volatile number from the repository at runtime. Do NOT quote pre-baked metrics —
+the whole point of this skill is that the figures come from the repo, so they can
+never drift.
 
-## Current Implementation Status
+## Live status — run these, then report the output
 
-**Version**: 2.5.0
-**Status**: ✅ Production Ready & Feature Complete
-**Repository**: https://github.com/HarmAalbers/claude-requirements-framework
+Run this block **from the framework repo root** (the paths are repo-relative; in a
+marketplace/plugin-cache context they won't resolve — say so and skip rather than
+invent a value). If a command errors, report that and move on.
 
----
+```bash
+# Version
+grep '"version"' plugins/requirements-framework/.claude-plugin/plugin.json
 
-## Quick Metrics
+# Hook scripts (lifecycle handlers) — exclude tests, the CLI, lib/, and the
+# vendored _langfuse_hook.py (leading underscore = not a registered hook).
+# langfuse-trace.py IS a hook (the opt-in observability Stop hook).
+ls hooks/*.py | grep -vE 'test_|requirements-cli|/lib/|/_'
 
-| Metric | Value |
-|--------|-------|
-| **Production Code** | ~8,500 lines |
-| **Test Suite** | 1079 tests (100% pass) |
-| **Hooks** | 15 active |
-| **Library Modules** | 32 |
-| **CLI Commands** | 11 |
-| **Requirement Types** | 3 strategies |
-| **Plugin Agents** | 25 |
-| **Plugin Commands** | 11 |
-| **Plugin Skills** | 21 |
+# Plugin component counts
+ls plugins/requirements-framework/agents/*.md   | wc -l   # agents
+ls plugins/requirements-framework/commands/*.md | wc -l   # commands
+ls -d plugins/requirements-framework/skills/*/  | wc -l   # skills
 
-**→ Full component inventory**: See `references/component-inventory.md`
+# ADRs (read the numeric range from the listing, e.g. ADR-001 … ADR-020)
+ls docs/adr/ADR-*.md
 
----
+# CLI subcommands
+req --help
 
-## Implementation Timeline
+# Live gating state for the current branch / session.
+# Outside a live Claude Code session this prints a harmless
+# "No Claude Code session detected" warning (still exit 0) — not a fault.
+req status
+```
 
-### Phase 1: MVP ✅ (2025-12-09)
-- Core framework structure
-- Session management
-- State storage (`.git/requirements/`)
-- Configuration cascade
-- PreToolUse hook
-- CLI tool (`req` command)
+Then report, in a compact table: **version**, **hook / agent / command / skill
+counts**, **ADR range**, and a one-line summary of the **live gating state** from
+`req status`. Flag anything unexpected (missing files, a non-fresh render).
 
-### Phase 2: Additional Requirements ⏭️
-- Skipped - Not needed for current use cases
+**Opt-in health check** — the full test suite runs ~1500 tests (~30s), too heavy to
+run on every status readout, so only run it when asked to verify health:
 
-### Phase 3: Polish & UX ✅ (2025-12-24)
-- Session registry & auto-detection (77 tests)
-- Enhanced error messages
-- Terminal colors (NO_COLOR support)
-- `req init` interactive wizard (42 tests)
-- `req config` management (14 tests)
+```bash
+python3 hooks/test_requirements.py 2>&1 | grep -E 'Results:|passed' | tail -1
+```
 
----
+## Durable reference (rarely changes)
 
-## Core Components
-
-### Hooks (15 total)
-
-| Hook | Type | Purpose |
-|------|------|---------|
-| `check-requirements.py` | PreToolUse | Blocks Edit/Write if unsatisfied |
-| `handle-session-start.py` | SessionStart | Context injection, status display |
-| `handle-prompt-submit.py` | UserPromptSubmit | Prompt context injection |
-| `handle-permission-request.py` | PermissionRequest | Auto-deny dangerous commands |
-| `handle-plan-exit.py` | PostToolUse | Show status after planning |
-| `auto-satisfy-skills.py` | PostToolUse | Auto-satisfy on skill completion |
-| `clear-single-use.py` | PostToolUse | Clear single_use after action |
-| `handle-tool-failure.py` | PostToolUseFailure | Failure pattern tracking |
-| `handle-subagent-start.py` | SubagentStart | Review agent context injection |
-| `handle-pre-compact.py` | PreCompact | Pre-compaction state saving |
-| `handle-stop.py` | Stop | Verify requirements before stopping |
-| `handle-session-end.py` | SessionEnd | Cleanup sessions |
-| `handle-teammate-idle.py` | TeammateIdle | Team progress tracking |
-| `handle-task-completed.py` | TaskCompleted | Team task quality gates |
-
-### Libraries (32 modules)
-
-**Core**: `requirements.py`, `config.py`, `state_storage.py`, `session.py`, `registry_client.py`
-
-**Strategies**: `strategy_registry.py`, `base_strategy.py`, `blocking_strategy.py`, `dynamic_strategy.py`, `guard_strategy.py`, `strategy_utils.py`
-
-**Utilities**: `branch_size_calculator.py`, `calculation_cache.py`, `calculator_interface.py`, `message_dedup_cache.py`, `git_utils.py`, `config_utils.py`, `colors.py`, `logger.py`, `feature_selector.py`, `init_presets.py`, `interactive.py`
-
-**Session Learning**: `session_metrics.py`, `learning_updates.py`
-
-**Messages**: `messages.py`, `message_validator.py`
-
-### CLI Commands (11)
-
-`status`, `satisfy`, `clear`, `init`, `config`, `doctor`, `verify`, `sessions`, `list`, `prune`, `logging`
-
----
-
-## Architecture Overview
-
-### Configuration Cascade
+### Configuration cascade
 
 ```
 Global (~/.claude/requirements.yaml)
@@ -107,15 +66,26 @@ Project (.claude/requirements.yaml)
 Local (.claude/requirements.local.yaml)
 ```
 
-### Requirement Strategies
+Priority: **local > project > global**.
 
-| Type | Satisfaction | Use Case |
+### Requirement strategies
+
+| Type | Satisfaction | Use case |
 |------|--------------|----------|
-| **Blocking** | Manual (`req satisfy`) | Planning, review |
-| **Dynamic** | Auto-calculated | Branch size limits |
+| **Blocking** | Manual (`req satisfy`) or skill auto-satisfy | Planning, review gates |
+| **Dynamic** | Auto-calculated, then approved | Branch size limits |
 | **Guard** | Condition check | Protected branches |
 
-### Session Lifecycle
+### Requirement scopes
+
+| Scope | Behavior |
+|-------|----------|
+| `session` | Cleared when the Claude Code session ends |
+| `branch` | Persists across sessions on the same branch |
+| `permanent` | Never auto-cleared |
+| `single_use` | Cleared after the trigger command completes |
+
+### Session lifecycle (hook events, in order)
 
 ```
 SessionStart → UserPromptSubmit → PreToolUse → PermissionRequest →
@@ -123,146 +93,25 @@ PostToolUse → PostToolUseFailure → SubagentStart → PreCompact →
 Stop → SessionEnd → TeammateIdle → TaskCompleted
 ```
 
-**→ Full architecture details**: See `references/architecture-overview.md`
+(For the current concrete hook scripts, use the `ls hooks/*.py` line above rather
+than a frozen list.)
 
----
+## Usage guide
 
-## Advanced Features
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Auto-Satisfaction | ✅ | Skills auto-satisfy requirements |
-| Single-Use Scope | ✅ | Clears after each action |
-| Message Dedup | ✅ | 5-min TTL, 90% spam reduction |
-| Stop Verification | ✅ | Blocks stop if unsatisfied |
-| Branch Guards | ✅ | Protected branch enforcement |
-| Branch Size Calc | ✅ | Dynamic with 30-sec cache |
-| Interactive Init | ✅ | 5 context-aware presets |
-| Config Management | ✅ | `req config` without YAML editing |
-
----
-
-## Plugin Components
-
-### Agents (25)
-
-**Workflow**: `adr-guardian`, `codex-review-agent`, `codex-arch-reviewer`, `commit-planner`, `solid-reviewer`, `tdd-validator`
-
-**Review**: `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`, `refactor-advisor`
-
-**Utility**: `comment-cleaner`, `import-organizer`, `session-analyzer`, `tenant-isolation-auditor`, `appsec-auditor`, `compliance-auditor`
-
-**Refactor Orchestration** (Haiku/Sonnet/Sonnet fanout): `refactor-executor`, `refactor-investigator`, `refactor-analyzer`
-
-### Commands (11)
-
-- `/requirements-framework:arch-review` - Team-based architecture review (recommended for planning)
-- `/requirements-framework:deep-review` - Cross-validated team review (recommended for PR)
-- `/requirements-framework:pre-commit` - Quick pre-commit review
-- `/requirements-framework:codex-review` - Codex-powered review
-- `/requirements-framework:commit-checks` - Auto-fix code quality issues
-- `/requirements-framework:session-reflect` - Session analysis and improvements
-- `/requirements-framework:brainstorm` - Design-first development
-- `/requirements-framework:write-plan` - Create implementation plan
-- `/requirements-framework:execute-plan` - Execute plan with checkpoints
-- `/requirements-framework:refactor-orchestrate` - Multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution)
-
-### Skills (20)
-
-**Framework Skills (5):**
-- `requirements-framework-usage` - Usage help
-- `requirements-framework-status` - This skill
-- `requirements-framework-development` - Dev workflow
-- `requirements-framework-builder` - Extension guidance
-- `session-learning` - Session analysis and improvement
-
-**Process Skills (15):**
-- `using-requirements-framework` - Bootstrap skill (session start injection)
-- `brainstorming` - Design-first exploration
-- `writing-plans` - Implementation plan creation
-- `executing-plans` - Plan execution with checkpoints
-- `test-driven-development` - RED-GREEN-REFACTOR enforcement
-- `systematic-debugging` - Root-cause investigation
-- `verification-before-completion` - Evidence-based completion
-- `subagent-driven-development` - Parallel task execution
-- `finishing-a-development-branch` - Branch completion options
-- `using-git-worktrees` - Isolated workspaces
-- `dispatching-parallel-agents` - Concurrent problem solving
-- `receiving-code-review` - Technical feedback evaluation
-- `requesting-code-review` - Review agent dispatch
-- `writing-skills` - TDD-for-documentation meta-skill
-- `refactor-orchestration` - Multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution)
-
----
-
-## Architecture Decision Records
-
-| ADR | Decision |
-|-----|----------|
-| ADR-001 | Remove main/master branch skip |
-| ADR-002 | Use Claude Code's native session_id |
-| ADR-003 | Dynamic sync file discovery |
-| ADR-004 | Guard requirement strategy |
-| ADR-005 | Per-project init command |
-| ADR-006 | Plugin-based architecture |
-| ADR-007 | Deterministic command orchestrators |
-| ADR-008 | CLAUDE.md weekly maintenance |
-| ADR-009 | Agent auto-fix plan validation |
-| ADR-010 | Cross-project feature upgrade |
-| ADR-011 | Externalize messages to YAML |
-| ADR-012 | Agent Teams integration |
-| ADR-013 | Standardized agent output format |
-| ADR-014 | Refactor orchestration via bundled skill |
-
----
-
-## Production Readiness
-
-- ✅ 1079 tests, 100% pass rate
-- ✅ TDD methodology throughout
-- ✅ Fail-open design (errors don't block)
-- ✅ Session management & cleanup
-- ✅ Interactive setup wizard
-- ✅ Comprehensive diagnostics (`req doctor`)
-- ✅ Zero external dependencies
-- ✅ Color support (NO_COLOR compliant)
-- ✅ Performance optimization (caching)
-
----
-
-## Usage Guide
-
-### For New Users
 ```bash
+# Users
 req init              # Interactive setup
-req status            # Check status
+req status            # Check current gating state
 req doctor            # Verify installation
+
+# Framework developers
+./sync.sh status                              # Check repo ↔ deployed sync
+./sync.sh deploy                              # Deploy repo → ~/.claude/hooks
+python3 hooks/test_requirements.py            # Run the test suite
 ```
 
-### For Framework Developers
-```bash
-./sync.sh status      # Check sync
-./sync.sh deploy      # Deploy changes
-python3 ~/.claude/hooks/test_requirements.py  # Run tests
-```
+## Deeper reference
 
-### For Team Leads
-```bash
-req init --preset strict   # Team onboarding
-req config                 # View settings
-```
-
----
-
-## Resources
-
-- **Repository**: https://github.com/HarmAalbers/claude-requirements-framework
-- **README**: `/Users/harm/Tools/claude-requirements-framework/README.md`
-- **Development Guide**: `DEVELOPMENT.md`
-- **Sync Tool**: `./sync.sh`
-- **Tests**: `hooks/test_requirements.py`
-
-## Reference Files
-
-- `references/component-inventory.md` - Detailed component listing with line counts
-- `references/architecture-overview.md` - Design patterns and architectural decisions
+- `references/architecture-overview.md` — design patterns and architectural decisions.
+- `docs/adr/` — Architecture Decision Records (list with the `ls docs/adr/` line above).
+- Repository: https://github.com/HarmAalbers/claude-requirements-framework
