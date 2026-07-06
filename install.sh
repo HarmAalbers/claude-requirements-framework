@@ -19,6 +19,17 @@ if [ ! -d "$HOME/.claude" ]; then
     exit 1
 fi
 
+# uv is required: every Python entrypoint (the req CLI, lifecycle hooks, build/test
+# tooling) resolves its interpreter + deps through uv. Nothing relies on ambient python.
+if ! command -v uv &> /dev/null; then
+    echo "❌ Error: 'uv' not found on PATH."
+    echo "   The framework runs all Python through uv. Install it, then re-run:"
+    echo "     curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "   (see https://docs.astral.sh/uv/ for other install methods)"
+    exit 1
+fi
+echo "✅ uv detected at: $(command -v uv)"
+
 # Lifecycle hooks are provided by the self-contained plugin — its
 # hooks/hooks.json is the single source of truth for hook registration
 # (commands resolved via ${CLAUDE_PLUGIN_ROOT}). install.sh no longer copies
@@ -126,8 +137,19 @@ else
     echo "   (Not overwriting - see examples/global-requirements.yaml for reference)"
 fi
 
+# Materialize the uv-managed project env so dev/test tooling and the first `req`
+# call have their deps ready (the runtime self-bootstrap also works without this,
+# but syncing up front avoids a cold-cache stall).
+echo ""
+echo "📦 Syncing uv project environment..."
+if ! (cd "$REPO_DIR" && uv sync); then
+    echo "⚠️  'uv sync' failed — dev tooling may be missing deps. Re-run: (cd $REPO_DIR && uv sync)"
+fi
+
 # Create symlink for CLI tool (points at the repo copy; requirements-cli.py
 # resolves its lib/ via the real path, so the symlink target works directly).
+# The CLI self-bootstraps under uv (hooks/lib/_bootstrap.py), so it runs correctly
+# even when the ambient python3 on PATH lacks PyYAML.
 echo ""
 echo "🔗 Creating symlink for 'req' command..."
 mkdir -p "$HOME/.local/bin"

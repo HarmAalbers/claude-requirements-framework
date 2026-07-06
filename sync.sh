@@ -379,8 +379,11 @@ deploy_plugin() {
     # so Step 16b's first plugin agent migration drops in clean.
     if [ -f "$REPO_DIR/scripts/render_prompts.py" ]; then
         echo "Rendering plugin .md.j2 sources..."
-        if ! python3 "$REPO_DIR/scripts/render_prompts.py" "$PLUGIN_REPO_DIR"; then
+        # Run through uv so jinja2 (the dev group) is guaranteed present regardless
+        # of the ambient interpreter. uv auto-syncs the project env on first run.
+        if ! uv run --project "$REPO_DIR" python "$REPO_DIR/scripts/render_prompts.py" "$PLUGIN_REPO_DIR"; then
             echo -e "${RED}ERROR: plugin template rendering failed; aborting deploy${NC}"
+            echo -e "${RED}       (ensure 'uv' is installed: https://docs.astral.sh/uv/)${NC}"
             exit 1
         fi
         echo ""
@@ -436,7 +439,7 @@ deploy_plugin() {
 deploy_all() {
     deploy_to_hooks
     deploy_plugin
-    echo "Run tests to verify: python3 $DEPLOY_DIR/test_requirements.py"
+    echo "Run tests to verify: uv run python $REPO_DIR/hooks/test_requirements.py"
     echo ""
 }
 
