@@ -32,5 +32,17 @@ llm = [
     "tiktoken>=0.8",
 ]
 
+[dependency-groups]
+# Lightweight build/test tooling — auto-synced by `uv run`/`uv sync` (no --extra needed).
+# pydantic + jinja2 are the "light half" of the [llm] extra that the build (template
+# rendering) and the in-suite V3 tests import directly; declared here so they don't drag
+# in the heavy llm stack (torch/sentence-transformers/ragas). pydantic was previously a
+# direct-but-undeclared import. ruff is pinned so a new release can't flag unchanged code.
+dev = [
+    "pydantic>=2",
+    "jinja2>=3.1",
+    "ruff==0.12.12",
+]
+
 [tool.setuptools]
 packages = ["hooks.lib.llm", "hooks.lib.llm.workers"]
