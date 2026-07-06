@@ -368,16 +368,18 @@ main() {
     # --check / --verify modes we only report staleness — don't write.
     # A non-zero render exit feeds into the verify error counter so CI
     # treats template drift as a verification failure, not a soft warning.
-    if [ -f "scripts/render_prompts.py" ] && command -v python3 >/dev/null 2>&1; then
+    # Render through uv so jinja2 (the dev group) is present regardless of the
+    # ambient interpreter — the stdlib heredocs above stay on plain python3.
+    if [ -f "scripts/render_prompts.py" ] && command -v uv >/dev/null 2>&1; then
         echo ""
         if [ "$CHECK_MODE" = true ] || [ "$VERIFY_MODE" = true ]; then
             echo "Plugin template render check (read-only):"
-            if ! python3 scripts/render_prompts.py --check; then
+            if ! uv run python scripts/render_prompts.py --check; then
                 [ "$VERIFY_MODE" = true ] && ((errors++)) || true
             fi
         else
             echo "Re-rendering plugin templates:"
-            if ! python3 scripts/render_prompts.py; then
+            if ! uv run python scripts/render_prompts.py; then
                 echo -e "${RED}✗ Template re-render failed${NC}"
                 ((errors++)) || true
             fi

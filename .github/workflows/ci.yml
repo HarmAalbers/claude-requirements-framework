@@ -11,24 +11,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up uv
+        # Single source of dep truth: pyproject.toml + uv.lock. `uv sync` installs
+        # core (PyYAML) + the [dependency-groups].dev group (pydantic, jinja2,
+        # ruff==0.12.12 — the light half the suite/render need). The heavy [llm]
+        # extra is NOT synced. Replaces the old hand-maintained `pip install` list,
+        # killing pyproject↔CI drift. uv provisions the interpreter itself.
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.x'
+          enable-cache: true
 
       - name: Install dependencies
-        # pyyaml: config parsing (core). pydantic + jinja2: the light half of the
-        # [llm] extra that the in-suite V3 tests (e.g. test_supervisor_config_driven)
-        # import directly — NOT the full extra (which drags torch/sentence-transformers/
-        # ragas). Without these the suite ModuleNotFound-crashes on a clean runner.
-        # ruff is PINNED so a future release can't flag new rules on unchanged code.
-        run: pip install pyyaml pydantic jinja2 ruff==0.12.12
+        run: uv sync
 
       - name: Lint (ruff)
         # The missing merge gate: lint debt used to accumulate silently because only
         # the opt-in /v3-review tool gate ran ruff. The generated plugin bundle is
         # excluded in ruff.toml (byte-identical mirror; build --check enforces equality).
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Prepare Claude home
         run: |
@@ -57,20 +57,20 @@ jobs:
           cp examples/global-requirements.yaml ~/.claude/requirements.yaml
 
       - name: Run doctor check
-        run: python hooks/requirements-cli.py doctor --ci --repo "$(pwd)"
+        run: uv run python hooks/requirements-cli.py doctor --ci --repo "$(pwd)"
 
       - name: Run test suite
-        run: python hooks/test_requirements.py
+        run: uv run python hooks/test_requirements.py
 
       - name: Check rendered prompts are fresh
         # Fails if any *.md rendered sibling is stale vs its *.md.j2 source.
-        # jinja2 is already installed above.
-        run: python scripts/render_prompts.py --check
+        # jinja2 comes from the dev group synced above.
+        run: uv run python scripts/render_prompts.py --check
 
       - name: Run V3 tests/ suite
         # Script-style suite (each file has its own TestRunner/main(), NOT pytest).
         # Heavy-dep files (Claude Agent SDK, OTel, etc.) self-skip cleanly when the
-        # optional [llm] extras are absent — only the light extras are installed in
+        # optional [llm] extras are absent — only the light dev group is synced in
         # CI. Aggregate exit codes so one failing file fails the job.
         env:
           PYTHONDONTWRITEBYTECODE: 1
@@ -78,6 +78,6 @@ jobs:
           rc=0
           for f in tests/test_*.py; do
             echo "== $f =="
-            python "$f" || rc=1
+            uv run python "$f" || rc=1
           done
           exit $rc

@@ -22,17 +22,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up uv
+        # jinja2 (dev group) is required: update-plugin-versions.sh re-renders the
+        # plugin templates via `uv run python scripts/render_prompts.py`. `uv sync`
+        # provides it from pyproject.toml + uv.lock. The stdlib json one-liners below
+        # stay on the runner's python3 (no deps).
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.x'
+          enable-cache: true
 
       - name: Install dependencies
-        # jinja2 is required: update-plugin-versions.sh re-renders the plugin
-        # templates via scripts/render_prompts.py → hooks.lib.llm.templates (jinja2).
-        # Without it the hash-sync step exits 1 and the auto-publish job fails.
-        # pydantic kept for parity with ci.yml (cheap, future-proof).
-        run: pip install pyyaml pydantic jinja2
+        run: uv sync
 
       - name: Detect manual version bump
         id: version_check
