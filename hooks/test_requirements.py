@@ -1036,6 +1036,51 @@ def test_project_has_config(runner: TestRunner):
         runner.test("Empty .claude dir → False", project_has_config(tmpdir) is False)
 
 
+def test_bootstrap_reexec_plan(runner: TestRunner):
+    """_bootstrap._plan_reexec: pure decision for the uv re-exec self-heal.
+
+    Guards the runtime bootstrap that makes hooks/req self-heal when the ambient
+    python lacks PyYAML (re-exec under `uv run`). Tests the side-effect-free planner
+    so we never spawn a real uv process.
+    """
+    print("\n📦 Testing _bootstrap re-exec planner...")
+    from _bootstrap import _plan_reexec
+
+    argv = ["/x/hooks/check-requirements.py"]
+
+    # Dep already present → never re-exec (zero-overhead common path)
+    runner.test("yaml present → no re-exec",
+                _plan_reexec(("PyYAML>=6.0",), yaml_present=True,
+                             uv_path="/usr/bin/uv", already_bootstrapped=False, argv=argv) is None)
+
+    # Missing dep but no uv → fail-open, proceed in-process
+    runner.test("no uv → no re-exec",
+                _plan_reexec(("PyYAML>=6.0",), yaml_present=False,
+                             uv_path=None, already_bootstrapped=False, argv=argv) is None)
+
+    # Missing dep, uv present, but already bootstrapped once → no loop
+    runner.test("already bootstrapped → no re-exec",
+                _plan_reexec(("PyYAML>=6.0",), yaml_present=False,
+                             uv_path="/usr/bin/uv", already_bootstrapped=True, argv=argv) is None)
+
+    # Missing dep + uv + not yet bootstrapped → build the uv run command
+    plan = _plan_reexec(("PyYAML>=6.0",), yaml_present=False,
+                        uv_path="/usr/bin/uv", already_bootstrapped=False, argv=argv)
+    runner.test("re-exec plan built", plan is not None)
+    if plan:
+        runner.test("plan invokes uv run --no-project isolated",
+                    plan[:4] == ["/usr/bin/uv", "run", "--no-project", "--with"], str(plan[:6]))
+        runner.test("plan passes PyYAML + python + argv",
+                    plan[4] == "PyYAML>=6.0" and plan[5] == "python" and plan[6:] == argv, str(plan))
+
+    # Multiple packages → one --with per package
+    multi = _plan_reexec(("PyYAML>=6.0", "jinja2>=3.1"), yaml_present=False,
+                         uv_path="/usr/bin/uv", already_bootstrapped=False, argv=argv)
+    runner.test("multi-package → two --with pairs",
+                multi is not None and multi.count("--with") == 2
+                and "jinja2>=3.1" in multi, str(multi))
+
+
 def test_write_local_config(runner: TestRunner):
     """Test writing local config overrides."""
     print("\n📝 Testing write_local_config and write_local_override...")
@@ -13409,6 +13454,7 @@ def main():
     test_state_storage_module(runner)
     test_config_module(runner)
     test_project_has_config(runner)
+    test_bootstrap_reexec_plan(runner)
     test_lazy_dev_ruleset(runner)
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)

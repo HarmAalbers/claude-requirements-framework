@@ -42,6 +42,9 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
+import _bootstrap
+_bootstrap.ensure()  # re-exec under `uv run` if ambient python lacks PyYAML
+
 from requirements import BranchRequirements
 from config import matches_trigger
 from session import update_registry, normalize_session_id
