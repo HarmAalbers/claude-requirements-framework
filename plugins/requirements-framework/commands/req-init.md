@@ -3,7 +3,7 @@ name: req-init
 description: "Scaffold .claude/requirements.local.yaml for strict-mode compliance"
 argument-hint: ""
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Edit", "AskUserQuestion"]
-git_hash: a3a583a
+git_hash: 2130999
 ---
 
 > **Workflow position**: escape-hatch command. Always allowed even when strict preflight is blocking the project. Run this to make a non-compliant project compliant.
