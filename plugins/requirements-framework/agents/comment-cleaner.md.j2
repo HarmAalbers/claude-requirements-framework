@@ -21,7 +21,7 @@ Comment-cleaner auto-fixes by editing files directly.
 </example>
 model: haiku
 color: yellow
-git_hash: 6575454
+git_hash: a3a583a
 allowed-tools: ["Read", "Edit", "Glob", "Grep", "Bash"]
 ---
 
