@@ -64,15 +64,31 @@ stg new <next-patch>     # Start the next logical patch on top
 
 ## Build & Test Commands
 
+> **`uv` is required.** Every Python entrypoint — the `req` CLI, the lifecycle
+> hooks, and all build/test tooling — resolves its interpreter and dependencies
+> through `uv` (single source of truth: `pyproject.toml` + `uv.lock`). Nothing
+> relies on the ambient `python3`. Run tooling via `uv run` so the synced env
+> (core `PyYAML` + the `dev` group: `pydantic`, `jinja2`, `ruff`) is guaranteed.
+> `uv sync` materializes `.venv`; the heavy `[llm]` extra is opt-in (`uv sync --extra llm`).
+> At runtime the hooks/CLI self-bootstrap: if the ambient python lacks `PyYAML`
+> and `uv` is on PATH, `hooks/lib/_bootstrap.py` re-execs once under
+> `uv run --no-project --with PyYAML` (zero overhead when deps are already present).
+
 ```bash
+# One-time: sync the uv-managed environment
+uv sync
+
 # Run test suite
-python3 hooks/test_requirements.py
+uv run python hooks/test_requirements.py
+
+# Lint (pinned ruff, matches CI)
+uv run ruff check .
 
 # Sync between repo and deployed location (~/.claude/hooks)
 ./sync.sh status   # Check sync status (run before committing!)
-./sync.sh deploy   # Copy repo → ~/.claude/hooks
+./sync.sh deploy   # Copy repo → ~/.claude/hooks (renders templates via uv)
 
-# Installation
+# Installation (requires uv on PATH; runs `uv sync`)
 ./install.sh
 
 # Configure logging (debug, info, warning, error)
