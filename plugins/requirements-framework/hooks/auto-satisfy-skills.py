@@ -30,7 +30,7 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from requirements import BranchRequirements
-from config import RequirementsConfig
+from config import RequirementsConfig, project_has_config
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import normalize_session_id
 from session_metrics import SessionMetrics
@@ -127,10 +127,8 @@ def main() -> int:
         hook_cwd = input_data.get('cwd')
         project_dir = resolve_project_root(start_dir=hook_cwd, verbose=False)
 
-        # Check if project has requirements config
-        config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-        if not config_file.exists():
+        # Check if project has requirements config (project-level or local override)
+        if not project_has_config(project_dir):
             return 0  # No requirements config
 
         # Must be a git repo

@@ -2013,6 +2013,10 @@ def _detect_init_context(args, project_dir: str) -> str:
     Detect if user is creating global, project, or local config.
 
     Returns: 'global', 'project', or 'local'
+
+    The default is 'local' (.claude/requirements.local.yaml) so the CLI matches
+    the /req-init slash command and the strict-preflight canonical file. Pass
+    --project for a version-controlled .claude/requirements.yaml.
     """
     # Explicit flags take precedence
     if args.local:
@@ -2026,12 +2030,12 @@ def _detect_init_context(args, project_dir: str) -> str:
         if Path(project_dir).resolve() == home_claude.resolve():
             return 'global'
     except (OSError, RuntimeError) as e:
-        # Path resolution failed - log warning and default to project
-        out(warning("⚠️  Path resolution failed, defaulting to project context"), file=sys.stderr)
+        # Path resolution failed - log warning and default to local
+        out(warning("⚠️  Path resolution failed, defaulting to local context"), file=sys.stderr)
         out(dim(f"   Error: {e}"), file=sys.stderr)
 
-    # Default: project
-    return 'project'
+    # Default: local (matches /req-init; use --project for the committable file)
+    return 'local'
 
 
 def _get_preset_options_for_context(context: str) -> tuple:
@@ -2086,8 +2090,9 @@ def cmd_init(args) -> int:
     """
     Initialize requirements framework for a project.
 
-    Creates .claude/requirements.yaml (and optionally .local.yaml) with
-    preset configurations.
+    Creates .claude/requirements.local.yaml by default (matching /req-init and
+    the strict-preflight canonical file). Pass --project for a version-controlled
+    .claude/requirements.yaml, or --global for the machine-wide defaults.
 
     Args:
         args: Parsed arguments
@@ -3525,9 +3530,9 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-    req init                            # Initialize with relaxed preset
+    req init                            # Initialize local requirements.local.yaml (default)
     req init --preset strict            # Initialize with strict preset
-    req init --local                    # Create local config only
+    req init --project                  # Create version-controlled requirements.yaml
     req init --preview                  # Preview config without writing
     req status                          # Show current status
     req config commit_plan              # Show config for commit_plan
@@ -3622,8 +3627,8 @@ Environment Variables:
     init_parser.add_argument('--yes', '-y', action='store_true', help='Non-interactive mode (use defaults)')
     init_parser.add_argument('--preset', '-p', choices=['strict', 'relaxed', 'minimal', 'advanced', 'inherit'],
                              help='Preset profile (context-aware defaults)')
-    init_parser.add_argument('--project', action='store_true', help='Create project config only')
-    init_parser.add_argument('--local', action='store_true', help='Create local config only')
+    init_parser.add_argument('--project', action='store_true', help='Create version-controlled requirements.yaml instead of the local default')
+    init_parser.add_argument('--local', action='store_true', help='Create local requirements.local.yaml (default)')
     init_parser.add_argument('--force', '-f', action='store_true', help='Overwrite existing config')
     init_parser.add_argument('--preview', '--dry-run', action='store_true', help='Preview without writing')
 

@@ -1,9 +1,8 @@
 """Shared utilities for hook implementation."""
 import json
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from config import RequirementsConfig
+from config import RequirementsConfig, project_has_config
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from logger import configure_logger, get_logger, JsonLogger
 from console import configure_console
@@ -116,10 +115,8 @@ def early_hook_setup(
     config = None
     if not skip_config:
         try:
-            # Check if project has requirements config
-            config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-            if config_file.exists():
+            # Check if project has requirements config (project-level or local override)
+            if project_has_config(project_dir):
                 config = RequirementsConfig(project_dir)
         except Exception as e:
             # Config loading failed - fail open with basic logger

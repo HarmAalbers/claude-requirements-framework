@@ -1843,6 +1843,22 @@ class RequirementsConfig:
         self._validator.validate_dynamic_requirement(req_name, req)
 
 
+def project_has_config(project_dir) -> bool:
+    """True if a project-level OR local-override requirements config exists.
+
+    The loader (RequirementsConfig) already merges .local.yaml as the highest-precedence
+    layer, but hook existence-gates historically only checked requirements.yaml. Use this
+    predicate so projects scaffolded via /req-init (which writes requirements.local.yaml)
+    are recognized as configured wherever the loader would read them.
+    """
+    claude_dir = Path(project_dir) / RequirementsConfig.CLAUDE_DIRNAME
+    names = (
+        RequirementsConfig.PROJECT_CONFIG_FILENAME,
+        *RequirementsConfig.LOCAL_OVERRIDE_FILENAMES,
+    )
+    return any((claude_dir / name).exists() for name in names)
+
+
 if __name__ == "__main__":
     import tempfile
     import os

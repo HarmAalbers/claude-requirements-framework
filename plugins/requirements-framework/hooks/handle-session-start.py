@@ -30,7 +30,7 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
-from config import RequirementsConfig
+from config import RequirementsConfig, project_has_config
 from config_utils import summarize_triggers, get_requirement_description
 from requirements import BranchRequirements
 from session import update_registry, cleanup_stale_sessions, normalize_session_id, get_active_sessions
@@ -522,9 +522,8 @@ def main() -> int:
         if not project_dir or not branch:
             return 0
 
-        # Check if project has its own config
-        project_config_yaml = Path(project_dir) / '.claude' / 'requirements.yaml'
-        has_project_config = project_config_yaml.exists()
+        # Check if project has its own config (project-level or local override)
+        has_project_config = project_has_config(project_dir)
 
         # Suggest init if no project config (only on startup, not resume/compact)
         source = input_data.get('source', 'startup')
@@ -532,10 +531,9 @@ def main() -> int:
             emit_hook_context("SessionStart", """💡 **No requirements config found for this project**
 
 To set up the requirements framework, run:
-  `req init`
+  `/req-init`
 
-Or create `.claude/requirements.yaml` manually.
-See `req init --help` for options.""")
+This scaffolds `.claude/requirements.local.yaml` with a starter config.""")
             return 0
 
         # Skip if config wasn't loaded (shouldn't happen given checks above)
