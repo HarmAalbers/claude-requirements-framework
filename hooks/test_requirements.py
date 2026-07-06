@@ -5196,17 +5196,20 @@ def test_cli_init_command(runner: TestRunner):
         )
         runner.test("init --preview runs", result.returncode == 0, result.stderr)
         runner.test("init --preview shows config", "commit_plan" in result.stdout, result.stdout[:200])
-        config_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
+        # Default context is now 'local' → .claude/requirements.local.yaml (matches /req-init)
+        config_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
+        project_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
         runner.test("init --preview doesn't create file", not config_file.exists())
 
-        # Test --yes creates project config
+        # Test --yes creates local config by default
         result = subprocess.run(
             ["python3", str(cli_path), "init", "--yes"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("init --yes runs", result.returncode == 0, result.stderr)
         runner.test("init creates .claude dir", (Path(tmpdir) / '.claude').exists())
-        runner.test("init creates config", config_file.exists())
+        runner.test("init default writes local config", config_file.exists())
+        runner.test("init default does not write project config", not project_file.exists())
 
         # Verify config content
         if config_file.exists():
@@ -5231,14 +5234,21 @@ def test_cli_init_command(runner: TestRunner):
         content = config_file.read_text()
         runner.test("init --force writes strict", "protected_branch" in content, content[:200])
 
-        # Test --local creates local config
-        local_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
+        # Test --local creates local config explicitly (same as default)
         result = subprocess.run(
             ["python3", str(cli_path), "init", "--yes", "--local", "--force"],
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("init --local runs", result.returncode == 0, result.stderr)
-        runner.test("init --local creates file", local_file.exists(), str(local_file))
+        runner.test("init --local creates file", config_file.exists(), str(config_file))
+
+        # Test --project creates the version-controlled requirements.yaml
+        result = subprocess.run(
+            ["python3", str(cli_path), "init", "--yes", "--project", "--force"],
+            cwd=tmpdir, capture_output=True, text=True
+        )
+        runner.test("init --project runs", result.returncode == 0, result.stderr)
+        runner.test("init --project creates requirements.yaml", project_file.exists(), str(project_file))
 
         # Test presets
         for preset in ['strict', 'relaxed', 'minimal']:
