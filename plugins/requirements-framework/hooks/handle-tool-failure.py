@@ -32,6 +32,9 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
+import _bootstrap
+_bootstrap.ensure()  # re-exec under `uv run` if ambient python lacks PyYAML
+
 from session import normalize_session_id
 from session_metrics import SessionMetrics
 from hook_utils import early_hook_setup

@@ -34,6 +34,9 @@ from pathlib import Path
 lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
+import _bootstrap
+_bootstrap.ensure()  # re-exec under `uv run` if ambient python lacks PyYAML
+
 from requirements import BranchRequirements
 from config import RequirementsConfig, matches_trigger, project_has_config
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
