@@ -34,7 +34,7 @@ lib_path = Path(__file__).parent / 'lib'
 sys.path.insert(0, str(lib_path))
 
 from logger import get_logger
-from config import RequirementsConfig
+from config import RequirementsConfig, project_has_config
 from git_utils import resolve_project_root
 from session import normalize_session_id
 
@@ -92,8 +92,7 @@ def main() -> int:
         if not project_dir:
             return 0  # No project context
 
-        config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-        if not config_file.exists():
+        if not project_has_config(project_dir):
             return 0  # No config
 
         config = RequirementsConfig(project_dir)

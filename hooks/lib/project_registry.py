@@ -164,7 +164,8 @@ class ProjectRegistry:
         max_depth: int = MAX_SCAN_DEPTH
     ) -> List[str]:
         """
-        Scan directories for projects with .claude/requirements.yaml files.
+        Scan directories for projects with a .claude/requirements.yaml or
+        .claude/requirements.local.yaml config file.
 
         Args:
             root_paths: Directories to scan. Uses defaults if not specified.
@@ -205,9 +206,9 @@ class ProjectRegistry:
             return
 
         try:
-            # Check for requirements config in this directory
-            config_path = directory / ".claude" / "requirements.yaml"
-            if config_path.exists():
+            # Check for requirements config in this directory (project-level or local override)
+            from config import project_has_config
+            if project_has_config(directory):
                 discovered.add(str(directory.resolve()))
                 # Don't recurse into discovered projects
                 return
@@ -316,10 +317,10 @@ class ProjectRegistry:
         registry = self.read()
         projects = registry.get("projects", {})
 
+        from config import project_has_config
         to_remove = []
         for path in projects:
-            config_path = Path(path) / ".claude" / "requirements.yaml"
-            if not config_path.exists():
+            if not project_has_config(path):
                 to_remove.append(path)
 
         for path in to_remove:

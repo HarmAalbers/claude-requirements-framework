@@ -2514,8 +2514,8 @@ def test_session_start_hook(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("SessionStart no config = pass", result.returncode == 0)
-        runner.test("SessionStart suggests init", "req init" in extract_hook_context(result.stdout),
-                   f"Expected 'req init' in output, got: {result.stdout[:200]}")
+        runner.test("SessionStart suggests init", "/req-init" in extract_hook_context(result.stdout),
+                   f"Expected '/req-init' in output, got: {result.stdout[:200]}")
 
         # Test without config on resume (should NOT suggest init) - provide session_id
         result = subprocess.run(
@@ -2641,7 +2641,7 @@ def test_session_start_json_format(runner: TestRunner):
             runner.test("No-config has additionalContext",
                        "additionalContext" in hook_output)
             runner.test("No-config context contains req init",
-                       "req init" in hook_output.get("additionalContext", ""))
+                       "/req-init" in hook_output.get("additionalContext", ""))
         except json.JSONDecodeError:
             runner.test("No-config output is valid JSON", False,
                        f"Could not parse JSON: {result.stdout[:200]}")
