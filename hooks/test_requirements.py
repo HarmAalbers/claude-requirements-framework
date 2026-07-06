@@ -1633,6 +1633,46 @@ def test_cli_commands(runner: TestRunner):
         )
 
 
+def test_cli_recognizes_local_yaml(runner: TestRunner):
+    """req status/enable recognize a project with ONLY requirements.local.yaml.
+
+    Regression guard: /req-init scaffolds .local.yaml, but the CLI status/satisfy/
+    enable commands used to hard-check requirements.yaml existence and report
+    "No requirements configured" for a .local.yaml-only project (same blind spot
+    the hooks had). They now route through project_has_config().
+    """
+    print("\n📦 Testing CLI recognizes requirements.local.yaml...")
+
+    cli_path = Path(__file__).parent / "requirements-cli.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "loc-branch"], cwd=tmpdir, capture_output=True)
+
+        os.makedirs(f"{tmpdir}/.claude")
+        # ONLY a local override — no requirements.yaml. Uniquely-named requirement
+        # so the assertion holds even if a global config merges in.
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "requirements": {
+                "local_only_req": {"enabled": True, "scope": "session"},
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.local.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(cli_path), "status"],
+            cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("status runs for .local.yaml-only project", result.returncode == 0, result.stderr)
+        runner.test("status does NOT report unconfigured",
+                    "No requirements configured" not in result.stdout, result.stdout[:300])
+        runner.test("status surfaces the local requirement",
+                    "local_only_req" in result.stdout, result.stdout[:300])
+
+
 def test_cli_status_modes(runner: TestRunner):
     """Test new status modes (focused, summary, verbose)."""
     print("\n📦 Testing status command modes...")
@@ -13468,6 +13508,7 @@ def main():
     test_branch_level_override(runner)
     test_branch_level_override_with_ttl(runner)
     test_cli_commands(runner)
+    test_cli_recognizes_local_yaml(runner)
     test_cli_status_modes(runner)
     test_cli_sessions_command(runner)
     test_cli_doctor_command(runner)

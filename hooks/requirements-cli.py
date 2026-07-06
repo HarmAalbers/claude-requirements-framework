@@ -28,7 +28,7 @@ import _bootstrap
 _bootstrap.ensure()  # re-exec under `uv run` if ambient python lacks PyYAML
 
 from requirements import BranchRequirements
-from config import RequirementsConfig, load_yaml
+from config import RequirementsConfig, load_yaml, project_has_config
 from git_utils import get_current_branch, is_git_repo, resolve_project_root
 from session import get_session_id, get_active_sessions, cleanup_stale_sessions, SessionNotFoundError
 from session_metrics import list_session_metrics
@@ -186,10 +186,8 @@ def _cmd_status_focused(project_dir: str, branch: str, session_id: str, args) ->
     out(f"Branch: {bold(branch)}")
     out()
 
-    # Check for config
-    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-    if not config_file.exists():
+    # Check for config (project-level or local override)
+    if not project_has_config(project_dir):
         out(info("ℹ️  No requirements configured for this project."))
         out(dim("   Run 'req init' to set up requirements"))
         return 0
@@ -301,12 +299,10 @@ def _cmd_status_verbose(project_dir: str, branch: str, session_id: str, args) ->
 
     out()
 
-    # Check for config
-    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-    if not config_file.exists():
+    # Check for config (project-level or local override)
+    if not project_has_config(project_dir):
         out(info("ℹ️  No requirements configured for this project."))
-        out(dim("   Create .claude/requirements.yaml to enable."))
+        out(dim("   Run 'req init' to set up requirements."))
         return 0
 
     config = RequirementsConfig(project_dir)
@@ -468,10 +464,8 @@ def cmd_satisfy(args) -> int:
         out(error("❌ Not on a branch (detached HEAD?)"), file=sys.stderr)
         return 1
 
-    # Check for config
-    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-    if not config_file.exists():
+    # Check for config (project-level or local override)
+    if not project_has_config(project_dir):
         out(warning("⚠️  No requirements configured for this project."), file=sys.stderr)
         # Still allow satisfying (for testing)
 
@@ -1358,12 +1352,10 @@ def cmd_enable(args) -> int:
         out(dim("   Requirements framework only works in git repositories"))
         return 1
 
-    # Check if project has any config
-    config_file = Path(project_dir) / '.claude' / 'requirements.yaml'
-
-    if not config_file.exists():
+    # Check if project has any config (project-level or local override)
+    if not project_has_config(project_dir):
         out(info("ℹ️  No requirements configured for this project."), file=sys.stderr)
-        out(dim("   Create .claude/requirements.yaml to configure requirements."))
+        out(dim("   Run 'req init' to configure requirements."))
         out(dim("   See: ~/.claude/requirements.yaml for examples"))
         return 1
 
