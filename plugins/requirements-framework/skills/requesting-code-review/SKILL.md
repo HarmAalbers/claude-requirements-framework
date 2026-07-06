@@ -1,7 +1,7 @@
 ---
 name: requesting-code-review
 description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
-git_hash: 2130999
+git_hash: 1c7c6d5
 ---
 
 # Requesting Code Review
