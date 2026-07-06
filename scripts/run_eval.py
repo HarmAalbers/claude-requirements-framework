@@ -159,7 +159,7 @@ async def run(args: argparse.Namespace) -> int:
 
     # Resolve the judge_model label unconditionally so EvalScore.judge_model
     # always has the right value, even when --no-judge is set ("none" in that case).
-    judge_model = "claude-sonnet-4-6" if args.judge == "sonnet" else "claude-haiku-4-5"
+    judge_model = "claude-sonnet-5" if args.judge == "sonnet" else "claude-haiku-4-5"
     judge, close_judge = (None, None)
     if not args.no_judge:
         print(f"Opening persistent ClaudeSDKClient for judge ({judge_model})...")

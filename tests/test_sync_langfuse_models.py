@@ -134,22 +134,29 @@ EXPECTED_PRICES = {
         "cache_read_input_tokens": 0.0000001,
         "cache_creation_input_tokens": 0.00000125,
     },
-    "claude-sonnet-4-6": {
+    "claude-sonnet-5": {
         "input": 0.000003,
         "output": 0.000015,
         "cache_read_input_tokens": 0.0000003,
         "cache_creation_input_tokens": 0.00000375,
     },
+    "claude-fable-5": {
+        "input": 0.00001,
+        "output": 0.00005,
+        "cache_read_input_tokens": 0.000001,
+        "cache_creation_input_tokens": 0.0000125,
+    },
 }
 EXPECTED_PATTERNS = {
     "claude-opus-4-8": r"(?i)^claude-opus-4-8.*$",
     "claude-haiku-4-5": r"(?i)^claude-haiku-4-5.*$",
-    "claude-sonnet-4-6": r"(?i)^claude-sonnet-4-6.*$",
+    "claude-sonnet-5": r"(?i)^claude-sonnet-5.*$",
+    "claude-fable-5": r"(?i)^claude-fable-5.*$",
 }
 
 
-def test_register_models_posts_three_when_absent(runner):
-    print("\ntest_register_models_posts_three_when_absent")
+def test_register_models_posts_four_when_absent(runner):
+    print("\ntest_register_models_posts_four_when_absent")
     opener = _FakeOpener(pages=[([], 1)])
     orig = _install_opener(slm, opener)
     try:
@@ -158,13 +165,13 @@ def test_register_models_posts_three_when_absent(runner):
         _restore_opener(orig)
 
     runner.test(
-        "exactly 3 POSTs",
-        len(opener.posts) == 3,
+        "exactly 4 POSTs",
+        len(opener.posts) == 4,
         f"posts={[b['modelName'] for _, b in opener.posts]}",
     )
     posted = {b["modelName"]: b for _, b in opener.posts}
     runner.test(
-        "posted all three model names",
+        "posted all four model names",
         set(posted) == set(EXPECTED_PRICES),
         f"got={set(posted)}",
     )
@@ -220,7 +227,7 @@ def test_register_models_idempotent_skips_existing(runner):
     finally:
         _restore_opener(orig)
     runner.test("0 POSTs when all exist", len(opener.posts) == 0, f"posts={opener.posts}")
-    runner.test("3 action lines returned", len(actions) == 3, f"actions={actions}")
+    runner.test("4 action lines returned", len(actions) == 4, f"actions={actions}")
 
 
 def test_register_models_partial_existence(runner):
@@ -234,13 +241,13 @@ def test_register_models_partial_existence(runner):
         _restore_opener(orig)
     posted_names = sorted(b["modelName"] for _, b in opener.posts)
     runner.test(
-        "exactly 2 POSTs",
-        len(opener.posts) == 2,
+        "exactly 3 POSTs",
+        len(opener.posts) == 3,
         f"posts={posted_names}",
     )
     runner.test(
-        "the correct two missing models posted",
-        posted_names == ["claude-haiku-4-5", "claude-sonnet-4-6"],
+        "the correct three missing models posted",
+        posted_names == ["claude-fable-5", "claude-haiku-4-5", "claude-sonnet-5"],
         f"got={posted_names}",
     )
 
@@ -277,15 +284,15 @@ def test_check_mode_never_posts(runner):
     runner.test("0 POSTs in check mode", len(opener.posts) == 0, f"posts={opener.posts}")
     would_create = [a for a in actions if "would create" in a.lower()]
     runner.test(
-        "reports 'would create' for all 3",
-        len(would_create) == 3,
+        "reports 'would create' for all 4",
+        len(would_create) == 4,
         f"actions={actions}",
     )
 
 
 def test_pagination_followed(runner):
     print("\ntest_pagination_followed")
-    # page1 (totalPages=2) has opus; page2 has haiku. sonnet absent -> 1 POST.
+    # page1 (totalPages=2) has opus; page2 has haiku. sonnet-5 + fable-5 absent -> 2 POSTs.
     page1 = ([_model_def("claude-opus-4-8")], 2)
     page2 = ([_model_def("claude-haiku-4-5")], 2)
     opener = _FakeOpener(pages=[page1, page2])
@@ -301,8 +308,8 @@ def test_pagination_followed(runner):
     )
     posted_names = sorted(b["modelName"] for _, b in opener.posts)
     runner.test(
-        "only the truly-absent model posted",
-        posted_names == ["claude-sonnet-4-6"],
+        "only the truly-absent models posted",
+        posted_names == ["claude-fable-5", "claude-sonnet-5"],
         f"got={posted_names}",
     )
 
@@ -331,7 +338,9 @@ def test_drift_reported_not_updated(runner):
     drifted = dict(drifted)
     drifted["prices"] = dict(drifted["prices"])
     drifted["prices"]["input"] = 0.999  # stale/wrong price
-    existing = [drifted] + [_model_def(n) for n in ("claude-haiku-4-5", "claude-sonnet-4-6")]
+    existing = [drifted] + [
+        _model_def(n) for n in ("claude-haiku-4-5", "claude-sonnet-5", "claude-fable-5")
+    ]
     opener = _FakeOpener(pages=[(existing, 1)])
     orig = _install_opener(slm, opener)
     try:
@@ -409,7 +418,8 @@ def test_managed_nested_prices_drift_detected(runner):
     bad = dict(EXPECTED_PRICES["claude-opus-4-8"])
     bad["output"] = 0.999  # wrong output price in nested form
     existing = [_managed_style_def("claude-opus-4-8", bad)] + [
-        _managed_style_def(n, EXPECTED_PRICES[n]) for n in ("claude-haiku-4-5", "claude-sonnet-4-6")
+        _managed_style_def(n, EXPECTED_PRICES[n])
+        for n in ("claude-haiku-4-5", "claude-sonnet-5", "claude-fable-5")
     ]
     opener = _FakeOpener(pages=[(existing, 1)])
     orig = _install_opener(slm, opener)
@@ -428,7 +438,7 @@ def test_managed_nested_prices_drift_detected(runner):
 def main():
     runner = TestRunner()
     print("Testing scripts/sync_langfuse_models.py")
-    test_register_models_posts_three_when_absent(runner)
+    test_register_models_posts_four_when_absent(runner)
     test_register_models_idempotent_skips_existing(runner)
     test_register_models_partial_existence(runner)
     test_prices_keys_match_usage_details(runner)

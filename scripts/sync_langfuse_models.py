@@ -77,9 +77,13 @@ _PRICE_TABLE = {
         "matchPattern": r"(?i)^claude-haiku-4-5.*$",
         "prices": (0.000001, 0.000005, 0.0000001, 0.00000125),
     },
-    "claude-sonnet-4-6": {
-        "matchPattern": r"(?i)^claude-sonnet-4-6.*$",
+    "claude-sonnet-5": {
+        "matchPattern": r"(?i)^claude-sonnet-5.*$",
         "prices": (0.000003, 0.000015, 0.0000003, 0.00000375),
+    },
+    "claude-fable-5": {
+        "matchPattern": r"(?i)^claude-fable-5.*$",
+        "prices": (0.00001, 0.00005, 0.000001, 0.0000125),
     },
 }
 
