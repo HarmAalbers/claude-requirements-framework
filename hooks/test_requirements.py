@@ -13053,7 +13053,7 @@ def test_statusline_script_end_to_end(runner: TestRunner):
         state_dir = repo / ".git" / "requirements"
         state_dir.mkdir(parents=True, exist_ok=True)
         # design_approved satisfied → phase advances past "design" to
-        # "plan-write"; one triggered-unsatisfied req → count == 1. Both differ
+        # "plan"; one triggered-unsatisfied req → count == 1. Both differ
         # from the placeholder ([design] / [? req]).
         (state_dir / "wip.json").write_text(json.dumps({"requirements": {
             "design_approved": {"satisfied": True},
@@ -13095,7 +13095,7 @@ def test_statusline_script_end_to_end(runner: TestRunner):
             runner.test(f"{label}: no traceback leaked to stderr",
                         "Traceback" not in proc.stderr, f"stderr={proc.stderr!r}")
             runner.test(f"{label}: phase is real, not [design]",
-                        "[plan-write]" in out, f"Got: {out!r}")
+                        "[plan]" in out, f"Got: {out!r}")
             runner.test(f"{label}: req count numeric, not '?'",
                         "[? req" not in out and "[1 req" in out, f"Got: {out!r}")
 
