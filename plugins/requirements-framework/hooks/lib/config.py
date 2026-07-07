@@ -900,79 +900,74 @@ class RequirementsConfig:
             "timeout": 5,
         },
     }
-    # Zero-config workflow: the five GATED phases are seeded 1:1 from
-    # derive_phase.PHASE_GATES so the default phase sequence (and the /req
-    # dispatch skills) reproduce today's hardcoded behaviour exactly. `phases`
-    # is an ordered list; the first phase whose `gate` requirement is
-    # unsatisfied is the current phase, else `ship_phase`. `skill` names mirror
-    # commands/req.md's dispatch table. `description` is the LLM-facing hint the
-    # supervisor's routing menu (req-supervisor.md.j2) renders.
-    #
-    # The trailing `refactor` and `ship` phases are GATELESS (gate:null):
-    # derive_phase's first-unsatisfied-gate scan skips them, so they are
-    # transparent to phase derivation (every existing derive_phase test stays
-    # green — that is the proof of non-behavioral). They exist only to complete
-    # the supervisor's default routing vocabulary, mirroring the historical
-    # 7-target menu (`refactor` is a dispatch-only phase; `ship` is the terminal
-    # label that also equals `ship_phase`).
+    # Zero-config workflow: the 7-node TYPED backbone (design→plan→validate→
+    # build→review→verify→ship). Nodes carry a `type` (spine|team), an optional
+    # `loop` (a re-armed single_use gate, e.g. Build's per-commit pre-commit), and
+    # optional `conditionals` (declared side-quest skills, surfaced as available —
+    # no gate, no auto-fire). `_normalize_phase` preserves these extra keys
+    # verbatim; derive_phase walks phases by `gate` so team vs spine is
+    # transparent to derivation. The first phase whose `gate` requirement is
+    # unsatisfied is the current phase, else `ship_phase`. `ship` is gateless.
     WORKFLOW_DEFAULTS: WorkflowConfigDict = {
         "default_phase": "design",
         "ship_phase": "ship",
         "phases": [
             {
                 "name": "design",
+                "type": "spine",
                 "gate": "design_approved",
                 "skill": "requirements-framework:brainstorming",
-                "description": (
-                    "design phase: requirements unclear, need exploration"
-                ),
+                "brainstorm_on_enter": True,
+                "description": "design: explore the problem",
             },
             {
-                "name": "plan-write",
+                "name": "plan",
+                "type": "spine",
                 "gate": "plan_written",
                 "skill": "requirements-framework:writing-plans",
-                "description": (
-                    "plan-write phase: design ready, plan not yet written"
-                ),
+                "description": "plan: write the executable plan",
             },
             {
-                "name": "plan-validate",
-                "gate": "solid_reviewed",
+                "name": "validate",
+                "type": "team",
+                "gate": "plan_validated",
                 "skill": "requirements-framework:arch-review",
-                "description": (
-                    "plan-validate phase: plan written, needs architectural "
-                    "review"
-                ),
+                "conditionals": ["requirements-framework:codex-review"],
+                "description": "validate: architecture review team",
             },
             {
-                "name": "implement",
-                "gate": None,
+                "name": "build",
+                "type": "spine",
+                "gate": "implementation_done",
                 "skill": "requirements-framework:executing-plans",
-                "description": "implement phase: plan validated, execute it",
+                "loop": {
+                    "gate": "pre_commit_review",
+                    "skill": "requirements-framework:pre-commit",
+                    "on": "commit",
+                },
+                "description": "build: implement the plan",
             },
             {
                 "name": "review",
-                "gate": "pre_pr_review",
+                "type": "team",
+                "gate": "pr_reviewed",
                 "skill": "requirements-framework:deep-review",
-                "description": (
-                    "review phase: implementation done, needs PR review"
-                ),
+                "conditionals": ["requirements-framework:codex-review"],
+                "description": "review: code review team",
             },
             {
-                "name": "refactor",
-                "gate": None,
-                "skill": "requirements-framework:refactor-orchestration",
-                "description": (
-                    "refactor phase: explicit multi-layer refactor requested"
-                ),
+                "name": "verify",
+                "type": "spine",
+                "gate": "verified",
+                "skill": "requirements-framework:verification-before-completion",
+                "description": "verify: capture test/build evidence",
             },
             {
                 "name": "ship",
+                "type": "spine",
                 "gate": None,
-                "skill": None,
-                "description": (
-                    "ship phase: all session-scoped requirements satisfied"
-                ),
+                "skill": "requirements-framework:finishing-a-development-branch",
+                "description": "ship: integrate the branch",
             },
         ],
     }
