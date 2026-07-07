@@ -43,115 +43,34 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
     # =========================================================================
     # REQUIREMENTS
     # =========================================================================
-    "commit_plan": {
-        "name": "Commit Planning",
+    "plan_validated": {
+        "name": "Plan Validation (Validate team)",
         "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.commit_plan",
-        "description": "Require planning before code changes",
-        "introduced": "1.0",
+        "config_path": "requirements.plan_validated",
+        "description": "Architecture-review team gate: ADR alignment, SOLID, TDD-readiness, commit plan",
+        "introduced": "4.29",
         "default_enabled": True,
         "example_yaml": """requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     type: blocking
     scope: session
-    description: "Ensures an atomic commit strategy exists before implementation."
+    description: "Ensures the plan passed the architecture-review team (ADR alignment, SOLID, TDD-readiness, commit plan)."
     trigger_tools:
       - Edit
       - Write
       - MultiEdit
     auto_resolve_skill: "requirements-framework:arch-review"
+    satisfied_by_skill: 'requirements-framework:arch-review'
     message: |
-      ## Blocked: commit_plan
+      ## Blocked: plan_validated
 
       **Execute**: `/requirements-framework:arch-review`
 
-      Team-based architecture review with commit planning and cross-validation.
+      Team-based architecture review: ADR alignment, SOLID, TDD-readiness, and commit planning, cross-validated.
 
       ---
-      Fallback: `req satisfy commit_plan`""",
-    },
-    "adr_reviewed": {
-        "name": "ADR Review",
-        "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.adr_reviewed",
-        "description": "Check Architecture Decision Records before changes",
-        "introduced": "1.0",
-        "default_enabled": True,
-        "example_yaml": """requirements:
-  adr_reviewed:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures changes align with Architecture Decision Records."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: adr_reviewed
-
-      **Execute**: `/requirements-framework:arch-review`
-
-      ---
-      Fallback: `req satisfy adr_reviewed`""",
-    },
-    "tdd_planned": {
-        "name": "TDD Planning",
-        "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.tdd_planned",
-        "description": "Ensure plan includes TDD strategy and test cases per feature",
-        "introduced": "1.2",
-        "default_enabled": True,
-        "example_yaml": """requirements:
-  tdd_planned:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures the plan includes TDD strategy and test cases per feature."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: tdd_planned
-
-      **Execute**: `/requirements-framework:arch-review`
-
-      Team-based TDD validation with cross-reference against breaking changes.
-
-      ---
-      Fallback: `req satisfy tdd_planned`""",
-    },
-    "solid_reviewed": {
-        "name": "SOLID Review",
-        "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.solid_reviewed",
-        "description": "Validate plan against SOLID design principles",
-        "introduced": "2.2",
-        "default_enabled": True,
-        "example_yaml": """requirements:
-  solid_reviewed:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures the plan follows SOLID principles with Python-specific patterns."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: solid_reviewed
-
-      **Execute**: `/requirements-framework:arch-review`
-
-      Team-based SOLID review with cross-validation against testability and ADRs.
-
-      ---
-      Fallback: `req satisfy solid_reviewed`""",
+      Fallback: `req satisfy plan_validated`""",
     },
     "pre_commit_review": {
         "name": "Pre-Commit Review",
@@ -184,15 +103,15 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
       ---
       Fallback: `req satisfy pre_commit_review`""",
     },
-    "pre_pr_review": {
-        "name": "Pre-PR Review",
+    "pr_reviewed": {
+        "name": "PR Review (Review team)",
         "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.pre_pr_review",
-        "description": "Comprehensive quality check before PR creation",
-        "introduced": "1.0",
+        "config_path": "requirements.pr_reviewed",
+        "description": "Comprehensive quality review by the /deep-review team before PR creation",
+        "introduced": "4.29",
         "default_enabled": True,
         "example_yaml": """requirements:
-  pre_pr_review:
+  pr_reviewed:
     enabled: true
     type: blocking
     scope: single_use
@@ -203,48 +122,22 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
     auto_resolve_skill: "requirements-framework:deep-review"
     satisfied_by_skill: 'requirements-framework:deep-review'
     message: |
-      ## Blocked: pre_pr_review
+      ## Blocked: pr_reviewed
 
       **Execute**: `/requirements-framework:deep-review`
 
       ---
-      Fallback: `req satisfy pre_pr_review`""",
+      Fallback: `req satisfy pr_reviewed`""",
     },
-    "codex_reviewer": {
-        "name": "Codex AI Review",
+    "verified": {
+        "name": "Verify (evidence before push)",
         "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.codex_reviewer",
-        "description": "AI-powered code review via OpenAI Codex CLI",
-        "introduced": "1.0",
-        "default_enabled": True,
-        "example_yaml": """requirements:
-  codex_reviewer:
-    enabled: true
-    type: blocking
-    scope: single_use
-    description: "AI-powered code review via OpenAI Codex CLI."
-    trigger_tools:
-      - tool: Bash
-        command_pattern: "gh\\\\s+pr\\\\s+create"
-    auto_resolve_skill: "requirements-framework:codex-review"
-    satisfied_by_skill: 'requirements-framework:codex-review'
-    message: |
-      ## Blocked: codex_reviewer
-
-      **Execute**: `/requirements-framework:codex-review`
-
-      ---
-      Fallback: `req satisfy codex_reviewer`""",
-    },
-    "pre_push_verification": {
-        "name": "Pre-Push Verification",
-        "category": CATEGORY_REQUIREMENTS,
-        "config_path": "requirements.pre_push_verification",
+        "config_path": "requirements.verified",
         "description": "Gate git push on verification evidence (tests/build)",
-        "introduced": "2.8",
+        "introduced": "4.29",
         "default_enabled": True,
         "example_yaml": """requirements:
-  pre_push_verification:
+  verified:
     enabled: true
     type: blocking
     scope: single_use
@@ -255,12 +148,12 @@ FEATURE_CATALOG: Dict[str, Dict[str, Any]] = {
     auto_resolve_skill: "requirements-framework:verification-before-completion"
     satisfied_by_skill: 'requirements-framework:verification-before-completion'
     message: |
-      ## Blocked: pre_push_verification
+      ## Blocked: verified
 
       **Execute**: `/requirements-framework:verification-before-completion`
 
       ---
-      Fallback: `req satisfy pre_push_verification`""",
+      Fallback: `req satisfy verified`""",
     },
     "github_ticket": {
         "name": "GitHub Ticket",

@@ -8664,32 +8664,32 @@ def test_feature_catalog_module(runner: TestRunner):
                len(features) > 0)
 
     # Test 2: Known features exist
-    runner.test("commit_plan feature exists",
-               'commit_plan' in features)
+    runner.test("plan_validated feature exists",
+               'plan_validated' in features)
     runner.test("session_learning feature exists",
                'session_learning' in features)
     runner.test("protected_branch feature exists",
                'protected_branch' in features)
 
     # Test 3: Feature metadata structure
-    commit_plan = features.get('commit_plan', {})
+    plan_validated = features.get('plan_validated', {})
     runner.test("Feature has name",
-               'name' in commit_plan)
+               'name' in plan_validated)
     runner.test("Feature has category",
-               'category' in commit_plan)
+               'category' in plan_validated)
     runner.test("Feature has config_path",
-               'config_path' in commit_plan)
+               'config_path' in plan_validated)
     runner.test("Feature has description",
-               'description' in commit_plan)
+               'description' in plan_validated)
     runner.test("Feature has example_yaml",
-               'example_yaml' in commit_plan)
+               'example_yaml' in plan_validated)
 
     # Test 4: get_features_by_category
     req_features = get_features_by_category(CATEGORY_REQUIREMENTS)
     runner.test("get_features_by_category returns dict",
                isinstance(req_features, dict))
-    runner.test("Requirements category has commit_plan",
-               'commit_plan' in req_features)
+    runner.test("Requirements category has plan_validated",
+               'plan_validated' in req_features)
     runner.test("Requirements category doesn't have session_learning",
                'session_learning' not in req_features)
 
@@ -8704,8 +8704,8 @@ def test_feature_catalog_module(runner: TestRunner):
     # Test 5: detect_configured_features with sample config
     sample_config = {
         'requirements': {
-            'commit_plan': {'enabled': True},
-            'adr_reviewed': {'enabled': False},
+            'plan_validated': {'enabled': True},
+            'pr_reviewed': {'enabled': False},
         },
         'hooks': {
             'session_learning': {'enabled': True}
@@ -8714,10 +8714,10 @@ def test_feature_catalog_module(runner: TestRunner):
     configured = detect_configured_features(sample_config)
     runner.test("detect_configured_features returns dict",
                isinstance(configured, dict))
-    runner.test("commit_plan detected as enabled",
-               configured.get('commit_plan') is True)
-    runner.test("adr_reviewed detected as disabled",
-               configured.get('adr_reviewed') is False)
+    runner.test("plan_validated detected as enabled",
+               configured.get('plan_validated') is True)
+    runner.test("pr_reviewed detected as disabled",
+               configured.get('pr_reviewed') is False)
     runner.test("session_learning detected as enabled",
                configured.get('session_learning') is True)
 
@@ -8725,8 +8725,8 @@ def test_feature_catalog_module(runner: TestRunner):
     missing = get_missing_features(sample_config)
     runner.test("get_missing_features returns list",
                isinstance(missing, list))
-    runner.test("Missing features doesn't include commit_plan",
-               'commit_plan' not in missing)
+    runner.test("Missing features doesn't include plan_validated",
+               'plan_validated' not in missing)
     runner.test("Missing features includes protected_branch",
                'protected_branch' in missing)
 
@@ -8734,12 +8734,12 @@ def test_feature_catalog_module(runner: TestRunner):
     enabled = get_enabled_features(sample_config)
     runner.test("get_enabled_features returns list",
                isinstance(enabled, list))
-    runner.test("Enabled features includes commit_plan",
-               'commit_plan' in enabled)
+    runner.test("Enabled features includes plan_validated",
+               'plan_validated' in enabled)
     runner.test("Enabled features includes session_learning",
                'session_learning' in enabled)
-    runner.test("Enabled features doesn't include adr_reviewed",
-               'adr_reviewed' not in enabled)
+    runner.test("Enabled features doesn't include pr_reviewed",
+               'pr_reviewed' not in enabled)
 
     # Test 8: get_feature_yaml
     yaml_snippet = get_feature_yaml('session_learning')
@@ -8756,11 +8756,11 @@ def test_feature_catalog_module(runner: TestRunner):
                unknown is None)
 
     # Test 10: get_feature_info
-    info = get_feature_info('commit_plan')
+    info = get_feature_info('plan_validated')
     runner.test("get_feature_info returns dict",
                isinstance(info, dict))
     runner.test("Info has name",
-               info.get('name') == "Commit Planning")
+               info.get('name') == "Plan Validation (Validate team)")
 
     # Test 11: get_feature_info for unknown
     info = get_feature_info('nonexistent')
@@ -8774,15 +8774,15 @@ def test_feature_catalog_module(runner: TestRunner):
     # session_learning was introduced in 1.1
     runner.test("session_learning is new since 1.0",
                'session_learning' in new_features)
-    runner.test("commit_plan is not new since 1.0",
-               'commit_plan' not in new_features)
+    runner.test("protected_branch is not new since 1.0",
+               'protected_branch' not in new_features)
 
     # Test 13: get_new_features_since with later versions
     new_features = get_new_features_since("1.1")
     runner.test("session_learning is not new since 1.1",
                'session_learning' not in new_features)
-    runner.test("tdd_planned is new since 1.1",
-               'tdd_planned' in new_features)
+    runner.test("plan_validated is new since 1.1",
+               'plan_validated' in new_features)
 
 
 def test_feature_catalog_project_sync(runner: TestRunner):
