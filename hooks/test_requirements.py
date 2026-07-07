@@ -3263,6 +3263,50 @@ def test_triggered_requirements(runner: TestRunner):
                    reqs5.is_satisfied("independent_req", "session"))
 
 
+def test_stop_hook_nudge_mode(runner: TestRunner):
+    """enforcement: nudge -> Stop hook never blocks, even with a triggered-but-unsatisfied requirement."""
+    print("\n🪶 Testing Stop hook nudge mode...")
+    hook_path = Path(__file__).parent / "handle-stop.py"
+    if not hook_path.exists():
+        runner.test("Stop hook exists (nudge)", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "enforcement": "nudge",
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        from requirements import BranchRequirements
+        test_session_id = "nudgestop1"
+        reqs = BranchRequirements("feature/test", test_session_id, tmpdir)
+        reqs.mark_triggered("commit_plan", "session")
+
+        stop_input = json.dumps({
+            "hook_event_name": "Stop", "stop_hook_active": False,
+            "session_id": test_session_id,
+        })
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input, cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("nudge mode: stop not blocked",
+                    '"decision": "block"' not in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("nudge mode: stop exit 0", result.returncode == 0)
+
+
 def test_stop_hook_triggered_only(runner: TestRunner):
     """Test that Stop hook only checks triggered requirements."""
     print("\n📦 Testing Stop hook triggered-only behavior...")
@@ -13630,6 +13674,7 @@ def main():
     test_session_start_hook(runner)
     test_session_start_json_format(runner)
     test_stop_hook(runner)
+    test_stop_hook_nudge_mode(runner)
     test_session_end_hook(runner)
     test_session_end_finalizes_metrics(runner)
     test_session_end_no_synthetic_metrics(runner)

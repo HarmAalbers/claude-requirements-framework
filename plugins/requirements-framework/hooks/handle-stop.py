@@ -206,6 +206,15 @@ def main() -> int:
         except Exception as e:
             logger.debug("pause check failed in stop (fail-open)", error=str(e))
 
+        # Nudge mode: guidance-only, never block Stop. Mirrors pause suppression
+        # so "nothing blocks" holds at end of turn too. Fail-open to blocking.
+        try:
+            if config.enforcement() == "nudge":
+                logger.info("Stop not blocked - nudge mode", session=session_id)
+                return 0
+        except Exception as e:
+            logger.debug("enforcement check failed in stop (fail-open)", error=str(e))
+
         # Get which scopes to verify (default: session only)
         verify_scopes = config.get_hook_config('stop', 'verify_scopes', ['session'])
 
