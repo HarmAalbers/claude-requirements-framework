@@ -10373,10 +10373,11 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
     runner.test("systematic-debugging maps to debugging_systematic",
                mappings.get('requirements-framework:systematic-debugging') == 'debugging_systematic')
+    runner.test("executing-plans maps to implementation_done",
+               mappings.get('requirements-framework:executing-plans') == 'implementation_done')
 
     # Test: Skills with no mapping are NOT in the dict (removed as dead entries)
     no_mapping_skills = [
-        'requirements-framework:executing-plans',
         'requirements-framework:subagent-driven-development',
         'requirements-framework:finishing-a-development-branch',
         'requirements-framework:using-git-worktrees',

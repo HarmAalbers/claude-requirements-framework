@@ -56,8 +56,12 @@ DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     'requirements-framework:test-driven-development': 'tdd_planned',
     'requirements-framework:systematic-debugging': 'debugging_systematic',
     'requirements-framework:requesting-code-review': 'pre_commit_review',
+    # Soft implement marker: flips the (optional) implementation_done gate so the
+    # nudge chain advances past the gateless 'implement' phase to review. Harmless
+    # where implementation_done is undefined (auto-satisfy checks enablement).
+    'requirements-framework:executing-plans': 'implementation_done',
     # Process skills with no auto-satisfy mapping (guidance-only):
-    # executing-plans, subagent-driven-development, finishing-a-development-branch,
+    # subagent-driven-development, finishing-a-development-branch,
     # using-git-worktrees, dispatching-parallel-agents, receiving-code-review,
     # using-requirements-framework, writing-skills
 }
