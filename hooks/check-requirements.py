@@ -128,23 +128,14 @@ def should_skip_plan_file(file_path: str) -> bool:
         return False
 
 
-def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, branch: str) -> dict:
+def _render_requirement_directives(unsatisfied: list, session_id: str) -> list:
+    """Directive lines (which skill/command resolves what), shared by the block
+    denial and the nudge advisory.
+
+    The caller appends its own footer/framing so block and nudge differ in tone
+    without diverging on the actual guidance. Kept byte-for-byte identical to the
+    former inline block so block-mode output is unchanged.
     """
-    Create batched denial message for all unsatisfied requirements.
-
-    Uses directive-first format optimized for autonomous resolution.
-
-    Args:
-        unsatisfied: List of tuples (req_name, req_config)
-        session_id: Current session ID
-        project_dir: Project directory
-        branch: Current branch
-
-    Returns:
-        Hook response dict with batched denial message
-    """
-    req_names = [r[0] for r in unsatisfied]
-
     # Group requirements by their auto_resolve_skill
     skill_groups: dict[str, list[str]] = {}
     no_skill_reqs: list[tuple[str, dict]] = []
@@ -158,7 +149,7 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
         else:
             no_skill_reqs.append((req_name, req_config))
 
-    lines = []
+    lines: list = []
 
     if len(unsatisfied) == 1:
         # Single requirement - use direct format
@@ -208,6 +199,27 @@ def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, 
             for req_name, req_config in no_skill_reqs:
                 lines.append(f"| {req_name} | `req satisfy {req_name}` |")
 
+    return lines
+
+
+def create_batched_denial(unsatisfied: list, session_id: str, project_dir: str, branch: str) -> dict:
+    """
+    Create batched denial message for all unsatisfied requirements.
+
+    Uses directive-first format optimized for autonomous resolution.
+
+    Args:
+        unsatisfied: List of tuples (req_name, req_config)
+        session_id: Current session ID
+        project_dir: Project directory
+        branch: Current branch
+
+    Returns:
+        Hook response dict with batched denial message
+    """
+    req_names = [r[0] for r in unsatisfied]
+    lines = _render_requirement_directives(unsatisfied, session_id)
+
     # Standard stand-down footer + fallback command. This carries the same
     # guidance as the default blocking template so it shows even when a
     # requirement supplied an inline `message` (which bypasses the template).
@@ -250,6 +262,33 @@ def _strict_denial_payload(verdict, project_dir: str) -> dict:
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": "\n".join(lines),
+        }
+    }
+
+
+def create_batched_advisory(unsatisfied: list, session_id: str, project_dir: str, branch: str) -> dict:
+    """Nudge-mode counterpart of create_batched_denial.
+
+    Shares the same directive lines (which skill resolves what) but frames them
+    as guidance, not a block: the tool is ALLOWED (no permissionDecision) and the
+    message carries a nudge footer instead of the deny/stand-down/req-satisfy
+    footer. This prevents Claude from being told work is "gated" when nothing is
+    actually blocked. Delivered via additionalContext so it surfaces as a
+    system-reminder.
+    """
+    lines = _render_requirement_directives(unsatisfied, session_id)
+    lines.insert(0, "**Nudge (not a block)** — proceeding is allowed; this is just the recommended next step.")
+    lines.insert(1, "")
+    lines.append("")
+    lines.append("---")
+    lines.append(
+        "Nudge mode: nothing is gated. Run the skill above when it fits the work — "
+        "you may proceed with the edit either way."
+    )
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": "\n".join(lines),
         }
     }
 
@@ -529,28 +568,57 @@ def main() -> int:
         # Clear any progress indicator
         clear_progress()
 
-        # If any requirements unsatisfied, create batched denial
+        # If any requirements unsatisfied: BLOCK (deny) or, in nudge mode, ADVISE
+        # (allow + surface the same message once per phase) and fall through.
         if unsatisfied:
+            try:
+                nudge_mode = config.enforcement() == "nudge"
+            except Exception:
+                nudge_mode = False  # fail-safe to blocking
+
             logger.info(
-                "Requirements blocked (batched)",
+                "Requirements advised (nudge)" if nudge_mode else "Requirements blocked (batched)",
                 requirements=[r[0] for r in unsatisfied],
                 count=len(unsatisfied),
             )
 
-            # Record blocked tool usage in metrics
+            # Record trigger metrics. In nudge mode the tool is allowed, so the
+            # single tool_use record is left to the allow path below (blocked=False);
+            # only in block mode do we record the blocked tool_use here.
             for req_name, _ in unsatisfied:
-                metrics.record_tool_use(
-                    tool_name,
-                    file=file_path,
-                    blocked=True,
-                    requirement=req_name
-                )
-                metrics.record_requirement_trigger(req_name, blocked=True)
+                if not nudge_mode:
+                    metrics.record_tool_use(
+                        tool_name,
+                        file=file_path,
+                        blocked=True,
+                        requirement=req_name
+                    )
+                metrics.record_requirement_trigger(req_name, blocked=not nudge_mode)
             metrics.save()
 
-            response = create_batched_denial(unsatisfied, session_id, project_dir, branch)
-            emit_json(response)
-            return 0
+            if nudge_mode:
+                # Guide, don't wall: surface the advisory once per (session, phase),
+                # then fall through to the allow path (mark triggered candidates).
+                # Fully fail-open: any error here still allows the tool.
+                try:
+                    phase = "unknown"
+                    try:
+                        from state_storage import get_state_path
+                        from derive_phase import derive_phase
+                        phase = derive_phase(get_state_path(branch, project_dir))
+                    except Exception:
+                        phase = "unknown"
+                    from brainstorm import phase_nudge_shown, mark_phase_nudge_shown
+                    if not phase_nudge_shown(session_id, project_dir, phase):
+                        emit_json(create_batched_advisory(
+                            unsatisfied, session_id, project_dir, branch))
+                        mark_phase_nudge_shown(session_id, project_dir, phase)
+                except Exception as e:
+                    logger.debug("nudge advisory failed (fail-open)", error=str(e))
+                # DO NOT return — fall through to the allow path (mark triggered).
+            else:
+                emit_json(create_batched_denial(unsatisfied, session_id, project_dir, branch))
+                return 0
 
         # Allow path: no requirement denied. Now that the tool is permitted to
         # run, mark each triggered candidate so the Stop hook still verifies

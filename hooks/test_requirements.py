@@ -2252,6 +2252,63 @@ def test_hook_behavior(runner: TestRunner):
         runner.test("Skip env = pass", result.returncode == 0)
 
 
+def test_nudge_mode_allows(runner: TestRunner):
+    """enforcement: nudge -> a triggered-but-unsatisfied requirement ALLOWS + advises, never denies."""
+    print("\n🪶 Testing nudge-mode advisory...")
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "enforcement": "nudge",
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!",
+                }
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": "nudgetest"}),
+            cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("nudge mode: exit 0", result.returncode == 0)
+        runner.test("nudge mode: never denies",
+                    '"permissionDecision": "deny"' not in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("nudge mode: surfaces advisory context",
+                    "additionalContext" in result.stdout and "commit" in result.stdout.lower(),
+                    f"Got: {result.stdout}")
+        # The advisory must NOT carry the block-mode 'stand down / gated' framing
+        # (it would make Claude stop working when nothing is actually blocked).
+        runner.test("nudge advisory not framed as blocked",
+                    "stand down" not in result.stdout.lower(),
+                    f"Got: {result.stdout}")
+
+        # Regression guard: block mode (default) MUST still deny.
+        config["enforcement"] = "block"
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+        result2 = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": "blocktest"}),
+            cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("block mode: still denies",
+                    '"permissionDecision": "deny"' in result2.stdout,
+                    f"Got: {result2.stdout}")
+
+
 def test_checklist_rendering(runner: TestRunner):
     """Test checklist rendering in hook output."""
     print("\n📦 Testing checklist rendering...")
@@ -13564,6 +13621,7 @@ def main():
     test_enhanced_doctor_check_functions(runner)
     test_doctor_plugin_hooks_checks(runner)
     test_hook_behavior(runner)
+    test_nudge_mode_allows(runner)
     test_checklist_rendering(runner)
 
     # New hook tests
