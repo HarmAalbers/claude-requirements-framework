@@ -2465,6 +2465,37 @@ def test_lazy_ladder_marker(runner: TestRunner):
                 f"Got: {ruleset_marker.shown(sid, None)}")
 
 
+def test_phase_nudge(runner: TestRunner):
+    """Phase-agnostic nudge: directive names skill+phase; dedup is per (session, phase)."""
+    print("\n🧭 Testing phase nudge helpers...")
+    import tempfile
+    import subprocess
+    from brainstorm import (
+        phase_directive,
+        phase_nudge_shown,
+        mark_phase_nudge_shown,
+    )
+
+    txt = phase_directive("plan-write", "requirements-framework:writing-plans")
+    runner.test("phase directive names skill", "/writing-plans" in txt)
+    runner.test("phase directive names phase", "plan-write" in txt)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        runner.test("phase nudge not shown initially",
+                    phase_nudge_shown("sess1", tmp, "plan-write") is False)
+        mark_phase_nudge_shown("sess1", tmp, "plan-write")
+        runner.test("plan-write marked after mark",
+                    phase_nudge_shown("sess1", tmp, "plan-write") is True)
+        # Dedup is per-phase: marking plan-write does NOT silence a later phase.
+        runner.test("review still unmarked (per-phase dedup)",
+                    phase_nudge_shown("sess1", tmp, "review") is False)
+
+    # Fail-open: a bogus project_dir must never raise, just return False.
+    runner.test("phase nudge fail-open on bad input",
+                phase_nudge_shown("sess1", None, "plan-write") is False)
+
+
 def test_subagent_ladder(runner: TestRunner):
     """SubagentStart ladder helper is flag-gated; refactor-executor is code-touching."""
     print("\n📦 Testing SubagentStart lazy-dev ladder...")
@@ -13514,6 +13545,7 @@ def main():
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)
     test_lazy_ladder_marker(runner)
+    test_phase_nudge(runner)
     test_subagent_ladder(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
