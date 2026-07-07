@@ -10353,9 +10353,10 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     process_skills_with_mappings = [
         'requirements-framework:brainstorming',
         'requirements-framework:writing-plans',
-        'requirements-framework:test-driven-development',
         'requirements-framework:systematic-debugging',
         'requirements-framework:requesting-code-review',
+        'requirements-framework:executing-plans',
+        'requirements-framework:verification-before-completion',
     ]
 
     for skill in process_skills_with_mappings:
@@ -10365,16 +10366,16 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     # Test: Specific mappings are correct
     runner.test("brainstorming maps to design_approved",
                mappings.get('requirements-framework:brainstorming') == 'design_approved')
-    runner.test("writing-plans maps to plan_written + commit_plan",
-               mappings.get('requirements-framework:writing-plans') == ['plan_written', 'commit_plan'])
-    runner.test("test-driven-development maps to tdd_planned",
-               mappings.get('requirements-framework:test-driven-development') == 'tdd_planned')
+    runner.test("writing-plans maps to plan_written",
+               mappings.get('requirements-framework:writing-plans') == 'plan_written')
     runner.test("requesting-code-review maps to pre_commit_review",
                mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
     runner.test("systematic-debugging maps to debugging_systematic",
                mappings.get('requirements-framework:systematic-debugging') == 'debugging_systematic')
     runner.test("executing-plans maps to implementation_done",
                mappings.get('requirements-framework:executing-plans') == 'implementation_done')
+    runner.test("verification-before-completion maps to verified",
+               mappings.get('requirements-framework:verification-before-completion') == 'verified')
 
     # Test: Skills with no mapping are NOT in the dict (removed as dead entries)
     no_mapping_skills = [
@@ -10385,6 +10386,8 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
         'requirements-framework:receiving-code-review',
         'requirements-framework:using-requirements-framework',
         'requirements-framework:writing-skills',
+        'requirements-framework:codex-review',
+        'requirements-framework:test-driven-development',
     ]
     for skill in no_mapping_skills:
         runner.test(f"{skill.split(':')[1]} not in mappings (no auto-satisfy)",
@@ -10393,8 +10396,12 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     # Test: Original review mappings still present
     runner.test("pre-commit mapping still present",
                mappings.get('requirements-framework:pre-commit') == 'pre_commit_review')
-    runner.test("arch-review mapping still present",
-               mappings.get('requirements-framework:arch-review') == ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'])
+    runner.test("arch-review maps to plan_validated (one team gate)",
+               mappings.get('requirements-framework:arch-review') == 'plan_validated')
+    runner.test("deep-review maps to pr_reviewed",
+               mappings.get('requirements-framework:deep-review') == 'pr_reviewed')
+    runner.test("v3-review maps to pr_reviewed",
+               mappings.get('requirements-framework:v3-review') == 'pr_reviewed')
 
     # Test: Deprecated /plan-review mapping removed in plugin v4.0.0
     runner.test("plan-review mapping removed in 4.0.0",
