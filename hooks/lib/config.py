@@ -281,6 +281,9 @@ class ConfigStateAccess(Protocol):
     def strict_preflight_enabled(self) -> bool:
         ...
 
+    def enforcement(self) -> str:
+        ...
+
     def get_validation_errors(self) -> list[str]:
         ...
 
@@ -396,6 +399,9 @@ class ConfigStateView(ConfigStateAccess):
 
     def strict_preflight_enabled(self) -> bool:
         return self._config.strict_preflight_enabled()
+
+    def enforcement(self) -> str:
+        return self._config.enforcement()
 
     def get_validation_errors(self) -> list[str]:
         return self._config.get_validation_errors()
@@ -1276,6 +1282,19 @@ class RequirementsConfig:
             True if strict preflight enabled, False otherwise
         """
         return bool(self._config.get("strict_preflight", False))
+
+    def enforcement(self) -> str:
+        """
+        Enforcement mode for this project: 'block' (default) or 'nudge'.
+
+        Top-level key `enforcement`, mirroring `strict_preflight`/`enabled`.
+        Any value other than the literal 'nudge' fails safe to 'block' so a
+        typo can never silently disable all gates.
+
+        Returns:
+            'nudge' if explicitly configured, otherwise 'block'
+        """
+        return "nudge" if self._config.get("enforcement") == "nudge" else "block"
 
     def write_local_override(
         self,

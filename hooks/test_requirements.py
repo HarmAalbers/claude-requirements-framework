@@ -995,6 +995,33 @@ def test_config_module(runner: TestRunner):
         runner.test("Legacy get_attribute still works", attr_value == 'branch_size_calculator')
 
 
+def test_enforcement_mode(runner: TestRunner):
+    """enforcement() returns 'block' by default, 'nudge' when configured, fails safe on garbage."""
+    print("\n🎚️  Testing enforcement mode...")
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+
+        # Default: no key -> block
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True}, f)
+        runner.test("enforcement defaults to block",
+                    RequirementsConfig(tmpdir).enforcement() == "block")
+
+        # Explicit nudge honored
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "enforcement": "nudge"}, f)
+        runner.test("enforcement reads nudge",
+                    RequirementsConfig(tmpdir).enforcement() == "nudge")
+
+        # Unknown value fails safe to block
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "enforcement": "banana"}, f)
+        runner.test("enforcement unknown -> block",
+                    RequirementsConfig(tmpdir).enforcement() == "block")
+
+
 def test_project_has_config(runner: TestRunner):
     """project_has_config recognizes both requirements.yaml and requirements.local.yaml.
 
@@ -13480,6 +13507,7 @@ def main():
     test_not_in_git_repo_fallback(runner)
     test_state_storage_module(runner)
     test_config_module(runner)
+    test_enforcement_mode(runner)
     test_project_has_config(runner)
     test_bootstrap_reexec_plan(runner)
     test_lazy_dev_ruleset(runner)
