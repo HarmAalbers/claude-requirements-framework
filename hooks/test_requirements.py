@@ -12397,31 +12397,32 @@ def test_derive_phase(runner: TestRunner):
             f.write_text(json.dumps({"requirements": reqs}))
             return f
 
-        runner.test("design_approved sat → plan-write",
-                    derive_phase(_state({"design_approved": "session"})) == "plan-write")
+        runner.test("design_approved sat → plan",
+                    derive_phase(_state({"design_approved": "session"})) == "plan")
 
-        runner.test("plan-write sat → plan-validate",
+        runner.test("plan_written sat → validate",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "branch",
-                    })) == "plan-validate")
+                    })) == "validate")
 
-        # implement is gateless (advisory) → transparent to derivation: with
-        # solid_reviewed satisfied and pre_pr_review not, derivation skips
-        # implement and lands on review.
-        runner.test("plan-validate sat → review (implement gateless)",
+        # build is now GATED (implementation_done): with plan_validated satisfied
+        # and implementation_done not, derivation lands on build.
+        runner.test("plan_validated sat → build",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "session",
-                        "solid_reviewed": "session",
-                    })) == "review")
+                        "plan_validated": "session",
+                    })) == "build")
 
         runner.test("everything sat → ship",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "session",
-                        "solid_reviewed": "session",
-                        "pre_pr_review": "branch",
+                        "plan_validated": "session",
+                        "implementation_done": "session",
+                        "pr_reviewed": "session",
+                        "verified": "branch",
                     })) == SHIP_PHASE)
 
         # Mixed: one session satisfied, others not → still counts as satisfied
@@ -12433,7 +12434,7 @@ def test_derive_phase(runner: TestRunner):
             }},
         }}))
         runner.test("any-session-satisfied counts as satisfied",
-                    derive_phase(mixed) == "plan-write")
+                    derive_phase(mixed) == "plan")
 
         # Schema robustness: malformed structures should fail-open, not raise.
         for label, content in [
@@ -12453,9 +12454,13 @@ def test_derive_phase(runner: TestRunner):
 _WORKFLOW_DEFAULT_GATES = {
     "design_approved": {"enabled": True},
     "plan_written": {"enabled": True},
-    "solid_reviewed": {"enabled": True},
-    # Retained as an arbitrary enabled-requirement in the fixture pool used by the
-    # custom-workflow tests below; the product no longer ships it as a gate.
+    "plan_validated": {"enabled": True},
+    "implementation_done": {"enabled": True},
+    "pr_reviewed": {"enabled": True},
+    "verified": {"enabled": True},
+    # Arbitrary enabled-requirements retained in the fixture pool for the
+    # custom-workflow tests below (reorder/add/custom); the product no longer
+    # ships them as default gates.
     "verification_evidence": {"enabled": True},
     "pre_pr_review": {"enabled": True},
 }
@@ -12539,8 +12544,8 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("undefined gate → workflow dropped → default names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement",
-                     "review", "refactor", "ship"])
+                    ["design", "plan", "validate", "build",
+                     "review", "verify", "ship"])
         runner.test("undefined gate → validation error recorded",
                     any("workflow" in e for e in config.get_validation_errors()))
 
@@ -12585,11 +12590,15 @@ def test_derive_phase_workflow(runner: TestRunner):
     # Zero-config: same transitions as today, but resolved through config.
     transitions = [
         ([], "design"),
-        (["design_approved"], "plan-write"),
-        (["design_approved", "plan_written"], "plan-validate"),
-        (["design_approved", "plan_written", "solid_reviewed"], "review"),
-        (["design_approved", "plan_written", "solid_reviewed",
-          "pre_pr_review"], "ship"),
+        (["design_approved"], "plan"),
+        (["design_approved", "plan_written"], "validate"),
+        (["design_approved", "plan_written", "plan_validated"], "build"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done"], "review"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done", "pr_reviewed"], "verify"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done", "pr_reviewed", "verified"], "ship"),
     ]
     for satisfied, expected in transitions:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -12638,8 +12647,8 @@ def test_derive_phase_workflow(runner: TestRunner):
     with tempfile.TemporaryDirectory() as tmpdir:
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["design_approved"],
                     workflow=bad_gate)
-        runner.test("fail-open: undefined gate → default order (plan-write)",
-                    derive_phase(sp) == "plan-write")
+        runner.test("fail-open: undefined gate → default order (plan)",
+                    derive_phase(sp) == "plan")
 
     # Fail-open: phases not a list → dropped → default order.
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -12683,18 +12692,18 @@ def test_derive_phase_with_skill(runner: TestRunner):
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
                     ["design_approved", "plan_written"])
         phase, skill = derive_phase_and_skill(sp)
-        runner.test("with-skill: plan-validate → arch-review",
-                    phase == "plan-validate"
+        runner.test("with-skill: validate → arch-review",
+                    phase == "validate"
                     and skill == "requirements-framework:arch-review")
 
-    # Ship: every gate satisfied → ship phase, empty skill (no resolver).
+    # Ship: every gate satisfied → ship phase, with resolver skill.
     with tempfile.TemporaryDirectory() as tmpdir:
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
-                    ["design_approved", "plan_written", "solid_reviewed",
-                     "verification_evidence", "pre_pr_review"])
+                    ["design_approved", "plan_written", "plan_validated",
+                     "implementation_done", "pr_reviewed", "verified"])
         phase, skill = derive_phase_and_skill(sp)
-        runner.test("with-skill: ship → empty skill",
-                    phase == "ship" and skill == "")
+        runner.test("with-skill: ship → finishing-a-development-branch",
+                    phase == "ship" and skill == "requirements-framework:finishing-a-development-branch")
 
     # Custom workflow whose FIRST phase is review/deep-review (the sanity case):
     # main() prints exactly "<phase>\t<skill>".
@@ -12816,13 +12825,13 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
         runner.test("derive_phase unchanged: no gates → design",
                     derive_phase(_state(tmpdir, [])) == "design")
     with tempfile.TemporaryDirectory() as tmpdir:
-        runner.test("derive_phase unchanged: design done → plan-write",
-                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan-write")
+        runner.test("derive_phase unchanged: design done → plan",
+                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan")
     with tempfile.TemporaryDirectory() as tmpdir:
         runner.test("derive_phase unchanged: all gates → ship",
                     derive_phase(_state(tmpdir, [
-                        "design_approved", "plan_written", "solid_reviewed",
-                        "verification_evidence", "pre_pr_review"])) == "ship")
+                        "design_approved", "plan_written", "plan_validated",
+                        "implementation_done", "pr_reviewed", "verified"])) == "ship")
 
 
 def test_supervisor_config_driven(runner: TestRunner):

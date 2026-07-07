@@ -34,14 +34,15 @@ from typing import Any, Optional
 
 # Order matters: first unsatisfied wins. These constants are the fail-open
 # fallback used when config cannot be resolved; they are kept byte-for-byte in
-# sync with config.RequirementsConfig.WORKFLOW_DEFAULTS.
-# plan-write satisfies plan_written; plan-validate is gated on solid_reviewed
-# (which arch-review flips alongside commit_plan, adr_reviewed, tdd_planned).
+# sync with config.RequirementsConfig.WORKFLOW_DEFAULTS. This is the GATED
+# subset of the 7-node backbone — ship is gateless and therefore omitted.
 PHASE_GATES: list[tuple[str, str]] = [
     ("design", "design_approved"),
-    ("plan-write", "plan_written"),
-    ("plan-validate", "solid_reviewed"),
-    ("review", "pre_pr_review"),
+    ("plan", "plan_written"),
+    ("validate", "plan_validated"),
+    ("build", "implementation_done"),
+    ("review", "pr_reviewed"),
+    ("verify", "verified"),
 ]
 SHIP_PHASE = "ship"
 DEFAULT_PHASE = "design"
