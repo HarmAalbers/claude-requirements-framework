@@ -217,7 +217,6 @@ Skills can automatically satisfy requirements:
 - `requirements-framework:writing-plans` → `plan_written`, `commit_plan`
 - `requirements-framework:test-driven-development` → `tdd_planned`
 - `requirements-framework:systematic-debugging` → `debugging_systematic`
-- `requirements-framework:verification-before-completion` → `verification_evidence`
 - `requirements-framework:requesting-code-review` → `pre_commit_review`
 
 ### Process Skills (Development Lifecycle)

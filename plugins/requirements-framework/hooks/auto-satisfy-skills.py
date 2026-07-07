@@ -55,7 +55,6 @@ DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     'requirements-framework:writing-plans': ['plan_written', 'commit_plan'],
     'requirements-framework:test-driven-development': 'tdd_planned',
     'requirements-framework:systematic-debugging': 'debugging_systematic',
-    'requirements-framework:verification-before-completion': 'verification_evidence',
     'requirements-framework:requesting-code-review': 'pre_commit_review',
     # Process skills with no auto-satisfy mapping (guidance-only):
     # executing-plans, subagent-driven-development, finishing-a-development-branch,

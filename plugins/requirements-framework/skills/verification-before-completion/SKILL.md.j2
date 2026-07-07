@@ -122,7 +122,7 @@ NEVER: Trust agent report blindly
 
 ## Requirements Integration
 
-When this skill completes, it auto-satisfies the `verification_evidence` requirement. This integrates with the `handle-stop.py` hook — if `verification_evidence` is enabled, the framework will block session completion until fresh verification has been run.
+This skill is guidance-only: it does **not** auto-satisfy any requirement. Invoke it whenever you are about to claim work is complete — the discipline stands on its own, independent of any gate.
 
 ## The Bottom Line
 

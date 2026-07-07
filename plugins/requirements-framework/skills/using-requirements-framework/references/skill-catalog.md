@@ -48,7 +48,6 @@ When a skill completes, it automatically satisfies its corresponding requirement
 - `writing-plans` → satisfies `plan_written` and `commit_plan`
 - `test-driven-development` → satisfies `tdd_planned`
 - `systematic-debugging` → satisfies `debugging_systematic`
-- `verification-before-completion` → satisfies `verification_evidence`
 - `requesting-code-review` → satisfies `pre_commit_review`
 
 This means you don't need to manually run `req satisfy` — just use the skill and the requirement clears automatically.

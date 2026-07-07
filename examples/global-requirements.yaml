@@ -305,9 +305,8 @@ requirements:
       - "AI review completed"
 
   # Pre-Push Verification Requirement
-  # Gates `git push` on verification evidence (tests/build). Shares the
-  # /verification-before-completion satisfier with verification_evidence, so a
-  # single skill run satisfies both. single_use: re-armed after each push by
+  # Gates `git push` on verification evidence (tests/build), satisfied by the
+  # /verification-before-completion skill. single_use: re-armed after each push by
   # clear-single-use.
   # NOTE: command_pattern is a substring regex — any Bash command containing the
   # literal text "git push" (even an echo or grep) also trips this gate, the same
@@ -401,35 +400,6 @@ requirements:
       - "Exact file paths and commands included"
       - "TDD cycle documented per task"
       - "Commit points identified"
-
-  # Verification Evidence Requirement
-  # Ensures fresh verification evidence exists before claiming completion
-  verification_evidence:
-    enabled: true
-    type: blocking
-    scope: session            # Stop's verify_scopes default is [session]; single_use is skipped there
-    stop_only: true           # Never blocks an edit at PreToolUse; enforced only at Stop
-    description: "Ensures fresh verification evidence before claiming work is complete."
-    trigger_tools:            # Armed when implementation work happens, not gating it
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:verification-before-completion"
-    satisfied_by_skill: 'requirements-framework:verification-before-completion'
-    message: |
-      ## Blocked: verification_evidence
-
-      Run verification commands and confirm output before claiming completion.
-
-      **Why this matters**: "Should work now" is not evidence. Run the command,
-      read the output, then claim the result.
-
-      ---
-      Fallback: `req satisfy verification_evidence`
-    checklist:
-      - "Identified verification commands for all claims"
-      - "Ran commands fresh (not from cache/memory)"
-      - "Read full output and confirmed results"
 
   # Systematic Debugging Requirement
   # Ensures root cause investigation before applying fixes

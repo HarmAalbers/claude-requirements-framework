@@ -104,3 +104,30 @@ This ADR's first application is the Step 07 deletion pass shipping in plugin v4.
 ## Decider
 
 Harm Aalbers (user) — decision recorded 2026-05-20 via `/arch-review` of the Step 07 deletion-pass plan, with cross-validated team findings documented in `.claude/plans/simplification/07-deletion-pass-implementation-plan.md`.
+
+## Amendment (2026-07-07) — requirement-ladder defaults are internal artifacts
+
+Policy 1 enumerates "public artifacts" as commands, named agents, public config
+values (`hooks.foo.bar`), and plugin-manifest entries. A **requirement definition
+shipped as a default** — i.e. a requirement block in the `examples/` template plus
+its entry in the `config.py` WORKFLOW_DEFAULTS / `derive_phase.py` PHASE_GATES
+ladders — is **not** a public-surface artifact in that sense:
+
+- It carries no plugin-manifest binding and no runtime spawn coupling; it is a
+  user-copied *template* value and a session-scoped default, not an API others
+  call.
+- Projects adopt it by copying it into their own gitignored config, where it is
+  theirs to keep or drop; removing the shipped default does not delete anyone's
+  local copy (the config cascade still honors a locally-defined requirement).
+
+**Decision:** requirement-ladder defaults / template requirements are treated as
+**internal artifacts exempt from Policy 1's deprecated-in-minor → removed-at-major
+cadence.** They MAY be removed in a **minor** release, provided the removal is
+recorded in `CHANGELOG.md` under `### Removed` with (a) a migration note for
+projects that still enable the requirement, and (b) the rationale. No
+compatibility shim is provided (consistent with Policy 1's no-shim stance).
+
+**First application:** removal of the `verification_evidence` requirement default
+(this branch). Decider: Harm Aalbers, 2026-07-07, via the `/arch-review` of
+`.claude/plans/2026-07-07-drop-verification-evidence-gate.md` (adr-guardian
+surfaced the cadence gap; this amendment closes it).

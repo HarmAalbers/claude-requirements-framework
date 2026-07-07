@@ -41,7 +41,6 @@ PHASE_GATES: list[tuple[str, str]] = [
     ("design", "design_approved"),
     ("plan-write", "plan_written"),
     ("plan-validate", "solid_reviewed"),
-    ("implement", "verification_evidence"),
     ("review", "pre_pr_review"),
 ]
 SHIP_PHASE = "ship"

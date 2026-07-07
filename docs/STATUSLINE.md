@@ -34,7 +34,7 @@ returns the first that is *not* satisfied:
 | `design`        | `design_approved`        |
 | `plan-write`    | `plan_written`           |
 | `plan-validate` | `solid_reviewed`         |
-| `implement`     | `verification_evidence`  |
+| `implement`     | *(none — advisory)*      |
 | `review`        | `pre_pr_review`          |
 | `ship`          | everything above satisfied |
 

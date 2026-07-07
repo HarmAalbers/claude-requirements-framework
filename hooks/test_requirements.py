@@ -10190,13 +10190,12 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                 if isinstance(target, ast.Name) and target.id == 'DEFAULT_SKILL_MAPPINGS':
                     mappings = ast.literal_eval(node.value)
 
-    # Test: All 6 process skills with auto-satisfy mappings are present
+    # Test: All 5 process skills with auto-satisfy mappings are present
     process_skills_with_mappings = [
         'requirements-framework:brainstorming',
         'requirements-framework:writing-plans',
         'requirements-framework:test-driven-development',
         'requirements-framework:systematic-debugging',
-        'requirements-framework:verification-before-completion',
         'requirements-framework:requesting-code-review',
     ]
 
@@ -10211,8 +10210,6 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                mappings.get('requirements-framework:writing-plans') == ['plan_written', 'commit_plan'])
     runner.test("test-driven-development maps to tdd_planned",
                mappings.get('requirements-framework:test-driven-development') == 'tdd_planned')
-    runner.test("verification-before-completion maps to verification_evidence",
-               mappings.get('requirements-framework:verification-before-completion') == 'verification_evidence')
     runner.test("requesting-code-review maps to pre_commit_review",
                mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
     runner.test("systematic-debugging maps to debugging_systematic",
@@ -10267,7 +10264,7 @@ def test_new_requirement_definitions(runner: TestRunner):
         reqs = config_data.get('requirements', {})
 
         # Test: New requirements exist in example config
-        new_reqs = ['design_approved', 'plan_written', 'verification_evidence', 'debugging_systematic']
+        new_reqs = ['design_approved', 'plan_written', 'debugging_systematic']
         for req_name in new_reqs:
             runner.test(f"Example config contains {req_name}",
                        req_name in reqs)
@@ -10283,19 +10280,6 @@ def test_new_requirement_definitions(runner: TestRunner):
                        'Edit' in da.get('trigger_tools', []))
             runner.test("design_approved satisfied by brainstorming",
                        da.get('satisfied_by_skill') == 'requirements-framework:brainstorming')
-
-        # Test: verification_evidence is a stop_only session requirement.
-        # It must be session-scoped (Stop's verify_scopes default is [session]),
-        # flagged stop_only (never gates an edit at PreToolUse), and armed by
-        # implementation tools so the Stop hook enforces "verify before done".
-        if 'verification_evidence' in reqs:
-            ve = reqs['verification_evidence']
-            runner.test("verification_evidence has session scope",
-                       ve.get('scope') == 'session')
-            runner.test("verification_evidence is stop_only",
-                       ve.get('stop_only') is True)
-            runner.test("verification_evidence triggers on Edit",
-                       'Edit' in ve.get('trigger_tools', []))
 
         # Test: debugging_systematic is enabled by default
         if 'debugging_systematic' in reqs:
@@ -10318,7 +10302,6 @@ def test_process_skill_message_files(runner: TestRunner):
     new_message_files = [
         'design_approved.yaml',
         'plan_written.yaml',
-        'verification_evidence.yaml',
         'debugging_systematic.yaml',
     ]
 
@@ -12204,6 +12187,16 @@ def test_derive_phase(runner: TestRunner):
     print("\n📦 Testing derive_phase module...")
     from derive_phase import derive_phase, DEFAULT_PHASE, SHIP_PHASE
 
+    # Sync invariant: the hand-maintained PHASE_GATES fallback must equal the
+    # gated subset of config's WORKFLOW_DEFAULTS (kept byte-for-byte in sync;
+    # gateless phases like implement/refactor/ship are omitted from PHASE_GATES).
+    from derive_phase import PHASE_GATES
+    from config import RequirementsConfig
+    runner.test("PHASE_GATES == gated subset of WORKFLOW_DEFAULTS",
+                [(p["name"], p["gate"])
+                 for p in RequirementsConfig.WORKFLOW_DEFAULTS["phases"]
+                 if p["gate"]] == PHASE_GATES)
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
 
@@ -12241,19 +12234,14 @@ def test_derive_phase(runner: TestRunner):
                         "plan_written": "branch",
                     })) == "plan-validate")
 
-        runner.test("plan-validate sat → implement",
+        # implement is gateless (advisory) → transparent to derivation: with
+        # solid_reviewed satisfied and pre_pr_review not, derivation skips
+        # implement and lands on review.
+        runner.test("plan-validate sat → review (implement gateless)",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "session",
                         "solid_reviewed": "session",
-                    })) == "implement")
-
-        runner.test("through verification → review",
-                    derive_phase(_state({
-                        "design_approved": "session",
-                        "plan_written": "session",
-                        "solid_reviewed": "session",
-                        "verification_evidence": "session",
                     })) == "review")
 
         runner.test("everything sat → ship",
@@ -12261,7 +12249,6 @@ def test_derive_phase(runner: TestRunner):
                         "design_approved": "session",
                         "plan_written": "session",
                         "solid_reviewed": "session",
-                        "verification_evidence": "session",
                         "pre_pr_review": "branch",
                     })) == SHIP_PHASE)
 
@@ -12295,6 +12282,8 @@ _WORKFLOW_DEFAULT_GATES = {
     "design_approved": {"enabled": True},
     "plan_written": {"enabled": True},
     "solid_reviewed": {"enabled": True},
+    # Retained as an arbitrary enabled-requirement in the fixture pool used by the
+    # custom-workflow tests below; the product no longer ships it as a gate.
     "verification_evidence": {"enabled": True},
     "pre_pr_review": {"enabled": True},
 }
@@ -12332,7 +12321,7 @@ def test_workflow_config(runner: TestRunner):
         runner.test("no workflow → default gates",
                     [p["gate"] for p in wf["phases"]] ==
                     ["design_approved", "plan_written", "solid_reviewed",
-                     "verification_evidence", "pre_pr_review", None, None])
+                     None, "pre_pr_review", None, None])
         runner.test("no workflow → every default phase carries a description",
                     all(isinstance(p.get("description"), str) and p["description"]
                         for p in wf["phases"]))
@@ -12426,11 +12415,9 @@ def test_derive_phase_workflow(runner: TestRunner):
         ([], "design"),
         (["design_approved"], "plan-write"),
         (["design_approved", "plan_written"], "plan-validate"),
-        (["design_approved", "plan_written", "solid_reviewed"], "implement"),
+        (["design_approved", "plan_written", "solid_reviewed"], "review"),
         (["design_approved", "plan_written", "solid_reviewed",
-          "verification_evidence"], "review"),
-        (["design_approved", "plan_written", "solid_reviewed",
-          "verification_evidence", "pre_pr_review"], "ship"),
+          "pre_pr_review"], "ship"),
     ]
     for satisfied, expected in transitions:
         with tempfile.TemporaryDirectory() as tmpdir:

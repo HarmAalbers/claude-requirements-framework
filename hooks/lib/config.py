@@ -940,7 +940,7 @@ class RequirementsConfig:
             },
             {
                 "name": "implement",
-                "gate": "verification_evidence",
+                "gate": None,
                 "skill": "requirements-framework:executing-plans",
                 "description": "implement phase: plan validated, execute it",
             },

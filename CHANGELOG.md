@@ -5,6 +5,34 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.27.0] — 2026-07-07
+
+Removed the `verification_evidence` requirement default — the auto-satisfied
+Stop-hook gate that blocked completion at every turn-end. "Stop" is Claude Code's
+only proxy for a completion *claim*, so a `session`/`stop_only` gate re-fired on
+every turn boundary, nagging during subagent-heavy sessions with no way to
+distinguish an intermediate stop from a genuine "done." The
+`/verification-before-completion` skill is **kept** as guidance-only.
+
+### Removed
+
+- **`verification_evidence` requirement** (shipped default). Removed from the
+  `examples/global-requirements.yaml` template, `messages/verification_evidence.yaml`,
+  the default phase ladder (`config.py` WORKFLOW_DEFAULTS + `derive_phase.py`
+  PHASE_GATES — the `implement` phase is now gateless/advisory), and the
+  `verification-before-completion → verification_evidence` auto-satisfy mapping.
+  No compatibility shim.
+  - **Migration:** projects that still `enable: verification_evidence` in their own
+    config keep a working Stop-gate (the config-driven strategy still fires) but
+    lose the skill-based satisfier — it becomes satisfiable only via `req satisfy`
+    or `req-pause`. **Remove the `verification_evidence` block from your
+    `.claude/requirements*.yaml`** to avoid a soft lockout.
+  - **Rationale / cadence:** removed in a **minor** release under the ADR-015
+    Amendment (2026-07-07), which classifies requirement-ladder defaults as
+    internal artifacts exempt from Policy 1's major-boundary cadence. Decision
+    recorded via `/arch-review` of the removal plan (adr-guardian surfaced the
+    cadence gap).
+
 ## [4.19.0] — 2026-06-11
 
 Strict Global Preflight (ADR-020) — an **opt-in, fail-CLOSED** adoption gate that blocks all

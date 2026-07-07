@@ -27,7 +27,7 @@ This is the **built-in default** that applies when a project has no `workflow:` 
 | design | `design_approved` unsatisfied | `/brainstorm` |
 | plan-write | `plan_written` unsatisfied | `/write-plan` |
 | plan-validate | `solid_reviewed` unsatisfied (after plan_written) | `/arch-review` |
-| implement | `verification_evidence` unsatisfied | `/execute-plan` |
+| implement | (no gate — advisory) | `/execute-plan` |
 | review | `pre_pr_review` unsatisfied | `/deep-review` then `/codex-review` |
 | refactor | (manual) when a large refactor is needed | `/refactor-orchestrate` |
 | ship | all session requirements satisfied | finalize commits + PR |

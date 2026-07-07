@@ -214,10 +214,9 @@ requirements:
     checklist:
     - Codex CLI installed (npm install -g @openai/codex)
     - AI review completed
-  # Gates `git push` on verification evidence (tests/build). Shares the
-  # /verification-before-completion satisfier with the stop-only
-  # verification_evidence req, so one skill run satisfies both. single_use:
-  # re-armed by clear-single-use after each push.
+  # Gates `git push` on verification evidence (tests/build), satisfied by the
+  # /verification-before-completion skill. single_use: re-armed by
+  # clear-single-use after each push.
   # KNOWN FOOT-GUN: command_pattern is a substring regex, so any Bash command
   # containing the literal text "git push" (e.g. an echo or grep) also trips
   # this gate — same naive matching as the commit/PR gates above.
