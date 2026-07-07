@@ -140,6 +140,43 @@ This is a nudge, not a block — you can proceed without it, but the workflow
 expects `{command}` at this phase."""
 
 
+def resolve_current_phase(config, reqs) -> tuple[str, str]:
+    """Session-aware current phase + skill for the proactive nudge.
+
+    Returns ``(phase_name, skill)`` for the first configured workflow phase whose
+    gate requirement is UNSATISFIED *for this session*. Unlike ``derive_phase``
+    (state-file based, any-session-satisfied — used by the session-less
+    statusline), this honors per-session scope via ``reqs.is_satisfied`` so the
+    nudge asks "does THIS session still need to do X?". Gateless phases are
+    transparent (skipped). Returns ``(ship_phase, '')`` when every gate is
+    satisfied. Fail-open: any error returns the design defaults so the nudge
+    still fires.
+    """
+    try:
+        workflow = config.get_workflow_phases()
+        phases = workflow.get('phases') or []
+        ship = workflow.get('ship_phase', 'ship')
+    except Exception:
+        return 'design', DEFAULT_BRAINSTORM_SKILL
+
+    for p in phases:
+        if not isinstance(p, dict):
+            continue
+        gate = p.get('gate')
+        if not gate:
+            continue  # gateless phase: transparent to derivation
+        skill = p.get('skill') or ''
+        try:
+            req_config = config.get_requirement(gate)
+            scope = (req_config or {}).get('scope', 'session')
+            satisfied = reqs.is_satisfied(gate, scope)
+        except Exception:
+            satisfied = False
+        if not satisfied:
+            return (p.get('name') or 'design'), skill
+    return ship, ''
+
+
 def _phase_marker_path(session_id: str, project_dir: str, phase: str):
     """Path to the once-per-(session, phase) nudge marker file."""
     token = _safe_session_token(session_id)

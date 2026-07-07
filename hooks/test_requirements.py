@@ -11351,6 +11351,18 @@ def test_prompt_submit_brainstorm_nudge(runner: TestRunner):
                    "Brainstorm Before Planning" in ctx7,
                    f"Got: {result7.stdout[:300]}")
 
+        # 8. Generalized chain: with design_approved satisfied, the nudge ADVANCES
+        #    to the next phase's skill (/writing-plans), not brainstorming. Proves
+        #    the phase nudge follows derive_phase across the whole workflow.
+        from requirements import BranchRequirements as _BR8
+        reqs8 = _BR8("feature/test", "ps-8", tmpdir)
+        reqs8.satisfy("design_approved", "session")
+        result8 = run_hook(hook_path, prompt_input("ps-8", substantive), tmpdir)
+        ctx8 = extract_hook_context(result8.stdout)
+        runner.test("Phase nudge advances to writing-plans after design",
+                   "/writing-plans" in ctx8 and "Brainstorm Before Planning" not in ctx8,
+                   f"Got: {result8.stdout[:300]}")
+
     # Default config value
     from config import RequirementsConfig
     with tempfile.TemporaryDirectory() as tmpdir:

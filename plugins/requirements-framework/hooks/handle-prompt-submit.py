@@ -38,9 +38,12 @@ from hook_utils import early_hook_setup, collect_unsatisfied
 from console import emit_hook_context
 from brainstorm import (
     brainstorm_directive,
-    resolve_brainstorm_phase,
+    phase_directive,
+    resolve_current_phase,
     nudge_already_shown,
     mark_nudge_shown,
+    phase_nudge_shown,
+    mark_phase_nudge_shown,
 )
 
 # Keywords that suggest the user is about to edit/commit/deploy
@@ -175,26 +178,34 @@ def main() -> int:
         except Exception:
             pass
 
-        # PROACTIVE brainstorm nudge (mode-independent). UserPromptSubmit fires
-        # every turn in every mode, so this reaches auto-accept users who never
-        # enter plan mode (where handle-plan-enter would otherwise nudge). Fires
-        # at most once per session via the shared dedup marker, and only at the
-        # brainstorm/design phase (gate unsatisfied) for a substantive prompt.
+        # PROACTIVE phase nudge (mode-independent). UserPromptSubmit fires every
+        # turn in every mode, so this reaches auto-accept users who never enter
+        # plan mode (where handle-plan-enter would otherwise nudge). Generalizes
+        # the old brainstorm-only nudge: derive the CURRENT workflow phase + its
+        # skill and nudge that, once per phase, so the chain walks the user from
+        # design → plan → implement → review as gates get satisfied.
+        #
+        # The design/brainstorm phase keeps the richer brainstorm directive AND
+        # the shared per-session marker (nudge_already_shown/mark_nudge_shown) so
+        # it still dedups against handle-plan-enter. Later phases use the
+        # per-(session, phase) marker so each fires exactly once when reached.
         if (
             prompt
             and config.get_hook_config('prompt_submit', 'brainstorm_nudge', True)
             and _prompt_is_substantive(prompt)
-            and not nudge_already_shown(session_id, project_dir)
         ):
-            gate, skill = resolve_brainstorm_phase(config)
-            req_config = config.get_requirement(gate)
-            scope = (req_config or {}).get('scope', 'session')
-            if not reqs.is_satisfied(gate, scope):
-                emit_hook_context("UserPromptSubmit", brainstorm_directive(skill))
-                mark_nudge_shown(session_id, project_dir)
-                logger.debug(
-                    "Injected brainstorm nudge", gate=gate, skill=skill
-                )
+            phase, skill = resolve_current_phase(config, reqs)
+            is_brainstorm = bool(skill) and skill.split(':')[-1] == 'brainstorming'
+            already = (nudge_already_shown(session_id, project_dir) if is_brainstorm
+                       else phase_nudge_shown(session_id, project_dir, phase))
+            if skill and not already:
+                if is_brainstorm:
+                    emit_hook_context("UserPromptSubmit", brainstorm_directive(skill))
+                    mark_nudge_shown(session_id, project_dir)
+                else:
+                    emit_hook_context("UserPromptSubmit", phase_directive(phase, skill))
+                    mark_phase_nudge_shown(session_id, project_dir, phase)
+                logger.debug("Injected phase nudge", phase=phase, skill=skill)
                 return 0
 
         # Only inject context when prompt relates to editing/committing
