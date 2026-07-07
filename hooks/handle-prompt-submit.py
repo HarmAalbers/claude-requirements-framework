@@ -194,7 +194,7 @@ def main() -> int:
             and config.get_hook_config('prompt_submit', 'brainstorm_nudge', True)
             and _prompt_is_substantive(prompt)
         ):
-            phase, skill = resolve_current_phase(config, reqs)
+            phase, skill, phase_cfg = resolve_current_phase(config, reqs)
             is_brainstorm = bool(skill) and skill.split(':')[-1] == 'brainstorming'
             already = (nudge_already_shown(session_id, project_dir) if is_brainstorm
                        else phase_nudge_shown(session_id, project_dir, phase))
@@ -203,7 +203,8 @@ def main() -> int:
                     emit_hook_context("UserPromptSubmit", brainstorm_directive(skill))
                     mark_nudge_shown(session_id, project_dir)
                 else:
-                    emit_hook_context("UserPromptSubmit", phase_directive(phase, skill))
+                    emit_hook_context("UserPromptSubmit",
+                                      phase_directive(phase, skill, phase_cfg))
                     mark_phase_nudge_shown(session_id, project_dir, phase)
                 logger.debug("Injected phase nudge", phase=phase, skill=skill)
                 return 0

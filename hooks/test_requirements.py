@@ -2553,6 +2553,55 @@ def test_phase_nudge(runner: TestRunner):
                 phase_nudge_shown("sess1", None, "plan-write") is False)
 
 
+def test_conductor_surfaces_loop_and_conditionals(runner: TestRunner):
+    """Conductor nudge surfaces the Build loop, the team note, and conditionals."""
+    print("\n🧭 Testing conductor loop/conditional surfacing...")
+    from brainstorm import phase_directive
+
+    # Build (spine + loop): the directive surfaces the per-commit loop.
+    build_cfg = {
+        "name": "build", "type": "spine", "gate": "implementation_done",
+        "skill": "requirements-framework:executing-plans",
+        "loop": {"gate": "pre_commit_review",
+                 "skill": "requirements-framework:pre-commit", "on": "commit"},
+    }
+    build_txt = phase_directive(
+        "build", "requirements-framework:executing-plans", build_cfg)
+    runner.test("build directive surfaces the pre-commit loop",
+                "/pre-commit" in build_txt and "before each commit" in build_txt,
+                f"Got: {build_txt!r}")
+
+    # Validate (team + conditionals): team note + conditional side-quests.
+    validate_cfg = {
+        "name": "validate", "type": "team", "gate": "plan_validated",
+        "skill": "requirements-framework:arch-review",
+        "conditionals": ["requirements-framework:codex-review"],
+    }
+    val_txt = phase_directive(
+        "validate", "requirements-framework:arch-review", validate_cfg)
+    runner.test("validate directive notes it runs a review team",
+                "review team" in val_txt, f"Got: {val_txt!r}")
+    runner.test("validate directive lists conditional side-quests",
+                "/codex-review" in val_txt and "Available here" in val_txt,
+                f"Got: {val_txt!r}")
+
+    # Plain spine phase: no loop/team/conditional noise.
+    plan_cfg = {"name": "plan", "type": "spine", "gate": "plan_written",
+                "skill": "requirements-framework:writing-plans"}
+    plan_txt = phase_directive(
+        "plan", "requirements-framework:writing-plans", plan_cfg)
+    runner.test("plain spine directive has no loop/team/conditional lines",
+                "Loop:" not in plan_txt and "review team" not in plan_txt
+                and "Available here" not in plan_txt,
+                f"Got: {plan_txt!r}")
+
+    # Backward-compat: no phase_cfg → base directive still renders.
+    base_txt = phase_directive("plan", "requirements-framework:writing-plans")
+    runner.test("phase_directive backward-compatible without phase_cfg",
+                "/writing-plans" in base_txt and "Next Step" in base_txt,
+                f"Got: {base_txt!r}")
+
+
 def test_subagent_ladder(runner: TestRunner):
     """SubagentStart ladder helper is flag-gated; refactor-executor is code-touching."""
     print("\n📦 Testing SubagentStart lazy-dev ladder...")
@@ -13675,6 +13724,7 @@ def main():
     test_session_start_ladder_block(runner)
     test_lazy_ladder_marker(runner)
     test_phase_nudge(runner)
+    test_conductor_surfaces_loop_and_conditionals(runner)
     test_subagent_ladder(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
