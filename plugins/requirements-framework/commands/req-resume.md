@@ -3,7 +3,7 @@ name: req-resume
 description: "Resume the framework's blocking gates for this session (undo /req-pause)"
 argument-hint: ""
 allowed-tools: ["Bash"]
-git_hash: 1c7c6d5
+git_hash: 026acdf8
 ---
 
 > **Workflow position**: escape-hatch (session-scoped). Re-enables the BLOCKING gates that `/req-pause` suppressed for the current session by clearing the pause marker.
