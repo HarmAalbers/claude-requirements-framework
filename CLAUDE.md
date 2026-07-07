@@ -476,6 +476,44 @@ on `hooks.plan_enter.brainstorm_on_enter` (default `true`).
 
 See `examples/global-requirements.yaml` for full example configuration.
 
+## Workflow Phase Backbone (typed 7-node — ADR-022)
+
+The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a **typed
+7-node backbone**, not a flat list. Each phase carries a `type` and, where
+relevant, a `loop` or `conditionals`:
+
+```
+Design → Plan → Validate → Build → Review → Verify → Ship
+[spine] [spine] [TEAM]    [spine] [TEAM]   [spine] [spine]
+                                   +loop (in Build)
+```
+
+| Node | Type | Gate | Skill / Command |
+|------|------|------|-----------------|
+| design   | spine | `design_approved`      | `/brainstorming` |
+| plan     | spine | `plan_written`         | `/writing-plans` |
+| validate | team  | `plan_validated`       | `/arch-review` *(cond: `/codex-review`)* |
+| build    | spine | `implementation_done`  | `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
+| review   | team  | `pr_reviewed`          | `/deep-review` *(cond: `/codex-review`)* |
+| verify   | spine | `verified`             | `/verification-before-completion` |
+| ship     | spine | — (gateless)           | `/finishing-a-development-branch` |
+
+- **Node types.** `spine` nudges one skill (its gate auto-satisfied by that
+  skill). `team` nudges one orchestrating command that fans out its agents and
+  satisfies ONE gate on completion (`derive_phase`/`resolve_current_phase` walk
+  by gate, so team vs spine is transparent to derivation). A `loop` is a
+  `single_use` gate declared on a node and re-armed by `clear-single-use`. A
+  `conditionals` list is optional side-quests surfaced as *available here* — no
+  gate, no auto-fire.
+- **Gate consolidation (~11 → 7).** `commit_plan`/`adr_reviewed`/`tdd_planned`/
+  `solid_reviewed` folded into **`plan_validated`** (one Validate-team gate);
+  `pre_pr_review` → **`pr_reviewed`**; `pre_push_verification` → **`verified`**;
+  `codex_reviewer` removed as a gate (now a conditional side-quest). No compat
+  shims — a config still naming an old gate gets a validation error pointing at
+  the new name.
+- **YAML footgun.** In a `loop`, write the trigger key quoted (`"on": commit`) —
+  a bare `on:` parses as boolean `True` under YAML 1.1.
+
 ## Requirement Scopes
 | Scope | Behavior |
 |-------|----------|
