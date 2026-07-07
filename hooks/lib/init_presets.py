@@ -5,8 +5,8 @@ Provides preset configuration profiles for the `req init` command.
 Each preset defines a set of requirements with sensible defaults.
 
 Presets:
-- strict: Full enforcement with commit_plan + protected_branch
-- relaxed: Light touch with commit_plan only (default for project without global)
+- strict: Full enforcement with plan_validated + protected_branch
+- relaxed: Light touch with plan_validated only (default for project without global)
 - minimal: Framework enabled, no requirements (configure later)
 - advanced: All features - showcases every requirement type (recommended for global)
 - inherit: Use global defaults (recommended for project with global config)
@@ -33,33 +33,26 @@ from config_utils import deep_merge
 PRESETS: Dict[str, Dict[str, Any]] = {
     'strict': {
         'requirements': {
-            'commit_plan': {
+            'plan_validated': {
                 'enabled': True,
                 'type': 'blocking',
                 'scope': 'session',
                 'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
-                'message': '''📋 **No commit plan found for this session**
+                'auto_resolve_skill': 'requirements-framework:arch-review',
+                'satisfied_by_skill': 'requirements-framework:arch-review',
+                'message': '''📋 **Plan not validated for this session**
 
-Before making code changes, you should plan your commits.
+Before making code changes, run the architecture-review team to validate the
+plan (ADR alignment, SOLID, TDD-readiness, atomic commit boundaries).
 
-**Required**: Create a commit plan that describes:
-- What changes you'll make
-- How you'll split them into atomic commits
-- What order to make the changes
-
-**Why this matters**:
-- Ensures commits are atomic and reviewable
-- Prevents "fix comments" commits
-- Follows project conventions
-
-**To proceed**: Run `req satisfy commit_plan` after creating a plan
+**To proceed**: `/requirements-framework:arch-review` (or `req satisfy plan_validated`)
 ''',
                 'checklist': [
-                    'Identified the changes needed for this feature/fix',
-                    'Determined atomic commit boundaries (each commit is reviewable)',
-                    'Planned commit sequence and dependencies',
+                    'Plan reviewed against ADRs',
+                    'SOLID principles checked',
+                    'TDD strategy documented',
+                    'Atomic commit boundaries planned',
                     'Considered what can be safely rolled back',
-                    'Created plan file documenting the approach',
                 ],
             },
             'protected_branch': {
@@ -91,19 +84,19 @@ req approve protected_branch
 
     'relaxed': {
         'requirements': {
-            'commit_plan': {
+            'plan_validated': {
                 'enabled': True,
                 'type': 'blocking',
                 'scope': 'session',
                 'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
-                'message': '''📋 **No commit plan found for this session**
+                'auto_resolve_skill': 'requirements-framework:arch-review',
+                'satisfied_by_skill': 'requirements-framework:arch-review',
+                'message': '''📋 **Plan not validated for this session**
 
-Before making code changes, please create a brief plan describing:
-- What you're implementing
-- Key files to modify
-- Approach and considerations
+Before making code changes, please validate the plan with the architecture
+review (ADR alignment, SOLID, TDD-readiness, atomic commits).
 
-**To proceed**: Run `req satisfy commit_plan` after creating a plan
+**To proceed**: `/requirements-framework:arch-review` (or `req satisfy plan_validated`)
 ''',
                 'checklist': [
                     'Plan created documenting approach',
@@ -119,59 +112,27 @@ Before making code changes, please create a brief plan describing:
 
     'advanced': {
         'requirements': {
-            'commit_plan': {
+            # Validate-team gate: the /arch-review team folds the old
+            # commit_plan / adr_reviewed / tdd_planned sub-gates into one.
+            'plan_validated': {
                 'enabled': True,
                 'type': 'blocking',
                 'scope': 'session',
                 'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
-                'message': '''📋 **Commit Plan Required**
+                'auto_resolve_skill': 'requirements-framework:arch-review',
+                'satisfied_by_skill': 'requirements-framework:arch-review',
+                'message': '''📋 **Plan Validation Required**
 
-Before making code changes, create a brief plan documenting your approach.
+Run the architecture-review team to validate the plan: ADR alignment, SOLID,
+TDD-readiness, and atomic commit boundaries — cross-validated.
 
-**To proceed**: Run `req satisfy commit_plan` after creating a plan
+**To proceed**: `/requirements-framework:arch-review` (or `req satisfy plan_validated`)
 ''',
                 'checklist': [
-                    'Identified the changes needed',
-                    'Determined atomic commit boundaries',
-                    'Planned commit sequence',
-                    'Considered rollback strategy',
-                    'Created plan file',
-                ],
-            },
-
-            'adr_reviewed': {
-                'enabled': True,
-                'type': 'blocking',
-                'scope': 'session',
-                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
-                'message': '''📚 **ADR Review Checkpoint**
-
-Have you reviewed relevant Architecture Decision Records?
-
-**To satisfy**: `req satisfy adr_reviewed` after reviewing ADRs
-''',
-                'checklist': [
-                    'Found relevant ADRs',
-                    'Reviewed decision context',
-                    'Confirmed approach aligns with ADRs',
-                ],
-            },
-
-            'tdd_planned': {
-                'enabled': True,
-                'type': 'blocking',
-                'scope': 'session',
-                'trigger_tools': ['Edit', 'Write', 'MultiEdit'],
-                'message': '''🧪 **TDD Plan Required**
-
-Ensure your plan includes a testing strategy with test cases per feature.
-
-**To satisfy**: `req satisfy tdd_planned` after planning tests
-''',
-                'checklist': [
-                    'Plan has a testing strategy section',
-                    'Each feature identifies tests to write first',
-                    'TDD sequence is documented',
+                    'Plan reviewed against ADRs',
+                    'SOLID principles checked',
+                    'TDD strategy documented (tests-first per feature)',
+                    'Atomic commit boundaries planned',
                 ],
             },
 
@@ -235,16 +196,19 @@ Run `/requirements-framework:pre-commit` to review changes.
                 ],
             },
 
-            'pre_pr_review': {
+            'pr_reviewed': {
                 'enabled': True,
                 'type': 'blocking',
                 'scope': 'single_use',
                 'trigger_tools': [
                     {'tool': 'Bash', 'command_pattern': 'gh\\s+pr\\s+create'},
                 ],
+                'auto_resolve_skill': 'requirements-framework:deep-review',
+                'satisfied_by_skill': 'requirements-framework:deep-review',
                 'message': '''🔍 **Quality check before PR**
 
 Run `/requirements-framework:deep-review` for cross-validated team review.
+(codex-review is an optional conditional side-quest here, not a gate.)
 
 **After review**: Create PR.
 ''',
@@ -253,27 +217,6 @@ Run `/requirements-framework:deep-review` for cross-validated team review.
                     'Error handling complete',
                     'Style guide followed',
                     'Tests adequate',
-                ],
-            },
-
-            'codex_reviewer': {
-                'enabled': True,  # Optional (requires Codex CLI)
-                'type': 'blocking',
-                'scope': 'single_use',
-                'trigger_tools': [
-                    {'tool': 'Bash', 'command_pattern': 'gh\\s+pr\\s+create'},
-                ],
-                'message': '''🤖 **Codex AI Review Required**
-
-Run `/requirements-framework:codex-review` for AI-powered code review.
-
-**After review**: Create PR.
-''',
-                'checklist': [
-                    'Codex CLI installed (npm install -g @openai/codex)',
-                    'Logged in (codex login)',
-                    'AI review completed',
-                    'Critical findings addressed',
                 ],
             },
 

@@ -5488,7 +5488,7 @@ def test_cli_init_command(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("init --preview runs", result.returncode == 0, result.stderr)
-        runner.test("init --preview shows config", "commit_plan" in result.stdout, result.stdout[:200])
+        runner.test("init --preview shows config", "plan_validated" in result.stdout, result.stdout[:200])
         # Default context is now 'local' → .claude/requirements.local.yaml (matches /req-init)
         config_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
         project_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
@@ -5509,7 +5509,7 @@ def test_cli_init_command(runner: TestRunner):
             content = config_file.read_text()
             runner.test("config has version", 'version' in content)
             runner.test("config has enabled", 'enabled' in content)
-            runner.test("config has commit_plan", 'commit_plan' in content)
+            runner.test("config has plan_validated", 'plan_validated' in content)
 
         # Test init warns on existing config
         result = subprocess.run(
@@ -5802,7 +5802,7 @@ def test_init_presets_module(runner: TestRunner):
 
     relaxed = get_preset('relaxed')
     runner.test("relaxed has requirements", 'requirements' in relaxed)
-    runner.test("relaxed has commit_plan", 'commit_plan' in relaxed.get('requirements', {}))
+    runner.test("relaxed has plan_validated", 'plan_validated' in relaxed.get('requirements', {}))
 
     minimal = get_preset('minimal')
     runner.test("minimal has empty requirements", len(minimal.get('requirements', {})) == 0)
@@ -5815,11 +5815,11 @@ def test_init_presets_module(runner: TestRunner):
     config = generate_config('relaxed')
     runner.test("generate_config adds version", config.get('version') == '1.0')
     runner.test("generate_config adds enabled", config.get('enabled') is True)
-    runner.test("generate_config preserves requirements", 'commit_plan' in config.get('requirements', {}))
+    runner.test("generate_config preserves requirements", 'plan_validated' in config.get('requirements', {}))
 
     # Test generate_config with customizations
-    config = generate_config('relaxed', {'requirements': {'commit_plan': {'scope': 'branch'}}})
-    scope = config.get('requirements', {}).get('commit_plan', {}).get('scope')
+    config = generate_config('relaxed', {'requirements': {'plan_validated': {'scope': 'branch'}}})
+    scope = config.get('requirements', {}).get('plan_validated', {}).get('scope')
     runner.test("generate_config merges customizations", scope == 'branch', f"Got: {scope}")
 
     # Test config_to_yaml returns string
@@ -5831,27 +5831,26 @@ def test_init_presets_module(runner: TestRunner):
     # Test strict preset has expected requirements
     strict_config = generate_config('strict')
     strict_reqs = strict_config.get('requirements', {})
-    runner.test("strict has commit_plan", 'commit_plan' in strict_reqs)
+    runner.test("strict has plan_validated", 'plan_validated' in strict_reqs)
     runner.test("strict has protected_branch", 'protected_branch' in strict_reqs)
 
     # Test requirement structure
-    commit_plan = strict_reqs.get('commit_plan', {})
-    runner.test("commit_plan has enabled", 'enabled' in commit_plan)
-    runner.test("commit_plan has type", 'type' in commit_plan)
-    runner.test("commit_plan has scope", 'scope' in commit_plan)
-    runner.test("commit_plan has trigger_tools", 'trigger_tools' in commit_plan)
-    runner.test("commit_plan has message", 'message' in commit_plan)
+    plan_validated = strict_reqs.get('plan_validated', {})
+    runner.test("plan_validated has enabled", 'enabled' in plan_validated)
+    runner.test("plan_validated has type", 'type' in plan_validated)
+    runner.test("plan_validated has scope", 'scope' in plan_validated)
+    runner.test("plan_validated has trigger_tools", 'trigger_tools' in plan_validated)
+    runner.test("plan_validated has message", 'message' in plan_validated)
 
     # Test advanced preset - should have all 6+ requirement types
     advanced = get_preset('advanced')
     advanced_reqs = advanced.get('requirements', {})
     runner.test("advanced has requirements", len(advanced_reqs) > 0)
-    runner.test("advanced has commit_plan", 'commit_plan' in advanced_reqs)
-    runner.test("advanced has adr_reviewed", 'adr_reviewed' in advanced_reqs)
+    runner.test("advanced has plan_validated", 'plan_validated' in advanced_reqs)
     runner.test("advanced has protected_branch", 'protected_branch' in advanced_reqs)
     runner.test("advanced has branch_size_limit", 'branch_size_limit' in advanced_reqs)
     runner.test("advanced has pre_commit_review", 'pre_commit_review' in advanced_reqs)
-    runner.test("advanced has pre_pr_review", 'pre_pr_review' in advanced_reqs)
+    runner.test("advanced has pr_reviewed", 'pr_reviewed' in advanced_reqs)
     runner.test("advanced has github_ticket", 'github_ticket' in advanced_reqs)
 
     # Test advanced preset has hooks config
@@ -5948,34 +5947,33 @@ def test_feature_selector(runner: TestRunner):
 
     # Test FEATURES catalog exists
     runner.test("FEATURES is dict", isinstance(FEATURES, dict))
-    runner.test("FEATURES has commit_plan", 'commit_plan' in FEATURES)
-    runner.test("FEATURES has adr_reviewed", 'adr_reviewed' in FEATURES)
+    runner.test("FEATURES has plan_validated", 'plan_validated' in FEATURES)
     runner.test("FEATURES has protected_branch", 'protected_branch' in FEATURES)
     runner.test("FEATURES has branch_size_limit", 'branch_size_limit' in FEATURES)
     runner.test("FEATURES has pre_commit_review", 'pre_commit_review' in FEATURES)
-    runner.test("FEATURES has pre_pr_review", 'pre_pr_review' in FEATURES)
+    runner.test("FEATURES has pr_reviewed", 'pr_reviewed' in FEATURES)
 
     # Test feature structure
-    commit_plan_feature = FEATURES.get('commit_plan', {})
-    runner.test("feature has name", 'name' in commit_plan_feature)
-    runner.test("feature has description", 'description' in commit_plan_feature)
-    runner.test("feature has category", 'category' in commit_plan_feature)
+    plan_validated_feature = FEATURES.get('plan_validated', {})
+    runner.test("feature has name", 'name' in plan_validated_feature)
+    runner.test("feature has description", 'description' in plan_validated_feature)
+    runner.test("feature has category", 'category' in plan_validated_feature)
 
     # Test FeatureSelector.build_config_from_features
     selector = FeatureSelector()
 
     # Test with valid features
-    config = selector.build_config_from_features(['commit_plan', 'adr_reviewed'], context='project')
+    config = selector.build_config_from_features(['plan_validated', 'pr_reviewed'], context='project')
     runner.test("build_config returns dict", isinstance(config, dict))
     runner.test("build_config has version", config.get('version') == '1.0')
     runner.test("build_config has enabled", config.get('enabled') is True)
     runner.test("build_config project has inherit", config.get('inherit') is True)
     runner.test("build_config has requirements", 'requirements' in config)
-    runner.test("build_config includes commit_plan", 'commit_plan' in config.get('requirements', {}))
-    runner.test("build_config includes adr_reviewed", 'adr_reviewed' in config.get('requirements', {}))
+    runner.test("build_config includes plan_validated", 'plan_validated' in config.get('requirements', {}))
+    runner.test("build_config includes pr_reviewed", 'pr_reviewed' in config.get('requirements', {}))
 
     # Test with global context (no inherit)
-    config = selector.build_config_from_features(['commit_plan'], context='global')
+    config = selector.build_config_from_features(['plan_validated'], context='global')
     runner.test("build_config global has no inherit", 'inherit' not in config)
 
     # Test with empty features list

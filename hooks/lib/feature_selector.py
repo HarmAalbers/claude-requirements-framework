@@ -16,16 +16,9 @@ from typing import Dict, List, Any
 
 # Feature catalog - maps requirement keys to user-friendly descriptions
 FEATURES = {
-    'commit_plan': {
-        'name': 'Commit Planning',
-        'description': 'Require planning before code changes',
-        'category': 'code_quality',
-        'type': 'blocking',
-        'scope': 'session',
-    },
-    'adr_reviewed': {
-        'name': 'ADR Review',
-        'description': 'Check Architecture Decision Records',
+    'plan_validated': {
+        'name': 'Plan Validation (Validate team)',
+        'description': 'Architecture-review team: ADR alignment, SOLID, TDD-readiness, commit plan',
         'category': 'code_quality',
         'type': 'blocking',
         'scope': 'session',
@@ -50,16 +43,9 @@ FEATURES = {
         'scope': 'single_use',
         'deprecated': True,
     },
-    'pre_pr_review': {
-        'name': 'Pre-PR Review',
-        'description': 'Quality check before PR creation',
-        'category': 'code_quality',
-        'type': 'blocking',
-        'scope': 'single_use',
-    },
-    'codex_reviewer': {
-        'name': 'Codex AI Review',
-        'description': 'AI-powered review before PR',
+    'pr_reviewed': {
+        'name': 'PR Review (Review team)',
+        'description': 'Cross-validated /deep-review team before PR creation',
         'category': 'code_quality',
         'type': 'blocking',
         'scope': 'single_use',
@@ -86,8 +72,8 @@ class FeatureSelector:
             options.append(option_str)
             option_to_key[option_str] = key
 
-        # Default selections: commit_plan, adr_reviewed
-        default_keys = ['commit_plan', 'adr_reviewed']
+        # Default selection: plan_validated (the consolidated Validate-team gate)
+        default_keys = ['plan_validated']
         defaults = [
             f"{FEATURES[k]['name']} - {FEATURES[k]['description']}"
             for k in default_keys
