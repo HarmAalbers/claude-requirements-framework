@@ -12488,18 +12488,18 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("no workflow → default phase names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement",
-                     "review", "refactor", "ship"])
+                    ["design", "plan", "validate", "build",
+                     "review", "verify", "ship"])
         runner.test("no workflow → default gates",
                     [p["gate"] for p in wf["phases"]] ==
-                    ["design_approved", "plan_written", "solid_reviewed",
-                     None, "pre_pr_review", None, None])
+                    ["design_approved", "plan_written", "plan_validated",
+                     "implementation_done", "pr_reviewed", "verified", None])
         runner.test("no workflow → every default phase carries a description",
                     all(isinstance(p.get("description"), str) and p["description"]
                         for p in wf["phases"]))
-        runner.test("no workflow → gateless refactor/ship at the tail",
+        runner.test("no workflow → only ship is gateless at the tail",
                     [(p["name"], p["gate"]) for p in wf["phases"][-2:]] ==
-                    [("refactor", None), ("ship", None)])
+                    [("verify", "verified"), ("ship", None)])
         runner.test("no workflow → resolver skill names",
                     wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
                     and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
@@ -12780,8 +12780,7 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
                         for p in wf["phases"]))
         design = next(p for p in wf["phases"] if p["name"] == "design")
         runner.test("design description ported from the prompt menu",
-                    design["description"] ==
-                    "design phase: requirements unclear, need exploration")
+                    design["description"] == "design: explore the problem")
 
     # WorkflowValidator: description is OPTIONAL — a phase WITH one and a phase
     # WITHOUT one both validate; a non-string description is rejected.
@@ -12886,7 +12885,7 @@ def test_supervisor_config_driven(runner: TestRunner):
     default_names = {p["name"] for p in default_phases}
     runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (7)",
                 len(default_phases) == 7
-                and {"design", "refactor", "ship"} <= default_names)
+                and {"design", "validate", "ship"} <= default_names)
     runner.test("clamp: 'ship' is routable under the default vocab",
                 _resolve_target("ship", default_phases, "design") == "ship")
 
