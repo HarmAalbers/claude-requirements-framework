@@ -769,7 +769,7 @@ def cmd_prune(args) -> int:
 
 
 def _find_repo_dir(explicit: str | None = None) -> Path | None:
-    """Locate the hooks repository directory containing sync.sh."""
+    """Locate the framework repository directory (identified by its pyproject.toml)."""
 
     candidates = []
     if explicit:
@@ -786,7 +786,7 @@ def _find_repo_dir(explicit: str | None = None) -> Path | None:
         if candidate in seen:
             continue
         seen.add(candidate)
-        if (candidate / "sync.sh").exists():
+        if (candidate / "pyproject.toml").exists():
             return candidate
     return None
 

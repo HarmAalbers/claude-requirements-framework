@@ -49,7 +49,7 @@ uv run python scripts/build_plugin_hooks.py      # rebuild the plugin bundle (a 
 - 7 pre-existing test failures are env-independent and expected; a green run reports `1544/1551`.
 - CI runs `ruff check .` (pinned) which the local test harness does not — lint can fail CI while tests pass locally.
 
-> **Runtime**: hooks fire via the **plugin** (installed marketplace build, or a `--plugin-dir` dev build for this repo), not a `~/.claude/hooks` deploy. `plugins/requirements-framework/hooks/hooks.json` owns hook registration. The old `sync.sh` two-location model is legacy.
+> **Runtime**: hooks fire via the **plugin** (installed marketplace build, or a `--plugin-dir` dev build for this repo), not a `~/.claude/hooks` deploy. `plugins/requirements-framework/hooks/hooks.json` owns hook registration. The old `sync.sh` two-location model has been removed.
 
 ## Configuration Cascade
 

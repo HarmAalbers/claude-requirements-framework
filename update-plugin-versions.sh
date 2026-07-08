@@ -415,7 +415,7 @@ main() {
             echo "Next steps:"
             echo "  1. Review changes: git diff plugins/requirements-framework/ github-issues-plugin/"
             echo "  2. Commit: git add . && git commit -m 'feat: add git hash version tracking'"
-            echo "  3. Deploy: ./sync.sh deploy"
+            echo "  3. Reload: restart the session, or 'claude --plugin-dir …/plugins/requirements-framework' for dev"
         fi
     fi
 }

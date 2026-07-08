@@ -18,10 +18,9 @@ Every entry resolves its script via `${CLAUDE_PLUGIN_ROOT}` (e.g.
 activates the hooks.** There is no separate deployed runtime directory that Claude Code
 loads hooks from.
 
-> **Legacy note:** older docs described a "two-location system" — a git repo that syncs to
-> `~/.claude/hooks/` via `sync.sh`. That flow is **dead**. `sync.sh` and any
-> `~/.claude/hooks/` directory are legacy and are not part of the supported runtime. Do not
-> rely on them.
+> **Legacy note:** older docs described a "two-location system" — a git repo that synced to
+> `~/.claude/hooks/` via a `sync.sh` script. That flow and the `sync.sh` script have been
+> **removed**. There is no `~/.claude/hooks/` runtime directory; the plugin is the only runtime.
 
 ### What `install.sh` does (and does not do)
 

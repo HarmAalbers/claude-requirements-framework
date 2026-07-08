@@ -14,7 +14,7 @@ Guide for developing, fixing, and maintaining the **Claude Code Requirements Fra
 
 ## Core Concept: Plugin-Owned Runtime + Build-Copy Bundle
 
-There is **no** `~/.claude/hooks` deployment and **no** `sync.sh` — both are dead.
+There is **no** `~/.claude/hooks` deployment and **no** `sync.sh` — both have been removed.
 The framework runs entirely as a **self-contained plugin**:
 
 | Piece | Path | Role |

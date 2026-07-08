@@ -17,7 +17,7 @@ if [[ -f "$HOME/.claude/hooks/lib/diff_scope.py" ]]; then
 elif [[ -f "$script_dir/../../../hooks/lib/diff_scope.py" ]]; then
   lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
 else
-  echo "prepare-diff-scope: cannot find diff_scope.py. Run ./sync.sh deploy or install the framework." >&2
+  echo "prepare-diff-scope: cannot find diff_scope.py. Run from the framework repo or install the plugin." >&2
   exit 3
 fi
 

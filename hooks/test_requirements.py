@@ -1943,7 +1943,7 @@ def test_cli_verify_command(runner: TestRunner):
     # and exits 1.
     with tempfile.TemporaryDirectory() as tmpdir2:
         broken_repo = Path(tmpdir2)
-        (broken_repo / "sync.sh").write_text("#!/bin/sh\n")
+        (broken_repo / "pyproject.toml").write_text("[project]\nname = \"x\"\n")
         (broken_repo / "plugins" / "requirements-framework" / "hooks").mkdir(parents=True)
         env2 = {**os.environ, "HOME": str(broken_repo)}
 
@@ -8842,8 +8842,8 @@ def test_feature_catalog_project_sync(runner: TestRunner):
     repo_root = Path(__file__).resolve().parent.parent
     project_config_path = repo_root / ".claude" / "requirements.yaml"
     if not project_config_path.exists():
-        # When running from deployed location (~/.claude/hooks/), find the repo
-        # via sync.sh's known source path
+        # When running from the plugin bundle, fall back to the repo's
+        # known default source path
         alt_root = Path.home() / "Tools" / "claude-requirements-framework"
         project_config_path = alt_root / ".claude" / "requirements.yaml"
     if not project_config_path.exists():
