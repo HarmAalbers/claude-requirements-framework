@@ -8,6 +8,10 @@ version: "1.0"
 # Framework enabled globally (projects can override)
 enabled: true
 
+# Enforcement mode: 'nudge' (default) advises without blocking; 'block' denies
+# edits/commits until gates are satisfied. Projects can override.
+enforcement: nudge
+
 # Default requirements (disabled by default - projects opt-in)
 requirements:
   # Validate Team Gate

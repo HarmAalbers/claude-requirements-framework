@@ -1,5 +1,7 @@
 version: '1.0'
 enabled: true
+# Gates advise rather than deny; set to 'block' to enforce.
+enforcement: nudge
 requirements:
   # Validate team gate: the architecture-review team (adr-guardian,
   # solid-reviewer, tdd-validator, commit-planner, refactor-advisor,

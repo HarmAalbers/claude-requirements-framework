@@ -11,6 +11,10 @@ inherit: true
 # Enable framework for this project
 enabled: true
 
+# Enforcement mode: 'nudge' (default) advises without blocking; 'block' denies
+# edits/commits until gates are satisfied.
+enforcement: nudge
+
 # Project-specific requirements
 requirements:
   # Customize the consolidated Validate-team gate for this project. The old

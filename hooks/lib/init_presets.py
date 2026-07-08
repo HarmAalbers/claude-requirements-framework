@@ -302,6 +302,8 @@ def generate_config(preset_name: str,
     # Add standard fields
     config['version'] = '1.0'
     config['enabled'] = True
+    # Gates advise rather than deny by default; set to 'block' to enforce.
+    config['enforcement'] = 'nudge'
 
     # Add inherit flag for project context (unless preset already defines it)
     if context == 'project' and 'inherit' not in config:
