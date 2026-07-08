@@ -16,6 +16,6 @@ Clear the session-scoped pause marker via the CLI primitive:
 req resume
 ```
 
-If `req` is not on PATH, fall back to `python3 hooks/requirements-cli.py resume`.
+If `req` is not on PATH, fall back to `uv run python hooks/requirements-cli.py resume`.
 
 Then confirm to the user that blocking gates are active again for this session: edits/commits are gated as normal and the end-of-turn Stop check is back on. If the session was never paused, this is a harmless no-op.

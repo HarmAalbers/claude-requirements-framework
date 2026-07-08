@@ -2,32 +2,36 @@
 
 Solutions for common development issues with the Requirements Framework.
 
+> All Python runs through **`uv`** (ADR-021) — never bare `python3` (the only
+> exception is `statusline.sh`). The runtime is the plugin at
+> `plugins/requirements-framework/`; the bundle under
+> `plugins/requirements-framework/hooks/` is a **build-copy** of `hooks/`
+> produced by `scripts/build_plugin_hooks.py`. There is no `~/.claude/hooks`
+> deployment and no `sync.sh`.
+
 ## Test Failures
 
-### Tests Pass in Repo But Fail When Deployed
+### Tests Behave Differently From the Running Plugin
 
-**Symptoms**: Tests work when run from repo, fail from deployed location.
+**Symptoms**: A change works when you run the test suite from `hooks/`, but the
+live plugin doesn't reflect it (or vice versa).
 
-**Causes**:
-1. Files not synced properly
-2. Import path differences
-3. Missing library files
+**Cause**: The plugin bundle is stale — you edited `hooks/` but never rebuilt.
 
 **Solution**:
 ```bash
-# 1. Check sync status
 cd ~/Tools/claude-requirements-framework
-./sync.sh status
 
-# 2. Deploy if needed
-./sync.sh deploy
+# 1. Check whether the bundle drifted from hooks/
+uv run python scripts/build_plugin_hooks.py --check
 
-# 3. Check file permissions
-ls -la ~/.claude/hooks/*.py
-chmod +x ~/.claude/hooks/*.py
+# 2. Rebuild if drift is reported
+uv run python scripts/build_plugin_hooks.py
 
-# 4. Run tests from deployed location
-python3 ~/.claude/hooks/test_requirements.py
+# 3. Run tests from source
+uv run python hooks/test_requirements.py
+
+# 4. Start a fresh --plugin-dir session to reload the runtime
 ```
 
 ### Import Errors
@@ -36,22 +40,20 @@ python3 ~/.claude/hooks/test_requirements.py
 
 **Solution**:
 ```bash
-# Check lib directory exists
-ls ~/.claude/hooks/lib/
+# Confirm the module exists in source
+ls hooks/lib/requirements.py
 
-# Check specific module
-ls ~/.claude/hooks/lib/requirements.py
+# Ensure the uv env is synced (missing deps surface as import errors)
+uv sync
 
-# Verify sync
-./sync.sh status
-
-# Re-deploy if missing
-./sync.sh deploy
+# Rebuild the bundle so it matches source, then retest
+uv run python scripts/build_plugin_hooks.py
+uv run python hooks/test_requirements.py
 ```
 
-### Test Database Issues
+### Test State Conflicts
 
-**Symptoms**: Tests fail due to state file conflicts.
+**Symptoms**: Tests fail due to leftover state files.
 
 **Solution**:
 ```bash
@@ -59,7 +61,7 @@ ls ~/.claude/hooks/lib/requirements.py
 rm -rf /tmp/test-requirements-*
 
 # Run tests fresh
-python3 ~/.claude/hooks/test_requirements.py
+uv run python hooks/test_requirements.py
 ```
 
 ---
@@ -68,36 +70,30 @@ python3 ~/.claude/hooks/test_requirements.py
 
 ### Hook Not Triggering
 
-**Check 1: Hook Registration**
+**Check 1: Plugin Loaded**
 ```bash
-# View registered hooks
-cat ~/.claude/settings.local.json | jq '.hooks'
-
-# Should show:
-# {
-#   "PreToolUse": "~/.claude/hooks/check-requirements.py",
-#   "SessionStart": "~/.claude/hooks/handle-session-start.py",
-#   ...
-# }
+# Hooks only fire when the plugin is loaded. In development, launch with:
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
 ```
 
-**Check 2: File Exists**
+**Check 2: Hook Registration**
 ```bash
-ls -la ~/.claude/hooks/check-requirements.py
+# Registration is owned by the plugin, NOT ~/.claude/settings*.json
+cat plugins/requirements-framework/hooks/hooks.json
+
+# Every lifecycle hook is wired here via ${CLAUDE_PLUGIN_ROOT}
 ```
 
-**Check 3: File Executable**
+**Check 3: Bundle Is Current**
 ```bash
-# Check permissions
-ls -la ~/.claude/hooks/*.py
-
-# Fix if needed
-chmod +x ~/.claude/hooks/*.py
+# A stale bundle can run old hook code
+uv run python scripts/build_plugin_hooks.py --check
+uv run python scripts/build_plugin_hooks.py   # rebuild if drift
 ```
 
 **Check 4: Python Syntax**
 ```bash
-python3 -m py_compile ~/.claude/hooks/check-requirements.py
+uv run python -m py_compile hooks/check-requirements.py
 ```
 
 ### Hook Errors Not Visible
@@ -112,67 +108,68 @@ req logging --level debug --local
 # View logs
 tail -f ~/.claude/requirements.log
 
-# Run test to trigger hook
-# Then check log output
+# Reproduce the action, then check log output
 ```
 
 ---
 
-## Sync Issues
+## Bundle Issues
 
-### sync.sh Shows Differences After Deploy
+### build_plugin_hooks.py --check Reports Drift
 
-**Symptoms**: After running `./sync.sh deploy`, status still shows differences.
+**Symptoms**: `--check` exits non-zero (missing / stale-extra / content-differs).
 
-**Causes**:
-1. File modified during deploy
-2. Line ending differences
-3. Permission differences
+**Cause**: The bundle no longer matches `hooks/` — usually because source was
+edited without a rebuild, or a stray file was added to the bundle.
 
 **Solution**:
 ```bash
-# Check exact differences
-./sync.sh diff
+# Rebuild to reconcile the bundle with source
+uv run python scripts/build_plugin_hooks.py
 
-# Force fresh deploy
-rm -f ~/.claude/hooks/problematic-file.py
-./sync.sh deploy
-
-# Verify
-./sync.sh status
+# Verify it is now clean
+uv run python scripts/build_plugin_hooks.py --check
 ```
 
-### Files Missing in Deployed
+### Prompt Changes Not Reflected
 
-**Symptoms**: New file exists in repo but not in deployed.
+**Symptoms**: You edited a command/agent/skill prompt but the plugin shows the
+old text.
 
-**Causes**:
-1. File not in sync.sh patterns
-2. File path incorrect
+**Cause**: You edited a rendered `.md` (which is regenerated) instead of its
+`.md.j2` source, or you edited the `.md.j2` but never re-rendered.
 
 **Solution**:
 ```bash
-# Check sync.sh patterns
-grep "your_file" ~/Tools/claude-requirements-framework/sync.sh
-
-# If not listed, add to sync.sh or copy manually
-cp hooks/your_new_file.py ~/.claude/hooks/
-
-# Then deploy to maintain consistency
-./sync.sh deploy
+# 1. Edit the *.md.j2 template, not the rendered *.md
+# 2. Re-render
+uv run python scripts/render_prompts.py
+# 3. Reload in a fresh --plugin-dir session
 ```
 
 ---
 
 ## Git Issues
 
-### Detached HEAD
+### Never Use git commit — Use Stacked Git
 
-**Symptoms**: Git shows "detached HEAD" state.
+This project authors every local commit through **Stacked Git (`stg`)**.
+
+```bash
+# Per-branch setup (once)
+git checkout -b feat/your-branch
+stg init
+
+# Atomic patches
+stg new <patch-name>   # opens editor for description
+# ... edit files ...
+stg refresh            # fold working-tree changes into the top patch
+```
+
+### Detached HEAD
 
 **Solution**:
 ```bash
-# Return to master
 git checkout master
 
 # If you have changes, stash first
@@ -183,50 +180,18 @@ git stash pop
 
 ### Merge Conflicts
 
-**Symptoms**: `git pull` fails with conflicts.
-
 **Solution**:
 ```bash
-# Stash local changes
-git stash
+# Integrate remote work
+git pull --rebase origin master
 
-# Pull remote
-git pull origin master
-
-# Reapply changes
-git stash pop
-
-# Manually resolve conflicts
-# Files will be marked with <<<<< ===== >>>>>
-
-# After resolving
+# Resolve conflicts (files marked <<<<< ===== >>>>>), then continue
 git add .
-git commit -m "merge: resolve conflicts"
+git rebase --continue
 
-# Deploy resolved version
-./sync.sh deploy
-```
-
-### Accidentally Committed to Wrong Branch
-
-**Solution**:
-```bash
-# Save commit hash
-git log -1 --format="%H"
-
-# Switch to correct branch
-git checkout correct-branch
-
-# Cherry-pick the commit
-git cherry-pick <commit-hash>
-
-# Remove from wrong branch
-git checkout wrong-branch
-git reset --hard HEAD~1
-
-# Deploy from correct branch
-git checkout correct-branch
-./sync.sh deploy
+# Rebuild the bundle (source may have changed) and retest
+uv run python scripts/build_plugin_hooks.py
+uv run python hooks/test_requirements.py
 ```
 
 ---
@@ -237,52 +202,44 @@ git checkout correct-branch
 
 **Symptoms**: Claude operations feel sluggish.
 
-**Causes**:
-1. Calculation cache disabled
-2. Too many file operations
-3. Complex regex patterns
-
 **Solution**:
 ```bash
 # Check cache configuration
 req config branch_size_limit
 
-# Ensure caching enabled
-# calculation_cache_ttl: 30  (seconds)
-
-# Check log for slow operations
+# Look for slow operations in the log
 grep "slow\|timeout\|delay" ~/.claude/requirements.log
 ```
 
 ### Tests Running Slowly
 
-**Symptoms**: Test suite takes longer than expected.
-
 **Solution**:
 ```bash
-# Run specific test categories
-python3 ~/.claude/hooks/test_requirements.py -k "test_session"
+# Run a specific test category
+uv run python hooks/test_requirements.py -k "test_session"
 
 # Skip slow tests during development
-python3 ~/.claude/hooks/test_requirements.py -k "not slow"
+uv run python hooks/test_requirements.py -k "not slow"
 ```
 
 ---
 
 ## Development Environment
 
-### Python Version Issues
+### uv Not Found / Wrong Interpreter
 
-**Symptoms**: Syntax errors or missing features.
+**Symptoms**: Import errors, missing PyYAML, or "python3 has no module …".
 
-**Required**: Python 3.9+
+**Cause**: Something ran under the ambient `python3` instead of the uv-managed
+env. Every entrypoint must run via `uv run`.
 
-**Check**:
+**Solution**:
 ```bash
-python3 --version
+# Materialize the uv env once
+uv sync
 
-# Should be 3.9 or higher
-# If lower, use pyenv or update system Python
+# Always prefix Python with `uv run`
+uv run python hooks/test_requirements.py
 ```
 
 ### Editor Not Recognizing Types
@@ -291,41 +248,34 @@ python3 --version
 
 **Solution**:
 ```bash
-# Ensure type stubs installed (if using strict typing)
-pip install types-PyYAML
-
-# Configure IDE to use correct Python interpreter
-which python3
-# Use this path in IDE settings
+# Point the IDE at the uv-managed interpreter
+uv run python -c "import sys; print(sys.executable)"
+# Use that path as the IDE's interpreter
 ```
 
 ---
 
 ## Recovery Procedures
 
-### Complete Reset
+### Reconcile a Broken Bundle
 
-If everything is broken:
+If the bundle is in a confusing state:
 
 ```bash
-# 1. Backup any local changes
-cp -r ~/.claude/hooks ~/.claude/hooks.backup
-
-# 2. Clean deployed location
-rm -rf ~/.claude/hooks
-
-# 3. Re-run installation
 cd ~/Tools/claude-requirements-framework
-./install.sh
 
-# 4. Deploy fresh
-./sync.sh deploy
+# 1. Rebuild straight from source (hooks/ is the source of truth)
+uv run python scripts/build_plugin_hooks.py
 
-# 5. Verify
-python3 ~/.claude/hooks/test_requirements.py
+# 2. Re-render prompts
+uv run python scripts/render_prompts.py
+
+# 3. Verify bundle is clean and tests pass
+uv run python scripts/build_plugin_hooks.py --check
+uv run python hooks/test_requirements.py
 ```
 
-### Revert to Previous Version
+### Inspect a Previous Version
 
 ```bash
 cd ~/Tools/claude-requirements-framework
@@ -333,18 +283,13 @@ cd ~/Tools/claude-requirements-framework
 # See recent commits
 git log --oneline -10
 
-# Revert to specific commit
-git checkout <commit-hash>
+# Inspect a specific commit's source without moving your branch
+git show <commit-hash>:hooks/lib/requirements.py
 
-# Deploy that version
-./sync.sh deploy
-
-# Test
-python3 ~/.claude/hooks/test_requirements.py
-
-# Return to latest when done
-git checkout master
-./sync.sh deploy
+# Or check it out on a scratch branch, rebuild, and test
+git checkout -b scratch-<hash> <commit-hash>
+uv run python scripts/build_plugin_hooks.py
+uv run python hooks/test_requirements.py
 ```
 
 ---
@@ -370,21 +315,10 @@ tail -f ~/.claude/requirements.log
 # Logs appear in Terminal 1
 ```
 
-### Run Hook Manually
+### Run a Hook Manually
 
-```python
-# Create test input
-import json
-test_input = {
-    "tool_name": "Edit",
-    "tool_input": {"file_path": "/test/file.py"},
-    "session_id": "test123"
-}
-
-# Import and test
-import sys
-sys.path.insert(0, "/Users/harm/.claude/hooks")
-from check_requirements import main
-result = main(test_input)
-print(json.dumps(result, indent=2))
+```bash
+# Feed a hook synthetic stdin and inspect the result, all under uv
+echo '{"tool_name":"Edit","tool_input":{"file_path":"/test/file.py"},"session_id":"test123"}' \
+  | uv run python hooks/check-requirements.py
 ```

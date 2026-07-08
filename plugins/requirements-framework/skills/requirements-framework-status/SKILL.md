@@ -51,7 +51,7 @@ counts**, **ADR range**, and a one-line summary of the **live gating state** fro
 run on every status readout, so only run it when asked to verify health:
 
 ```bash
-python3 hooks/test_requirements.py 2>&1 | grep -E 'Results:|passed' | tail -1
+uv run python hooks/test_requirements.py 2>&1 | grep -E 'Results:|passed' | tail -1
 ```
 
 ## Durable reference (rarely changes)
@@ -104,11 +104,19 @@ req init              # Interactive setup
 req status            # Check current gating state
 req doctor            # Verify installation
 
-# Framework developers
-./sync.sh status                              # Check repo ↔ deployed sync
-./sync.sh deploy                              # Deploy repo → ~/.claude/hooks
-python3 hooks/test_requirements.py            # Run the test suite
+# Framework developers (uv required — ADR-021; never bare python3)
+uv sync                                        # Materialize the uv-managed env
+uv run python hooks/test_requirements.py       # Run the test suite
+uv run ruff check .                            # Lint (pinned ruff, matches CI)
+uv run python scripts/build_plugin_hooks.py    # Rebuild the plugin hook bundle
+uv run python scripts/render_prompts.py        # Render *.md.j2 → *.md
 ```
+
+The active runtime is the **plugin** — hooks are registered by
+`plugins/requirements-framework/hooks/hooks.json` (via `${CLAUDE_PLUGIN_ROOT}`),
+not copied into `~/.claude/hooks`. The bundle under `plugins/.../hooks/` is a
+build-copy produced by `scripts/build_plugin_hooks.py`; `hooks/` at the repo root
+is the source of truth for hook logic.
 
 ## Deeper reference
 

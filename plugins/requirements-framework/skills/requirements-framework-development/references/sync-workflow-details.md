@@ -1,212 +1,194 @@
-# Sync Workflow Details
+# Plugin Dev Workflow Details
 
-Comprehensive guide to the sync.sh tool and two-location architecture.
+Comprehensive guide to the framework's build-copy plugin architecture and the
+tools that keep the runtime bundle current: `build_plugin_hooks.py`,
+`render_prompts.py`, and live-reload via `--plugin-dir`.
 
-## Two-Location Architecture
+> There is **no** `~/.claude/hooks` deployment and **no** `sync.sh`. Both are
+> retired. The framework runs as a self-contained plugin whose hook bundle is a
+> build-copy of `hooks/`.
 
-The framework lives in TWO places that must stay synchronized:
+## Plugin-Owned Runtime Architecture
 
-### Repository Location
-**Path**: `~/Tools/claude-requirements-framework/`
+### Source Location
+**Path**: `hooks/` (under `~/Tools/claude-requirements-framework/`)
 
 - Git version controlled
-- Source of truth for all changes
-- Where you commit and push from
+- **Source of truth** for all hook + lib code
+- Where you edit and where the test suite runs
 - Contains:
-  - `hooks/` - Python hooks and libraries
-  - `plugin/` - Agents, commands, skills
-  - `docs/` - Documentation
-  - `sync.sh` - Synchronization tool
+  - `hooks/*.py` - lifecycle hook entry points + `requirements-cli.py`
+  - `hooks/lib/*.py` - core library modules
+  - `hooks/test_requirements.py` - test suite
 
-### Deployed Location
-**Path**: `~/.claude/hooks/`
+### Plugin Bundle Location
+**Path**: `plugins/requirements-framework/hooks/`
 
-- Active runtime (where Claude Code loads hooks)
-- Where framework actually executes
-- Hooks run from here immediately
-- Changes here take effect without restart
+- A **build-copy** of `hooks/`, produced by `scripts/build_plugin_hooks.py`
+- What Claude Code actually loads at runtime
+- Registration lives in `plugins/requirements-framework/hooks/hooks.json`, the
+  single source of truth, wiring every lifecycle hook via `${CLAUDE_PLUGIN_ROOT}`
+- **Never edit the bundle directly** — your change is overwritten on the next
+  build. Edit `hooks/` and rebuild.
+
+### Prompt Templates
+**Pattern**: `**/*.md.j2` → `**/*.md`
+
+- Agent / command / skill prompts are authored as Jinja2 templates (`.md.j2`)
+- `scripts/render_prompts.py` renders them to the `.md` files the plugin ships
+- **Never edit a rendered `.md`** — edit the `.md.j2` and re-render
 
 ---
 
-## sync.sh Commands
+## Build & Render Commands
 
-### Check Status
+Everything runs through **`uv`** (ADR-021) — never bare `python3`.
+
+### Rebuild the Bundle
 
 ```bash
 cd ~/Tools/claude-requirements-framework
-./sync.sh status
+uv run python scripts/build_plugin_hooks.py
 ```
 
-**Output explanation**:
-```
-📊 Sync Status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Copies hook + lib source from `hooks/` into `plugins/requirements-framework/hooks/`.
+Run it after editing anything under `hooks/`.
 
-Repository:  ~/Tools/claude-requirements-framework
-Deployed:    ~/.claude/hooks
-
-File Status:
-  ✓ check-requirements.py - In sync
-  ↑ requirements-cli.py - Out of sync (run './sync.sh deploy' to update deployed)
-  ⚠ lib/new_module.py - Not deployed
-  ✗ lib/old_module.py - Missing in repository
-```
-
-**Symbols**:
-| Symbol | Meaning | Action |
-|--------|---------|--------|
-| `✓` | In sync | None needed |
-| `↑` | Out of sync | Run `./sync.sh deploy` |
-| `⚠` | Not deployed | Run `./sync.sh deploy` |
-| `✗` | Missing in repo | Copy from deployed or delete |
-
-### Deploy Changes
+### Check for Bundle Drift
 
 ```bash
-./sync.sh deploy
+uv run python scripts/build_plugin_hooks.py --check
 ```
 
-Copies all hook files from repository → deployed location.
+Reports missing / stale-extra / content-differs files **without writing**. Exits
+non-zero on drift — ideal as a pre-commit / CI guard. Treat a non-zero exit as
+"rebuild before you commit."
 
-**What gets synced**:
-- `hooks/*.py` → `~/.claude/hooks/*.py`
-- `hooks/lib/*.py` → `~/.claude/hooks/lib/*.py`
-
-**What does NOT get synced**:
-- `examples/` - Example files
-- `docs/` - Documentation
-- `plugin/` - Plugin components (symlinked)
-- `.git/` - Git files
-
-### View Differences
+### Render Prompt Templates
 
 ```bash
-./sync.sh diff
+uv run python scripts/render_prompts.py
 ```
 
-Shows detailed diff between repository and deployed versions.
+Renders every `*.md.j2` to its `*.md`. Run it after editing any template.
 
 ---
 
-## Sync Scenarios
+## Live-Reload
+
+Load the plugin directly from the repo so edits are picked up on the next session:
+
+```bash
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
+```
+
+Rebuild the bundle and/or re-render prompts as needed, then start a **fresh
+session** to load the changes.
+
+---
+
+## Workflow Scenarios
 
 ### Scenario: Normal Development
 
-You edit files in the repository, then deploy.
+Edit source, rebuild the bundle, test, commit.
 
 ```bash
 cd ~/Tools/claude-requirements-framework
 
-# 1. Edit file in repo
-vim hooks/lib/requirements.py
+# 1. Edit source
+$EDITOR hooks/lib/requirements.py
 
-# 2. Deploy to make changes active
-./sync.sh deploy
+# 2. Rebuild the bundle
+uv run python scripts/build_plugin_hooks.py
 
 # 3. Test
-python3 ~/.claude/hooks/test_requirements.py
+uv run python hooks/test_requirements.py
 
-# 4. Commit
-git add . && git commit -m "feat: description"
+# 4. Commit (Stacked Git)
+stg new my-change && stg refresh
 ```
 
-### Scenario: Emergency Fix
+### Scenario: Editing a Prompt
 
-You edit directly in deployed location for immediate effect.
+You change a command / agent / skill prompt.
 
 ```bash
-# 1. Fix directly (immediate effect)
-vim ~/.claude/hooks/check-requirements.py
+# 1. Edit the template (never the rendered .md)
+$EDITOR plugins/requirements-framework/commands/some-command.md.j2
 
-# 2. Test immediately
-python3 ~/.claude/hooks/test_requirements.py
+# 2. Render
+uv run python scripts/render_prompts.py
 
-# 3. Copy back to repo
-cd ~/Tools/claude-requirements-framework
-cp ~/.claude/hooks/check-requirements.py hooks/check-requirements.py
+# 3. Reload in a fresh --plugin-dir session
+```
 
-# 4. Deploy to sync
-./sync.sh deploy
+### Scenario: Test-Driven Development
+
+```bash
+# 1. Write a failing test
+$EDITOR hooks/test_requirements.py
+
+# 2. Rebuild + run (RED)
+uv run python scripts/build_plugin_hooks.py
+uv run python hooks/test_requirements.py   # fails
+
+# 3. Implement
+$EDITOR hooks/lib/requirements.py
+
+# 4. Rebuild + run (GREEN)
+uv run python scripts/build_plugin_hooks.py
+uv run python hooks/test_requirements.py   # green = 1544/1551
 
 # 5. Commit
-git add . && git commit -m "fix: emergency bug fix"
+stg new tdd-change && stg refresh
 ```
 
-### Scenario: Claude Made Changes
+### Scenario: Merge / Rebase
 
-Claude edited files in deployed location during development.
-
-```bash
-# 1. Claude edited ~/.claude/hooks/lib/some_module.py
-
-# 2. Copy changes to repo
-cd ~/Tools/claude-requirements-framework
-cp ~/.claude/hooks/lib/some_module.py hooks/lib/some_module.py
-
-# 3. Deploy to maintain sync
-./sync.sh deploy
-
-# 4. Review changes
-git diff
-
-# 5. Commit
-git add . && git commit -m "feat: changes made by Claude"
-```
-
-### Scenario: Merge Conflict
-
-Remote has changes while you have local changes.
+Standard git; there is no separate deploy step to reconcile.
 
 ```bash
 cd ~/Tools/claude-requirements-framework
 
-# 1. Stash local changes
-git stash
+# 1. Integrate remote work
+git pull --rebase origin master
 
-# 2. Pull remote
-git pull origin master
+# 2. Rebuild the bundle (source may have changed)
+uv run python scripts/build_plugin_hooks.py
 
-# 3. Reapply changes
-git stash pop
-
-# 4. Resolve conflicts manually
-
-# 5. Deploy merged version
-./sync.sh deploy
-
-# 6. Test
-python3 ~/.claude/hooks/test_requirements.py
-
-# 7. Commit merge
-git add . && git commit -m "merge: resolve conflicts"
+# 3. Test
+uv run python hooks/test_requirements.py
 ```
 
 ---
 
-## File Patterns Synced
+## Bundle Contents
 
-### Hook Files
+### Hook Files (copied `hooks/*.py`)
 
 | File | Purpose |
 |------|---------|
 | `check-requirements.py` | PreToolUse hook entry point |
 | `handle-session-start.py` | SessionStart hook |
+| `handle-prompt-submit.py` | UserPromptSubmit hook |
 | `handle-stop.py` | Stop hook |
 | `handle-session-end.py` | SessionEnd hook |
+| `handle-plan-enter.py` | PostToolUse for EnterPlanMode |
 | `handle-plan-exit.py` | PostToolUse for ExitPlanMode |
 | `auto-satisfy-skills.py` | PostToolUse for skills |
 | `clear-single-use.py` | PostToolUse for Bash |
-| `requirements-cli.py` | CLI tool |
+| `requirements-cli.py` | `req` CLI (bundled) |
 | `test_requirements.py` | Test suite |
 
-### Library Files
+### Library Files (copied `hooks/lib/*.py`)
 
-All `*.py` files in `hooks/lib/` are synced:
+All `*.py` files in `hooks/lib/` are copied into the bundle:
 
 | Module | Purpose |
 |--------|---------|
 | `requirements.py` | Core API |
-| `config.py` | Configuration loader |
+| `config.py` | Configuration loader + workflow defaults |
 | `state_storage.py` | State persistence |
 | `session.py` | Session tracking |
 | `registry_client.py` | Registry management |
@@ -225,87 +207,62 @@ All `*.py` files in `hooks/lib/` are synced:
 
 ## Pre-Commit Checklist
 
-**ALWAYS run before committing**:
+**Run before committing**:
 
 ```bash
 cd ~/Tools/claude-requirements-framework
 
-# 1. Check sync status
-./sync.sh status
+# 1. Confirm the bundle is not stale relative to hooks/
+uv run python scripts/build_plugin_hooks.py --check
+#    (non-zero exit → run `build_plugin_hooks.py` to rebuild)
 
-# 2. If out of sync, reconcile:
-#    - If deployed is newer: copy to repo
-#    - If repo is newer: deploy
-./sync.sh diff  # See what's different
+# 2. Re-render prompts if you touched any *.md.j2
+uv run python scripts/render_prompts.py
 
 # 3. Run tests
-python3 ~/.claude/hooks/test_requirements.py
+uv run python hooks/test_requirements.py
 
-# 4. Now safe to commit
-git add .
-git commit -m "type: description"
-git push
+# 4. Lint like CI (pinned ruff)
+uv run ruff check .
+
+# 5. Commit with Stacked Git — bump plugin.json in the same patch
+#    when plugin files changed
+stg new my-change && stg refresh
 ```
 
 ---
 
-## Plugin Components (Separate Pattern)
-
-Plugin components use symlink, NOT copy:
-
-```bash
-# Plugin is symlinked (live updates)
-ls -la ~/.claude/plugins/requirements-framework
-# → /Users/harm/Tools/claude-requirements-framework/plugin
-
-# Changes to plugin/ directory are immediately active
-# No sync.sh deploy needed for plugin changes
-```
-
-This means:
-- Edit `plugin/agents/*.md` → Immediately available
-- Edit `plugin/skills/*/skill.md` → Immediately available
-- Edit `plugin/commands/*.md` → Immediately available
-
----
-
-## Troubleshooting Sync
+## Troubleshooting the Build
 
 ### Changes Not Taking Effect
 
 ```bash
-# 1. Check which location you edited
-pwd
+# 1. Did you rebuild the bundle after editing hooks/?
+uv run python scripts/build_plugin_hooks.py --check   # reports drift
+uv run python scripts/build_plugin_hooks.py           # rebuild
 
-# 2. If edited in repo, deploy
-./sync.sh deploy
+# 2. For prompt changes, did you re-render?
+uv run python scripts/render_prompts.py
 
-# 3. If still not working, check file exists
-ls -la ~/.claude/hooks/your-file.py
-
-# 4. Check file permissions
-chmod +x ~/.claude/hooks/*.py
+# 3. Start a fresh --plugin-dir session to reload
 ```
 
-### sync.sh Not Working
+### build_plugin_hooks.py --check Reports Drift You Didn't Expect
 
 ```bash
-# Check if executable
-ls -la ~/Tools/claude-requirements-framework/sync.sh
+# The bundle is stale or has an extra file not in hooks/. Rebuild to reconcile:
+uv run python scripts/build_plugin_hooks.py
 
-# Make executable if needed
-chmod +x ~/Tools/claude-requirements-framework/sync.sh
-
-# Run with bash explicitly
-bash ~/Tools/claude-requirements-framework/sync.sh status
+# Then re-check
+uv run python scripts/build_plugin_hooks.py --check
 ```
 
-### Files Missing After Sync
+### uv Not Found / Wrong Interpreter
 
 ```bash
-# Check if file is in the sync list
-grep "filename" ~/Tools/claude-requirements-framework/sync.sh
+# All Python must run via uv (ADR-021). Materialize the env once:
+uv sync
 
-# sync.sh uses explicit file patterns
-# New files may need to be added to the script
+# Then prefix every command with `uv run`:
+uv run python hooks/test_requirements.py
 ```

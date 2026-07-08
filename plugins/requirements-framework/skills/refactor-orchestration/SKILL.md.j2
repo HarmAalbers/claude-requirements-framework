@@ -77,7 +77,7 @@ This skill is bundled with the `requirements-framework` plugin. Recommended sequ
 
 | Step | Command | What it covers |
 |---|---|---|
-| 1 | `/requirements-framework:arch-review` | Satisfies the framework's planning gates (commit_plan, adr_reviewed, tdd_planned, solid_reviewed) for the upcoming work. |
+| 1 | `/requirements-framework:arch-review` | Satisfies the framework's plan-validation gate (plan_validated) for the upcoming work. |
 | 2 | `/requirements-framework:refactor-orchestrate` | Stages 1–7 of this skill: inventory, top-down design, library-claim validation, harmonization, plan write, chunk queue, orchestrator-prompt write. |
 | 3 | Fresh `claude` session | Paste the orchestrator block. Stages 8–9 (execution + retrospective) run there. |
 

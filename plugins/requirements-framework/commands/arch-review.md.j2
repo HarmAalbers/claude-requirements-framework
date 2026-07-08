@@ -6,12 +6,12 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelet
 git_hash: db81f75
 ---
 
-> **Workflow position**: invoked by `/req plan`. Run directly to override the conductor.
+> **Workflow position**: invoked by `/req plan-validate` (the Validate team node). Run directly to override the conductor.
 
 # Architecture Review — Team-Based Multi-Perspective Assessment
 
 Team-based architecture review where agents debate architectural implications of a plan and generate an atomic commit strategy.
-Satisfies all 4 planning requirements: `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`.
+Satisfies the single Validate gate: `plan_validated`.
 
 **See ADR-012 for design rationale.**
 
@@ -188,13 +188,11 @@ The persisted file MUST contain:
 - A `## Commit Plan` section holding the atomic commit breakdown produced by the commit-planner agent (one entry per commit: title, files changed, what to test).
 - A `## Verdict` section whose body is the actual verdict. Write `APPROVED` **only** when the verdict is genuinely APPROVED, followed by a one-line stamp `Reviewed: <branch> @ <ISO time>` (branch from `git rev-parse --abbrev-ref HEAD`, time from `date -u +%Y-%m-%dT%H:%M:%SZ`). If the verdict is `BLOCKED` or `ADR_REQUIRED`, write that verdict honestly — never write `APPROVED` for a non-approved review — so the plan-evidence gate stays CLOSED until the issues are resolved.
 
-This persisted `## Verdict APPROVED` artifact is what satisfies the requirements-framework `commit_plan` gate; a BLOCKED review intentionally leaves the gate closed.
+This persisted `## Verdict APPROVED` artifact is what satisfies the requirements-framework `plan_validated` gate; a BLOCKED review intentionally leaves the gate closed.
 
 ### Step 7: Auto-satisfy
 
-If verdict is APPROVED:
-- Run: `req satisfy commit_plan adr_reviewed tdd_planned solid_reviewed --session [current_session_id]`
-- Output: "All 4 planning requirements satisfied (commit_plan, adr_reviewed, tdd_planned, solid_reviewed)"
+If verdict is APPROVED, the framework's PostToolUse hook (`auto-satisfy-skills.py`) auto-satisfies `plan_validated` on this command's completion — you do **not** run `req satisfy` (it is a user-only action the permission layer blocks). Output: "Validate gate `plan_validated` satisfied."
 
 ### Step 8: Cleanup
 

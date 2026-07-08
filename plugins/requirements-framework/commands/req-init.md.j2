@@ -77,7 +77,7 @@ If missing, append `**/.claude/requirements.local.yaml` to `.gitignore` (create 
 
 Strict-mode compliance is more than the config. Tell the user that strict mode ALSO requires:
 
-- **Valid Langfuse env** — run `python3 scripts/setup_langfuse_tracing.py --write` to write the 5 Layer-1 keys into `.claude/settings.local.json` (and prune any stale Layer-2 keys).
+- **Valid Langfuse env** — run `uv run python scripts/setup_langfuse_tracing.py --write` to write the 5 Layer-1 keys into `.claude/settings.local.json` (and prune any stale Layer-2 keys).
 - **`uv` on PATH** — required by the bundled tracing hook. If `which uv` returns nothing, install it (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ## Step 5: Tell them to restart

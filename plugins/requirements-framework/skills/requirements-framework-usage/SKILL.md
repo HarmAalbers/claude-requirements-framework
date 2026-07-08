@@ -8,8 +8,31 @@ git_hash: db81f75
 
 Help users configure, customize, and troubleshoot the **Claude Code Requirements Framework** - a hook-based system that enforces development workflow practices.
 
+The framework ships as a **self-contained Claude Code plugin**. Hook registration is owned by the plugin (`hooks.json` resolved via `${CLAUDE_PLUGIN_ROOT}`); there is no `~/.claude/hooks` deploy step and no `sync.sh`. All Python entrypoints run through `uv` (never a bare `python3`).
+
 **Repository**: https://github.com/HarmAalbers/claude-requirements-framework
-**Documentation**: `~/.claude/hooks/README-REQUIREMENTS-FRAMEWORK.md`
+**Documentation**: `plugins/requirements-framework/README.md` (in the repo) and the ADRs under `docs/adr/`
+
+## Workflow Backbone (ADR-022, typed 7-node)
+
+The default workflow is a typed 7-node backbone. Each node has one gate (except the gateless final `ship`):
+
+```
+Design → Plan → Validate → Build → Review → Verify → Ship
+```
+
+| Node | Gate | Skill / Command |
+|------|------|-----------------|
+| design   | `design_approved`     | `/brainstorming` |
+| plan     | `plan_written`        | `/writing-plans` |
+| validate | `plan_validated`      | `/arch-review` (team; conditional `/codex-review`) |
+| build    | `implementation_done` | `/executing-plans` (loop: `/pre-commit` → `pre_commit_review` per commit) |
+| review   | `pr_reviewed`         | `/deep-review` (team; conditional `/codex-review`) |
+| verify   | `verified`            | `/verification-before-completion` |
+| ship     | — (gateless)          | `/finishing-a-development-branch` |
+
+**Retired gate names** (a config still naming one gets a validation error pointing at the new name):
+`commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` → **`plan_validated`**; `pre_pr_review` → **`pr_reviewed`**; `pre_push_verification` → **`verified`**; `codex_reviewer` → removed (now a conditional side-quest, not a gate). `pre_commit_review` survives as the Build per-commit loop gate.
 
 ## Core Capabilities
 
@@ -24,15 +47,19 @@ Help users configure, customize, and troubleshoot the **Claude Code Requirements
 ### Essential CLI Commands
 
 ```bash
-req status                  # Check requirement status
-req satisfy commit_plan     # Mark requirement satisfied
-req clear commit_plan       # Clear a requirement
-req list                    # List all requirements
-req sessions                # View active sessions
-req init                    # Interactive project setup
-req config commit_plan      # View/modify configuration
-req doctor                  # Verify installation
+req status                    # Check requirement status
+req satisfy plan_validated    # Mark requirement satisfied (USER action)
+req clear plan_validated      # Clear a requirement (USER action)
+req pause                     # Pause blocking gates for this session (Claude may run this)
+req resume                    # Resume blocking gates for this session
+req list                      # List tracked branches
+req sessions                  # View active sessions
+req init                      # Interactive project setup
+req config plan_validated     # View/modify configuration
+req doctor                    # Verify installation (plugin hook integrity)
 ```
+
+**Who runs what**: `req satisfy` / `req clear` are **user** actions (they represent a human's approval of a gate). `req pause` / `req resume` and read-only commands like `req status` are runnable by Claude.
 
 **→ Full CLI reference**: See `references/cli-reference.md`
 
@@ -46,10 +73,10 @@ req doctor                  # Verify installation
 
 | Scope | Lifetime | Use Case |
 |-------|----------|----------|
-| `session` | Until Claude session ends | Daily planning, ADR review |
+| `session` | Until Claude session ends | Design/plan gates, ADR review |
 | `branch` | Persists across sessions | GitHub ticket linking |
 | `permanent` | Never auto-cleared | Project setup |
-| `single_use` | Cleared after action | Pre-commit review (each commit) |
+| `single_use` | Cleared after triggering action | `pre_commit_review` (each commit) |
 
 ## Common Tasks
 
@@ -58,11 +85,11 @@ req doctor                  # Verify installation
 ```yaml
 # In .claude/requirements.yaml
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     scope: session
     checklist:
-      - "Plan created via EnterPlanMode"
+      - "Plan reviewed by /arch-review"
       - "Atomic commits identified"
       - "TDD approach documented"
 ```
@@ -125,7 +152,7 @@ export CLAUDE_SKIP_REQUIREMENTS=1
 
 **Option 3**: Disable specific requirement
 ```bash
-req config commit_plan --disable --local
+req config plan_validated --disable --local
 ```
 
 ## Interactive Setup
@@ -141,7 +168,7 @@ req init --yes              # Non-interactive with defaults
 **Presets**:
 - `strict` - All requirements, session scope (teams)
 - `relaxed` - Basic requirements, branch scope
-- `minimal` - Only commit_plan (learning)
+- `minimal` - Minimal gate set (learning)
 - `advanced` - All features + branch limits + guards
 - `inherit` - Inherit from global config
 
@@ -151,14 +178,15 @@ View and modify settings without editing YAML:
 
 ```bash
 # View
-req config                   # All requirements
-req config commit_plan       # Specific requirement
+req config                     # All requirements
+req config plan_validated      # Specific requirement
+req config --sources           # Show which cascade layer set each value
 
 # Modify
-req config commit_plan --enable
-req config commit_plan --disable
-req config commit_plan --scope branch
-req config adr_reviewed --set adr_path=/custom/path
+req config plan_validated --enable
+req config plan_validated --disable
+req config plan_validated --scope branch
+req config plan_validated --set adr_path=/custom/path
 ```
 
 **→ Full config options**: See `references/cli-reference.md`
@@ -168,8 +196,8 @@ req config adr_reviewed --set adr_path=/custom/path
 Sessions are auto-detected. Manual override when needed:
 
 ```bash
-req sessions                           # List active sessions
-req satisfy commit_plan --session ID   # Explicit session
+req sessions                             # List active sessions
+req satisfy plan_validated --session ID  # Explicit session
 ```
 
 ## Troubleshooting Quick Guide
@@ -178,8 +206,8 @@ req satisfy commit_plan --session ID   # Explicit session
 
 1. Check if on main/master (skipped by design)
 2. Verify config enabled: `req config`
-3. Check hook registration: `req doctor`
-4. Check permissions: `ls -la ~/.claude/hooks/*.py`
+3. Check plugin hook integrity: `req doctor` (validates `hooks.json` and the scripts it registers)
+4. Confirm the plugin is installed/enabled: `/plugin`
 5. Verify no skip flag: `echo $CLAUDE_SKIP_REQUIREMENTS`
 
 ### Session Not Found?
@@ -206,18 +234,21 @@ Skills can automatically satisfy requirements:
 5. single_use clears → Next commit requires review again
 ```
 
-**Built-in mappings (review skills)**:
-- `requirements-framework:pre-commit` → `pre_commit_review`
-- `requirements-framework:deep-review` → `pre_pr_review`
-- `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`
-- `requirements-framework:codex-review` → `codex_reviewer`
+**Built-in mappings (review commands/skills)**:
+- `requirements-framework:arch-review` → `plan_validated` (one Validate gate)
+- `requirements-framework:deep-review` → `pr_reviewed`
+- `requirements-framework:v3-review` → `pr_reviewed`
+- `requirements-framework:pre-commit` → `pre_commit_review` (Build per-commit loop)
 
 **Built-in mappings (process skills)**:
 - `requirements-framework:brainstorming` → `design_approved`
-- `requirements-framework:writing-plans` → `plan_written`, `commit_plan`
-- `requirements-framework:test-driven-development` → `tdd_planned`
+- `requirements-framework:writing-plans` → `plan_written`
+- `requirements-framework:executing-plans` → `implementation_done`
+- `requirements-framework:verification-before-completion` → `verified`
 - `requirements-framework:systematic-debugging` → `debugging_systematic`
 - `requirements-framework:requesting-code-review` → `pre_commit_review`
+
+**Not gates** (guidance-only / conditional): `requirements-framework:codex-review` is a conditional side-quest on the Validate and Review teams, not a gate; `test-driven-development` is advisory and owns no gate.
 
 ### Process Skills (Development Lifecycle)
 
@@ -284,7 +315,7 @@ protected_branch:
 **Good**:
 ```yaml
 checklist:
-  - "Plan created via EnterPlanMode"
+  - "Plan reviewed by /arch-review"
   - "Atomic commits identified"
   - "Tests written (TDD)"
 ```
@@ -303,13 +334,13 @@ checklist:
 ```yaml
 # .claude/requirements.yaml (team - committed)
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     scope: session
 
 # .claude/requirements.local.yaml (personal - gitignored)
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: false  # I opt-out
 ```
 
@@ -321,7 +352,7 @@ version: "1.0"
 inherit: true
 
 requirements:
-  commit_plan:
+  plan_validated:
     checklist:
       - "Project-specific checklist item"
 ```
@@ -337,11 +368,12 @@ req verify   # Quick verification
 
 `req doctor` checks:
 - Python version (3.9+)
-- Hook registration
-- File permissions
-- Sync status (repo vs deployed)
-- Library imports
-- Test suite status
+- PyYAML availability
+- Plugin hook integrity (`hooks.json` + the scripts it registers via `${CLAUDE_PLUGIN_ROOT}`)
+- `req` on PATH and callable
+- Plugin installation
+
+Use `req doctor --verbose` for all checks, `--json` for machine-readable output, and `--ci` to skip local Claude Code config checks.
 
 ## Key Principles
 
@@ -353,11 +385,11 @@ req verify   # Quick verification
 
 ## Resources
 
-- **README**: `~/.claude/hooks/README-REQUIREMENTS-FRAMEWORK.md`
+- **Plugin README**: `plugins/requirements-framework/README.md` (in the repo)
 - **GitHub**: https://github.com/HarmAalbers/claude-requirements-framework
-- **Dev Guide**: `~/Tools/claude-requirements-framework/DEVELOPMENT.md`
-- **Sync Tool**: `~/Tools/claude-requirements-framework/sync.sh`
-- **Tests**: `~/.claude/hooks/test_requirements.py`
+- **Dev Guide**: `DEVELOPMENT.md` (in the repo)
+- **ADRs**: `docs/adr/` (ADR-022 = the typed 7-node workflow backbone)
+- **Tests** (run via uv): `uv run python hooks/test_requirements.py`
 
 ## Reference Files
 

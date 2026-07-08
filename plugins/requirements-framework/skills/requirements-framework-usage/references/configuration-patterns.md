@@ -16,6 +16,25 @@ The framework uses a three-layer configuration cascade:
 
 **Priority**: Local > Project > Global (later files override earlier ones)
 
+> A project with **only** `.claude/requirements.local.yaml` (no committed
+> `requirements.yaml`) is fully recognized — the local layer alone is enough.
+
+## Gate Names (ADR-022)
+
+The default workflow uses these six gate names (the final `ship` node is gateless):
+`design_approved`, `plan_written`, `plan_validated`, `implementation_done`,
+`pr_reviewed`, `verified`. Plus `pre_commit_review` as the Build per-commit loop gate.
+
+**Retired names** — a config that still names one of these gets a validation error
+pointing at the new name:
+
+| Retired | Replacement |
+|---------|-------------|
+| `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | `plan_validated` |
+| `pre_pr_review` | `pr_reviewed` |
+| `pre_push_verification` | `verified` |
+| `codex_reviewer` | removed (now a conditional side-quest, not a gate) |
+
 ---
 
 ## Pattern: Project with Multiple Requirements
@@ -29,13 +48,14 @@ inherit: true   # Inherit from global config
 enabled: true
 
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     scope: session
     checklist:
-      - "Plan created via EnterPlanMode"
+      - "Plan reviewed by /arch-review"
       - "Atomic commits identified"
       - "TDD approach documented"
+      - "Relevant ADRs reviewed"
 
   github_ticket:
     enabled: true
@@ -55,14 +75,6 @@ requirements:
       ✅ **Run tests before making changes**
 
       Verify all tests pass: `npm test`
-
-  adr_reviewed:
-    enabled: true
-    scope: session
-    message: |
-      📚 **Review relevant Architecture Decision Records**
-
-      Check `docs/adr/` for applicable decisions.
 ```
 
 ---
@@ -74,7 +86,7 @@ Disable specific requirements for yourself while team uses them:
 ```yaml
 # .claude/requirements.local.yaml (gitignored)
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: false   # Disable for myself only
 
   github_ticket:
@@ -195,11 +207,11 @@ Add checklists to guide users through requirements:
 
 ```yaml
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     scope: session
     checklist:
-      - "Plan created via EnterPlanMode"
+      - "Plan reviewed by /arch-review"
       - "Atomic commits identified"
       - "Tests written (TDD approach)"
       - "Relevant ADRs reviewed"
@@ -231,10 +243,17 @@ requirements:
 ```
 
 **Built-in Skill Mappings** (in `auto-satisfy-skills.py`):
-- `requirements-framework:pre-commit` → `pre_commit_review`
-- `requirements-framework:deep-review` → `pre_pr_review`
-- `requirements-framework:arch-review` → `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`
-- `requirements-framework:codex-review` → `codex_reviewer`
+- `requirements-framework:brainstorming` → `design_approved`
+- `requirements-framework:writing-plans` → `plan_written`
+- `requirements-framework:arch-review` → `plan_validated`
+- `requirements-framework:pre-commit` → `pre_commit_review` (Build per-commit loop)
+- `requirements-framework:executing-plans` → `implementation_done`
+- `requirements-framework:deep-review` → `pr_reviewed`
+- `requirements-framework:v3-review` → `pr_reviewed`
+- `requirements-framework:verification-before-completion` → `verified`
+
+`requirements-framework:codex-review` is a conditional side-quest on the Validate
+and Review teams — it satisfies no gate.
 
 ---
 
@@ -249,7 +268,7 @@ inherit: true    # Merge with global config
 
 requirements:
   # Override global setting
-  commit_plan:
+  plan_validated:
     checklist:
       - "Project-specific step 1"
       - "Project-specific step 2"
@@ -275,15 +294,15 @@ version: "1.0"
 enabled: true
 
 requirements:
-  commit_plan:
+  design_approved:
     enabled: true
     scope: session
     message: |
-      📋 **No commit plan found**
+      📋 **Design not approved yet**
 
-      Create a plan using EnterPlanMode before making changes.
+      Run `/brainstorming` to explore the problem before making changes.
 
-      **To satisfy**: `req satisfy commit_plan`
+      **To satisfy**: `req satisfy design_approved`
 ```
 
 ---
@@ -304,19 +323,20 @@ hooks:
     verify_scopes: [session]
 
 requirements:
-  commit_plan:
+  design_approved:
     enabled: true
     scope: session
-    checklist:
-      - "Plan created via EnterPlanMode"
-      - "Atomic commits identified"
-      - "TDD approach documented"
+    message: "Run /brainstorming to approve the design before implementation"
 
-  adr_reviewed:
+  plan_validated:
     enabled: true
     scope: session
     adr_path: docs/adr/
-    message: "Review relevant ADRs before implementation"
+    checklist:
+      - "Plan reviewed by /arch-review"
+      - "Atomic commits identified"
+      - "TDD approach documented"
+      - "Relevant ADRs reviewed"
 
   pre_commit_review:
     enabled: true
@@ -327,7 +347,7 @@ requirements:
     auto_satisfy:
       on_skill_complete: ["requirements-framework:pre-commit"]
 
-  pre_pr_review:
+  pr_reviewed:
     enabled: true
     scope: single_use
     trigger_tools:

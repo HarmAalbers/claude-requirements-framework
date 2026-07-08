@@ -6,7 +6,7 @@ allowed-tools: ["Bash"]
 git_hash: db81f75
 ---
 
-> **Workflow position**: an opt-in SDK alternative to the team-based `/deep-review` (ADR-012). Both satisfy `pre_pr_review`; choose the substrate you want.
+> **Workflow position**: an opt-in SDK alternative to the team-based `/deep-review` (ADR-012). Both satisfy `pr_reviewed`; choose the substrate you want.
 
 # `/v3-review` — SDK Fan-out Code Review
 

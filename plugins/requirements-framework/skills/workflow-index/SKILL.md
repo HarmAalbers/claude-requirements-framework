@@ -25,21 +25,23 @@ This is the **built-in default** that applies when a project has no `workflow:` 
 | Phase | When | Run |
 |-------|------|-----|
 | design | `design_approved` unsatisfied | `/brainstorm` |
-| plan-write | `plan_written` unsatisfied | `/write-plan` |
-| plan-validate | `solid_reviewed` unsatisfied (after plan_written) | `/arch-review` |
-| implement | (no gate — advisory) | `/execute-plan` |
-| review | `pre_pr_review` unsatisfied | `/deep-review` then `/codex-review` |
-| refactor | (manual) when a large refactor is needed | `/refactor-orchestrate` |
-| ship | all session requirements satisfied | finalize commits + PR |
+| plan | `plan_written` unsatisfied | `/write-plan` |
+| validate | `plan_validated` unsatisfied (after plan_written) | `/arch-review` (optional `/codex-review`) |
+| build | `implementation_done` unsatisfied | `/execute-plan` (loops `/pre-commit` per commit) |
+| review | `pr_reviewed` unsatisfied | `/deep-review` (optional `/codex-review`) |
+| verify | `verified` unsatisfied | `verification-before-completion` |
+| ship | all gates satisfied (gateless) | `finishing-a-development-branch` |
 
-In the default workflow, planning is split because two skills are needed to clear all planning gates: `/write-plan` produces a plan (flips `plan_written`), and `/arch-review` validates it (flips `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`).
+This is the ADR-022 typed 7-node backbone: Design → Plan → Validate → Build → Review → Verify → Ship. Planning is split across two phases: `/write-plan` produces a plan (flips `plan_written`), and `/arch-review` validates it (flips `plan_validated`).
 
 ## Common transitions (default workflow)
 
-- After `/brainstorm` → `design_approved` flips → next phase: **plan-write**
-- After `/write-plan` → `plan_written` flips → next phase: **plan-validate**
-- After `/arch-review` → 4 planning requirements flip → next phase: **implement**
-- After `/deep-review` → `pre_pr_review` flips → next phase: **ship**
+- After `/brainstorm` → `design_approved` flips → next phase: **plan**
+- After `/write-plan` → `plan_written` flips → next phase: **validate**
+- After `/arch-review` → `plan_validated` flips → next phase: **build**
+- After `/execute-plan` → `implementation_done` flips → next phase: **review**
+- After `/deep-review` → `pr_reviewed` flips → next phase: **verify**
+- After `verification-before-completion` → `verified` flips → next phase: **ship**
 
 ## How to use this index
 

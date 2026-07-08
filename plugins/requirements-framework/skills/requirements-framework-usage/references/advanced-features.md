@@ -18,30 +18,30 @@ Requirements can be automatically satisfied when specific skills complete.
 
 ### Built-in Mappings
 
-Located in `~/.claude/hooks/auto-satisfy-skills.py`:
+Defined in the plugin's `hooks/auto-satisfy-skills.py` (`DEFAULT_SKILL_MAPPINGS`):
 
 ```python
 DEFAULT_SKILL_MAPPINGS = {
+    'requirements-framework:brainstorming': 'design_approved',
+    'requirements-framework:writing-plans': 'plan_written',
+    'requirements-framework:arch-review': 'plan_validated',
     'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:deep-review': 'pre_pr_review',
-    'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
-    'requirements-framework:codex-review': 'codex_reviewer',
+    'requirements-framework:executing-plans': 'implementation_done',
+    'requirements-framework:deep-review': 'pr_reviewed',
+    'requirements-framework:v3-review': 'pr_reviewed',
+    'requirements-framework:verification-before-completion': 'verified',
+    'requirements-framework:systematic-debugging': 'debugging_systematic',
+    'requirements-framework:requesting-code-review': 'pre_commit_review',
 }
 ```
+
+`requirements-framework:codex-review` is a conditional side-quest (no gate);
+`test-driven-development` is advisory (no gate).
 
 ### Adding Custom Mappings
 
-Edit `~/.claude/hooks/auto-satisfy-skills.py`:
-
-```python
-DEFAULT_SKILL_MAPPINGS = {
-    'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:deep-review': 'pre_pr_review',
-    'my-plugin:my-skill': 'my_requirement',  # Add here
-}
-```
-
-Or use `satisfied_by_skill` in configuration:
+The mapping table lives inside the plugin, so add project-specific mappings via
+**configuration** rather than editing plugin code. Use `satisfied_by_skill`:
 
 ```yaml
 requirements:
@@ -210,20 +210,29 @@ requirements:
 
 ## TTL (Time-To-Live)
 
-Expire requirements automatically after a time period.
+Approvals for dynamic/approval-style requirements can expire automatically after a
+time period. **TTL is configured per-requirement via the `approval_ttl` attribute
+(seconds), not a CLI flag** — there is no `req satisfy --ttl`.
 
-### Usage
+### Configuration
+
+```yaml
+requirements:
+  branch_size_limit:
+    enabled: true
+    type: dynamic
+    approval_ttl: 3600   # An approval lasts 1 hour, then must be re-approved
+```
+
+Set it from the CLI without editing YAML:
 
 ```bash
-# Satisfy for 1 hour
-req satisfy commit_plan --ttl 3600
-
-# Satisfy for 24 hours (full day)
-req satisfy commit_plan --ttl 86400
-
-# Satisfy for 8 hours (work day)
-req satisfy commit_plan --ttl 28800
+req config branch_size_limit --set approval_ttl=3600   # 1 hour
+req config branch_size_limit --set approval_ttl=28800  # work day
 ```
+
+When approved (e.g. `req approve branch_size_limit`), the approval is valid for
+`approval_ttl` seconds (default 300).
 
 ---
 
@@ -300,7 +309,7 @@ Requirements state is stored in `.git/requirements/[branch].json`:
   "version": "1.0",
   "branch": "feature/auth",
   "requirements": {
-    "commit_plan": {
+    "plan_validated": {
       "scope": "session",
       "sessions": {
         "abc12345": {

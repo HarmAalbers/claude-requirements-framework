@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Task"]
 git_hash: db81f75
 ---
 
-> **Workflow position**: suggested by `/req ship` after `/req review`, as the second-opinion external review. Run directly any time for an independent AI check.
+> **Workflow position**: a conditional side-quest on the Validate and Review team nodes (ADR-022) — surfaced as *available here*, with no gate of its own. Run directly any time for an independent external AI check.
 
 # Codex AI Code Review
 
@@ -79,18 +79,15 @@ If the agent's output indicates the review could **not** actually run — it con
 
 then tell the user the review did not complete and they should fix the issue and re-run `/requirements-framework:codex-review`. Otherwise, present the review results normally.
 
-### Step 4: Requirement Satisfaction (Automatic)
+### Step 4: No Gate (Conditional Side-Quest)
 
-You do **not** run `req satisfy` — it is a user-only action (the permission layer blocks Claude from running it). The `codex_reviewer` requirement is auto-satisfied by the framework's PostToolUse hook (`auto-satisfy-skills.py`) when this command **completes**, consistent with `/deep-review`, `/arch-review`, and `/pre-commit`.
-
-**Satisfaction is completion-based, not success-gated.** Even if the review could not actually run (e.g. Codex not installed), the gate still flips. If that happens, tell the user to either re-run the command after fixing the issue or run `req clear codex_reviewer` to re-gate.
+Codex review satisfies **no** requirement gate. Under the ADR-022 typed 7-node workflow it is a conditional side-quest surfaced on the Validate and Review team nodes, not a gated step, and `auto-satisfy-skills.py` deliberately maps no requirement to it. There is nothing to `req satisfy` or `req clear` here — just present the findings.
 
 ## Integration with Requirements Framework
 
-**Satisfies**: `codex_reviewer` requirement
-**Scope**: Configured in project's `.claude/requirements.yaml` (typically single_use or session)
-**Auto-satisfaction**: Hook-based — `auto-satisfy-skills.py` satisfies `codex_reviewer` when this command completes (completion-based, not success-gated)
-**Check status**: Run `req status` to verify requirement state
+**Gate**: none — Codex is a conditional side-quest (ADR-022), not a gated step.
+**Surfaced by**: the Validate (`/arch-review`) and Review (`/deep-review`) team nodes list it as *available here*; it never auto-fires and never blocks.
+**Check status**: Run `req status` to see the current workflow phase.
 
 ## Integration with Other Commands
 
@@ -132,7 +129,7 @@ The codex-review-agent handles all error cases autonomously - you don't need to 
 | Rate limits | Provides wait guidance (5-10 minutes) with retry instructions |
 | Empty output | Reports "✅ No Issues Found" (Codex found no problems) |
 
-When the agent reports a prerequisite/API failure, surface it to the user per Step 3. Note that the `codex_reviewer` gate is still auto-satisfied on completion (see Step 4); a user who wants to re-gate after a failed run can `req clear codex_reviewer`.
+When the agent reports a prerequisite/API failure, surface it to the user per Step 3. Codex satisfies no gate (see Step 4), so a failed run leaves the workflow state unchanged — just re-run once the issue is fixed.
 
 ## TDD Workflow Integration
 
@@ -172,10 +169,7 @@ The agent will provide structured output like:
 ✅ Review complete! No critical issues found. Ready to proceed!
 ```
 
-After this output, the framework's auto-satisfy hook records:
-```
-✅ Auto-satisfied 'codex_reviewer' requirement
-```
+No requirement gate flips on completion — Codex is a conditional side-quest (see Step 4).
 
 ## Command Design Notes
 
@@ -183,7 +177,7 @@ After this output, the framework's auto-satisfy hook records:
 - Commands reduce session context pressure vs skill wrappers
 - Direct agent invocation (no extra indirection layer)
 - Follows ADR-006 unified plugin architecture pattern
-- Requirement satisfaction is hook-based (`auto-satisfy-skills.py`), consistent with the other review commands
+- No gate to satisfy — Codex is a conditional side-quest (ADR-022), unlike the gated review commands
 
 **Why deterministic steps**:
 - Follows ADR-007 deterministic command orchestrator pattern

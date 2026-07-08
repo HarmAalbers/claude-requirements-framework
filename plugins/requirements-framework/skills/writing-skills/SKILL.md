@@ -443,8 +443,8 @@ helper1, helper2, step3, pattern4
 **Deployment:**
 - [ ] Commit skill to git
 - [ ] Run `./update-plugin-versions.sh` to update git_hash
-- [ ] Run `./sync.sh deploy` to deploy to runtime
 - [ ] Bump plugin version in `plugin.json` if needed
+- [ ] Reload the runtime: `claude --plugin-dir …/plugins/requirements-framework` (dev live-reload) or reinstall the marketplace plugin
 
 ## Requirements Integration
 

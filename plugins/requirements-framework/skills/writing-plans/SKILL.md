@@ -137,6 +137,6 @@ After saving the plan, offer execution choice:
 
 ## Requirements Integration
 
-When this skill completes, it auto-satisfies both `plan_written` and `commit_plan` requirements. This means Edit/Write tools will no longer be blocked by the planning gate (if your project has these requirements enabled).
+When this skill completes, it auto-satisfies the `plan_written` requirement. This means Edit/Write tools will no longer be blocked by the planning gate (if your project has this requirement enabled).
 
-For architecture validation, consider running `/arch-review` on the plan to also satisfy `adr_reviewed`, `tdd_planned`, and `solid_reviewed`.
+For architecture validation, consider running `/arch-review` on the plan to also satisfy `plan_validated`.

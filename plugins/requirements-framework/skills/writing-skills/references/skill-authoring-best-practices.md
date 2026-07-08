@@ -342,7 +342,7 @@ When creating skills for this framework, also consider:
 - [ ] Add requirement definition to `examples/global-requirements.yaml`
 - [ ] Document auto-satisfy behavior in skill's "Requirements Integration" section
 - [ ] Run `./update-plugin-versions.sh` to set `git_hash`
-- [ ] Run `./sync.sh deploy` to deploy to runtime location
+- [ ] Reload the runtime: `claude --plugin-dir …/plugins/requirements-framework` (dev live-reload) or reinstall the marketplace plugin
 
 ## Checklist for Effective Skills
 

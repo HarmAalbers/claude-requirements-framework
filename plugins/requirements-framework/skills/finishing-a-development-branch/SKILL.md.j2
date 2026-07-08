@@ -82,7 +82,7 @@ Then: Cleanup worktree (Step 5)
 
 #### Option 2: Push and Create PR
 
-Before creating the PR, run `/deep-review` to satisfy the `pre_pr_review` requirement.
+Before creating the PR, run `/deep-review` to satisfy the `pr_reviewed` requirement.
 
 ```bash
 git push -u origin <feature-branch>

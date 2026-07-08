@@ -62,25 +62,25 @@ def example_function():
 ```
 
 ```bash
-# Commands to execute
-mkdir -p ~/.claude/hooks/lib
+# Commands to execute (work in the repo hooks/ tree — the source of truth)
+mkdir -p hooks/lib
 ```
 
 ---
 
 ### Verification
 
-Run these checks to verify the step:
+Run these checks to verify the step (uv required — ADR-021):
 
 ```bash
 # Check 1: File exists
-ls -la ~/.claude/hooks/lib/[filename]
+ls -la hooks/lib/[filename]
 
 # Check 2: Syntax valid
-python3 -m py_compile ~/.claude/hooks/lib/[filename]
+uv run python -m py_compile hooks/lib/[filename]
 
 # Check 3: Basic functionality
-python3 -c "from lib.[module] import [class]; print('✓ Import successful')"
+uv run python -c "import sys; sys.path.insert(0, 'hooks'); from lib.[module] import [class]; print('OK: import successful')"
 ```
 
 **Expected Results**:
@@ -101,17 +101,17 @@ python3 -c "from lib.[module] import [class]; print('✓ Import successful')"
 
 ```bash
 #!/bin/bash
-# verify-files.sh - Check all framework files exist
+# verify-files.sh - Check all framework files exist (run from repo root)
 
 FILES=(
-    "$HOME/.claude/hooks/lib/__init__.py"
-    "$HOME/.claude/hooks/lib/session.py"
-    "$HOME/.claude/hooks/lib/git_utils.py"
-    "$HOME/.claude/hooks/lib/state_storage.py"
-    "$HOME/.claude/hooks/lib/config.py"
-    "$HOME/.claude/hooks/lib/requirements.py"
-    "$HOME/.claude/hooks/check-requirements.py"
-    "$HOME/.claude/hooks/requirements-cli.py"
+    "hooks/lib/__init__.py"
+    "hooks/lib/session.py"
+    "hooks/lib/git_utils.py"
+    "hooks/lib/state_storage.py"
+    "hooks/lib/config.py"
+    "hooks/lib/requirements.py"
+    "hooks/check-requirements.py"
+    "hooks/requirements-cli.py"
 )
 
 echo "Checking framework files..."
@@ -138,18 +138,18 @@ fi
 
 ```bash
 #!/bin/bash
-# validate-syntax.sh - Check all Python files for syntax errors
+# validate-syntax.sh - Check all Python files for syntax errors (run from repo root)
 
 echo "Validating Python syntax..."
 ERRORS=0
 
-for f in ~/.claude/hooks/lib/*.py ~/.claude/hooks/*.py; do
+for f in hooks/lib/*.py hooks/*.py; do
     if [ -f "$f" ]; then
-        if python3 -m py_compile "$f" 2>/dev/null; then
+        if uv run python -m py_compile "$f" 2>/dev/null; then
             echo "✓ $f"
         else
             echo "✗ $f (SYNTAX ERROR)"
-            python3 -m py_compile "$f"
+            uv run python -m py_compile "$f"
             ERRORS=$((ERRORS + 1))
         fi
     fi
@@ -172,9 +172,9 @@ fi
 
 echo "Testing module imports..."
 
-cd ~/.claude/hooks
+cd hooks   # run from the repo hooks/ tree
 
-python3 << 'EOF'
+uv run python << 'EOF'
 import sys
 sys.path.insert(0, '.')
 
@@ -338,49 +338,40 @@ EOF
 echo "Checking prerequisites for Requirements Framework..."
 echo ""
 
-# Python version
-PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d'.' -f1)
-PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d'.' -f2)
-
-if [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 9 ]; then
-    echo "✓ Python $PYTHON_VERSION (3.9+ required)"
+# uv (required — ADR-021: the single source of truth for interpreter + deps)
+if command -v uv &> /dev/null; then
+    echo "✓ uv $(uv --version | cut -d' ' -f2)"
 else
-    echo "✗ Python $PYTHON_VERSION (3.9+ required)"
+    echo "✗ uv not found (required — install from https://docs.astral.sh/uv/)"
+fi
+
+# Python (resolved through uv's managed env, not the ambient interpreter)
+if command -v uv &> /dev/null; then
+    echo "✓ Python (via uv): $(uv run python --version 2>&1 | cut -d' ' -f2)"
 fi
 
 # Git
 if command -v git &> /dev/null; then
-    GIT_VERSION=$(git --version | cut -d' ' -f3)
-    echo "✓ Git $GIT_VERSION"
+    echo "✓ Git $(git --version | cut -d' ' -f3)"
 else
     echo "✗ Git not found"
 fi
 
-# Write access to ~/.claude
-if [ -w "$HOME/.claude" ]; then
-    echo "✓ Write access to ~/.claude"
+# uv-managed env materialized (.venv) + PyYAML resolvable
+if command -v uv &> /dev/null && uv run python -c "import yaml" 2>/dev/null; then
+    echo "✓ uv env synced (PyYAML resolvable)"
 else
-    echo "✗ No write access to ~/.claude"
-fi
-
-# Claude Code hooks directory
-if [ -d "$HOME/.claude/hooks" ]; then
-    echo "✓ ~/.claude/hooks directory exists"
-else
-    echo "⚠ ~/.claude/hooks directory does not exist (will be created)"
-fi
-
-# PyYAML (required)
-if python3 -c "import yaml" 2>/dev/null; then
-    echo "✓ PyYAML installed"
-else
-    echo "✗ PyYAML not installed (required for YAML config)"
+    echo "⚠ Run 'uv sync' to materialize the environment"
 fi
 
 echo ""
 echo "Prerequisites check complete."
 ```
+
+> **Note.** The active runtime is the plugin (`hooks.json` via
+> `${CLAUDE_PLUGIN_ROOT}`) — there is no `~/.claude/hooks` deploy directory to
+> check. Work in the repo `hooks/` tree and rebuild the bundle with
+> `uv run python scripts/build_plugin_hooks.py`.
 
 ## Progress File Operations
 

@@ -16,7 +16,7 @@ Write the session-scoped pause marker via the CLI primitive:
 req pause ${ARGUMENTS:+--reason "$ARGUMENTS"}
 ```
 
-If `req` is not on PATH, fall back to `python3 hooks/requirements-cli.py pause ${ARGUMENTS:+--reason "$ARGUMENTS"}`.
+If `req` is not on PATH, fall back to `uv run python hooks/requirements-cli.py pause ${ARGUMENTS:+--reason "$ARGUMENTS"}`.
 
 Then confirm to the user:
 
