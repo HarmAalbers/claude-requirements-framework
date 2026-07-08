@@ -1,304 +1,200 @@
 # Claude Code Requirements Framework
 
-A powerful hook-based system for enforcing development workflow requirements in Claude Code. Ensures critical steps like commit planning, ADR review, and test-driven development are completed before code modifications.
+A hook-based system for enforcing a development workflow in Claude Code. It ships as a **self-contained plugin**: install the plugin and its lifecycle hooks gate your work through a typed 7-node workflow — Design → Plan → Validate → Build → Review → Verify → Ship — so critical steps (design, planning, architecture review, code review, verification) happen before code lands.
 
 ## Features
 
-- **🔒 PreToolUse Hook**: Blocks file modifications until requirements are satisfied
-- **🛑 Stop Hook**: Verifies all requirements before Claude finishes (prevents incomplete work)
-- **🚀 SessionStart Hook**: Injects full requirement status at session start
-- **🧹 SessionEnd Hook**: Cleans up session state when session ends
-- **📋 Customizable Checklists**: Display reminder checklists in requirement blocker messages
-- **🎯 Session & Branch Scoping**: Requirements can be session-specific, branch-specific, or permanent
-- **⚡ CLI Tool**: Simple `req` command for managing requirements
-- **🔄 Session Auto-Detection**: Automatically finds the correct session without manual configuration
-- **🚫 Message Deduplication**: Prevents spam when Claude makes parallel tool calls
-- **🧪 Comprehensive Tests**: 1445 passing tests with full TDD coverage
-- **📦 Project Inheritance**: Cascade configuration from global → project → local
-- **🔧 Development Tools**: Plugin-bundle build (`scripts/build_plugin_hooks.py`) mirrors `hooks/` into the plugin tree for a self-contained install
+- **🔒 PreToolUse gate**: Blocks file modifications until the current phase's requirement is satisfied
+- **🛑 Stop gate**: Verifies session-scoped requirements before Claude finishes (prevents incomplete work)
+- **🚀 SessionStart context**: Injects full requirement status at session start
+- **🧭 Typed 7-node workflow (ADR-022)**: Design → Plan → Validate → Build → Review → Verify → Ship, each with its own gate and skill/command
+- **🎯 Four scopes**: `session`, `branch`, `permanent`, `single_use`
+- **⚡ `req` CLI**: One command to inspect and drive requirements (`req status`, `req satisfy`, `req enable`, …)
+- **📦 Config cascade**: global → project → local, with `local` winning
+- **🔌 Rich plugin**: 24 agents, 16 commands, 21 skills for review, planning, and orchestration
+- **🧪 Comprehensive test suite** run under `uv`
+
+## Runtime Model: Self-Contained Plugin
+
+The framework runs entirely from the installed plugin. There is **no separate `~/.claude/hooks` deploy step and no two-location sync** — those are gone.
+
+- Hook registration is owned by `plugins/requirements-framework/hooks/hooks.json`, which wires every lifecycle hook via `${CLAUDE_PLUGIN_ROOT}`.
+- `install.sh` only sets up the **host-side tooling**: the `req` CLI, the phase-aware statusline, and shell env. It does **not** copy hook scripts anywhere or write a `hooks` block into your settings.
+- **Installing the plugin is what activates the hooks.**
 
 ## Quick Start
 
-### Installation
+### 1. Install the host tooling
 
 ```bash
-# Clone the repository
-git clone <repository-url> ~/tools/claude-requirements-framework
-cd ~/tools/claude-requirements-framework
-
-# Run the installation script
+git clone https://github.com/HarmAalbers/claude-requirements-framework ~/Tools/claude-requirements-framework
+cd ~/Tools/claude-requirements-framework
 ./install.sh
 ```
 
-The installer sets up only the host-side tooling — it does **not** copy hook scripts to `~/.claude/hooks/` or write a `hooks` block into your Claude Code settings. Specifically, `install.sh`:
-1. Installs the global configuration to `~/.claude/requirements.yaml`
-2. Creates the `req` CLI symlink at `~/.local/bin/req`
-3. Registers the phase-aware statusline in `~/.claude/settings.json` (only when you don't already have a custom one)
-4. Adds `ENABLE_TOOL_SEARCH=true` to your shell rc (reduces Claude Code's initial context — requires Claude Code v2.0.74+)
-5. Displays plugin installation instructions
+`install.sh` (requires `uv` on PATH) runs `uv sync`, installs the global config to `~/.claude/requirements.yaml`, creates the `req` CLI at `~/.local/bin/req`, registers the statusline (only if you don't already have a custom one), and adds `ENABLE_TOOL_SEARCH=true` to your shell rc.
 
-**Lifecycle hooks ship with the plugin, not the installer.** The plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for hook registration (commands resolved via `${CLAUDE_PLUGIN_ROOT}`). Install the plugin to activate the hooks:
+### 2. Install the plugin (this activates the hooks)
+
+**From the GitHub marketplace (recommended):**
+
+```text
+# In a Claude Code session:
+/plugin marketplace add HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+**For development (live reload from your clone):**
 
 ```bash
-# In a Claude Code session — persistent install
-/plugin install requirements-framework@requirements-framework
-
-# Or for development (live reload from your clone)
 claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
 ```
 
-### Token Efficiency: on-demand tool loading
+### 3. Verify
 
-The installer enables on-demand tool loading by default by adding `export ENABLE_TOOL_SEARCH=true` to your shell rc. This makes Claude Code load tool schemas lazily via `ToolSearch` instead of dumping every deferred-tool description into the initial system prompt, trimming several thousand tokens per new session.
-
-**Behavior:**
-- The installer prompts before writing to your shell rc and is idempotent (re-running it won't duplicate the line).
-- Decline at the prompt to skip; the framework still works, you just get a fatter initial context.
-- To revert: `sed -i '' '/ENABLE_TOOL_SEARCH=true/d' ~/.zshrc` (or your shell's rc).
-
-**Scope note:** This does *not* shrink the "Available agent types" block at the top of the system prompt — that's driven by `plugin.json` and is a separate concern.
-
-### Install Plugin via Marketplace
-
-**Option A: GitHub Marketplace (for users)**
-```bash
-# In Claude Code session:
-/plugin marketplace add https://github.com/HarmAalbers/claude-requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-**Option B: Local Marketplace (for developers)**
-After running `install.sh`, register the local clone:
-```bash
-# In Claude Code session:
-/plugin marketplace add ~/Tools/claude-requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-### Verify Plugin Installation
-
-Verify the plugin loaded successfully:
-
-```bash
-# Check plugin appears in Claude Code
-# Start a new session and type:
+```text
+# In a new session, type the command prefix to autocomplete:
 /requirements-framework:
 
-# Should autocomplete to:
-# - /requirements-framework:pre-commit [aspects]
-# - /requirements-framework:deep-review
-# - /requirements-framework:codex-review [focus]
-
-# Check installed version:
+# Check the installed version:
 /plugin list
-# Should show: requirements-framework@2.0.5
+# Should show: requirements-framework@4.29.2
 ```
 
-For detailed installation, troubleshooting, and component reference:
-- **[Plugin Installation Guide](docs/PLUGIN-INSTALLATION.md)** - Comprehensive reference
-- **[Plugin README](plugins/requirements-framework/README.md)** - Plugin-specific docs
-- **[Plugin Components](#plugin-components)** (below) - Agent/command/skill descriptions
+For deeper installation and troubleshooting reference:
+- **[Plugin Installation Guide](docs/PLUGIN-INSTALLATION.md)**
+- **[Plugin README](plugins/requirements-framework/README.md)**
 
-### Project Setup
+### Token efficiency: on-demand tool loading
 
-After installation, initialize requirements for your project:
+`install.sh` enables on-demand tool loading by adding `export ENABLE_TOOL_SEARCH=true` to your shell rc (requires Claude Code v2.0.74+). This makes Claude Code load tool schemas lazily via `ToolSearch` instead of dumping every deferred-tool description into the initial system prompt, trimming several thousand tokens per new session. The append is idempotent; decline at the prompt to skip. (It does *not* shrink the "Available agent types" block — that's driven by `plugin.json`.)
+
+## Project Setup
+
+After installing, scaffold requirements for a project:
 
 ```bash
-# Interactive wizard (recommended)
 cd /your/project
-req init
-
-# Or non-interactively
-req init --yes --preset relaxed
+req init                       # interactive wizard
+req init --yes --preset relaxed  # non-interactive
 ```
 
-#### Initialization Modes
+`req init` detects context (global vs. project, with/without an existing global config) and offers presets: `advanced` (all features), `inherit` (rely on global defaults), `relaxed` (baseline), `strict` (full enforcement), `minimal` (framework on, no requirements). It writes `.claude/requirements.yaml` (or `.claude/requirements.local.yaml` for strict-mode compliance via `/req-init`).
 
-The interactive wizard offers three configuration approaches:
+## The Workflow (ADR-022 typed 7-node backbone)
 
-**1. Quick Preset** (Recommended)
-Choose from context-aware presets optimized for your setup:
+The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a typed backbone. Each phase has a `type`, a gate, and a skill or orchestrating command. `spine` nodes nudge one skill; `team` nodes nudge one orchestrating command that fans out agents and satisfies one gate on completion.
 
-- **`advanced`** - All features (recommended for global config)
-  - 7 requirements showcasing every capability
-  - Dynamic checks (branch_size_limit with calculator)
-  - Single-use requirements (pre_pr_review, codex_reviewer)
-  - Guard requirements (protected_branch)
-  - Perfect for discovering what the framework can do
+```
+Design → Plan → Validate → Build → Review → Verify → Ship
+[spine]  [spine] [TEAM]    [spine]  [TEAM]   [spine]  [spine]
+                                    +loop (in Build)
+```
 
-- **`inherit`** - Use global defaults (recommended for projects)
-  - Sets `inherit: true`
-  - Empty requirements (relies on global config)
-  - Perfect for projects when you have global config
+| Node       | Type  | Gate                 | Skill / Command                              |
+|------------|-------|----------------------|----------------------------------------------|
+| design     | spine | `design_approved`    | `/brainstorming`                             |
+| plan       | spine | `plan_written`       | `/writing-plans`                             |
+| validate   | team  | `plan_validated`     | `/arch-review` *(cond: `/codex-review`)*     |
+| build      | spine | `implementation_done`| `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
+| review     | team  | `pr_reviewed`        | `/deep-review` *(cond: `/codex-review`)*     |
+| verify     | spine | `verified`           | `/verification-before-completion`            |
+| ship       | spine | — (gateless)         | `/finishing-a-development-branch`            |
 
-- **`relaxed`** - Baseline requirements
-  - commit_plan only
-  - Good for standalone projects or trying the framework
+**Gate consolidation.** ADR-022 folded the older gate zoo into the seven names above. The retired names and their replacements:
 
-- **`strict`** - Full enforcement
-  - commit_plan + protected_branch
-  - Good for team projects with protected branches
+| Retired gate                                          | Now                                    |
+|-------------------------------------------------------|----------------------------------------|
+| `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | `plan_validated` (one Validate-team gate) |
+| `pre_pr_review`                                       | `pr_reviewed`                          |
+| `pre_push_verification`                               | `verified`                             |
+| `codex_reviewer`                                      | conditional side-quest (no gate)       |
 
-- **`minimal`** - Framework enabled, no requirements
-  - Configure later manually
+There are **no backward-compat shims** — a config still naming an old gate gets a validation error pointing at the new name.
 
-**2. Custom Selection**
-Interactive checkbox to pick specific features:
-- Choose from: commit_plan, adr_reviewed, protected_branch, branch_size_limit, pre_pr_review, codex_reviewer
-- Perfect for power users who know exactly what they want
+> **YAML footgun:** inside a `loop`, quote the trigger key (`"on": commit`) — a bare `on:` parses as boolean `True` under YAML 1.1.
 
-**3. Manual Setup**
-Starts with minimal config - configure everything yourself later
+## Using the `req` CLI
 
-#### Context-Aware Behavior
-
-`req init` automatically detects your context:
-
-- **Global setup** (`~/.claude/` directory): Defaults to `advanced` preset
-- **Project with global config**: Defaults to `inherit` preset
-- **Project without global**: Defaults to `relaxed` preset
-- **Local override**: Only offers `minimal` preset
-
-The `req init` command creates `.claude/requirements.yaml` with your chosen configuration.
-
-### Basic Usage
+The `req` command is the primary interface — prefer it over hand-editing YAML.
 
 ```bash
-# Check requirement status
-req status
+# Inspect
+req status                      # current phase + requirement state for this project
+req list                        # list all requirements
+req sessions                    # active Claude Code sessions
 
-# Satisfy the commit_plan requirement
-req satisfy commit_plan
+# Drive
+req satisfy plan_validated      # mark a gate satisfied for the current session
+req clear plan_validated        # clear it
+req enable pr_reviewed          # enable a requirement
+req satisfy verified --branch   # satisfy for the whole branch
+req satisfy design_approved --ttl 3600   # satisfy for 1 hour
+req satisfy plan_written --session abc12345  # target a specific session
 
-# Clear a requirement
-req clear commit_plan
+# Session control
+req pause                       # pause blocking gates for this session (auto-resumes at session end)
+req resume
 
-# List all requirements
-req list
-
-# View active sessions
-req sessions
-
-# Configure a requirement
-req config commit_plan --enable --scope branch
-
-# Set custom fields (e.g., ADR location)
-req config adr_reviewed --set adr_path=/docs/adr
-
-# Diagnose installation and sync status
-req doctor --repo ~/Tools/claude-requirements-framework
+# Diagnostics
+req doctor                      # verify install: req CLI, plugin config, project config
+req logging --level debug --local
 ```
 
-### Doctor Command
+Scoped satisfaction matters: satisfying a `branch`-scope requirement with `--session` (or vice versa) won't clear the block. Use `req status` to see each requirement's scope.
 
-Use `req doctor` to verify the framework is installed and synced correctly:
+## Requirement Scopes
 
-- Confirms the `PreToolUse` hook is registered in `~/.claude/settings.json`
-- Ensures `check-requirements.py` and `requirements-cli.py` are executable
-- Checks the current project for `.claude/requirements.yaml`
-- Compares repository files to the deployed `~/.claude/hooks` installation and recommends whether to deploy or reconcile differences
+| Scope        | Behavior                                              | Use case                          |
+|--------------|-------------------------------------------------------|-----------------------------------|
+| `session`    | Cleared when the Claude Code session ends             | Per-session phase gates           |
+| `branch`     | Persists across sessions on the same branch           | Branch-linked review/verification |
+| `permanent`  | Never auto-cleared                                     | One-time project setup            |
+| `single_use` | Cleared after its trigger command completes (re-armed)| Per-commit `pre_commit_review` loop |
 
-Pass `--repo` to point at your repository copy if auto-detection fails:
+## Configuration System
 
-```bash
-req doctor --repo ~/Tools/claude-requirements-framework
-```
+### 3-level cascade
 
-### Managing Configuration
+1. **Global** — `~/.claude/requirements.yaml` (defaults for all projects)
+2. **Project** — `.claude/requirements.yaml` (shared, committed to repo)
+3. **Local** — `.claude/requirements.local.yaml` (personal overrides, gitignored)
 
-The `req config` command lets you view and modify requirement settings without manually editing YAML files:
+Priority is **local > project > global**.
 
-```bash
-# View current configuration for a requirement
-req config commit_plan
-
-# Enable/disable a requirement
-req config github_ticket --enable
-req config commit_plan --disable
-
-# Change scope
-req config commit_plan --scope branch
-
-# Set custom message
-req config adr_reviewed --message "📚 Review ADRs in docs/adr/"
-
-# Set arbitrary fields (great for custom requirements)
-req config adr_reviewed --set adr_path=/docs/adr
-req config dynamic_req --set approval_ttl=600
-req config my_requirement --set custom_field="value"
-
-# Multiple changes at once
-req config commit_plan --enable --scope branch --message "Custom"
-
-# Interactive mode (asks project vs local)
-req config commit_plan --enable
-
-# Non-interactive (for scripts)
-req config commit_plan --disable --local --yes
-```
-
-The `--set` flag supports:
-- **Strings**: `--set adr_path=/docs/adr`
-- **Numbers**: `--set approval_ttl=600` (auto-parsed as JSON)
-- **Booleans**: `--set strict=true`
-- **Arrays**: `--set branches='["main","master"]'`
-
-## Requirements Types
-
-### commit_plan (Recommended)
-
-Ensures you create a commit plan before making code changes.
-
-**Checklist** (customizable):
-- ⬜ Identified the changes needed for this feature/fix
-- ⬜ Determined atomic commit boundaries (each commit is reviewable)
-- ⬜ Planned commit sequence and dependencies
-- ⬜ Considered what can be safely rolled back
-- ⬜ Created plan file documenting the approach
-
-**Configuration**:
-```yaml
-requirements:
-  commit_plan:
-    enabled: true
-    scope: session  # Resets each Claude Code session
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-```
-
-### github_ticket
-
-Links branches to GitHub issues for traceability.
+### Example: project config
 
 ```yaml
+# .claude/requirements.yaml
+version: "1.0"
+inherit: true   # merge with global config
+
 requirements:
-  github_ticket:
+  plan_validated:
     enabled: true
-    scope: branch  # Once per branch
+    type: blocking
+    scope: single_use
+    satisfied_by_skill: 'requirements-framework:arch-review'
+
+  verified:
+    enabled: true
+    scope: branch
 ```
 
-### adr_reviewed (Example: cclv2 project)
-
-Ensures relevant Architecture Decision Records are reviewed.
+### Example: local override
 
 ```yaml
+# .claude/requirements.local.yaml (gitignored)
 requirements:
-  adr_reviewed:
-    enabled: true
-    scope: session
-    message: |
-      📚 **Have you reviewed relevant ADRs?**
-
-      ADRs are in: /path/to/ADR/
+  plan_validated:
+    enabled: false   # temporarily disable for myself
 ```
 
-### protected_branch (Guard Type)
+### Guard and dynamic requirement types
 
-Prevents direct edits on protected branches (main/master).
+Beyond the workflow gates, the framework supports:
 
-**Type**: Guard - Checks conditions rather than requiring manual satisfaction
+**Guard** — checks a condition rather than requiring manual satisfaction:
 
 ```yaml
 requirements:
@@ -306,16 +202,10 @@ requirements:
     enabled: true
     type: guard
     guard_type: protected_branch
-    protected_branches:
-      - master
-      - main
+    protected_branches: [master, main]
 ```
 
-### branch_size_limit (Dynamic Type)
-
-Automatically calculates branch size and blocks large PRs.
-
-**Type**: Dynamic - Calculated automatically, not manually satisfied
+**Dynamic** — computed by a calculator, not manually satisfied:
 
 ```yaml
 requirements:
@@ -325,73 +215,17 @@ requirements:
     calculator: branch_size_calculator
     scope: session
     thresholds:
-      warn: 250   # Log warning (non-blocking)
-      block: 400  # Block with denial message
-    cache_ttl: 60  # Recalculate every 60 seconds
-    approval_ttl: 3600  # 1 hour approval via `req approve`
+      warn: 250   # log warning (non-blocking)
+      block: 400  # block with denial message
+    cache_ttl: 60
+    approval_ttl: 3600   # 1 hour approval via `req approve`
 ```
 
-### pre_commit_review (Deprecated)
+### Project-specific skills (`satisfied_by_skill`)
 
-> **Deprecated since v2.6.** The `/pre-commit` command remains available for voluntary use.
-> Use `/deep-review` or `/arch-review` for enforced review workflows instead.
-
-Previously required code review before every commit. Now disabled by default.
+Connect any project skill to auto-satisfy a requirement when it completes:
 
 ```yaml
-requirements:
-  # DEPRECATED: Use /pre-commit voluntarily instead.
-  pre_commit_review:
-    enabled: false
-    deprecated: true
-```
-
-### pre_pr_review (Single-Use Scope)
-
-Requires comprehensive quality check before creating each PR.
-
-```yaml
-requirements:
-  pre_pr_review:
-    enabled: true
-    type: blocking
-    scope: single_use
-    trigger_tools:
-      - tool: Bash
-        command_pattern: "gh\\s+pr\\s+create"
-    message: |
-      Run `/requirements-framework:deep-review` for comprehensive review
-```
-
-**Auto-satisfied** when you run `/requirements-framework:deep-review`
-
-### codex_reviewer (AI-Powered Review)
-
-Requires AI-powered code review before creating PRs.
-
-```yaml
-requirements:
-  codex_reviewer:
-    enabled: true
-    type: blocking
-    scope: single_use
-    trigger_tools:
-      - tool: Bash
-        command_pattern: "gh\\s+pr\\s+create"
-    message: |
-      Run `/requirements-framework:codex-review` for AI-powered review
-```
-
-**Auto-satisfied** when you run `/requirements-framework:codex-review`
-
-### Project-Specific Skills (`satisfied_by_skill`)
-
-Connect any project skill to auto-satisfy a requirement when it completes.
-
-**Use Case**: Projects with custom review skills (e.g., architecture review against ADRs)
-
-```yaml
-# .claude/requirements.yaml (in your project)
 requirements:
   architecture_review:
     enabled: true
@@ -400,1014 +234,200 @@ requirements:
     trigger_tools:
       - tool: Bash
         command_pattern: 'gh\s+pr\s+create'
-    satisfied_by_skill: 'architecture-guardian'  # Your project skill name
-    message: |
-      🏗️ Run the architecture-guardian skill to review against ADRs
+    satisfied_by_skill: 'architecture-guardian'  # your project skill name
 ```
 
-**How It Works**:
-1. Define a skill in your project (`.claude/skills/architecture-guardian.md`)
-2. Add `satisfied_by_skill: 'skill-name'` to your requirement config
-3. When the skill completes, the requirement is automatically satisfied
-4. PR creation is allowed (requirement is satisfied)
+Plugin skills use the namespaced form (`'requirements-framework:arch-review'`); project skills use the bare name from their frontmatter.
 
-**Naming Convention**:
-- Project skills: Use skill name from frontmatter (e.g., `'architecture-guardian'`)
-- Plugin skills: Use namespaced format (e.g., `'requirements-framework:pre-commit'`)
-
-### hooks.stop Configuration
-
-Controls whether sessions can end with unsatisfied requirements.
-
-```yaml
-hooks:
-  stop:
-    verify_requirements: true  # Block session end if requirements unsatisfied
-```
-
-When enabled, the Stop hook prevents Claude Code sessions from ending until all session-scoped requirements are satisfied.
-
----
-
-## Plugin Components
-
-The requirements framework includes a comprehensive plugin with specialized agents, orchestrator commands, and management skills.
-
-> **Authoring note (v4.5.0+):** Plugin agents under `plugins/requirements-framework/agents/` use a two-file pattern — `<name>.md.j2` (Jinja2 source-of-truth, the file you edit) and `<name>.md` (rendered output, what Claude Code dispatches). Run `python3 scripts/render_prompts.py` after editing a `.md.j2`. See DEVELOPMENT.md § "Plugin Agent Authoring" for the full workflow.
-
-### Agents (10)
-
-**Workflow Enforcement**:
-- **adr-guardian** - Validates plans and code against Architecture Decision Records (BLOCKING authority)
-- **codex-review-agent** - Orchestrates OpenAI Codex CLI for AI-powered code review
-
-**Pre-Commit Review Suite** (7 specialized reviewers):
-- **tool-validator** - Executes pyright/ruff/eslint to catch CI errors locally (Haiku model)
-- **code-reviewer** - CLAUDE.md compliance, bug detection, code quality (Opus model, confidence ≥80)
-- **silent-failure-hunter** - Error handling audit with zero tolerance for silent failures (Sonnet model)
-- **test-analyzer** - Test coverage quality with CRITICAL gap detection for code without tests
-- **type-design-analyzer** - Type invariants and encapsulation analysis with 4-dimensional rating
-- **comment-analyzer** - Documentation accuracy and comment rot detection
-- **backward-compatibility-checker** - Schema migration detection with Alembic verification (Sonnet model)
-
-### Commands (3)
-
-**`/requirements-framework:pre-commit [aspects]`**
-
-Fast pre-commit review with smart agent selection:
-- **Default** (no args): tool-validator + code-reviewer + silent-failure-hunter
-- **Arguments**: `tools`, `code`, `errors`, `compat`, `tests`, `types`, `comments`, `simplify`, `all`, `parallel`
-- **Integrated with**: `pre_commit_review` requirement (auto-satisfies on completion, requirement deprecated)
-- **Execution**: Deterministic workflow with blocking gates (tool errors stop AI review)
-
-Examples:
-```bash
-/requirements-framework:pre-commit              # Fast essential checks
-/requirements-framework:pre-commit tools        # Just CI tools
-/requirements-framework:pre-commit all parallel # Comprehensive + fast
-/requirements-framework:pre-commit tests types  # Specific aspects
-```
-
-**`/requirements-framework:codex-review [focus]`**
-
-AI-powered code review using OpenAI Codex CLI:
-- **Focus areas**: `security`, `performance`, `bugs`, `style`, `all` (default)
-- **Autonomous agent**: Handles prerequisites, scope detection, and error recovery
-- **Integrated with**: `codex_reviewer` requirement (auto-satisfies on completion)
-- **Requirements**: OpenAI Codex CLI (`npm install -g @openai/codex` + `codex login`)
-
-Examples:
-```bash
-/requirements-framework:codex-review            # All focus areas
-/requirements-framework:codex-review security   # Security vulnerabilities
-/requirements-framework:codex-review performance # Performance optimization
-```
-
-### Skills (4)
-- **requirements-framework-builder** - Framework management, extension, and status checking
-- **requirements-framework-development** - Framework development workflow and sync operations
-- **requirements-framework-status** - Status reporting and progress tracking
-- **requirements-framework-usage** - Usage help, troubleshooting, and configuration guidance
-
----
-
-## Configuration System
-
-### 3-Level Cascade
-
-1. **Global** (`~/.claude/requirements.yaml`) - Default requirements for all projects
-2. **Project** (`.claude/requirements.yaml`) - Shared team configuration (committed to repo)
-3. **Local** (`.claude/requirements.local.yaml`) - Personal overrides (gitignored)
-
-### Example: Global Config
-
-```yaml
-# ~/.claude/requirements.yaml
-version: "1.0"
-enabled: true
-
-requirements:
-  commit_plan:
-    enabled: false  # Disabled by default - projects opt-in
-    scope: session
-    trigger_tools: [Edit, Write, MultiEdit]
-    message: |
-      📋 **No commit plan found for this session**
-
-      Before making code changes, you should plan your commits.
-    checklist:
-      - "Identified the changes needed"
-      - "Determined atomic commit boundaries"
-      - "Created plan file"
-```
-
-### Example: Project Config
-
-```yaml
-# .claude/requirements.yaml (committed to repo)
-version: "1.0"
-inherit: true  # Merge with global config
-
-requirements:
-  commit_plan:
-    enabled: true  # Enable for this project
-    checklist:
-      - "Plan created via EnterPlanMode"
-      - "Reviewed relevant ADRs"
-      - "TDD approach in plan"
-
-  adr_reviewed:
-    enabled: true
-```
-
-### Example: Local Override
-
-```yaml
-# .claude/requirements.local.yaml (gitignored)
-requirements:
-  commit_plan:
-    enabled: false  # Temporarily disable for myself
-```
-
-### Logging Configuration
-
-Configure how the hook emits JSON logs:
+### Logging and console output
 
 ```yaml
 logging:
-  level: info               # One of: debug, info, warning, error
-  destinations: [file]      # Any of: stdout, file (can list multiple)
-  file: ~/.claude/requirements.log  # Optional custom log path
-```
-
-Defaults keep the existing fail-open behavior: level `error` with file logging to
-`~/.claude/requirements.log` so normal runs stay quiet unless something fails.
-
-### Console Output Configuration
-
-Configure non-JSON console output (warnings, notices, debug messages). This is
-separate from hook protocol output (JSON responses/context injection), which
-always goes to stdout. All structured logs still live in `~/.claude/requirements.log`.
-
-```yaml
+  level: info               # debug | info | warning | error
+  destinations: [file]      # stdout | file
+  file: ~/.claude/requirements.log
 console:
-  level: warning              # One of: debug, info, warning, error
-  destinations: [stderr]      # Any of: stdout, stderr, file
-  file: ~/.claude/requirements-console.log  # Optional custom output path
+  level: warning            # non-JSON console output (default: silent)
+  destinations: [stderr]    # stdout | stderr | file
 ```
 
-Defaults are silent (no console output). Enable stderr output if you want to see
-warnings inline during CLI runs.
-
-Debugging example (write verbose logs to file and surface warnings locally):
-
-```yaml
-logging:
-  level: debug
-  destinations: [file]
-console:
-  level: warning
-  destinations: [stderr]
-```
-
-### Hook Configuration
-
-Configure behavior for each hook:
+### Hook configuration
 
 ```yaml
 hooks:
   session_start:
-    inject_context: true       # ON by default - show full status at start
+    inject_context: true       # ON by default
   stop:
-    verify_requirements: true  # ON by default - enforce requirements
-    verify_scopes: [session]   # Which scopes to verify (default: session only)
+    verify_requirements: true  # ON by default
+    verify_scopes: [session]   # which scopes the Stop gate checks
   session_end:
-    clear_session_state: false # OFF by default - preserve state for debugging
+    clear_session_state: false # OFF by default
 ```
 
-To disable the Stop hook verification:
+## Session Lifecycle (17 hooks across 12 events)
+
+The plugin registers 17 hook commands across 12 events via `plugins/requirements-framework/hooks/hooks.json` (the authoritative source). The core gating flow:
+
+```
+🚀 SessionStart ──► clean stale sessions, inject full requirement status
+   │
+   │  WORK LOOP
+   │  🔒 PreToolUse (Edit/Write/Bash/…) ──► block if the current gate is unsatisfied
+   │
+🛑 Stop ──► verify session-scoped requirements; block finish if incomplete
+   │
+🧹 SessionEnd ──► remove session from registry, optional state cleanup
+```
+
+| Hook            | When                       | Can block | Purpose                                        |
+|-----------------|----------------------------|-----------|------------------------------------------------|
+| SessionStart    | Session starts/resumes     | No        | Inject context, prune stale sessions           |
+| PreToolUse      | Before Edit/Write/Bash/…   | Yes       | Block modifications until the gate is satisfied|
+| Stop            | Claude about to finish     | Yes       | Verify session-scoped requirements             |
+| SessionEnd      | Session ends               | No        | Cleanup                                        |
+
+The full set also includes `UserPromptSubmit`, `PermissionRequest`, several `PostToolUse` hooks (auto-satisfy skills, clear single-use, git events, plan enter/exit), `PostToolUseFailure`, `SubagentStart`, `PreCompact`, a second `Stop` hook (Langfuse trace, opt-in), `TeammateIdle`, and `TaskCompleted`. See `DEVELOPMENT.md` for the complete hook lifecycle.
+
+### Stop hook behavior
+
+Enabled by default. Checks session-scoped requirements, uses a `stop_hook_active` flag to prevent infinite continuation loops, and shows which requirements still need satisfaction. Disable with `hooks.stop.verify_requirements: false`.
+
+## Plugin Components
+
+The plugin bundles **24 agents, 16 commands, and 21 skills**.
+
+> **Authoring note:** plugin agents/commands use a two-file pattern — `<name>.md.j2` (Jinja2 source you edit) and `<name>.md` (rendered output Claude Code dispatches). Run `uv run python scripts/render_prompts.py` after editing a `.md.j2`. See DEVELOPMENT.md.
+
+### Key commands
+
+- `/requirements-framework:brainstorm` — design-first exploration (Design phase)
+- `/requirements-framework:write-plan` — produce an executable plan (Plan phase)
+- `/requirements-framework:arch-review` — team-based architecture review; satisfies `plan_validated` (Validate phase)
+- `/requirements-framework:execute-plan` — execute a plan with checkpoints (Build phase)
+- `/requirements-framework:pre-commit [aspects]` — fast pre-commit review; satisfies the `pre_commit_review` build loop
+- `/requirements-framework:deep-review` — cross-validated team code review; satisfies `pr_reviewed` (Review phase)
+- `/requirements-framework:codex-review [focus]` — AI-powered review via OpenAI Codex (conditional side-quest)
+- `/requirements-framework:refactor-orchestrate` — multi-layer top-down refactor workflow
+- `/req` — workflow conductor: derives the current phase and dispatches to the matching skill/command
+
+### Representative agents
+
+**Review suite:** `code-reviewer`, `silent-failure-hunter`, `test-analyzer`, `type-design-analyzer`, `comment-analyzer`, `tool-validator`, `backward-compatibility-checker`, `frontend-reviewer`.
+**Architecture / workflow:** `adr-guardian`, `solid-reviewer`, `tdd-validator`, `commit-planner`, `refactor-advisor`, `codex-review-agent`, `codex-arch-reviewer`.
+**Refactor orchestration:** `refactor-executor` (Haiku), `refactor-investigator` (Sonnet), `refactor-analyzer` (Sonnet).
+**Security / compliance:** `appsec-auditor`, `tenant-isolation-auditor`, `compliance-auditor`.
+
+### Skills
+
+Skills cover the whole workflow (`brainstorming`, `writing-plans`, `executing-plans`, `verification-before-completion`, `finishing-a-development-branch`), engineering practice (`test-driven-development`, `systematic-debugging`, `using-git-worktrees`), review (`requesting-code-review`, `receiving-code-review`), and framework meta-work (`requirements-framework-usage`, `-builder`, `-development`, `-status`, `session-learning`, `writing-skills`).
+
+## Agent Teams (ADR-012)
+
+Team-based review is the primary review approach: agents collaborate, cross-validate findings, and produce a unified verdict.
 
 ```yaml
 hooks:
-  stop:
-    verify_requirements: false  # Turn off requirement verification at stop
+  agent_teams:
+    enabled: true                # on by default
+    keep_working_on_idle: false
+    validate_task_completion: false
+    max_teammates: 5
+    fallback_to_subagents: true
 ```
 
-## Session Lifecycle
+## State Storage
 
-The framework registers **thirteen** lifecycle hooks via the plugin's `hooks/hooks.json` (see CLAUDE.md → "Session Lifecycle (Thirteen Hooks)" for the full list). The core flow that gates your work is:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    SESSION LIFECYCLE                     │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  🚀 SessionStart ────────────────────────────────────►  │
-│     • Clean stale sessions (prune)                      │
-│     • Inject full requirement status + instructions     │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │              WORK LOOP                          │   │
-│  │  🔒 PreToolUse (Edit/Write)                     │   │
-│  │  • Block if requirements not satisfied          │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
-│  🛑 Stop ───────────────────────────────────────────►   │
-│     • Verify all requirements satisfied (ON by default) │
-│     • Block stop if incomplete (force continuation)     │
-│                                                         │
-│  🧹 SessionEnd ─────────────────────────────────────►   │
-│     • Clean up session-specific state                   │
-│     • Update registry (mark session inactive)           │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Hook Details
-
-| Hook | When | Can Block | Purpose |
-|------|------|-----------|---------|
-| SessionStart | Session starts/resumes | No | Inject context, clean stale sessions |
-| PreToolUse | Before Edit/Write | Yes | Block modifications until requirements satisfied |
-| Stop | Claude about to finish | Yes | Final verification before stopping |
-| SessionEnd | Session ends | No | Cleanup session state |
-
-> The table above lists the four core hooks. The plugin also registers `UserPromptSubmit`, `PermissionRequest`, `PostToolUse` (auto-satisfy skills, clear single-use, git events, plan enter/exit), `PostToolUseFailure`, `SubagentStart`, `PreCompact`, `TeammateIdle`, and `TaskCompleted` — thirteen in total. The authoritative registration lives in `plugins/requirements-framework/hooks/hooks.json`.
-
-### Stop Hook Behavior
-
-The Stop hook prevents Claude from finishing with unsatisfied requirements:
-
-1. **Enabled by default** - No configuration needed
-2. **Checks session-scoped requirements** - Branch/permanent scopes are not verified by default
-3. **Safe loop prevention** - Uses `stop_hook_active` flag to prevent infinite continuation loops
-4. **Helpful messaging** - Shows which requirements need satisfaction
-
-Example output when blocked:
-```
-⚠️ **Requirements not satisfied**: commit_plan
-
-Please satisfy these requirements before finishing, or use
-`req satisfy <name>` to mark them complete.
-```
-
-## Checklists Feature
-
-Checklists provide visual reminders of important steps when requirements block your workflow.
-
-### Adding Checklists
-
-```yaml
-requirements:
-  commit_plan:
-    enabled: true
-    checklist:
-      - "Plan created via EnterPlanMode and planning agents/skills"
-      - "Atomic commits identified (from agent/skill analysis)"
-      - "Reviewed relevant ADRs (in /ADR/ directory)"
-      - "TDD approach implemented in todo list/plan"
-      - "Linting/formatting/typecheck commands known"
-```
-
-### Checklist Display
-
-When Claude Code is blocked, the checklist appears in the error message:
-
-```
-📋 **No commit plan found for this session**
-
-**Checklist**:
-⬜ 1. Plan created via EnterPlanMode and planning agents/skills
-⬜ 2. Atomic commits identified (from agent/skill analysis)
-⬜ 3. Reviewed relevant ADRs (in /ADR/ directory)
-...
-
-**Current session**: `abc12345`
-
-💡 **To satisfy from terminal**:
-```bash
-req satisfy commit_plan --session abc12345
-```
-```
-
-## Advanced Features
-
-### Session Management
-
-The framework automatically manages session state:
-
-- **Session Registry** (`~/.claude/sessions.json`) - Tracks active Claude Code sessions
-- **Auto-Detection** - CLI automatically finds the correct session
-- **PID Validation** - Stale sessions are automatically cleaned up
-
-```bash
-# View all active sessions
-req sessions
-
-# View sessions for current project only
-req sessions --project
-
-# Use specific session explicitly
-req satisfy commit_plan --session abc12345
-```
-
-### Scopes
-
-Requirements can have different lifetimes:
-
-| Scope | Behavior | Use Case |
-|-------|----------|----------|
-| `session` | Cleared when Claude Code session ends | Daily planning, ADR review |
-| `branch` | Persists across sessions on same branch | GitHub ticket linking |
-| `permanent` | Never cleared automatically | Project setup tasks |
-
-### State Storage
-
-State is stored in `.git/requirements/[branch].json`:
+Branch state lives in `.git/requirements/[branch].json`:
 
 ```json
 {
   "version": "1.0",
   "branch": "feature/auth",
   "requirements": {
-    "commit_plan": {
-      "scope": "session",
+    "plan_validated": {
+      "scope": "single_use",
       "sessions": {
-        "abc12345": {
-          "satisfied": true,
-          "satisfied_at": 1702345678,
-          "satisfied_by": "cli"
-        }
+        "abc12345": { "satisfied": true, "satisfied_at": 1702345678, "satisfied_by": "cli" }
       }
     }
   }
 }
 ```
 
-### TTL (Time-To-Live)
-
-Requirements can expire automatically:
-
-```bash
-# Satisfy for 1 hour
-req satisfy commit_plan --ttl 3600
-```
-
-## Testing
-
-The framework includes comprehensive tests (1445 tests, 100% passing):
-
-```bash
-# Run all tests (from the repo root)
-cd ~/Tools/claude-requirements-framework
-python3 hooks/test_requirements.py
-
-# Expected output:
-# 🧪 Requirements Framework Test Suite
-# ==================================================
-# ...
-# Results: 1445/1445 tests passed
-```
-
-Representative test categories include:
-- Session management (31 tests)
-- Configuration loading (13 tests)
-- Hook config (6 tests)
-- Requirements manager (9 tests)
-- CLI commands (15 tests)
-- PreToolUse hook behavior (13 tests)
-- SessionStart hook (5 tests)
-- Stop hook (7 tests)
-- SessionEnd hook (5 tests)
-- Session registry removal (4 tests)
-- Checklist rendering (8 tests)
-- Message deduplication (13 tests)
-- Logging (19 tests)
-
-## Architecture
-
-### Components
-
-```
-~/.claude/
-├── hooks/
-│   ├── check-requirements.py       # PreToolUse hook (blocks edits)
-│   ├── handle-session-start.py     # SessionStart hook (context injection)
-│   ├── handle-stop.py              # Stop hook (requirement verification)
-│   ├── handle-session-end.py       # SessionEnd hook (cleanup)
-│   ├── requirements-cli.py         # CLI tool (req command)
-│   ├── test_requirements.py        # Test suite (1445 tests)
-│   └── lib/
-│       ├── config.py               # Configuration cascade + hook config
-│       ├── git_utils.py            # Git operations
-│       ├── logger.py               # Structured JSON logging
-│       ├── requirements.py         # Core requirements manager
-│       ├── session.py              # Session tracking + registry
-│       └── state_storage.py        # JSON state persistence
-├── requirements.yaml               # Global configuration
-└── sessions.json                   # Active session registry
-
-<project>/.git/requirements/
-└── [branch].json                   # Branch-specific state
-```
-
-### Hook Flow
-
-```
-SESSION START
-─────────────
-1. Claude Code session starts
-   ↓
-2. SessionStart hook triggered (handle-session-start.py)
-   - Cleans stale sessions from registry
-   - Loads configuration
-   - Outputs full requirement status with instructions
-   ↓
-3. Context injected into Claude's context
-
-WORK LOOP
-─────────
-4. Claude Code invokes Edit/Write tool
-   ↓
-5. PreToolUse hook triggered (check-requirements.py)
-   - Loads configuration (global → project → local)
-   - Gets current session ID
-   - Updates session registry
-   - Checks all enabled requirements
-   ↓
-6a. All requirements satisfied
-    → Hook returns empty output
-    → Edit/Write proceeds
-
-6b. Requirement not satisfied
-    → Hook returns "deny" decision
-    → Shows message with checklist
-    → Edit/Write blocked
-
-SESSION END
-───────────
-7. Claude about to stop
-   ↓
-8. Stop hook triggered (handle-stop.py)
-   - Checks stop_hook_active flag (prevents loops)
-   - Verifies session-scoped requirements
-   ↓
-9a. All requirements satisfied → Stop allowed
-
-9b. Requirements unsatisfied
-    → Returns {"decision": "block", "reason": "..."}
-    → Claude continues to satisfy requirements
-
-10. Session ends (user exits, clears, etc.)
-    ↓
-11. SessionEnd hook triggered (handle-session-end.py)
-    - Removes session from registry
-    - Optionally clears session-scoped state
-```
-
-## Local observability (V3)
-
-V3 LLM calls (Step 11+) can be traced into a self-hosted Langfuse instance.
-This is opt-in: with no env vars set, V3 code runs without tracing and no
-errors are raised.
-
-### One-time bootstrap
-
-```bash
-# 1. Bring up Langfuse + Postgres + ClickHouse + Redis + MinIO
-cd infra && docker compose up -d && cd ..
-
-# Wait ~60s for all containers to become healthy
-docker compose -f infra/docker-compose.yml ps
-
-# 2. Open the UI and create a user + project
-open http://localhost:3000
-#    a. Sign up (local-only account — any email works)
-#    b. Create an organization (e.g., "local")
-#    c. Create a project (e.g., "requirements-framework")
-#    d. Settings → API Keys → Create new keys
-#    e. Copy the public + secret key
-
-# 3. Save the keys to an environment file
-cp infra/.env.example infra/.env
-$EDITOR infra/.env    # paste the two keys
-
-# 4. Source the env vars in your shell
-set -a; source infra/.env; set +a
-```
-
-### Host-port remap (heads-up)
-
-`infra/docker-compose.yml` carries intentional **host-port remappings** so the
-local Langfuse stack doesn't collide with other Postgres/Redis instances on
-your machine:
-
-- Postgres: host `55432` → container `5432`
-- Redis: host `56379` → container `6379`
-
-Container-to-container connections inside the compose network are unaffected,
-and `langfuse-web` still listens on the standard `:3000`. See the header
-comment at the top of `infra/docker-compose.yml` for the full list of local
-deviations from the upstream pin.
-
-### Verify the wiring
-
-Run the joint test suite first — all three scripts should exit cleanly:
-
-```bash
-python3 hooks/test_requirements.py \
-  && python3 tests/test_observability.py \
-  && python3 tests/test_schemas.py
-```
-
-Then exercise the runnable smoke spike against your bootstrapped Langfuse:
-
-```bash
-python3 hooks/lib/llm/_spikes/v3_langfuse_smoke.py
-```
-
-Expected: prints `✓ Got ReviewFinding`, then a UI link. Within 5s, a trace
-appears in Langfuse UI → Traces tab.
-
-### Tear down
-
-```bash
-docker compose -f infra/docker-compose.yml down       # stop containers, keep data
-docker compose -f infra/docker-compose.yml down -v    # stop + delete trace history
-```
-
-### Troubleshooting
-
-- **"observability disabled" log line**: one or more of `LANGFUSE_PUBLIC_KEY`,
-  `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` is unset. Re-source `infra/.env`.
-- **Code runs but no trace appears**: check `OTEL_LOG_LEVEL=debug python3 ...`
-  to see exporter retries.
-- **Init failure with no traceback**: set `LANGFUSE_DEBUG=1` to get the full
-  stack trace.
-- **Container `unhealthy` after `up -d`**: `docker compose logs <service>` and
-  consult [Langfuse self-hosting docs](https://langfuse.com/self-hosting).
+Sessions are tracked in `~/.claude/sessions.json`; the CLI auto-detects the current session and prunes stale ones by PID validation.
 
 ## Development
 
-### Creating Custom Requirements
-
-1. Add to your configuration:
-
-```yaml
-requirements:
-  my_custom_requirement:
-    enabled: true
-    scope: session
-    trigger_tools: [Edit, Write]
-    message: |
-      🎯 **Custom requirement not satisfied**
-
-      Please complete [your custom step]
-    checklist:
-      - "Custom step 1"
-      - "Custom step 2"
-```
-
-2. Satisfy it when ready:
+> **`uv` is required.** Every Python entrypoint — the `req` CLI, the hooks, and all build/test tooling — resolves through `uv` (single source of truth: `pyproject.toml` + `uv.lock`). Never call bare `python3` for tooling.
 
 ```bash
-req satisfy my_custom_requirement
+# One-time: sync the uv-managed environment
+uv sync
+
+# Run the test suite
+uv run python hooks/test_requirements.py
+
+# Lint (pinned ruff, matches CI)
+uv run ruff check .
 ```
 
-### Adding New Features
+### Plugin bundle
 
-The framework was built using TDD (Test-Driven Development):
+The repo `hooks/` tree is the single source of truth. The copies under `plugins/requirements-framework/hooks/` are **build artifacts** so a marketplace / `--plugin-dir` install is self-contained. After editing any hook or `lib/` module, rebuild the bundle:
 
-1. Write tests first in `test_requirements.py`
-2. Run tests to see failures (RED)
-3. Implement the feature
-4. Run tests to see passes (GREEN)
-5. Refactor if needed
-
-Example test structure:
-
-```python
-def test_my_feature(runner: TestRunner):
-    """Test my new feature."""
-    print("\n📦 Testing my feature...")
-
-    # Test setup
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # ... test code ...
-        runner.test("Feature works", result == expected)
+```bash
+uv run python scripts/build_plugin_hooks.py          # mirror hooks/ → plugin tree
+uv run python scripts/build_plugin_hooks.py --check   # report drift (wired into the tests)
 ```
+
+There is **no user "deploy" step** and nothing is copied into `~/.claude/hooks/`. Reload by restarting the session or running `claude --plugin-dir …`.
+
+### Plugin version bumps
+
+Every change touching plugin files (agents, commands, skills, hooks) must bump `plugins/requirements-framework/.claude-plugin/plugin.json` in the same change (semver: patch/minor/major). Update component `git_hash` fields with `./update-plugin-versions.sh`.
+
+### TDD workflow
+
+1. Write tests in `hooks/test_requirements.py`
+2. Run (RED): `uv run python hooks/test_requirements.py`
+3. Implement
+4. Rebuild bundle + run (GREEN)
+5. Commit
+
+## Local Observability (V3, opt-in)
+
+V3 LLM calls can be traced into a self-hosted Langfuse instance, and each Claude Code turn can be traced via a bundled Stop hook. This is **opt-in per project** and inert everywhere else. See ADR-019 and the `langfuse` skill / `scripts/setup_langfuse_tracing.py` for setup. With no env vars set, nothing traces and no errors are raised.
+
+## Strict Global Preflight (ADR-020, opt-in)
+
+An opt-in, **fail-closed** adoption gate. When `strict_preflight: true` is set in `~/.claude/requirements.yaml`, a globally-installed plugin blocks work in any non-compliant project until it's configured (`.claude/requirements.local.yaml` with ≥1 enabled requirement, valid Langfuse env, `uv` on PATH) or opted out (`/req-optout`). OFF by default. Emergency bailout: `RF_STRICT_OFF=true`. See ADR-020.
 
 ## Troubleshooting
 
-### Hook Not Triggering
+**Hooks not firing** — hooks are registered by the plugin, not by a hand-written `hooks` block in settings. Confirm the plugin is installed (`/plugin install requirements-framework@requirements-framework`) or run with `claude --plugin-dir …`. Verify the bundle is in sync: `uv run python scripts/build_plugin_hooks.py --check`.
 
-Lifecycle hooks are registered by the plugin, not by hand — do not add a `hooks` block to `~/.claude/settings.json` yourself. If hooks aren't firing:
+**`Edit(*)` / `Write(*)` in `permissions.allow`** bypass hooks — remove those wildcards.
 
-1. Confirm the plugin is installed and enabled:
+**`req` not found** — add `~/.local/bin` to PATH.
 
-```bash
-# In a Claude Code session — persistent install
-/plugin install requirements-framework@requirements-framework
+**Requirement satisfied but still blocking** — usually a scope mismatch (satisfied `--session` but the requirement is `branch` scope, or vice versa) or an expired TTL. Check `req status` for the scope and re-satisfy with the matching flag.
 
-# Or run with live reload from your clone
-claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
-```
+**Skip temporarily** — `export CLAUDE_SKIP_REQUIREMENTS=1`, or `req pause` for the session, or set `enabled: false` in `.claude/requirements.local.yaml`.
 
-The plugin's `hooks/hooks.json` registers every hook via `${CLAUDE_PLUGIN_ROOT}`.
+**Diagnostics** — `req doctor`; logs at `~/.claude/requirements.log` (`tail -f`); tests via `uv run python hooks/test_requirements.py`.
 
-2. Check the requirement is enabled:
+## Architecture Decision Records
 
-```bash
-req list
-```
-
-### Permission Override Issues
-
-If wildcards like `Edit(*)` or `Write(*)` are in `permissions.allow`, hooks are bypassed. Remove them:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      // Remove these if present:
-      // "Edit(*)",
-      // "Write(*)"
-    ]
-  }
-}
-```
-
-### Session Not Found
-
-```bash
-# Check active sessions
-req sessions
-
-# Use explicit session ID if needed
-req satisfy commit_plan --session <session-id>
-```
-
-### Skip Requirements Temporarily
-
-```bash
-# Disable framework temporarily
-export CLAUDE_SKIP_REQUIREMENTS=1
-
-# Or disable in config
-# .claude/requirements.local.yaml
-enabled: false
-```
-
-## Examples
-
-See the `examples/` directory for:
-- `global-requirements.yaml` - Global configuration template
-- `project-requirements.yaml` - Project-specific configuration example
-
-## What's New in v2.3
-
-### 🎯 Project-Specific Skill Requirements (`satisfied_by_skill`)
-
-**Feature**: Connect any project skill to auto-satisfy a requirement when it completes.
-
-Projects can now define custom skills that automatically satisfy requirements, enabling:
-- Architecture review skills that gate PR creation
-- Custom code review workflows per project
-- ADR compliance checks specific to each codebase
-
-**How to Use**:
-```yaml
-# .claude/requirements.yaml
-requirements:
-  architecture_review:
-    enabled: true
-    type: blocking
-    scope: single_use
-    trigger_tools:
-      - tool: Bash
-        command_pattern: 'gh\s+pr\s+create'
-    satisfied_by_skill: 'architecture-guardian'  # NEW FIELD
-    message: |
-      🏗️ Run the architecture-guardian skill before creating PR
-```
-
-**Workflow**:
-1. User exits plan mode → Shows proactive reminder
-2. User runs `/architecture-guardian` skill
-3. `auto-satisfy-skills.py` hook fires → Auto-satisfies `architecture_review`
-4. User runs `gh pr create` → Allowed (requirement satisfied)
-5. `clear-single-use.py` fires → Clears requirement for next PR
-
-**Configuration-Driven**: No framework changes needed for new skills. Just add `satisfied_by_skill` to your requirement config.
-
-**Test Coverage**: 454 tests passing (7 new tests for this feature)
-
----
-
-## What's New in v2.2
-
-### Full Session Lifecycle Hooks
-
-The framework now supports the complete Claude Code session lifecycle with four hooks:
-
-**🚀 SessionStart Hook**
-- Fires when Claude Code session starts or resumes
-- Injects full requirement status into context automatically
-- Cleans stale sessions from registry
-- Configurable via `hooks.session_start.inject_context`
-
-**🛑 Stop Hook (Enabled by Default)**
-- Prevents Claude from finishing with unsatisfied requirements
-- **Opt-out design** - works out of the box
-- Safe infinite loop prevention via `stop_hook_active` flag
-- Configurable via `hooks.stop.verify_requirements`
-
-**🧹 SessionEnd Hook**
-- Fires when session ends (exit, clear, logout)
-- Removes session from registry
-- Optional session state cleanup (disabled by default)
-
-**Test Coverage**: Comprehensive test suite (447 total tests, 100% passing)
-
----
-
-## What's New in v2.1
-
-### 🚫 Message Deduplication
-
-**Problem Solved**: When Claude makes parallel Write/Edit calls (e.g., modifying 5 files simultaneously), the hook previously executed 5 times, showing identical blocking messages 5-12 times. This created overwhelming walls of text.
-
-**Solution**: TTL-based deduplication cache that:
-- Shows full blocking message on **first occurrence**
-- Shows minimal "⏸️ Requirement `name` not satisfied (waiting...)" for subsequent blocks within 5 seconds
-- Automatically expires to show updated messages when you retry
-
-**Impact**: 90% reduction in message output, ~5000 tokens saved per blocking scenario
-
-**Debug Mode**: Set `export CLAUDE_DEDUP_DEBUG=1` to see cache behavior in stderr
-
-**Implementation**: Cross-platform (Unix + Windows), atomic file writes, fail-open design
-
----
-
-## Troubleshooting
-
-### Installation Issues
-
-**Problem**: Hooks not firing after installation
-
-Hooks are registered by the plugin's `hooks/hooks.json` (via `${CLAUDE_PLUGIN_ROOT}`), not by a hand-written `hooks` block in `~/.claude/settings.json`.
-
-1. **Confirm the plugin is installed and enabled**:
-   ```bash
-   # In a Claude Code session
-   /plugin install requirements-framework@requirements-framework
-   ```
-   Or run with live reload from your clone:
-   ```bash
-   claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
-   ```
-
-2. **Verify the bundled hooks are present and in sync**:
-   ```bash
-   cd ~/Tools/claude-requirements-framework
-   python3 scripts/build_plugin_hooks.py --check
-   ```
-
-3. **Test a hook manually** (from the repo):
-   ```bash
-   echo '{"tool_name":"Read"}' | python3 hooks/check-requirements.py
-   ```
-   Should return immediately with no errors.
-
-**Problem**: `req` command not found
-
-- Add `~/.local/bin` to your PATH:
-  ```bash
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
-  source ~/.bashrc
-  ```
-
-### Common Errors
-
-**Problem**: "Unknown requirement: xyz"
-
-**Solution**: The requirement doesn't exist in your configuration. Check:
-
-1. **Typo in requirement name?**
-   - Use `req status` to see available requirements
-   - The error message will show "Did you mean?" suggestions
-
-2. **Requirement not defined?**
-   - Add it to:
-     - Global: `~/.claude/requirements.yaml`
-     - Project: `.claude/requirements.yaml`
-     - Local: `.claude/requirements.local.yaml`
-   - Or run `req init` to set up project requirements
-
-**Problem**: "No active Claude session detected"
-
-This means `req satisfy` couldn't find your Claude Code session. Solutions:
-
-1. **Use explicit session ID** (recommended):
-   ```bash
-   req satisfy commit_plan --session abc12345
-   ```
-   Find your session ID in the blocking message or via `req sessions`.
-
-2. **Use branch-level satisfaction** (satisfies all sessions on the branch):
-   ```bash
-   req satisfy commit_plan --branch
-   ```
-
-3. **Set CLAUDE_SESSION_ID environment variable**:
-   ```bash
-   export CLAUDE_SESSION_ID=abc12345
-   req satisfy commit_plan
-   ```
-
-**Problem**: Requirements satisfied but still blocking
-
-1. **Check scope mismatch**:
-   - Requirement might be `branch` scope but you satisfied it with `session` scope
-   - Use `req status` to see the scope
-   - Satisfy with matching scope: `req satisfy <name> --branch` or `req satisfy <name> --session <id>`
-
-2. **Check session ID**:
-   - You might be satisfying a different session
-   - Use `req sessions` to list active sessions
-   - Use `req status` to see current session
-
-3. **TTL expired**:
-   - Dynamic requirements have approval TTLs (default 5 minutes)
-   - Re-satisfy the requirement: `req satisfy <name>`
-
-**Problem**: Framework blocking when it shouldn't
-
-1. **Disable temporarily**:
-   ```bash
-   export CLAUDE_SKIP_REQUIREMENTS=1
-   # Work normally
-   unset CLAUDE_SKIP_REQUIREMENTS
-   ```
-
-2. **Disable specific requirement**:
-   ```bash
-   req config <requirement_name> --disable --local --yes
-   ```
-
-3. **Check configuration**:
-   ```bash
-   req config <requirement_name>  # Show current config
-   req doctor  # Full diagnostic
-   ```
-
-### Plugin Changes Not Taking Effect (Development)
-
-**Problem**: Edits to `hooks/` aren't reflected in a running session
-
-The repo `hooks/` tree is the source of truth; the copies under `plugins/requirements-framework/hooks/` are build artifacts. After editing a hook or `lib/` module:
-
-1. **Rebuild the plugin bundle**:
-   ```bash
-   cd ~/Tools/claude-requirements-framework
-   python3 scripts/build_plugin_hooks.py          # mirror hooks/ into the plugin
-   python3 scripts/build_plugin_hooks.py --check   # report drift without writing
-   ```
-
-2. **Reload the plugin** — restart the session, or run with live reload:
-   ```bash
-   claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
-   ```
-
-3. **Verify**:
-   ```bash
-   python3 hooks/test_requirements.py
-   ```
-
-### Performance Issues
-
-**Problem**: Hooks slow down file operations
-
-1. **Check calculation cache**:
-   - Dynamic requirements cache results for 30 seconds
-   - Clear cache if stale: `rm ~/tmp/claude-req-calc-cache-*.json`
-
-2. **Check message dedup cache**:
-   - Enable debug mode to see cache behavior:
-     ```bash
-     export CLAUDE_DEDUP_DEBUG=1
-     ```
-
-3. **Disable expensive requirements**:
-   ```bash
-   req config branch_size_limit --disable --local --yes
-   ```
-
-### Getting Help
-
-1. **Run diagnostics**:
-   ```bash
-   req doctor
-   ```
-
-2. **Check logs**:
-   ```bash
-   tail -f ~/.claude/requirements.log
-   ```
-
-3. **Test manually**:
-   ```bash
-   python3 hooks/test_requirements.py
-   ```
-
-4. **Report issues**: https://github.com/anthropics/claude-code/issues
-
----
-
-## Development Workflow
-
-### Keeping the Plugin Bundle in Sync
-
-The repo `hooks/` tree is the **single source of truth**. The hook copies under `plugins/requirements-framework/hooks/` are build artifacts (the `.py` analogue of the rendered prompt templates) so a marketplace / `--plugin-dir` install is self-contained. After editing any hook or `lib/` module, rebuild the bundle:
-
-```bash
-cd ~/Tools/claude-requirements-framework
-
-# Mirror hooks/ → plugins/requirements-framework/hooks/
-python3 scripts/build_plugin_hooks.py
-
-# Report drift without writing (this check is wired into the test suite)
-python3 scripts/build_plugin_hooks.py --check
-```
-
-> There is no user "deploy" step and nothing is copied into `~/.claude/hooks/`. Hooks activate by installing the plugin (`/plugin install requirements-framework@requirements-framework`) or running `claude --plugin-dir …`.
-
-### Standard Development Workflow
-
-```bash
-# 1. Make changes in the repo hooks/ tree (source of truth)
-vim hooks/lib/config.py
-
-# 2. Rebuild the plugin bundle
-python3 scripts/build_plugin_hooks.py
-
-# 3. Run tests
-python3 hooks/test_requirements.py
-
-# 4. Commit when tests pass (bundle in sync via build_plugin_hooks.py --check)
-git add .
-git commit -m "feat: Add feature"
-git push origin master
-```
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development workflows, TDD practices, and troubleshooting guide.
-
-### Architecture Decision Records (ADRs)
-
-Important architectural decisions are documented in `docs/adr/`:
-
-- **ADR-001**: Remove main/master branch skip - Requirements now enforced on all branches
-- **ADR-002**: Use Claude Code's native session_id - Better session correlation
-- **ADR-003**: Dynamic sync file discovery - sync.sh auto-discovers new files
+Key decisions live in `docs/adr/`. Notable: ADR-011 (externalized messages), ADR-012 (agent teams), ADR-019 (Stop-hook observability), ADR-020 (strict global preflight), ADR-021 (uv standardization), ADR-022 (typed 7-node workflow backbone).
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for your changes (TDD)
-4. Build the bundle and test: `python3 scripts/build_plugin_hooks.py && python3 hooks/test_requirements.py`
-5. Ensure the bundle is in sync: `python3 scripts/build_plugin_hooks.py --check`
-6. Commit and submit a pull request
+1. Fork and branch (this repo authors commits via Stacked Git — see CLAUDE.md).
+2. Write tests first (TDD).
+3. Rebuild the bundle and test: `uv run python scripts/build_plugin_hooks.py && uv run python hooks/test_requirements.py`
+4. Ensure the bundle is in sync: `uv run python scripts/build_plugin_hooks.py --check`
+5. Bump `plugin.json` if plugin files changed, then open a PR.
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Credits
-
-Built with Test-Driven Development (TDD) methodology for reliability and maintainability.
-
-## Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
+MIT License — see LICENSE.

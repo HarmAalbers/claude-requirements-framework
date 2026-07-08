@@ -32,7 +32,7 @@ Smaller, narrower spike added when Step 10 landed. Validates the package surface
 Use this as the **post-Step-10 sanity check** before working on dependent code. The big `v3_spike.py` is still the canonical end-to-end proof.
 
 ```bash
-python3 hooks/lib/llm/_spikes/v3_code_reviewer_smoke.py
+uv run python hooks/lib/llm/_spikes/v3_code_reviewer_smoke.py
 # then verify cost telemetry:
 req budget tail -n 5
 ```
@@ -44,7 +44,7 @@ Expected: two ledger entries labeled `code-reviewer` and `review-aggregator` fro
 Runs `supervisor.route(phase, unsatisfied)` for each of the 7 workflow phases and prints the (target, rationale) pair. The aim is NOT to assert specific targets (small models may diverge from the expected mapping) but to prove the round-trip works end-to-end on real SDK + Max auth + budget ledger + Langfuse instrumentation, and that the LLM produces valid `HandoffResult` JSON within the SDK's internal retry cap.
 
 ```bash
-python3 hooks/lib/llm/_spikes/v3_supervisor_smoke.py
+uv run python hooks/lib/llm/_spikes/v3_supervisor_smoke.py
 # then:
 req budget tail -n 7   # expect 7 entries labeled 'req-supervisor'
 ```
@@ -60,7 +60,7 @@ Validates the Langfuse Prompt Management round-trip in three steps:
 3. Clear `LANGFUSE_PUBLIC_KEY` and re-import the loader — should silently fall back to file, producing the `{diff}`-placeholder template.
 
 ```bash
-python3 hooks/lib/llm/_spikes/v3_prompt_loader_smoke.py
+uv run python hooks/lib/llm/_spikes/v3_prompt_loader_smoke.py
 ```
 
 Then visit `http://localhost:3000` → Prompts tab to see `code-reviewer` and `review-aggregator` listed with the `production` label.
@@ -77,10 +77,10 @@ The data from those runs is captured in ADR-016's Empirical Data section. `v3_sp
 
 ```bash
 # One-time install (already required for V3 work):
-pip3 install --user claude-agent-sdk pydantic
+uv sync --extra llm
 
 # Run the spike:
-python3 hooks/lib/llm/_spikes/v3_spike.py
+uv run python hooks/lib/llm/_spikes/v3_spike.py
 ```
 
 No environment variables needed. Auth flows through `~/.claude/` (the Claude Code CLI's credentials, inherited by the SDK's bundled subprocess).

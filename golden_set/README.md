@@ -45,7 +45,7 @@ against the reference using two metrics defined in `hooks/lib/llm/eval.py`:
    - `reference_goal` is the prompt the Ragas judge sees. Be specific:
      mention file, line, and bug type — vague goals score poorly.
 
-3. **Run it.** `python3 scripts/run_eval.py --cases cases/NNN-slug.json`
+3. **Run it.** `uv run python scripts/run_eval.py --cases cases/NNN-slug.json`
    to verify the case parses and the harness produces a sensible score.
 
 ## Why synthetic, not real bugs?
