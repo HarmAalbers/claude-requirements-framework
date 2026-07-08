@@ -58,7 +58,7 @@ claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-f
 
 # Check the installed version:
 /plugin list
-# Should show: requirements-framework@4.29.2
+# Should show: requirements-framework@4.31.0
 ```
 
 For deeper installation and troubleshooting reference:

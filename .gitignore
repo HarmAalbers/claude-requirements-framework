@@ -72,3 +72,7 @@ infra/.env
 .claude/handoff.md
 .claude/handoff.archive/
 **/.claude/requirements.local.yaml
+
+# Refactor-orchestration local, auto-grown artifacts (see ADR-014)
+.claude/refactor-conventions.md
+.claude/refactor-orchestration/

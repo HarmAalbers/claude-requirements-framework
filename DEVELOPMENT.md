@@ -391,7 +391,7 @@ Hash format: `abc1234` (committed clean), `abc1234*` (committed + uncommitted ch
 > **Version bump rule:** every change to the plugin (agents, commands, skills, hooks,
 > `plugin.json`) must bump the version in
 > `plugins/requirements-framework/.claude-plugin/plugin.json` (semver: patch for fixes,
-> minor for features, major for breaking). Current version: **4.29.1**.
+> minor for features, major for breaking). The current version lives in `plugins/requirements-framework/.claude-plugin/plugin.json`.
 
 ## Testing
 
