@@ -19,7 +19,7 @@ You MUST follow these steps in order. Do not skip or improvise.
 Ask the user which adoption stage they want, using `AskUserQuestion`. Present these three presets:
 
 - **instrument-only** — Observability only. No workflow gates fire; the project just becomes compliant so strict mode stops blocking. Lowest friction. Good for a first adoption.
-- **front-gates** — Design/plan gates at the front of the workflow (e.g. `design_approved`, `commit_plan`) plus observability. Nudges design-first without gating every commit.
+- **front-gates** — Design/plan gates at the front of the workflow (e.g. `design_approved`, `plan_validated`) plus observability. Nudges design-first without gating every commit.
 - **full-chain** — The full gated workflow (design → plan → review) end to end. Highest assurance, most friction.
 
 Briefly describe each as above and let the user pick one (default to **instrument-only** if they are unsure).
@@ -43,7 +43,7 @@ requirements:
 **front-gates:** the instrument-only block PLUS:
 
 ```yaml
-  commit_plan:
+  plan_validated:
     enabled: true
     type: blocking
     scope: branch
@@ -54,7 +54,7 @@ requirements:
 **full-chain:** the front-gates block PLUS:
 
 ```yaml
-  pre_pr_review:
+  pr_reviewed:
     enabled: true
     type: blocking
     scope: branch
