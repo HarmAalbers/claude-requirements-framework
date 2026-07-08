@@ -1,7 +1,7 @@
 ---
 name: finishing-a-development-branch
 description: Use when implementation is complete, all tests pass, and it is time to decide how to integrate the work into the main branch
-git_hash: db81f75
+git_hash: 4b624f2
 ---
 
 # Finishing a Development Branch
