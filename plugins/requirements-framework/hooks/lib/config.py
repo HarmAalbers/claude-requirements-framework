@@ -1280,16 +1280,17 @@ class RequirementsConfig:
 
     def enforcement(self) -> str:
         """
-        Enforcement mode for this project: 'block' (default) or 'nudge'.
+        Enforcement mode for this project: 'nudge' (default) or 'block'.
 
         Top-level key `enforcement`, mirroring `strict_preflight`/`enabled`.
-        Any value other than the literal 'nudge' fails safe to 'block' so a
-        typo can never silently disable all gates.
+        Blocking is opt-in: only the literal 'block' selects it. Any other
+        value — unset, 'nudge', or a typo — resolves to 'nudge', so gates
+        advise rather than deny by default.
 
         Returns:
-            'nudge' if explicitly configured, otherwise 'block'
+            'block' only if explicitly configured, otherwise 'nudge'
         """
-        return "nudge" if self._config.get("enforcement") == "nudge" else "block"
+        return "block" if self._config.get("enforcement") == "block" else "nudge"
 
     def write_local_override(
         self,

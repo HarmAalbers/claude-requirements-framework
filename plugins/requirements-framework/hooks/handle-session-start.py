@@ -42,17 +42,41 @@ from hook_utils import early_hook_setup
 from console import emit_hook_context
 
 
-# Stand-down directive appended to the SessionStart briefing ONLY when at least
-# one gating requirement is unsatisfied (satisfied_count < total_count). It tells
-# Claude not to blindly attempt blocked edits, to resolve via the listed skill,
-# and that `req satisfy`/`req clear` are USER actions (the permission layer blocks
-# Claude from running them). Kept to ~2 lines to respect the compact token budget.
+# Stand-down directives appended to the SessionStart briefing ONLY when at least
+# one gating requirement is unsatisfied (and the session is not paused). The
+# wording is enforcement-aware (`_stand_down_directive`):
+#   - block mode: the PreToolUse gate WILL deny the edit, so tell Claude not to
+#     attempt it and to resolve via the listed skill first.
+#   - nudge mode (the default): nothing is gated, so frame the same items as
+#     recommended next steps Claude MAY satisfy but need not before proceeding.
+# Both note that `req satisfy`/`req clear` are USER actions (the permission layer
+# blocks Claude from running them). Kept to ~2 lines for the compact token budget.
 _GATING_DIRECTIVE = (
     "**Gated**: edits/commits are blocked until the above are satisfied — do NOT "
     "attempt Edit/Write/MultiEdit first. To satisfy, run the listed resolution skill "
     "(you may run it). Do NOT run `req satisfy`/`req clear` yourself — those are USER "
     "actions (the permission layer blocks Claude from running them)."
 )
+
+_NUDGE_DIRECTIVE = (
+    "**Nudge (not a block)**: nothing is gated — you may proceed with edits/commits. "
+    "The above are the recommended next steps for this phase; run the listed resolution "
+    "skill when it fits (you may run it). Do NOT run `req satisfy`/`req clear` yourself — "
+    "those are USER actions (the permission layer blocks Claude from running them)."
+)
+
+
+def _stand_down_directive(config: RequirementsConfig) -> str:
+    """Return the enforcement-aware stand-down directive for the briefing.
+
+    Block mode → the edit WILL be denied, so warn Claude off attempting it.
+    Nudge mode → guidance only. Fail-safe to the nudge wording (the framework
+    default) so a config read error never falsely claims edits are blocked.
+    """
+    try:
+        return _GATING_DIRECTIVE if config.enforcement() == "block" else _NUDGE_DIRECTIVE
+    except Exception:
+        return _NUDGE_DIRECTIVE
 
 
 # Visible breadcrumb appended when the status-briefing formatter throws, so a
@@ -284,7 +308,7 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     if unsatisfied:
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied)} --session {session_id}`")
         if not paused:
-            lines.append(_GATING_DIRECTIVE)
+            lines.append(_stand_down_directive(config))
 
     return "\n".join(line for line in lines if line)
 
@@ -344,7 +368,7 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
         lines.append(f"**Fallback**: `req satisfy {' '.join(r['name'] for r in unsatisfied_reqs)} --session {session_id}`")
         if not paused:
             lines.append("")
-            lines.append(_GATING_DIRECTIVE)
+            lines.append(_stand_down_directive(config))
 
     return "\n".join(lines)
 
