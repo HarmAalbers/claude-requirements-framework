@@ -1,851 +1,105 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Operational essentials for Claude Code in this repo. Deep detail lives in `DEVELOPMENT.md`, `docs/adr/`, and `plugins/requirements-framework/README.md` — this file stays short on purpose.
 
-## Session Handoff — check FIRST on every session start
+## Session Handoff — check FIRST every session
 
-**Before doing anything else (before reading the rest of this file, before responding to the user's first prompt), check whether `.claude/handoff.md` exists in the repo root.** It is a cross-session handoff prompt written by a prior session, gitignored, pointing at a specific next step. If present:
+Before anything else, check whether `.claude/handoff.md` exists (gitignored, written by a prior session). If present:
 
-1. Read `.claude/handoff.md` in full.
-2. Summarize it in 2–3 lines for the user: where the prior session left off + the recommended next step + the named alternatives.
-3. Ask the user whether to proceed with the proposed next step, pick an alternative, or do something else entirely. Do NOT auto-execute it.
-4. After the user decides (whichever path), MOVE the file to `.claude/handoff.archive/<YYYY-MM-DD-HHMMSS>.md` (`mkdir -p` the archive dir if needed) so the file stays as durable history but never re-prompts in a future session. If the user explicitly says "leave it for later," skip the archive step and tell them you've left it in place.
+1. Read it in full.
+2. Summarize in 2–3 lines: where the prior session stopped + the proposed next step + named alternatives.
+3. Ask the user whether to proceed, pick an alternative, or do something else. Do **not** auto-execute.
+4. After the user decides, MOVE it to `.claude/handoff.archive/<YYYY-MM-DD-HHMMSS>.md` (`mkdir -p` first) so it never re-prompts — unless the user says "leave it for later."
 
-If `.claude/handoff.md` is absent, do not mention this section or the convention to the user — just proceed normally with the rest of the file.
+If absent, don't mention this convention. To hand off to the next session, write `.claude/handoff.md`.
 
-This convention exists so prior sessions can hand off mid-refactor state without the user copy-pasting prompts. To write one for the next session, save the handoff content to `.claude/handoff.md` (it's gitignored).
+## Version Control: Stacked Git (`stg`)
 
-## Version Control: Always Use Stacked Git
-
-This project uses **Stacked Git (`stg`)** for all local commit authoring. Every patch goes through the stack — **never use `git commit` directly**.
-
-### Per-Branch Setup
-
-`stg init` is per-branch. `master` is already initialized. Every new topic branch needs its own init:
+All local commits go through Stacked Git — **never `git commit` directly**. `stg init` is per-branch (`master` is done; every new branch needs its own).
 
 ```bash
-git checkout -b feat/your-branch
-stg init
+git checkout -b feat/your-branch && stg init
+stg new <patch-name>     # create an empty patch (use -m "msg" to skip the editor)
+# ...edit files...
+stg refresh              # fold working-tree changes into the top patch (iterate)
+stg new <next-patch>     # start the next atomic patch
 ```
 
-### Atomic Commit Workflow
+Common ops: `stg series` (list), `stg show` (top diff), `stg pop`/`stg push`, `stg edit <patch>`, `stg rename`. `git push` works unchanged (patches are ordinary commits).
 
-```bash
-stg new <patch-name>     # Create a new empty patch (opens editor for description)
-# ... edit files ...
-stg refresh              # Fold working-tree changes into the top patch
-# Iterate: keep editing and `stg refresh` until the patch is right
-stg new <next-patch>     # Start the next logical patch on top
-```
-
-### Common Operations
-
-| Task                          | Command                  |
-|-------------------------------|--------------------------|
-| List patch stack              | `stg series`             |
-| Show top patch diff           | `stg show`               |
-| Pop top patch (keep changes)  | `stg pop`                |
-| Re-apply popped patch         | `stg push`               |
-| Amend a non-top patch         | `stg edit <patch>`       |
-| Rename a patch                | `stg rename <old> <new>` |
-| Delete a patch                | `stg delete <patch>`     |
-| Status across all branches    | `stg branch --list`      |
-
-### Pushing to Remote
-
-`git push` works unchanged — stg patches are ordinary git commits, so remotes, CI, and existing pre-commit hooks see no difference.
-
-### Rules
-
+Rules:
 - **Never `git commit`** — always `stg new` + `stg refresh`.
-- **One logical change per patch** — keep patches atomic; refresh as you iterate.
-- **`stg init` first on any new branch** — without it, stg commands fail and the fallback to `git commit` would silently bypass the stack.
-- **Plugin version bumps still apply** — when a patch touches plugin files, bump `plugins/requirements-framework/.claude-plugin/plugin.json` inside the same patch (not a separate one).
+- **One logical change per patch**; do framework work on a **topic branch**, not `master` (gates are per-branch).
+- Any change under `plugins/requirements-framework/` must bump `plugins/requirements-framework/.claude-plugin/plugin.json` (semver) in the **same** patch.
+- Don't `stg repair` after a raw merge — it can reset the master ref to an ancient commit.
 
-## Build & Test Commands
+## Build & Test
 
-> **`uv` is required.** Every Python entrypoint — the `req` CLI, the lifecycle
-> hooks, and all build/test tooling — resolves its interpreter and dependencies
-> through `uv` (single source of truth: `pyproject.toml` + `uv.lock`). Nothing
-> relies on the ambient `python3`. Run tooling via `uv run` so the synced env
-> (core `PyYAML` + the `dev` group: `pydantic`, `jinja2`, `ruff`) is guaranteed.
-> `uv sync` materializes `.venv`; the heavy `[llm]` extra is opt-in (`uv sync --extra llm`).
-> At runtime the hooks/CLI self-bootstrap: if the ambient python lacks `PyYAML`
-> and `uv` is on PATH, `hooks/lib/_bootstrap.py` re-execs once under
-> `uv run --no-project --with PyYAML` (zero overhead when deps are already present).
+`uv` is required — every Python entrypoint (the `req` CLI, hooks, tooling) resolves its interpreter + deps through `uv` (`pyproject.toml` + `uv.lock` are the single source of truth). Nothing relies on ambient `python3`.
 
 ```bash
-# One-time: sync the uv-managed environment
-uv sync
-
-# Run test suite
-uv run python hooks/test_requirements.py
-
-# Lint (pinned ruff, matches CI)
-uv run ruff check .
-
-# Sync between repo and deployed location (~/.claude/hooks)
-./sync.sh status   # Check sync status (run before committing!)
-./sync.sh deploy   # Copy repo → ~/.claude/hooks (renders templates via uv)
-
-# Installation (requires uv on PATH; runs `uv sync`)
-./install.sh
-
-# Configure logging (debug, info, warning, error)
-req logging                         # Show current config
-req logging --level debug --local   # Enable debug logging
-req logging --destinations file stdout --local  # Log to file and stdout
-tail -f ~/.claude/requirements.log  # View logs in real-time
+uv sync                                          # materialize .venv (PyYAML + dev group: pydantic, jinja2, ruff)
+uv run python hooks/test_requirements.py         # test suite
+uv run ruff check .                              # lint (pinned, matches CI)
+uv run python scripts/render_prompts.py --check  # verify .md.j2 → .md renders
+uv run python scripts/build_plugin_hooks.py      # rebuild the plugin bundle (a build-copy)
 ```
 
-## Architecture
+- Hooks/CLI self-bootstrap: if ambient python lacks PyYAML and `uv` is on PATH, `hooks/lib/_bootstrap.py` re-execs once under `uv run --no-project --with PyYAML`.
+- 7 pre-existing test failures are env-independent and expected; a green run reports `1544/1551`.
+- CI runs `ruff check .` (pinned) which the local test harness does not — lint can fail CI while tests pass locally.
 
-### Two-Location System
-The framework exists in two places that must stay synchronized:
-- **Repository** (`~/Tools/claude-requirements-framework/`) - Source of truth, git-controlled
-- **Deployed** (`~/.claude/hooks/`) - Active runtime where Claude Code loads hooks
+> **Runtime**: hooks fire via the **plugin** (installed marketplace build, or a `--plugin-dir` dev build for this repo), not a `~/.claude/hooks` deploy. `plugins/requirements-framework/hooks/hooks.json` owns hook registration. The old `sync.sh` two-location model is legacy.
 
-Always run `./sync.sh status` before committing to ensure both locations are in sync.
+## Configuration Cascade
 
-> **Hook registration is owned by the plugin.** The self-contained plugin's `plugins/requirements-framework/hooks/hooks.json` is the single source of truth for registering all lifecycle hooks (via `${CLAUDE_PLUGIN_ROOT}`). `install.sh` no longer copies hook scripts to `~/.claude/hooks/` or writes a `hooks` block into `~/.claude/settings.json` — it only sets up the `req` CLI, the statusline, and shell env. Install the plugin to activate hooks.
+`~/.claude/requirements.yaml` (global) → `.claude/requirements.yaml` (project, versioned) → `.claude/requirements.local.yaml` (local, gitignored). Deep-merged; local wins. A project with only a `.local.yaml` is still recognized.
 
-### Session Lifecycle (Sixteen Hooks)
-```
-SessionStart (handle-session-start.py)
-    → Clean stale sessions
-    → Update registry with current session
-    → Inject full status into context
+## Requirement Scopes
 
-UserPromptSubmit (handle-prompt-submit.py) - before Claude processes user prompt
-    → Inject compact requirement status for edit/commit prompts
-    → Track prompt count in session metrics
-
-PreToolUse (check-requirements.py) - triggered on Edit/Write/Bash/EnterPlanMode/ExitPlanMode
-    → Load config (global → project → local cascade)
-    → Check requirements against session/branch state
-    → Allow or block with message
-    → Plan mode triggers enable ADR validation at planning time
-
-PermissionRequest (handle-permission-request.py) - before permission dialog shown
-    → Auto-deny dangerous command patterns (rm -rf, force push, etc.)
-    → Log permission patterns in session metrics
-
-PostToolUse (auto-satisfy-skills.py) - after Skill tool completes
-    → Auto-satisfy requirements when review skills complete
-    → Maps: /requirements-framework:pre-commit → pre_commit_review (deprecated, kept for backward compat)
-    → Maps: /requirements-framework:codex-review → codex_reviewer
-    → Maps: /requirements-framework:deep-review → pre_pr_review
-    → Maps: /requirements-framework:arch-review → commit_plan, adr_reviewed, tdd_planned, solid_reviewed
-
-PostToolUse (clear-single-use.py) - after certain Bash commands
-    → Clears single_use requirements after trigger commands
-    → Example: Clears single_use requirements after trigger commands
-
-PostToolUse (handle-git-events.py) - after git Bash commands
-    → Monitor git commit/push and gh pr create completions
-    → Update WipTracker git metrics (WIP tracking)
-
-PostToolUse (handle-plan-enter.py) - after EnterPlanMode
-    → Auto-invoke brainstorming skill if design_approved not satisfied
-    → Configurable via hooks.plan_enter.brainstorm_on_enter (default: true)
-
-PostToolUse (handle-plan-exit.py) - after ExitPlanMode
-    → Shows requirements status proactively
-    → Fires before any Edit attempts begin
-
-PostToolUseFailure (handle-tool-failure.py) - when a tool call fails
-    → Track failure patterns in session metrics
-    → Suggest running review after repeated failures (threshold: 3)
-
-SubagentStart (handle-subagent-start.py) - when a subagent is spawned
-    → Inject requirement context into review subagents
-    → Track subagent spawn events in session metrics
-
-PreCompact (handle-pre-compact.py) - before context compaction
-    → Save requirement state and session metrics before compaction
-    → Track compaction frequency in session metrics
-
-Stop (handle-stop.py) - when Claude finishes
-    → Check stop_hook_active flag (prevent loops!)
-    → Verify session-scoped requirements
-    → Block stop if unsatisfied (enabled by default)
-
-SessionEnd (handle-session-end.py) - session ends
-    → Remove session from registry
-    → Optional: clear session state
-
-TeammateIdle (handle-teammate-idle.py) - when teammate goes idle (ADR-012)
-    → Log idle event to session metrics
-    → Optionally re-engage idle teammate (exit code 2)
-    → Disabled by default (hooks.agent_teams.keep_working_on_idle)
-
-TaskCompleted (handle-task-completed.py) - when team task completes (ADR-012)
-    → Record task completion in session metrics
-    → Optionally validate task output quality
-    → Disabled by default (hooks.agent_teams.validate_task_completion)
-```
-
-### Configuration Cascade
-1. **Global**: `~/.claude/requirements.yaml`
-2. **Project**: `.claude/requirements.yaml` (version controlled)
-3. **Local**: `.claude/requirements.local.yaml` (gitignored)
-
-### Key Components
-
-**Hooks** (in `hooks/`):
-- `check-requirements.py` - PreToolUse hook entry point
-- `handle-session-start.py` - SessionStart hook (context injection)
-- `handle-prompt-submit.py` - UserPromptSubmit hook (prompt context injection)
-- `handle-permission-request.py` - PermissionRequest hook (auto-deny dangerous commands)
-- `handle-plan-enter.py` - PostToolUse hook for EnterPlanMode (brainstorm auto-invoke)
-- `handle-plan-exit.py` - PostToolUse hook for ExitPlanMode
-- `auto-satisfy-skills.py` - PostToolUse hook for skill completion
-- `clear-single-use.py` - PostToolUse hook for clearing single-use requirements
-- `handle-git-events.py` - PostToolUse hook for git Bash commands (WIP git metrics tracking)
-- `handle-tool-failure.py` - PostToolUseFailure hook (failure pattern tracking)
-- `handle-subagent-start.py` - SubagentStart hook (review agent context injection)
-- `handle-pre-compact.py` - PreCompact hook (pre-compaction state saving)
-- `handle-stop.py` - Stop hook (requirement verification)
-- `handle-session-end.py` - SessionEnd hook (cleanup)
-- `handle-teammate-idle.py` - TeammateIdle hook (team progress tracking, ADR-012)
-- `handle-task-completed.py` - TaskCompleted hook (team task quality gates, ADR-012)
-- `requirements-cli.py` - `req` command implementation
-- `test_requirements.py` - Test suite (1445 tests)
-- `test_branch_size_calculator.py` - Branch size calculator tests
-
-**Core Library** (in `hooks/lib/`):
-- `requirements.py` - Core BranchRequirements API
-- `config.py` - Configuration loader with cascade logic + hook config
-- `state_storage.py` - JSON state in `.git/requirements/[branch].json`
-- `session.py` - Session tracking and registry
-- `registry_client.py` - Registry client for session tracking
-
-**Strategy Pattern** (in `hooks/lib/`):
-- `strategy_registry.py` - Central dispatch mechanism for requirement types
-- `base_strategy.py` - Abstract base class for strategies
-- `blocking_strategy.py` - Blocking requirement type
-- `dynamic_strategy.py` - Dynamic requirement type
-- `guard_strategy.py` - Guard requirement type (see ADR-004)
-- `strategy_utils.py` - Strategy utility functions
-
-**Utilities** (in `hooks/lib/`):
-- `branch_size_calculator.py` - Calculate branch diff size
-- `calculation_cache.py` - Caching for calculations
-- `calculator_interface.py` - Calculator interface abstraction
-- `message_dedup_cache.py` - TTL-based deduplication for parallel calls
-- `git_utils.py` - Git utilities (branch, repo detection)
-- `config_utils.py` - Configuration utility functions
-- `colors.py` - Color output for CLI
-- `logger.py` - Structured JSON logging
-- `feature_selector.py` - Feature selection logic
-- `init_presets.py` - Initialization presets
-- `interactive.py` - Interactive prompts
-
-**Session Learning** (in `hooks/lib/`):
-- `session_metrics.py` - Session data collection and storage
-- `learning_updates.py` - Apply and track learning updates with rollback
-
-**Message System** (in `hooks/lib/`):
-- `messages.py` - MessageLoader for externalized YAML messages (see ADR-011)
-- `message_validator.py` - Validation for message files
-
-## Plugin Component Versioning
-
-All plugin components (agents, commands, skills) include a `git_hash` field in their YAML frontmatter showing the last commit that modified the file. This enables version tracking and A/B testing of component effectiveness.
-
-### Updating Versions
-
-After modifying plugin components:
-
-```bash
-# Update git_hash fields
-./update-plugin-versions.sh
-
-# Verify changes
-./update-plugin-versions.sh --check
-
-# Commit with updated hashes
-git add .
-git commit -m "feat: update code-reviewer agent"
-
-# Deploy to runtime
-./sync.sh deploy
-```
-
-### Hash Format
-
-- `abc1234` - Committed, no modifications
-- `abc1234*` - Committed but has uncommitted changes
-- `uncommitted` - New file, never committed
-
-### Usage Modes
-
-```bash
-./update-plugin-versions.sh           # Update all files
-./update-plugin-versions.sh --check   # Dry-run (show what would change)
-./update-plugin-versions.sh --verify  # Verify hashes are current
-```
-
-## Development Patterns
-
-### TDD Workflow
-1. Write tests in `hooks/test_requirements.py`
-2. Deploy: `./sync.sh deploy`
-3. Run tests (RED): `python3 ~/.claude/hooks/test_requirements.py`
-4. Implement feature
-5. Deploy and run tests (GREEN)
-6. Commit
-
-### Design Principles
-- **Fail-open**: Errors in the hook never block work
-- **Dependencies**: Python stdlib + PyYAML for YAML config parsing
-- **Strategy pattern**: Extensible requirement types via modular strategy architecture (see `hooks/lib/*_strategy.py`)
-
-## Testing Plugin Components
-
-The framework includes 25 agents, 12 commands, and 21 skills that extend Claude Code's capabilities.
-
-### Development Testing (Live Reload)
-
-For development, use the `--plugin-dir` flag for live reload:
-
-```bash
-# Launch Claude Code with plugin loaded directly from repo
-claude --plugin-dir ~/Tools/claude-requirements-framework/plugin
-
-# Changes to plugin files are immediately available (live reload)
-```
-
-### Production Testing (Marketplace Installation)
-
-For testing the installed plugin:
-
-```bash
-# Reinstall to get latest version
-/plugin uninstall requirements-framework@requirements-framework
-/plugin marketplace update requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-**Test commands:**
-```
-/requirements-framework:deep-review          # Primary: cross-validated team review
-/requirements-framework:arch-review [path]   # Primary: team-based architecture review
-/requirements-framework:pre-commit [aspects] # Pre-commit code review
-/requirements-framework:codex-review [scope]
-```
-
-**Test skills** (natural language):
-- "Show requirements framework status"
-- "How to use requirements framework"
-- "Extend requirements framework"
-
-**Test agents** (via Task tool or commands):
-- code-reviewer, tool-validator, silent-failure-hunter
-- test-analyzer, type-design-analyzer, comment-analyzer
-- backward-compatibility-checker
-- adr-guardian, codex-review-agent, solid-reviewer
-- tenant-isolation-auditor, appsec-auditor, compliance-auditor
-
-**For installation details**, see `docs/PLUGIN-INSTALLATION.md`.
-
-### Refactor Orchestration
-
-The framework includes a bundled refactor-orchestration skill for multi-layer top-down refactors.
-
-**Command**: `/requirements-framework:refactor-orchestrate`
-
-**Agents (Haiku/Sonnet/Sonnet fanout)**:
-- `requirements-framework:refactor-executor` (Haiku) — mechanical chunk execution
-- `requirements-framework:refactor-investigator` (Sonnet) — read-only diagnosis
-- `requirements-framework:refactor-analyzer` (Sonnet) — retrospective + rule-of-three promotion
-
-**Outputs**:
-- `.claude/plans/<YYYY-MM-DD>-<slug>.md` — validated design plan
-- `.claude/plans/<YYYY-MM-DD>-<slug>-orchestrator-prompt.md` — copy-paste orchestrator
-
-**Execution model**: A planning session produces both files. The orchestrator block runs in a **fresh `claude` session** by paste — chunks dispatch atomically, one commit per chunk.
-
-**Recommended sequencing**: `/requirements-framework:arch-review` → `/requirements-framework:refactor-orchestrate` → fresh session for execution.
-
-**Two-tier learning** (refactor-analyzer):
-- Global ledger: `~/.claude/refactor-orchestration/learnings.md` (seeded from plugin template)
-- Project ledger: `.claude/refactor-orchestration/learnings.md` (gitignored)
-- Project conventions: `.claude/refactor-conventions.md` (gitignored, auto-grown)
-
-See `docs/adr/ADR-014-refactor-orchestration-bundled-skill.md` for design rationale.
-
-## On-Demand Tool Loading (`ENABLE_TOOL_SEARCH`)
-
-Claude Code v2.0.74+ supports on-demand tool schema loading via `ToolSearch`. When `ENABLE_TOOL_SEARCH=true` is set in the shell environment, the initial system prompt lists tool *names* only; full JSON schemas are fetched lazily on first use. This trims several thousand tokens from every session's startup context.
-
-### Default in this project
-
-`install.sh` now adds `export ENABLE_TOOL_SEARCH=true` to your shell rc (`~/.zshrc`, `~/.bashrc`, or `~/.config/fish/config.fish`) during installation. The append is idempotent — re-running the installer will not duplicate the line.
-
-### Manual setup
-
-If you skipped the installer prompt or are working in a fresh shell:
-
-```bash
-# zsh / bash
-echo 'export ENABLE_TOOL_SEARCH=true' >> ~/.zshrc
-source ~/.zshrc
-
-# fish
-echo 'set -x ENABLE_TOOL_SEARCH true' >> ~/.config/fish/config.fish
-```
-
-### Verify
-
-In a new Claude Code session, the initial tool list shows names only — schemas appear in the conversation later, fetched by `ToolSearch` calls. If you see complete schemas at session start, the env var didn't make it into the new shell.
-
-### Scope note
-
-This does **not** shrink the "Available agent types" block in the system prompt — that's driven by `plugin.json` and would require splitting agents across separate plugins to address (future work).
-
-## Serena MCP Configuration
-
-The project uses Serena MCP for semantic code analysis. For optimal performance with Claude Code:
-
-### Configuration Location
-`~/.claude/plugins/cache/claude-plugins-official/serena/[version]/.mcp.json`
-
-### Optimal Settings
-```json
-{
-  "serena": {
-    "command": "uvx",
-    "args": [
-      "--from",
-      "git+https://github.com/oraios/serena",
-      "serena",
-      "start-mcp-server",
-      "--context",
-      "claude-code",
-      "--project",
-      "/Users/harm/Tools/claude-requirements-framework"
-    ]
-  }
-}
-```
-
-### Key Configuration Flags
-
-- `--context claude-code` - Disables tools that duplicate Claude Code's built-in capabilities (prevents conflicts)
-- `--project <path>` - Explicitly specifies project directory for focused codebase analysis
-
-### Verification
-
-After configuration changes, restart Claude Code to apply settings. Verify Serena is active with the correct project context by checking available MCP tools.
-
-## Plan Mode Triggers
-Requirements can now trigger on plan mode transitions:
-- `EnterPlanMode` - Triggers when Claude enters planning mode
-- `ExitPlanMode` - Triggers when Claude exits planning mode
-
-This enables multi-phase ADR workflows:
-```yaml
-adr_plan_validation:
-  enabled: true
-  type: blocking
-  scope: single_use
-  trigger_tools:
-    - ExitPlanMode  # Validates plan after planning
-  satisfied_by_skill: 'adr-guardian'
-```
-
-Use cases:
-- Pre-planning ADR review (EnterPlanMode)
-- Plan validation against ADRs (ExitPlanMode)
-- Architectural compliance at planning stage
-
-**Caveat — plan-mode triggers are mode-dependent**: `EnterPlanMode`/`ExitPlanMode`
-only fire when the user actually transitions into/out of plan mode. Users who
-live in `acceptEdits`/auto-accept mode never emit these events, so a hook keyed
-solely on them never runs for those users.
-
-**Brainstorm nudge is mode-independent**: the brainstorm auto-invoke therefore
-fires from TWO hooks — `handle-plan-enter.py` (on `EnterPlanMode`, for plan-mode
-users) AND `handle-prompt-submit.py` (on `UserPromptSubmit`, which fires every
-turn in every mode). The proactive prompt-submit nudge fires on a substantive
-prompt while the brainstorm gate is unsatisfied, and is deduplicated to once per
-session (shared marker) so the two hooks never double-nudge. Toggle it with
-`hooks.prompt_submit.brainstorm_nudge` (default `true`); the plan-mode path stays
-on `hooks.plan_enter.brainstorm_on_enter` (default `true`).
-
-See `examples/global-requirements.yaml` for full example configuration.
+| Scope | Behavior |
+|-------|----------|
+| `session` | Cleared when the session ends |
+| `branch` | Persists across sessions on the same branch |
+| `permanent` | Never auto-cleared |
+| `single_use` | Cleared after the trigger command completes |
 
 ## Workflow Phase Backbone (typed 7-node — ADR-022)
 
-The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a **typed
-7-node backbone**, not a flat list. Each phase carries a `type` and, where
-relevant, a `loop` or `conditionals`:
+The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a typed 7-node backbone:
 
 ```
 Design → Plan → Validate → Build → Review → Verify → Ship
 [spine] [spine] [TEAM]    [spine] [TEAM]   [spine] [spine]
-                                   +loop (in Build)
 ```
 
 | Node | Type | Gate | Skill / Command |
 |------|------|------|-----------------|
-| design   | spine | `design_approved`      | `/brainstorming` |
-| plan     | spine | `plan_written`         | `/writing-plans` |
-| validate | team  | `plan_validated`       | `/arch-review` *(cond: `/codex-review`)* |
-| build    | spine | `implementation_done`  | `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
-| review   | team  | `pr_reviewed`          | `/deep-review` *(cond: `/codex-review`)* |
-| verify   | spine | `verified`             | `/verification-before-completion` |
-| ship     | spine | — (gateless)           | `/finishing-a-development-branch` |
-
-- **Node types.** `spine` nudges one skill (its gate auto-satisfied by that
-  skill). `team` nudges one orchestrating command that fans out its agents and
-  satisfies ONE gate on completion (`derive_phase`/`resolve_current_phase` walk
-  by gate, so team vs spine is transparent to derivation). A `loop` is a
-  `single_use` gate declared on a node and re-armed by `clear-single-use`. A
-  `conditionals` list is optional side-quests surfaced as *available here* — no
-  gate, no auto-fire.
-- **Gate consolidation (~11 → 7).** `commit_plan`/`adr_reviewed`/`tdd_planned`/
-  `solid_reviewed` folded into **`plan_validated`** (one Validate-team gate);
-  `pre_pr_review` → **`pr_reviewed`**; `pre_push_verification` → **`verified`**;
-  `codex_reviewer` removed as a gate (now a conditional side-quest). No compat
-  shims — a config still naming an old gate gets a validation error pointing at
-  the new name.
-- **YAML footgun.** In a `loop`, write the trigger key quoted (`"on": commit`) —
-  a bare `on:` parses as boolean `True` under YAML 1.1.
-
-## Requirement Scopes
-| Scope | Behavior |
-|-------|----------|
-| `session` | Cleared when Claude Code session ends |
-| `branch` | Persists across sessions on same branch |
-| `permanent` | Never auto-cleared |
-| `single_use` | Cleared after trigger command completes |
-
-## Session Learning
-
-The session learning system helps Claude Code improve over time by analyzing sessions and suggesting updates to memories, skills, and commands.
-
-### Enable Session Learning
-
-Add to your `.claude/requirements.yaml`:
-
-```yaml
-hooks:
-  session_learning:
-    enabled: true
-    prompt_on_stop: true  # Prompts for review when ending session
-    min_tool_uses: 5      # Minimum activity before prompting
-```
-
-### Usage
-
-```bash
-/session-reflect          # Full analysis with recommendations
-/session-reflect quick    # Quick summary statistics
-/session-reflect analyze-only  # Analysis without applying changes
-
-req learning stats        # Show learning statistics
-req learning list         # List recent updates
-req learning rollback 3   # Undo update #3
-```
-
-### Storage
-
-- Session metrics: `.git/requirements/sessions/<session_id>.json`
-- Learning history: `.git/requirements/learning_history.json`
-- Updated memories: `.serena/memories/*.md`
-
-### Design
-
-- **Fail-open**: Metric recording errors never block execution
-- **Atomic writes**: File locking + atomic rename for data safety
-- **User approval**: All updates require user approval before applying
-- **Rollback capable**: Every change recorded with previous content hash
-
-## Obsidian CLI Integration
-
-The framework can log session data to Obsidian via the [Obsidian CLI](https://help.obsidian.md/cli) (requires Obsidian v1.12.4+ with CLI enabled and [Dataview](https://github.com/blacksmithgu/obsidian-dataview) plugin for auto-updating ledger).
-
-### Enable
-
-```yaml
-# In requirements.yaml (global or project)
-hooks:
-  obsidian:
-    enabled: true
-    vault: "MyVault"              # Optional, defaults to active vault
-    session_folder: "Claude/Sessions"  # Folder for detail notes
-    index_note: "Claude/Sessions Log"  # Ledger note name
-    ledger_format: "dataview"     # "dataview" (default) or "table" (legacy)
-    update_on_commit: true        # Log git commits to timeline
-    update_on_requirement: true   # Log requirement satisfactions
-    timeout: 5                    # CLI call timeout (seconds)
-```
-
-### What Gets Logged
-
-- **SessionStart**: Creates a detail note with YAML frontmatter (project, branch, status, tags, aliases, cssclasses) + ensures Dataview index note exists
-- **Git commits**: Appends timeline entry to detail note
-- **Requirement satisfaction**: Appends timeline entry to detail note
-- **SessionEnd**: Finalizes detail note with metrics (duration, tool uses, commits) — Dataview ledger auto-updates from frontmatter
-
-### Dataview Ledger (Default)
-
-The index note contains a Dataview TABLE query that auto-renders session data from frontmatter. No manual writes needed — the ledger always reflects current state. Status (✅/⏳), duration, and commit counts update automatically when frontmatter changes.
-
-Existing legacy table notes are auto-migrated: backed up as "(legacy)" and replaced with the Dataview version. Set `ledger_format: "table"` to keep the old behavior.
-
-### Batch Property Setting
-
-Properties are set atomically via `obsidian eval` using Obsidian's JS API (`app.fileManager.processFrontMatter`). This reduces ~15 CLI calls per session to ~3. Falls back to individual `property:set` calls if eval is unavailable.
-
-### Architecture
-
-- `hooks/lib/obsidian.py` — `ObsidianClient` (CLI wrapper with batch eval) + `ObsidianSessionLogger` (lifecycle orchestrator)
-- Integrates into: `handle-session-start.py`, `handle-session-end.py`, `auto-satisfy-skills.py`, `clear-single-use.py`
-- **Fail-open**: Obsidian errors never block Claude Code. If Obsidian isn't running, logging is silently skipped.
-
-## Langfuse Session Tracing (R5)
-
-Every Claude Code turn in an opted-in project is traced to the self-hosted Langfuse
-(`http://localhost:3000`) via a bundled Stop hook. As of the 2026-06-08 hardening
-(ADR-019 amendment) this is a **single-layer** design — the former Layer-2 native-OTEL
-beta traces are removed (they were hollow and doubled trace volume). Opt-in per project;
-inert everywhere else.
-
-### Enable (per project)
-
-Prerequisite: `uv` on PATH (the hook runs the vendored script under `uv run` with
-isolated deps; projects that never opt in need nothing).
-
-```bash
-python3 scripts/setup_langfuse_tracing.py --write   # creds from env or infra/.env
-# restart the Claude Code session to pick up the env block
-```
-
-Writes the **5-key Layer-1 env block** (`TRACE_TO_LANGFUSE=true` + the three
-`LANGFUSE_*` creds + `CC_LANGFUSE_MAX_CHARS`) into the project's gitignored
-`.claude/settings.local.json`, **prunes** any deprecated Layer-2 OTEL keys still present
-(clean removal, no shim), warms the uv cache, and **registers project-scoped model-price
-definitions** so traces carry non-zero cost. A model-sync failure only warns (creds are
-already written; re-run `scripts/sync_langfuse_models.py`). Print mode (no `--write`)
-does NOT register model prices — it says so and points at `--write`.
-
-### Architecture
-
-- `hooks/langfuse-trace.py` — stdlib Stop-hook wrapper: gate + failure policy.
-- `hooks/_langfuse_hook.py` — VENDORED upstream (langfuse/Claude-Observability-Plugin@1266914),
-  runs under `uv run` with isolated `langfuse>=4,<5` (the repo's global langfuse v3 pin is
-  untouched). Update by re-vendoring at a new pinned commit; hunks marked `# VENDOR-PATCH`.
-- **Fail-hard by default** when tracing is enabled: failures print a one-line stderr warning
-  and exit 1 (never 2 — the Stop event is never blocked). Set `CC_LANGFUSE_FAIL_OPEN=true`
-  in the project env to silence. Activity log: `~/.claude/state/langfuse_hook.log`
-  (always written by the vendored hook; `CC_LANGFUSE_DEBUG=true` for verbose).
-- `scripts/sync_langfuse_models.py` — project-scoped model-price registry (opus-4-8 /
-  haiku-4-5 / sonnet-4-6, per-token, incl. cache tiers). Create-if-absent + drift report;
-  also backs `/v3-review` cost attribution. Called by `setup --write`; re-runnable.
-- **Trace enrichment** (`# VENDOR-PATCH (e)`): each turn trace carries `userId` (OS-user
-  proxy — transcripts have no Claude account id), `version` (Claude Code version), and
-  `project`/`branch` tags. `ttft` is not recoverable post-Layer-2 (deferred).
-- **Layer 2 is removed** (no more `OTEL_EXPORTER_OTLP_*` generic keys). The V3 review stack
-  still uses the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` vars; the prune is exact-name
-  and never touches that namespace.
-- Stop hooks in the same matcher currently run in parallel: turns blocked by requirement verification
-  may still be traced; re-fired Stop events do not duplicate traces (watermark state).
-
-See ADR-019 (incl. the 2026-06-08 amendment) and
-`.claude/plans/2026-06-08-r5-observability-hardening-design.md`.
-
-## Strict Global Preflight (ADR-020)
-
-An **opt-in, fail-CLOSED** adoption gate. When enabled, a globally-installed plugin blocks
-all work in any non-compliant project until it's fixed or opted out — the deliberate inverse
-of the framework's fail-open/inert-when-unconfigured default, scoped to strict mode only.
-It exists because a loaded-but-misconfigured plugin otherwise does nothing silently (a real
-`solarmonkey-app` adoption ran 41 turns with the gated workflow entirely absent and no
-signal). **OFF by default** — inert until you turn it on.
-
-### Global install (from GitHub)
-
-```
-/plugin marketplace add HarmAalbers/claude-requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-This caches from GitHub (independent of the local `~/Tools` dev checkout). Enable
-per-marketplace auto-update so master pushes land at session startup (UI toggle, or
-`extraKnownMarketplaces.<name>.autoUpdate: true` in `~/.claude/settings.json`).
-
-### Enable
-
-```yaml
-# ~/.claude/requirements.yaml  (global — the master switch lives here)
-strict_preflight: true
-```
-
-Default is `false`; the whole strict regime is inert until this is set.
-
-### Compliance (all three must hold, else every edit/bash is BLOCKED)
-
-1. `.claude/requirements.local.yaml` exists, parses, has ≥1 enabled requirement.
-2. Langfuse env structurally valid: the 5 Layer-1 keys present, **none** of the 6 deprecated
-   Layer-2 keys present, creds non-empty. **Structural only** — no reachability/model check
-   in the blocking gate (that stays the R5 trace-time warning).
-3. `uv` resolvable on PATH.
-
-Non-compliance is surfaced loudly at SessionStart, each failure with its exact fix command.
-
-### Escape (always allowed, precedence over ALL gates)
-
-- Scaffold a config: `/req-init` (writes `.claude/requirements.local.yaml`).
-- Opt a project out: `/req-optout` (creates `.claude/.rf-optout` → project goes fully inert).
-- Editing the config / opt-out sentinel and running `req` init/optout are always permitted,
-  so you can never lock yourself out of reaching compliance.
-
-### Emergency bailout
-
-```bash
-RF_STRICT_OFF=true   # disables strict mode instantly, no config edit needed
-```
-
-The kill-switch is checked first and the evaluator is fail-SAFE (any exception → allow), so a
-preflight bug can never globally lock you out — the worst case degrades to ordinary fail-open.
-
-See ADR-020 and `.claude/plans/2026-06-11-strict-global-preflight-design.md`.
-
-## Agent Teams (ADR-012)
-
-The framework uses Claude Code Agent Teams as the **primary review approach**. Agents collaborate, cross-validate findings, and produce unified verdicts.
-
-### Commands (Recommended)
-- `/deep-review` — Cross-validated team-based code review with agent debate. Satisfies `pre_pr_review`.
-- `/arch-review` — Multi-perspective architecture review with commit planning. Satisfies `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed`.
-
-### Configuration
-```yaml
-hooks:
-  agent_teams:
-    enabled: true           # Enabled by default
-    keep_working_on_idle: false  # Re-engage idle teammates
-    validate_task_completion: false  # Validate task output
-    max_teammates: 5        # Token cost cap
-    fallback_to_subagents: true  # Graceful degradation
-```
-
-### When to Use Teams
-Use `/deep-review`, `/arch-review`, or `/pre-commit` for:
-- Default for most reviews (recommended)
-- Complex changes affecting multiple areas
-- Cross-validated findings with debate
-- Architecture decisions with trade-offs
-- Pre-commit with 2+ review agents (default)
-
-### Hook Events
-- `TeammateIdle` — Fires when teammate goes idle. Configurable re-engagement.
-- `TaskCompleted` — Fires when team task completes. Configurable validation.
-
-## Message Externalization
-
-Framework messages are stored in external YAML files for customization without code changes.
-
-### Message Directory Cascade
-```
-~/.claude/messages/              # Global defaults
-<project>/.claude/messages/      # Project-specific (version controlled)
-<project>/.claude/messages.local/ # Local overrides (gitignored)
-```
-
-Priority: **local > project > global** (same as requirements config)
-
-### Message File Schema
-Each requirement has 6 required fields:
-```yaml
-version: "1.0"
-blocking_message: |
-  ## Blocked: {req_name}
-  **Execute**: `/{satisfied_by_skill}`
-short_message: "Requirement `{req_name}` not satisfied (waiting...)"
-success_message: "Requirement `{req_name}` satisfied"
-header: "Commit Plan"
-action_label: "Run `/arch-review`"
-fallback_text: "req satisfy {req_name}"
-```
-
-### Special Files
-- `_templates.yaml` - Default templates by requirement type (blocking/guard/dynamic)
-- `_status.yaml` - Status briefing format templates (compact/standard)
-
-### CLI Commands
-```bash
-req messages validate           # Validate all message files
-req messages validate --fix     # Generate missing files from templates
-req messages list               # List loaded files with cascade sources
-```
-
-### Customizing Messages
-```bash
-# Project-level override
-mkdir -p .claude/messages
-cat > .claude/messages/commit_plan.yaml << 'EOF'
-version: "1.0"
-blocking_message: |
-  ## Need a Plan First
-  Run `/arch-review` before editing.
-short_message: "Plan required"
-success_message: "Plan approved"
-header: "Planning"
-action_label: "`/arch-review`"
-fallback_text: "req satisfy commit_plan"
-EOF
-```
-
-See ADR-011 for design details.
-
-## Cross-Project Feature Upgrade
-
-The `req upgrade` command helps discover and adopt new framework features across all projects on your machine.
-
-### Usage
-
-```bash
-req upgrade scan               # Scan machine for projects using the framework
-req upgrade status             # Show feature status for current project
-req upgrade status --all       # Show all tracked projects (brief)
-req upgrade recommend          # Generate YAML snippets for missing features
-req upgrade recommend -f NAME  # Show snippet for specific feature
-```
-
-### How It Works
-
-1. **Project Registry**: Stores discovered projects at `~/.claude/project_registry.json`
-2. **Feature Catalog**: Tracks all available features with version info and YAML examples
-3. **Auto-Registration**: Projects are registered when sessions start (no manual scan needed)
-
-### Example
-
-```bash
-$ req upgrade status
-Feature Status: /Users/harm/Work/my-project
-────────────────────────────────────────────────
-  Requirements:
-    commit_plan               ✓ Enabled
-    session_learning          ○ Not configured
-────────────────────────────────────────────────
-  Enabled: 2/12 features
-
-$ req upgrade recommend --feature session_learning
-# Shows ready-to-copy YAML snippet
-```
-
-## Additional Documentation
-- `DEVELOPMENT.md` - Comprehensive development guide with detailed implementation notes
-- `docs/adr/` - Architecture Decision Records documenting key design decisions
-  - ADR-004: Guard requirement strategy
-  - ADR-008: CLAUDE.md weekly maintenance process
-  - ADR-010: Cross-project feature upgrade system
-  - ADR-011: Externalize messages to YAML files
-  - ADR-012: Agent Teams integration
-  - ADR-019: Stop-hook observability (vendored hook, fail-hard opt-in)
-  - ADR-020: Strict global preflight (opt-in, fail-closed adoption gate)
-- `plugins/requirements-framework/README.md` - Plugin architecture with agents, commands, and skills
+| design   | spine | `design_approved`     | `/brainstorming` |
+| plan     | spine | `plan_written`        | `/writing-plans` |
+| validate | team  | `plan_validated`      | `/arch-review` *(cond: `/codex-review`)* |
+| build    | spine | `implementation_done` | `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
+| review   | team  | `pr_reviewed`         | `/deep-review` *(cond: `/codex-review`)* |
+| verify   | spine | `verified`            | `/verification-before-completion` |
+| ship     | spine | — (gateless)          | `/finishing-a-development-branch` |
+
+- **spine** nudges one skill (its gate auto-satisfied by that skill); **team** nudges an orchestrating command that fans out agents and satisfies one gate; a **loop** is a `single_use` gate re-armed by `clear-single-use`; **conditionals** are optional side-quests (no gate, no auto-fire).
+- Gate vocabulary consolidated ~11 → 7 (ADR-022). No compat shims — a config naming an old gate errors and points at the new name.
+- YAML footgun: in a `loop`, quote the trigger key (`"on": commit`) — a bare `on:` parses as boolean `True` under YAML 1.1.
+- Skill auto-satisfactions are **per-branch** — run workflow skills *after* `git checkout -b`, else the new branch re-blocks.
+
+## Development Principles
+
+- **Fail-open**: an error in a hook never blocks work (the sole exception is strict preflight, ADR-020, opt-in).
+- **TDD**: add tests to `hooks/test_requirements.py` first (RED), implement (GREEN), then commit.
+- **Strategy pattern**: requirement types are modular strategies (`hooks/lib/*_strategy.py`).
+- **No backwards-compat shims**: delete old config keys/features cleanly, don't keep deprecated aliases.
+
+## Deeper Documentation
+
+- `DEVELOPMENT.md` — comprehensive development guide (hooks lifecycle, lib modules, internals).
+- `plugins/requirements-framework/README.md` — the 24 agents / 16 commands / 21 skills.
+- `docs/adr/` — design records. Load-bearing ones:
+  - ADR-011 message externalization · ADR-012 agent teams · ADR-014 refactor orchestration
+  - ADR-019 Stop-hook observability (Langfuse) · ADR-020 strict global preflight · ADR-022 workflow backbone
+- **Opt-in features** (off by default; details in their ADR / `DEVELOPMENT.md`): Langfuse tracing (ADR-019), strict global preflight (ADR-020), Obsidian session logging, session learning (`/session-reflect`), cross-project upgrade (`req upgrade`), message externalization (`req messages`, ADR-011), refactor orchestration (`/refactor-orchestrate`, ADR-014), Serena MCP, `ENABLE_TOOL_SEARCH`.
