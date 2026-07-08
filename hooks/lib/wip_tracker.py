@@ -35,11 +35,6 @@ WIP_FILE = Path.home() / ".claude" / "wip_projects.json"
 VALID_STATUSES = {"wip", "done", "paused", "todo"}
 
 
-def _empty_registry() -> dict:
-    """Return empty WIP registry structure."""
-    return {"version": "1.0", "entries": {}}
-
-
 def _new_entry(project_dir: str, branch: str) -> dict:
     """Create a new WIP entry with defaults."""
     now = time.time()

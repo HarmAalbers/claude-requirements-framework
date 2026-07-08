@@ -2,7 +2,7 @@
 
 Workflow enforcement, agent-team code review, and session tooling for Claude Code.
 
-**Version:** 4.31.0
+**Version:** 4.31.1
 
 ## Overview
 

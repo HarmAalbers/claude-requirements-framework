@@ -486,42 +486,6 @@ class BranchRequirements:
             'requirements': self._state['requirements'].copy()
         }
 
-    def get_requirement_details(self, req_name: str, scope: str = 'session') -> dict:
-        """
-        Get detailed status for a specific requirement.
-
-        Args:
-            req_name: Requirement name
-            scope: Requirement scope
-
-        Returns:
-            Dictionary with satisfaction details
-        """
-        req_state = self._get_req_state(req_name)
-        satisfied = self.is_satisfied(req_name, scope)
-
-        details = {
-            'name': req_name,
-            'scope': scope,
-            'satisfied': satisfied,
-        }
-
-        if scope == 'session':
-            sessions = req_state.get('sessions', {})
-            if self.session_id in sessions:
-                session_state = sessions[self.session_id]
-                details['satisfied_at'] = session_state.get('satisfied_at')
-                details['satisfied_by'] = session_state.get('satisfied_by')
-                details['expires_at'] = session_state.get('expires_at')
-                details['metadata'] = session_state.get('metadata')
-        else:
-            details['satisfied_at'] = req_state.get('satisfied_at')
-            details['satisfied_by'] = req_state.get('satisfied_by')
-            details['expires_at'] = req_state.get('expires_at')
-            details['metadata'] = req_state.get('metadata')
-
-        return details
-
     def approve_for_session(self, req_name: str, ttl: int, metadata: dict = None) -> None:
         """
         Record user approval for a dynamic requirement.

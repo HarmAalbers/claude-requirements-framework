@@ -32,7 +32,7 @@ Example directory structure:
 """
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Protocol, runtime_checkable
+from typing import Optional, Dict, Any, List
 import re
 import yaml
 
@@ -47,18 +47,6 @@ class MessageNotFoundError(Exception):
         super().__init__(
             f"Message file not found for requirement '{req_name}'.\n"
             f"Searched in:\n  {paths_str}"
-        )
-
-
-class MessageValidationError(Exception):
-    """Raised when a message file fails validation."""
-
-    def __init__(self, file_path: Path, errors: List[str]):
-        self.file_path = file_path
-        self.errors = errors
-        errors_str = "\n  - ".join(errors)
-        super().__init__(
-            f"Message file validation failed for '{file_path}':\n  - {errors_str}"
         )
 
 
@@ -159,24 +147,6 @@ class RequirementMessages:
             'action_label': self.action_label,
             'fallback_text': self.fallback_text,
         }
-
-
-@runtime_checkable
-class CalculatorMessageProvider(Protocol):
-    """
-    Protocol for calculators that provide their own messages.
-
-    Dynamic requirement calculators implement this to generate
-    context-aware messages based on calculation results.
-    """
-
-    def get_blocking_message(self, result: dict, context: dict) -> str:
-        """Generate blocking message from calculator result."""
-        ...
-
-    def get_short_message(self, result: dict) -> str:
-        """Generate short/deduplicated message."""
-        ...
 
 
 # Default templates for each requirement type

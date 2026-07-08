@@ -111,11 +111,6 @@ def configure_progress(
         _default_timing_threshold = timing_threshold
 
 
-def get_default_timing_threshold() -> float:
-    """Get the default timing threshold for progress_context."""
-    return _default_timing_threshold
-
-
 def progress_enabled() -> bool:
     """
     Check if progress is enabled (cached).

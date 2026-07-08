@@ -58,7 +58,7 @@ claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-f
 
 # Check the installed version:
 /plugin list
-# Should show: requirements-framework@4.31.0
+# Should show: requirements-framework@<installed-version>
 ```
 
 For deeper installation and troubleshooting reference:
@@ -331,8 +331,6 @@ hooks:
     enabled: true                # on by default
     keep_working_on_idle: false
     validate_task_completion: false
-    max_teammates: 5
-    fallback_to_subagents: true
 ```
 
 ## State Storage

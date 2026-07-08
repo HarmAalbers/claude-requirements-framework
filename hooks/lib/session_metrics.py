@@ -531,48 +531,6 @@ class SessionMetrics:
         except Exception as e:
             get_logger().warning(f"Failed to record agent use: {e}")
 
-    def record_git_activity(self, commits: list[str] = None,
-                            files_changed: int = None,
-                            lines_added: int = None,
-                            lines_removed: int = None) -> None:
-        """
-        Record git activity.
-
-        Args:
-            commits: List of commit hashes
-            files_changed: Number of files changed
-            lines_added: Lines added
-            lines_removed: Lines removed
-        """
-        try:
-            self._ensure_loaded()
-
-            git_data = self._metrics.setdefault('git', {
-                'commits': [],
-                'files_changed': 0,
-                'lines_added': 0,
-                'lines_removed': 0
-            })
-
-            if commits:
-                for commit in commits:
-                    if commit not in git_data['commits']:
-                        git_data['commits'].append(commit)
-
-            if files_changed is not None:
-                git_data['files_changed'] = files_changed
-
-            if lines_added is not None:
-                git_data['lines_added'] = lines_added
-
-            if lines_removed is not None:
-                git_data['lines_removed'] = lines_removed
-
-            self._dirty = True
-
-        except Exception as e:
-            get_logger().warning(f"Failed to record git activity: {e}")
-
     def finalize_session(self) -> None:
         """
         Finalize session metrics with end time and duration.

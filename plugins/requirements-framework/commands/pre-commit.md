@@ -135,7 +135,7 @@ For EACH enabled review agent flag, create a task:
 Then create a synthesis task:
 - **Task**: "Cross-validate and synthesize findings" — blocked by all review tasks above, assigned to lead
 
-**Fallback**: If TeamCreate fails and `hooks.agent_teams.fallback_to_subagents` is true (default), log the error and skip to Step 9 (subagent fallback).
+**Fallback**: If TeamCreate fails, log the error and skip to Step 9 (subagent fallback).
 
 ### Step 6: Spawn Teammates
 

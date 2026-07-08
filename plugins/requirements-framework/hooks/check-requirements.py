@@ -312,28 +312,6 @@ def strict_preflight_block(config, tool_name, tool_input, project_dir):
         return None  # fail-safe: a bug here must never lock the user out
 
 
-def output_prompt(req_name: str, config: dict, session_id: str, project_dir: str, branch: str) -> None:
-    """
-    Output 'deny' decision to block until requirement is satisfied.
-
-    DEPRECATED: Use create_batched_denial() for batched blocking.
-    Kept for backwards compatibility.
-
-    We use 'deny' instead of 'ask' because 'ask' gets overridden by
-    permissions.allow entries in settings.local.json.
-
-    Args:
-        req_name: Requirement name
-        config: Requirement configuration
-        session_id: Current session ID
-        project_dir: Project directory
-        branch: Current branch
-    """
-    # Use the new batched function with a single requirement
-    response = create_batched_denial([(req_name, config)], session_id, project_dir, branch)
-    emit_json(response)
-
-
 def main() -> int:
     """
     Hook entry point.

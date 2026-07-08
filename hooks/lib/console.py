@@ -152,14 +152,6 @@ def _build_console(config: Optional[dict]) -> Console:
     return Console(level_name=level_name, level=level, handlers=tuple(handlers))
 
 
-def get_console() -> Console:
-    """Get the configured console (lazy initialized)."""
-    global _console
-    if _console is None:
-        _console = _build_console(None)
-    return _console
-
-
 def configure_console(config: Optional[dict]) -> Console:
     """Configure the shared console instance from config."""
     global _console

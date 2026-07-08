@@ -23,7 +23,7 @@
 The Requirements Framework plugin extends Claude Code with a gated development
 workflow and a suite of code-review agents, commands, and skills.
 
-**What's Included (plugin v4.31.0):**
+**What's Included (plugin v4.31.1):**
 - **24 review/workflow agents** — code-reviewer, tool-validator, silent-failure-hunter,
   test-analyzer, type-design-analyzer, comment-analyzer, backward-compatibility-checker,
   adr-guardian, solid-reviewer, tdd-validator, commit-planner, refactor-advisor,
@@ -156,7 +156,7 @@ It does **not** copy hook scripts anywhere or edit a `hooks` block in
 /plugin list
 ```
 
-**Expected:** an entry like `requirements-framework@4.31.0 (requirements-framework)`.
+**Expected:** an entry like `requirements-framework@<version> (requirements-framework)`.
 
 ### Step 2: Test Commands
 

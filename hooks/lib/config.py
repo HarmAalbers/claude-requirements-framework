@@ -1589,22 +1589,6 @@ class RequirementsConfig:
         """
         return cast(ConsoleConfigDict, self._config.get("console", {}))
 
-    def get_debug_config(self) -> DebugConfigDict:
-        """
-        Get debug/progress configuration.
-
-        Returns:
-            Debug config dictionary with optional keys:
-            - show_progress: bool (default: auto-detect TTY)
-            - timing_threshold: float (default: 0.3)
-
-        Example config:
-            debug:
-              show_progress: true
-              timing_threshold: 0.5
-        """
-        return cast(DebugConfigDict, self._config.get("debug", {}))
-
     def get_hook_config(self, hook_name: str, key: str, default: Any = None) -> Any:
         """
         Get configuration for a specific hook.
