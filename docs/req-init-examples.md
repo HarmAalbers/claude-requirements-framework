@@ -38,13 +38,10 @@ Choose a preset profile:
 Preview:
 ──────────────────────────────────────────────────
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     type: blocking
     scope: session
-    ...
-  adr_reviewed:
-    enabled: true
     ...
   branch_size_limit:
     enabled: true
@@ -58,7 +55,7 @@ requirements:
     enabled: false  # Deprecated since v2.6
     deprecated: true
     ...
-  pre_pr_review:
+  pr_reviewed:
     enabled: true
     scope: single_use
     ...
@@ -191,28 +188,24 @@ How would you like to configure?
 [Select: 2 - Custom Selection]
 
 Select features to enable:
-  ✓ Commit Planning - Require planning before code changes
-  ✓ ADR Review - Check Architecture Decision Records
+  ✓ Plan Validation (Validate team) - Architecture-review team: ADR alignment, SOLID, TDD-readiness, commit plan
   ☐ Protected Branches - Prevent edits on main/master
   ✓ Branch Size Limits - Warn/block large PRs
-  ☐ Pre-Commit Review - Review before every commit
-  ✓ Pre-PR Review - Quality check before PR creation
+  ☐ Pre-Commit Review (deprecated) - Review before every commit
+  ✓ PR Review (Review team) - Cross-validated /deep-review team before PR creation
 
 Preview:
 ──────────────────────────────────────────────────
 inherit: true
 requirements:
-  commit_plan:
-    enabled: true
-    ...
-  adr_reviewed:
+  plan_validated:
     enabled: true
     ...
   branch_size_limit:
     enabled: true
     type: dynamic
     ...
-  pre_pr_review:
+  pr_reviewed:
     enabled: true
     scope: single_use
     ...
@@ -220,7 +213,7 @@ requirements:
 
 Create requirements.yaml? [Y/n]: y
 
-✅ Created project config (custom 4 features)
+✅ Created project config (custom 3 features)
 ```
 
 **Result**: Tailored config with exactly the features you want!
@@ -315,7 +308,7 @@ req init --local --preset minimal --preview
 📋 Preview: Project config (advanced preset)
 ──────────────────────────────────────────────────
 requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
     type: blocking
     scope: session
@@ -354,8 +347,8 @@ req init --preset advanced --force
 ```bash
 $ req init
 Choose a preset profile:
-  > 1. relaxed - commit_plan only
-    2. strict - commit_plan + protected_branch
+  > 1. relaxed - plan_validated only
+    2. strict - plan_validated + protected_branch
     3. minimal - empty
 
 [Limited to 2 requirement types, no feature discovery]
@@ -393,9 +386,9 @@ How would you like to configure?
 
 Mix and match requirements using Custom Selection:
 
-- **Solo Developer**: commit_plan + branch_size_limit
-- **Team Project**: commit_plan + protected_branch + pre_pr_review
-- **Open Source**: commit_plan + adr_reviewed + github_ticket + pre_pr_review
+- **Solo Developer**: plan_validated + branch_size_limit
+- **Team Project**: plan_validated + protected_branch + pr_reviewed
+- **Open Source**: plan_validated + github_ticket + pr_reviewed
 - **Enterprise**: All features enabled
 
 ### Workflow Recommendations
@@ -431,10 +424,10 @@ This pattern gives you:
 
 The `advanced` preset is designed to be an **educational tool**. When you run it, you'll see:
 
-1. **Blocking requirements** (commit_plan, adr_reviewed)
+1. **Blocking requirements** (plan_validated) - the consolidated Validate-team gate
 2. **Guard requirements** (protected_branch) - prevents operations
 3. **Dynamic requirements** (branch_size_limit) - auto-calculated with thresholds
-4. **Single-use requirements** (pre_pr_review, codex_reviewer) - re-satisfy each time
+4. **Single-use requirements** (pr_reviewed) - re-satisfy each time
 5. **Branch-scoped requirements** (github_ticket, disabled) - once per branch
 6. **Tool-specific triggers** with command patterns (git commit, gh pr create)
 7. **Hooks configuration** (stop hook verification)
