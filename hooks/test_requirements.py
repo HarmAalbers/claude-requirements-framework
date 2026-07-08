@@ -996,18 +996,18 @@ def test_config_module(runner: TestRunner):
 
 
 def test_enforcement_mode(runner: TestRunner):
-    """enforcement() returns 'block' by default, 'nudge' when configured, fails safe on garbage."""
+    """enforcement() returns 'nudge' by default, 'block' only when explicitly configured."""
     print("\n🎚️  Testing enforcement mode...")
     from config import RequirementsConfig
 
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
 
-        # Default: no key -> block
+        # Default: no key -> nudge
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump({"version": "1.0", "enabled": True}, f)
-        runner.test("enforcement defaults to block",
-                    RequirementsConfig(tmpdir).enforcement() == "block")
+        runner.test("enforcement defaults to nudge",
+                    RequirementsConfig(tmpdir).enforcement() == "nudge")
 
         # Explicit nudge honored
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
@@ -1015,11 +1015,17 @@ def test_enforcement_mode(runner: TestRunner):
         runner.test("enforcement reads nudge",
                     RequirementsConfig(tmpdir).enforcement() == "nudge")
 
-        # Unknown value fails safe to block
+        # Explicit block honored (opt-in)
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "enforcement": "block"}, f)
+        runner.test("enforcement reads block",
+                    RequirementsConfig(tmpdir).enforcement() == "block")
+
+        # Unknown value falls through to the nudge default (only literal 'block' blocks)
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
             json.dump({"version": "1.0", "enabled": True, "enforcement": "banana"}, f)
-        runner.test("enforcement unknown -> block",
-                    RequirementsConfig(tmpdir).enforcement() == "block")
+        runner.test("enforcement unknown -> nudge",
+                    RequirementsConfig(tmpdir).enforcement() == "nudge")
 
 
 def test_project_has_config(runner: TestRunner):
