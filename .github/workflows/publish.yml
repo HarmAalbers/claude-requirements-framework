@@ -86,7 +86,7 @@ jobs:
           print(f"Bumped version: {version} → {new_version}")
           BUMP_SCRIPT
 
-      - name: Sync marketplace version and update git hashes
+      - name: Update git hashes
         run: |
           chmod +x ./update-plugin-versions.sh
           ./update-plugin-versions.sh
