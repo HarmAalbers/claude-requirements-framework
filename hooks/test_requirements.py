@@ -609,6 +609,8 @@ def test_hook_from_subdirectory(runner: TestRunner):
         config = {
             "version": "1.0",
             "enabled": True,
+            "inherit": False,  # isolate from ~/.claude global cascade
+            "enforcement": "block",  # deny is the signal this test checks for
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -2202,6 +2204,7 @@ def test_hook_behavior(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,  # Don't merge with ~/.claude/requirements.yaml
+            "enforcement": "block",  # this test exercises the blocking gate
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -2332,6 +2335,7 @@ def test_checklist_rendering(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,  # Isolate test from global config
+            "enforcement": "block",  # this test exercises the blocking gate
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -2966,6 +2970,7 @@ def test_stop_hook(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "hooks": {
                 "stop": {"verify_requirements": True}
             },
@@ -3385,6 +3390,7 @@ def test_stop_hook_triggered_only(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "hooks": {"stop": {"verify_requirements": True}},
             "requirements": {
                 "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
@@ -3446,6 +3452,7 @@ def test_stop_hook_triggered_only(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "hooks": {"stop": {"verify_requirements": True}},
             "requirements": {
                 "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"},
@@ -3501,6 +3508,7 @@ def test_stop_hook_guard_context_aware(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "hooks": {"stop": {"verify_requirements": True}},
             "requirements": {
                 "protected_branch": {
@@ -3584,6 +3592,7 @@ def test_batched_requirements_blocking(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -3880,6 +3889,7 @@ def test_partial_satisfaction(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "commit_plan": {"enabled": True, "scope": "session"},
                 "adr_reviewed": {"enabled": True, "scope": "session"}
@@ -3953,6 +3963,7 @@ def test_blocked_edit_does_not_trigger(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -4063,6 +4074,7 @@ def test_blocked_guard_does_not_trigger(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "protected_branch": {
                     "enabled": True,
@@ -4173,6 +4185,7 @@ def test_stop_only_enforced_at_stop(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "hooks": {
                 "stop": {"verify_requirements": True}
             },
@@ -4243,6 +4256,7 @@ def test_normal_blocking_still_blocks_pretooluse(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "commit_plan": {
                     "enabled": True,
@@ -7962,11 +7976,13 @@ def test_session_start_format_tiers(runner: TestRunner):
         # gating directive appended when >=1 requirement is unsatisfied.
         runner.test("Compact format is concise", len(compact) < 800,
                    f"Length: {len(compact)}")
-        # Gating directive present because both requirements are unsatisfied.
-        runner.test("Compact shows gating directive when unsatisfied",
-                   "do NOT attempt Edit/Write/MultiEdit first" in compact,
+        # Default enforcement is nudge, so the stand-down directive uses the
+        # non-blocking wording (never claims edits are blocked).
+        runner.test("Compact shows nudge directive by default",
+                   "Nudge (not a block)" in compact
+                   and "do NOT attempt Edit/Write/MultiEdit first" not in compact,
                    f"Got: {compact[:400]}")
-        runner.test("Compact gating directive flags req satisfy as user action",
+        runner.test("Compact nudge directive flags req satisfy as user action",
                    "USER action" in compact and "`req satisfy`" in compact,
                    f"Got: {compact[:400]}")
 
@@ -7978,9 +7994,28 @@ def test_session_start_format_tiers(runner: TestRunner):
                    "Missing Quick Start section")
         runner.test("Standard format shows triggers", "Edit" in standard or "git commit" in standard,
                    "Missing triggers")
-        runner.test("Standard shows gating directive when unsatisfied",
-                   "do NOT attempt Edit/Write/MultiEdit first" in standard,
+        runner.test("Standard shows nudge directive by default",
+                   "Nudge (not a block)" in standard
+                   and "do NOT attempt Edit/Write/MultiEdit first" not in standard,
                    f"Got: {standard[:600]}")
+
+        # Block mode: the stand-down directive switches to the blocking wording.
+        config_block = dict(config_content)
+        config_block["enforcement"] = "block"
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_block, f)
+        cfg_block = RequirementsConfig(tmpdir)
+        reqs_block = BranchRequirements("feature/test-formats", "test-session", tmpdir)
+        compact_block = session_start_module.format_compact_status(
+            reqs_block, cfg_block, "test-session", "feature/test-formats")
+        standard_block = session_start_module.format_standard_status(
+            reqs_block, cfg_block, "test-session", "feature/test-formats")
+        runner.test("Compact shows blocking directive in block mode",
+                   "do NOT attempt Edit/Write/MultiEdit first" in compact_block,
+                   f"Got: {compact_block[:400]}")
+        runner.test("Standard shows blocking directive in block mode",
+                   "do NOT attempt Edit/Write/MultiEdit first" in standard_block,
+                   f"Got: {standard_block[:600]}")
 
         # Test format_adaptive_status dispatches by briefing_format (source is ignored)
         config_compact = dict(config_content)
@@ -8122,7 +8157,7 @@ def test_session_start_pause_aware(runner: TestRunner):
         subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
         subprocess.run(["git", "checkout", "-b", "feature/pause-test"], cwd=tmpdir, capture_output=True)
         os.makedirs(f"{tmpdir}/.claude")
-        cfg = {"version": "1.0", "enabled": True, "inherit": False, "requirements": {
+        cfg = {"version": "1.0", "enabled": True, "inherit": False, "enforcement": "block", "requirements": {
             "commit_plan": {"enabled": True, "type": "blocking", "scope": "session",
                             "auto_resolve_skill": "requirements-framework:arch-review"}}}
         with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
@@ -13538,7 +13573,7 @@ def test_pretooluse_pause(runner: TestRunner):
         subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
         os.makedirs(f"{tmp}/.claude")
         config = {
-            "version": "1.0", "enabled": True, "inherit": False,
+            "version": "1.0", "enabled": True, "inherit": False, "enforcement": "block",
             "requirements": {
                 "commit_plan": {"enabled": True, "type": "blocking",
                                 "scope": "session", "trigger_tools": ["Edit", "Write"],
@@ -13607,7 +13642,7 @@ def test_stop_pause(runner: TestRunner):
         subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
         os.makedirs(f"{tmp}/.claude")
         config = {
-            "version": "1.0", "enabled": True, "inherit": False,
+            "version": "1.0", "enabled": True, "inherit": False, "enforcement": "block",
             "hooks": {"stop": {"verify_requirements": True}},
             "requirements": {
                 "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
