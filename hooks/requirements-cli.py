@@ -565,8 +565,10 @@ def cmd_satisfy(args) -> int:
                     out(dim(f"   Session: {session_id}"))
         else:
             # Blocking requirement - standard satisfaction
-            # Track bypass for plan-related requirements satisfied via CLI
-            plan_requirements = {'commit_plan', 'adr_reviewed', 'tdd_planned'}
+            # Track bypass for plan-related requirements satisfied via CLI. The
+            # old commit_plan/adr_reviewed/tdd_planned sub-gates collapsed into
+            # the single Validate-team gate plan_validated.
+            plan_requirements = {'plan_validated'}
             if req_name in plan_requirements:
                 method = 'cli_bypass'
                 req_metadata = metadata.copy() if metadata else {}

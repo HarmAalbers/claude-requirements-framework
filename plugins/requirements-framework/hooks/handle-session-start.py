@@ -255,8 +255,8 @@ def format_compact_status(reqs: BranchRequirements, config: RequirementsConfig,
     Example output:
         ## Requirements: 2/4 satisfied
 
-        **Run `/arch-review`** → `adr_reviewed`, `commit_plan`
-        **Fallback**: `req satisfy adr_reviewed commit_plan --session abc123`
+        **Run `/arch-review`** → `plan_validated`
+        **Fallback**: `req satisfy plan_validated --session abc123`
     """
     req_data = _get_requirement_status_data(reqs, config, session_id, branch)
 
@@ -303,7 +303,7 @@ def format_standard_status(reqs: BranchRequirements, config: RequirementsConfig,
         **Branch**: `master` @ `/project/path` | **Session**: `6d4487f4`
 
         ### Quick Start
-        🚀 **Run `/arch-review`** → satisfies `adr_reviewed`, `commit_plan`
+        🚀 **Run `/arch-review`** → satisfies `plan_validated`
 
         | Requirement | Status | Triggers | Resolve |
         ...

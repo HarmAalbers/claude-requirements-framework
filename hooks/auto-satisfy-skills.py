@@ -46,18 +46,24 @@ from hook_utils import extract_skill_name
 DEFAULT_SKILL_MAPPINGS: dict[str, str | list[str]] = {
     # Review commands
     'requirements-framework:pre-commit': 'pre_commit_review',
-    'requirements-framework:codex-review': 'codex_reviewer',
-    'requirements-framework:deep-review': 'pre_pr_review',
-    'requirements-framework:v3-review': 'pre_pr_review',
-    'requirements-framework:arch-review': ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'],
+    'requirements-framework:deep-review': 'pr_reviewed',
+    'requirements-framework:v3-review': 'pr_reviewed',
+    # Validate team: arch-review satisfies ONE gate (was 4).
+    'requirements-framework:arch-review': 'plan_validated',
     # Process skills (auto-satisfy a requirement when the skill completes)
     'requirements-framework:brainstorming': 'design_approved',
-    'requirements-framework:writing-plans': ['plan_written', 'commit_plan'],
-    'requirements-framework:test-driven-development': 'tdd_planned',
+    'requirements-framework:writing-plans': 'plan_written',
     'requirements-framework:systematic-debugging': 'debugging_systematic',
     'requirements-framework:requesting-code-review': 'pre_commit_review',
+    # Build gate: executing-plans flips implementation_done.
+    'requirements-framework:executing-plans': 'implementation_done',
+    # Verify gate (rename target of the old pre_push_verification).
+    'requirements-framework:verification-before-completion': 'verified',
+    # Removed (no longer gates): codex-review (now a conditional side-quest on
+    # the Validate/Review teams) and test-driven-development (build-time TDD is
+    # advisory; it no longer owns a gate).
     # Process skills with no auto-satisfy mapping (guidance-only):
-    # executing-plans, subagent-driven-development, finishing-a-development-branch,
+    # subagent-driven-development, finishing-a-development-branch,
     # using-git-worktrees, dispatching-parallel-agents, receiving-code-review,
     # using-requirements-framework, writing-skills
 }

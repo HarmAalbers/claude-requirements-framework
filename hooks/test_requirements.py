@@ -995,6 +995,33 @@ def test_config_module(runner: TestRunner):
         runner.test("Legacy get_attribute still works", attr_value == 'branch_size_calculator')
 
 
+def test_enforcement_mode(runner: TestRunner):
+    """enforcement() returns 'block' by default, 'nudge' when configured, fails safe on garbage."""
+    print("\n🎚️  Testing enforcement mode...")
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.claude", exist_ok=True)
+
+        # Default: no key -> block
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True}, f)
+        runner.test("enforcement defaults to block",
+                    RequirementsConfig(tmpdir).enforcement() == "block")
+
+        # Explicit nudge honored
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "enforcement": "nudge"}, f)
+        runner.test("enforcement reads nudge",
+                    RequirementsConfig(tmpdir).enforcement() == "nudge")
+
+        # Unknown value fails safe to block
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump({"version": "1.0", "enabled": True, "enforcement": "banana"}, f)
+        runner.test("enforcement unknown -> block",
+                    RequirementsConfig(tmpdir).enforcement() == "block")
+
+
 def test_project_has_config(runner: TestRunner):
     """project_has_config recognizes both requirements.yaml and requirements.local.yaml.
 
@@ -2225,6 +2252,63 @@ def test_hook_behavior(runner: TestRunner):
         runner.test("Skip env = pass", result.returncode == 0)
 
 
+def test_nudge_mode_allows(runner: TestRunner):
+    """enforcement: nudge -> a triggered-but-unsatisfied requirement ALLOWS + advises, never denies."""
+    print("\n🪶 Testing nudge-mode advisory...")
+    hook_path = Path(__file__).parent / "check-requirements.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "test-branch"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "enforcement": "nudge",
+            "requirements": {
+                "commit_plan": {
+                    "enabled": True,
+                    "scope": "session",
+                    "message": "Need commit plan!",
+                }
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": "nudgetest"}),
+            cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("nudge mode: exit 0", result.returncode == 0)
+        runner.test("nudge mode: never denies",
+                    '"permissionDecision": "deny"' not in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("nudge mode: surfaces advisory context",
+                    "additionalContext" in result.stdout and "commit" in result.stdout.lower(),
+                    f"Got: {result.stdout}")
+        # The advisory must NOT carry the block-mode 'stand down / gated' framing
+        # (it would make Claude stop working when nothing is actually blocked).
+        runner.test("nudge advisory not framed as blocked",
+                    "stand down" not in result.stdout.lower(),
+                    f"Got: {result.stdout}")
+
+        # Regression guard: block mode (default) MUST still deny.
+        config["enforcement"] = "block"
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+        result2 = subprocess.run(
+            ["python3", str(hook_path)],
+            input=json.dumps({"tool_name": "Edit", "session_id": "blocktest"}),
+            cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("block mode: still denies",
+                    '"permissionDecision": "deny"' in result2.stdout,
+                    f"Got: {result2.stdout}")
+
+
 def test_checklist_rendering(runner: TestRunner):
     """Test checklist rendering in hook output."""
     print("\n📦 Testing checklist rendering...")
@@ -2436,6 +2520,86 @@ def test_lazy_ladder_marker(runner: TestRunner):
     runner.test("shown fail-open on bad input",
                 ruleset_marker.shown(sid, None) is False,
                 f"Got: {ruleset_marker.shown(sid, None)}")
+
+
+def test_phase_nudge(runner: TestRunner):
+    """Phase-agnostic nudge: directive names skill+phase; dedup is per (session, phase)."""
+    print("\n🧭 Testing phase nudge helpers...")
+    import tempfile
+    import subprocess
+    from brainstorm import (
+        phase_directive,
+        phase_nudge_shown,
+        mark_phase_nudge_shown,
+    )
+
+    txt = phase_directive("plan-write", "requirements-framework:writing-plans")
+    runner.test("phase directive names skill", "/writing-plans" in txt)
+    runner.test("phase directive names phase", "plan-write" in txt)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        runner.test("phase nudge not shown initially",
+                    phase_nudge_shown("sess1", tmp, "plan-write") is False)
+        mark_phase_nudge_shown("sess1", tmp, "plan-write")
+        runner.test("plan-write marked after mark",
+                    phase_nudge_shown("sess1", tmp, "plan-write") is True)
+        # Dedup is per-phase: marking plan-write does NOT silence a later phase.
+        runner.test("review still unmarked (per-phase dedup)",
+                    phase_nudge_shown("sess1", tmp, "review") is False)
+
+    # Fail-open: a bogus project_dir must never raise, just return False.
+    runner.test("phase nudge fail-open on bad input",
+                phase_nudge_shown("sess1", None, "plan-write") is False)
+
+
+def test_conductor_surfaces_loop_and_conditionals(runner: TestRunner):
+    """Conductor nudge surfaces the Build loop, the team note, and conditionals."""
+    print("\n🧭 Testing conductor loop/conditional surfacing...")
+    from brainstorm import phase_directive
+
+    # Build (spine + loop): the directive surfaces the per-commit loop.
+    build_cfg = {
+        "name": "build", "type": "spine", "gate": "implementation_done",
+        "skill": "requirements-framework:executing-plans",
+        "loop": {"gate": "pre_commit_review",
+                 "skill": "requirements-framework:pre-commit", "on": "commit"},
+    }
+    build_txt = phase_directive(
+        "build", "requirements-framework:executing-plans", build_cfg)
+    runner.test("build directive surfaces the pre-commit loop",
+                "/pre-commit" in build_txt and "before each commit" in build_txt,
+                f"Got: {build_txt!r}")
+
+    # Validate (team + conditionals): team note + conditional side-quests.
+    validate_cfg = {
+        "name": "validate", "type": "team", "gate": "plan_validated",
+        "skill": "requirements-framework:arch-review",
+        "conditionals": ["requirements-framework:codex-review"],
+    }
+    val_txt = phase_directive(
+        "validate", "requirements-framework:arch-review", validate_cfg)
+    runner.test("validate directive notes it runs a review team",
+                "review team" in val_txt, f"Got: {val_txt!r}")
+    runner.test("validate directive lists conditional side-quests",
+                "/codex-review" in val_txt and "Available here" in val_txt,
+                f"Got: {val_txt!r}")
+
+    # Plain spine phase: no loop/team/conditional noise.
+    plan_cfg = {"name": "plan", "type": "spine", "gate": "plan_written",
+                "skill": "requirements-framework:writing-plans"}
+    plan_txt = phase_directive(
+        "plan", "requirements-framework:writing-plans", plan_cfg)
+    runner.test("plain spine directive has no loop/team/conditional lines",
+                "Loop:" not in plan_txt and "review team" not in plan_txt
+                and "Available here" not in plan_txt,
+                f"Got: {plan_txt!r}")
+
+    # Backward-compat: no phase_cfg → base directive still renders.
+    base_txt = phase_directive("plan", "requirements-framework:writing-plans")
+    runner.test("phase_directive backward-compatible without phase_cfg",
+                "/writing-plans" in base_txt and "Next Step" in base_txt,
+                f"Got: {base_txt!r}")
 
 
 def test_subagent_ladder(runner: TestRunner):
@@ -3146,6 +3310,50 @@ def test_triggered_requirements(runner: TestRunner):
         runner.test("Both triggered and satisfied",
                    reqs5.is_triggered("independent_req", "session") and
                    reqs5.is_satisfied("independent_req", "session"))
+
+
+def test_stop_hook_nudge_mode(runner: TestRunner):
+    """enforcement: nudge -> Stop hook never blocks, even with a triggered-but-unsatisfied requirement."""
+    print("\n🪶 Testing Stop hook nudge mode...")
+    hook_path = Path(__file__).parent / "handle-stop.py"
+    if not hook_path.exists():
+        runner.test("Stop hook exists (nudge)", False, "Hook file not implemented yet")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
+        os.makedirs(f"{tmpdir}/.claude")
+        config = {
+            "version": "1.0",
+            "enabled": True,
+            "inherit": False,
+            "enforcement": "nudge",
+            "hooks": {"stop": {"verify_requirements": True}},
+            "requirements": {
+                "commit_plan": {"enabled": True, "scope": "session", "message": "Plan!"}
+            },
+        }
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config, f)
+
+        from requirements import BranchRequirements
+        test_session_id = "nudgestop1"
+        reqs = BranchRequirements("feature/test", test_session_id, tmpdir)
+        reqs.mark_triggered("commit_plan", "session")
+
+        stop_input = json.dumps({
+            "hook_event_name": "Stop", "stop_hook_active": False,
+            "session_id": test_session_id,
+        })
+        result = subprocess.run(
+            ["python3", str(hook_path)],
+            input=stop_input, cwd=tmpdir, capture_output=True, text=True,
+        )
+        runner.test("nudge mode: stop not blocked",
+                    '"decision": "block"' not in result.stdout,
+                    f"Got: {result.stdout}")
+        runner.test("nudge mode: stop exit 0", result.returncode == 0)
 
 
 def test_stop_hook_triggered_only(runner: TestRunner):
@@ -5280,7 +5488,7 @@ def test_cli_init_command(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("init --preview runs", result.returncode == 0, result.stderr)
-        runner.test("init --preview shows config", "commit_plan" in result.stdout, result.stdout[:200])
+        runner.test("init --preview shows config", "plan_validated" in result.stdout, result.stdout[:200])
         # Default context is now 'local' → .claude/requirements.local.yaml (matches /req-init)
         config_file = Path(tmpdir) / '.claude' / 'requirements.local.yaml'
         project_file = Path(tmpdir) / '.claude' / 'requirements.yaml'
@@ -5301,7 +5509,7 @@ def test_cli_init_command(runner: TestRunner):
             content = config_file.read_text()
             runner.test("config has version", 'version' in content)
             runner.test("config has enabled", 'enabled' in content)
-            runner.test("config has commit_plan", 'commit_plan' in content)
+            runner.test("config has plan_validated", 'plan_validated' in content)
 
         # Test init warns on existing config
         result = subprocess.run(
@@ -5594,7 +5802,7 @@ def test_init_presets_module(runner: TestRunner):
 
     relaxed = get_preset('relaxed')
     runner.test("relaxed has requirements", 'requirements' in relaxed)
-    runner.test("relaxed has commit_plan", 'commit_plan' in relaxed.get('requirements', {}))
+    runner.test("relaxed has plan_validated", 'plan_validated' in relaxed.get('requirements', {}))
 
     minimal = get_preset('minimal')
     runner.test("minimal has empty requirements", len(minimal.get('requirements', {})) == 0)
@@ -5607,11 +5815,11 @@ def test_init_presets_module(runner: TestRunner):
     config = generate_config('relaxed')
     runner.test("generate_config adds version", config.get('version') == '1.0')
     runner.test("generate_config adds enabled", config.get('enabled') is True)
-    runner.test("generate_config preserves requirements", 'commit_plan' in config.get('requirements', {}))
+    runner.test("generate_config preserves requirements", 'plan_validated' in config.get('requirements', {}))
 
     # Test generate_config with customizations
-    config = generate_config('relaxed', {'requirements': {'commit_plan': {'scope': 'branch'}}})
-    scope = config.get('requirements', {}).get('commit_plan', {}).get('scope')
+    config = generate_config('relaxed', {'requirements': {'plan_validated': {'scope': 'branch'}}})
+    scope = config.get('requirements', {}).get('plan_validated', {}).get('scope')
     runner.test("generate_config merges customizations", scope == 'branch', f"Got: {scope}")
 
     # Test config_to_yaml returns string
@@ -5623,27 +5831,26 @@ def test_init_presets_module(runner: TestRunner):
     # Test strict preset has expected requirements
     strict_config = generate_config('strict')
     strict_reqs = strict_config.get('requirements', {})
-    runner.test("strict has commit_plan", 'commit_plan' in strict_reqs)
+    runner.test("strict has plan_validated", 'plan_validated' in strict_reqs)
     runner.test("strict has protected_branch", 'protected_branch' in strict_reqs)
 
     # Test requirement structure
-    commit_plan = strict_reqs.get('commit_plan', {})
-    runner.test("commit_plan has enabled", 'enabled' in commit_plan)
-    runner.test("commit_plan has type", 'type' in commit_plan)
-    runner.test("commit_plan has scope", 'scope' in commit_plan)
-    runner.test("commit_plan has trigger_tools", 'trigger_tools' in commit_plan)
-    runner.test("commit_plan has message", 'message' in commit_plan)
+    plan_validated = strict_reqs.get('plan_validated', {})
+    runner.test("plan_validated has enabled", 'enabled' in plan_validated)
+    runner.test("plan_validated has type", 'type' in plan_validated)
+    runner.test("plan_validated has scope", 'scope' in plan_validated)
+    runner.test("plan_validated has trigger_tools", 'trigger_tools' in plan_validated)
+    runner.test("plan_validated has message", 'message' in plan_validated)
 
     # Test advanced preset - should have all 6+ requirement types
     advanced = get_preset('advanced')
     advanced_reqs = advanced.get('requirements', {})
     runner.test("advanced has requirements", len(advanced_reqs) > 0)
-    runner.test("advanced has commit_plan", 'commit_plan' in advanced_reqs)
-    runner.test("advanced has adr_reviewed", 'adr_reviewed' in advanced_reqs)
+    runner.test("advanced has plan_validated", 'plan_validated' in advanced_reqs)
     runner.test("advanced has protected_branch", 'protected_branch' in advanced_reqs)
     runner.test("advanced has branch_size_limit", 'branch_size_limit' in advanced_reqs)
     runner.test("advanced has pre_commit_review", 'pre_commit_review' in advanced_reqs)
-    runner.test("advanced has pre_pr_review", 'pre_pr_review' in advanced_reqs)
+    runner.test("advanced has pr_reviewed", 'pr_reviewed' in advanced_reqs)
     runner.test("advanced has github_ticket", 'github_ticket' in advanced_reqs)
 
     # Test advanced preset has hooks config
@@ -5740,34 +5947,33 @@ def test_feature_selector(runner: TestRunner):
 
     # Test FEATURES catalog exists
     runner.test("FEATURES is dict", isinstance(FEATURES, dict))
-    runner.test("FEATURES has commit_plan", 'commit_plan' in FEATURES)
-    runner.test("FEATURES has adr_reviewed", 'adr_reviewed' in FEATURES)
+    runner.test("FEATURES has plan_validated", 'plan_validated' in FEATURES)
     runner.test("FEATURES has protected_branch", 'protected_branch' in FEATURES)
     runner.test("FEATURES has branch_size_limit", 'branch_size_limit' in FEATURES)
     runner.test("FEATURES has pre_commit_review", 'pre_commit_review' in FEATURES)
-    runner.test("FEATURES has pre_pr_review", 'pre_pr_review' in FEATURES)
+    runner.test("FEATURES has pr_reviewed", 'pr_reviewed' in FEATURES)
 
     # Test feature structure
-    commit_plan_feature = FEATURES.get('commit_plan', {})
-    runner.test("feature has name", 'name' in commit_plan_feature)
-    runner.test("feature has description", 'description' in commit_plan_feature)
-    runner.test("feature has category", 'category' in commit_plan_feature)
+    plan_validated_feature = FEATURES.get('plan_validated', {})
+    runner.test("feature has name", 'name' in plan_validated_feature)
+    runner.test("feature has description", 'description' in plan_validated_feature)
+    runner.test("feature has category", 'category' in plan_validated_feature)
 
     # Test FeatureSelector.build_config_from_features
     selector = FeatureSelector()
 
     # Test with valid features
-    config = selector.build_config_from_features(['commit_plan', 'adr_reviewed'], context='project')
+    config = selector.build_config_from_features(['plan_validated', 'pr_reviewed'], context='project')
     runner.test("build_config returns dict", isinstance(config, dict))
     runner.test("build_config has version", config.get('version') == '1.0')
     runner.test("build_config has enabled", config.get('enabled') is True)
     runner.test("build_config project has inherit", config.get('inherit') is True)
     runner.test("build_config has requirements", 'requirements' in config)
-    runner.test("build_config includes commit_plan", 'commit_plan' in config.get('requirements', {}))
-    runner.test("build_config includes adr_reviewed", 'adr_reviewed' in config.get('requirements', {}))
+    runner.test("build_config includes plan_validated", 'plan_validated' in config.get('requirements', {}))
+    runner.test("build_config includes pr_reviewed", 'pr_reviewed' in config.get('requirements', {}))
 
     # Test with global context (no inherit)
-    config = selector.build_config_from_features(['commit_plan'], context='global')
+    config = selector.build_config_from_features(['plan_validated'], context='global')
     runner.test("build_config global has no inherit", 'inherit' not in config)
 
     # Test with empty features list
@@ -8505,32 +8711,32 @@ def test_feature_catalog_module(runner: TestRunner):
                len(features) > 0)
 
     # Test 2: Known features exist
-    runner.test("commit_plan feature exists",
-               'commit_plan' in features)
+    runner.test("plan_validated feature exists",
+               'plan_validated' in features)
     runner.test("session_learning feature exists",
                'session_learning' in features)
     runner.test("protected_branch feature exists",
                'protected_branch' in features)
 
     # Test 3: Feature metadata structure
-    commit_plan = features.get('commit_plan', {})
+    plan_validated = features.get('plan_validated', {})
     runner.test("Feature has name",
-               'name' in commit_plan)
+               'name' in plan_validated)
     runner.test("Feature has category",
-               'category' in commit_plan)
+               'category' in plan_validated)
     runner.test("Feature has config_path",
-               'config_path' in commit_plan)
+               'config_path' in plan_validated)
     runner.test("Feature has description",
-               'description' in commit_plan)
+               'description' in plan_validated)
     runner.test("Feature has example_yaml",
-               'example_yaml' in commit_plan)
+               'example_yaml' in plan_validated)
 
     # Test 4: get_features_by_category
     req_features = get_features_by_category(CATEGORY_REQUIREMENTS)
     runner.test("get_features_by_category returns dict",
                isinstance(req_features, dict))
-    runner.test("Requirements category has commit_plan",
-               'commit_plan' in req_features)
+    runner.test("Requirements category has plan_validated",
+               'plan_validated' in req_features)
     runner.test("Requirements category doesn't have session_learning",
                'session_learning' not in req_features)
 
@@ -8545,8 +8751,8 @@ def test_feature_catalog_module(runner: TestRunner):
     # Test 5: detect_configured_features with sample config
     sample_config = {
         'requirements': {
-            'commit_plan': {'enabled': True},
-            'adr_reviewed': {'enabled': False},
+            'plan_validated': {'enabled': True},
+            'pr_reviewed': {'enabled': False},
         },
         'hooks': {
             'session_learning': {'enabled': True}
@@ -8555,10 +8761,10 @@ def test_feature_catalog_module(runner: TestRunner):
     configured = detect_configured_features(sample_config)
     runner.test("detect_configured_features returns dict",
                isinstance(configured, dict))
-    runner.test("commit_plan detected as enabled",
-               configured.get('commit_plan') is True)
-    runner.test("adr_reviewed detected as disabled",
-               configured.get('adr_reviewed') is False)
+    runner.test("plan_validated detected as enabled",
+               configured.get('plan_validated') is True)
+    runner.test("pr_reviewed detected as disabled",
+               configured.get('pr_reviewed') is False)
     runner.test("session_learning detected as enabled",
                configured.get('session_learning') is True)
 
@@ -8566,8 +8772,8 @@ def test_feature_catalog_module(runner: TestRunner):
     missing = get_missing_features(sample_config)
     runner.test("get_missing_features returns list",
                isinstance(missing, list))
-    runner.test("Missing features doesn't include commit_plan",
-               'commit_plan' not in missing)
+    runner.test("Missing features doesn't include plan_validated",
+               'plan_validated' not in missing)
     runner.test("Missing features includes protected_branch",
                'protected_branch' in missing)
 
@@ -8575,12 +8781,12 @@ def test_feature_catalog_module(runner: TestRunner):
     enabled = get_enabled_features(sample_config)
     runner.test("get_enabled_features returns list",
                isinstance(enabled, list))
-    runner.test("Enabled features includes commit_plan",
-               'commit_plan' in enabled)
+    runner.test("Enabled features includes plan_validated",
+               'plan_validated' in enabled)
     runner.test("Enabled features includes session_learning",
                'session_learning' in enabled)
-    runner.test("Enabled features doesn't include adr_reviewed",
-               'adr_reviewed' not in enabled)
+    runner.test("Enabled features doesn't include pr_reviewed",
+               'pr_reviewed' not in enabled)
 
     # Test 8: get_feature_yaml
     yaml_snippet = get_feature_yaml('session_learning')
@@ -8597,11 +8803,11 @@ def test_feature_catalog_module(runner: TestRunner):
                unknown is None)
 
     # Test 10: get_feature_info
-    info = get_feature_info('commit_plan')
+    info = get_feature_info('plan_validated')
     runner.test("get_feature_info returns dict",
                isinstance(info, dict))
     runner.test("Info has name",
-               info.get('name') == "Commit Planning")
+               info.get('name') == "Plan Validation (Validate team)")
 
     # Test 11: get_feature_info for unknown
     info = get_feature_info('nonexistent')
@@ -8615,15 +8821,15 @@ def test_feature_catalog_module(runner: TestRunner):
     # session_learning was introduced in 1.1
     runner.test("session_learning is new since 1.0",
                'session_learning' in new_features)
-    runner.test("commit_plan is not new since 1.0",
-               'commit_plan' not in new_features)
+    runner.test("protected_branch is not new since 1.0",
+               'protected_branch' not in new_features)
 
     # Test 13: get_new_features_since with later versions
     new_features = get_new_features_since("1.1")
     runner.test("session_learning is not new since 1.1",
                'session_learning' not in new_features)
-    runner.test("tdd_planned is new since 1.1",
-               'tdd_planned' in new_features)
+    runner.test("plan_validated is new since 1.1",
+               'plan_validated' in new_features)
 
 
 def test_feature_catalog_project_sync(runner: TestRunner):
@@ -10194,9 +10400,10 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     process_skills_with_mappings = [
         'requirements-framework:brainstorming',
         'requirements-framework:writing-plans',
-        'requirements-framework:test-driven-development',
         'requirements-framework:systematic-debugging',
         'requirements-framework:requesting-code-review',
+        'requirements-framework:executing-plans',
+        'requirements-framework:verification-before-completion',
     ]
 
     for skill in process_skills_with_mappings:
@@ -10206,18 +10413,19 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     # Test: Specific mappings are correct
     runner.test("brainstorming maps to design_approved",
                mappings.get('requirements-framework:brainstorming') == 'design_approved')
-    runner.test("writing-plans maps to plan_written + commit_plan",
-               mappings.get('requirements-framework:writing-plans') == ['plan_written', 'commit_plan'])
-    runner.test("test-driven-development maps to tdd_planned",
-               mappings.get('requirements-framework:test-driven-development') == 'tdd_planned')
+    runner.test("writing-plans maps to plan_written",
+               mappings.get('requirements-framework:writing-plans') == 'plan_written')
     runner.test("requesting-code-review maps to pre_commit_review",
                mappings.get('requirements-framework:requesting-code-review') == 'pre_commit_review')
     runner.test("systematic-debugging maps to debugging_systematic",
                mappings.get('requirements-framework:systematic-debugging') == 'debugging_systematic')
+    runner.test("executing-plans maps to implementation_done",
+               mappings.get('requirements-framework:executing-plans') == 'implementation_done')
+    runner.test("verification-before-completion maps to verified",
+               mappings.get('requirements-framework:verification-before-completion') == 'verified')
 
     # Test: Skills with no mapping are NOT in the dict (removed as dead entries)
     no_mapping_skills = [
-        'requirements-framework:executing-plans',
         'requirements-framework:subagent-driven-development',
         'requirements-framework:finishing-a-development-branch',
         'requirements-framework:using-git-worktrees',
@@ -10225,6 +10433,8 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
         'requirements-framework:receiving-code-review',
         'requirements-framework:using-requirements-framework',
         'requirements-framework:writing-skills',
+        'requirements-framework:codex-review',
+        'requirements-framework:test-driven-development',
     ]
     for skill in no_mapping_skills:
         runner.test(f"{skill.split(':')[1]} not in mappings (no auto-satisfy)",
@@ -10233,8 +10443,12 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
     # Test: Original review mappings still present
     runner.test("pre-commit mapping still present",
                mappings.get('requirements-framework:pre-commit') == 'pre_commit_review')
-    runner.test("arch-review mapping still present",
-               mappings.get('requirements-framework:arch-review') == ['commit_plan', 'adr_reviewed', 'tdd_planned', 'solid_reviewed'])
+    runner.test("arch-review maps to plan_validated (one team gate)",
+               mappings.get('requirements-framework:arch-review') == 'plan_validated')
+    runner.test("deep-review maps to pr_reviewed",
+               mappings.get('requirements-framework:deep-review') == 'pr_reviewed')
+    runner.test("v3-review maps to pr_reviewed",
+               mappings.get('requirements-framework:v3-review') == 'pr_reviewed')
 
     # Test: Deprecated /plan-review mapping removed in plugin v4.0.0
     runner.test("plan-review mapping removed in 4.0.0",
@@ -11191,6 +11405,18 @@ def test_prompt_submit_brainstorm_nudge(runner: TestRunner):
         runner.test("Plan-enter emits once in fresh session",
                    "Brainstorm Before Planning" in ctx7,
                    f"Got: {result7.stdout[:300]}")
+
+        # 8. Generalized chain: with design_approved satisfied, the nudge ADVANCES
+        #    to the next phase's skill (/writing-plans), not brainstorming. Proves
+        #    the phase nudge follows derive_phase across the whole workflow.
+        from requirements import BranchRequirements as _BR8
+        reqs8 = _BR8("feature/test", "ps-8", tmpdir)
+        reqs8.satisfy("design_approved", "session")
+        result8 = run_hook(hook_path, prompt_input("ps-8", substantive), tmpdir)
+        ctx8 = extract_hook_context(result8.stdout)
+        runner.test("Phase nudge advances to writing-plans after design",
+                   "/writing-plans" in ctx8 and "Brainstorm Before Planning" not in ctx8,
+                   f"Got: {result8.stdout[:300]}")
 
     # Default config value
     from config import RequirementsConfig
@@ -12225,31 +12451,32 @@ def test_derive_phase(runner: TestRunner):
             f.write_text(json.dumps({"requirements": reqs}))
             return f
 
-        runner.test("design_approved sat → plan-write",
-                    derive_phase(_state({"design_approved": "session"})) == "plan-write")
+        runner.test("design_approved sat → plan",
+                    derive_phase(_state({"design_approved": "session"})) == "plan")
 
-        runner.test("plan-write sat → plan-validate",
+        runner.test("plan_written sat → validate",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "branch",
-                    })) == "plan-validate")
+                    })) == "validate")
 
-        # implement is gateless (advisory) → transparent to derivation: with
-        # solid_reviewed satisfied and pre_pr_review not, derivation skips
-        # implement and lands on review.
-        runner.test("plan-validate sat → review (implement gateless)",
+        # build is now GATED (implementation_done): with plan_validated satisfied
+        # and implementation_done not, derivation lands on build.
+        runner.test("plan_validated sat → build",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "session",
-                        "solid_reviewed": "session",
-                    })) == "review")
+                        "plan_validated": "session",
+                    })) == "build")
 
         runner.test("everything sat → ship",
                     derive_phase(_state({
                         "design_approved": "session",
                         "plan_written": "session",
-                        "solid_reviewed": "session",
-                        "pre_pr_review": "branch",
+                        "plan_validated": "session",
+                        "implementation_done": "session",
+                        "pr_reviewed": "session",
+                        "verified": "branch",
                     })) == SHIP_PHASE)
 
         # Mixed: one session satisfied, others not → still counts as satisfied
@@ -12261,7 +12488,7 @@ def test_derive_phase(runner: TestRunner):
             }},
         }}))
         runner.test("any-session-satisfied counts as satisfied",
-                    derive_phase(mixed) == "plan-write")
+                    derive_phase(mixed) == "plan")
 
         # Schema robustness: malformed structures should fail-open, not raise.
         for label, content in [
@@ -12281,9 +12508,13 @@ def test_derive_phase(runner: TestRunner):
 _WORKFLOW_DEFAULT_GATES = {
     "design_approved": {"enabled": True},
     "plan_written": {"enabled": True},
-    "solid_reviewed": {"enabled": True},
-    # Retained as an arbitrary enabled-requirement in the fixture pool used by the
-    # custom-workflow tests below; the product no longer ships it as a gate.
+    "plan_validated": {"enabled": True},
+    "implementation_done": {"enabled": True},
+    "pr_reviewed": {"enabled": True},
+    "verified": {"enabled": True},
+    # Arbitrary enabled-requirements retained in the fixture pool for the
+    # custom-workflow tests below (reorder/add/custom); the product no longer
+    # ships them as default gates.
     "verification_evidence": {"enabled": True},
     "pre_pr_review": {"enabled": True},
 }
@@ -12316,18 +12547,18 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("no workflow → default phase names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement",
-                     "review", "refactor", "ship"])
+                    ["design", "plan", "validate", "build",
+                     "review", "verify", "ship"])
         runner.test("no workflow → default gates",
                     [p["gate"] for p in wf["phases"]] ==
-                    ["design_approved", "plan_written", "solid_reviewed",
-                     None, "pre_pr_review", None, None])
+                    ["design_approved", "plan_written", "plan_validated",
+                     "implementation_done", "pr_reviewed", "verified", None])
         runner.test("no workflow → every default phase carries a description",
                     all(isinstance(p.get("description"), str) and p["description"]
                         for p in wf["phases"]))
-        runner.test("no workflow → gateless refactor/ship at the tail",
+        runner.test("no workflow → only ship is gateless at the tail",
                     [(p["name"], p["gate"]) for p in wf["phases"][-2:]] ==
-                    [("refactor", None), ("ship", None)])
+                    [("verify", "verified"), ("ship", None)])
         runner.test("no workflow → resolver skill names",
                     wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
                     and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
@@ -12367,8 +12598,8 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("undefined gate → workflow dropped → default names",
                     [p["name"] for p in wf["phases"]] ==
-                    ["design", "plan-write", "plan-validate", "implement",
-                     "review", "refactor", "ship"])
+                    ["design", "plan", "validate", "build",
+                     "review", "verify", "ship"])
         runner.test("undefined gate → validation error recorded",
                     any("workflow" in e for e in config.get_validation_errors()))
 
@@ -12413,11 +12644,15 @@ def test_derive_phase_workflow(runner: TestRunner):
     # Zero-config: same transitions as today, but resolved through config.
     transitions = [
         ([], "design"),
-        (["design_approved"], "plan-write"),
-        (["design_approved", "plan_written"], "plan-validate"),
-        (["design_approved", "plan_written", "solid_reviewed"], "review"),
-        (["design_approved", "plan_written", "solid_reviewed",
-          "pre_pr_review"], "ship"),
+        (["design_approved"], "plan"),
+        (["design_approved", "plan_written"], "validate"),
+        (["design_approved", "plan_written", "plan_validated"], "build"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done"], "review"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done", "pr_reviewed"], "verify"),
+        (["design_approved", "plan_written", "plan_validated",
+          "implementation_done", "pr_reviewed", "verified"], "ship"),
     ]
     for satisfied, expected in transitions:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -12466,8 +12701,8 @@ def test_derive_phase_workflow(runner: TestRunner):
     with tempfile.TemporaryDirectory() as tmpdir:
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES, ["design_approved"],
                     workflow=bad_gate)
-        runner.test("fail-open: undefined gate → default order (plan-write)",
-                    derive_phase(sp) == "plan-write")
+        runner.test("fail-open: undefined gate → default order (plan)",
+                    derive_phase(sp) == "plan")
 
     # Fail-open: phases not a list → dropped → default order.
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -12511,18 +12746,18 @@ def test_derive_phase_with_skill(runner: TestRunner):
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
                     ["design_approved", "plan_written"])
         phase, skill = derive_phase_and_skill(sp)
-        runner.test("with-skill: plan-validate → arch-review",
-                    phase == "plan-validate"
+        runner.test("with-skill: validate → arch-review",
+                    phase == "validate"
                     and skill == "requirements-framework:arch-review")
 
-    # Ship: every gate satisfied → ship phase, empty skill (no resolver).
+    # Ship: every gate satisfied → ship phase, with resolver skill.
     with tempfile.TemporaryDirectory() as tmpdir:
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
-                    ["design_approved", "plan_written", "solid_reviewed",
-                     "verification_evidence", "pre_pr_review"])
+                    ["design_approved", "plan_written", "plan_validated",
+                     "implementation_done", "pr_reviewed", "verified"])
         phase, skill = derive_phase_and_skill(sp)
-        runner.test("with-skill: ship → empty skill",
-                    phase == "ship" and skill == "")
+        runner.test("with-skill: ship → finishing-a-development-branch",
+                    phase == "ship" and skill == "requirements-framework:finishing-a-development-branch")
 
     # Custom workflow whose FIRST phase is review/deep-review (the sanity case):
     # main() prints exactly "<phase>\t<skill>".
@@ -12608,8 +12843,7 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
                         for p in wf["phases"]))
         design = next(p for p in wf["phases"] if p["name"] == "design")
         runner.test("design description ported from the prompt menu",
-                    design["description"] ==
-                    "design phase: requirements unclear, need exploration")
+                    design["description"] == "design: explore the problem")
 
     # WorkflowValidator: description is OPTIONAL — a phase WITH one and a phase
     # WITHOUT one both validate; a non-string description is rejected.
@@ -12645,13 +12879,13 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
         runner.test("derive_phase unchanged: no gates → design",
                     derive_phase(_state(tmpdir, [])) == "design")
     with tempfile.TemporaryDirectory() as tmpdir:
-        runner.test("derive_phase unchanged: design done → plan-write",
-                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan-write")
+        runner.test("derive_phase unchanged: design done → plan",
+                    derive_phase(_state(tmpdir, ["design_approved"])) == "plan")
     with tempfile.TemporaryDirectory() as tmpdir:
         runner.test("derive_phase unchanged: all gates → ship",
                     derive_phase(_state(tmpdir, [
-                        "design_approved", "plan_written", "solid_reviewed",
-                        "verification_evidence", "pre_pr_review"])) == "ship")
+                        "design_approved", "plan_written", "plan_validated",
+                        "implementation_done", "pr_reviewed", "verified"])) == "ship")
 
 
 def test_supervisor_config_driven(runner: TestRunner):
@@ -12714,7 +12948,7 @@ def test_supervisor_config_driven(runner: TestRunner):
     default_names = {p["name"] for p in default_phases}
     runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (7)",
                 len(default_phases) == 7
-                and {"design", "refactor", "ship"} <= default_names)
+                and {"design", "validate", "ship"} <= default_names)
     runner.test("clamp: 'ship' is routable under the default vocab",
                 _resolve_target("ship", default_phases, "design") == "ship")
 
@@ -12817,7 +13051,7 @@ def test_statusline_script_end_to_end(runner: TestRunner):
         state_dir = repo / ".git" / "requirements"
         state_dir.mkdir(parents=True, exist_ok=True)
         # design_approved satisfied → phase advances past "design" to
-        # "plan-write"; one triggered-unsatisfied req → count == 1. Both differ
+        # "plan"; one triggered-unsatisfied req → count == 1. Both differ
         # from the placeholder ([design] / [? req]).
         (state_dir / "wip.json").write_text(json.dumps({"requirements": {
             "design_approved": {"satisfied": True},
@@ -12859,7 +13093,7 @@ def test_statusline_script_end_to_end(runner: TestRunner):
             runner.test(f"{label}: no traceback leaked to stderr",
                         "Traceback" not in proc.stderr, f"stderr={proc.stderr!r}")
             runner.test(f"{label}: phase is real, not [design]",
-                        "[plan-write]" in out, f"Got: {out!r}")
+                        "[plan]" in out, f"Got: {out!r}")
             runner.test(f"{label}: req count numeric, not '?'",
                         "[? req" not in out and "[1 req" in out, f"Got: {out!r}")
 
@@ -13480,12 +13714,15 @@ def main():
     test_not_in_git_repo_fallback(runner)
     test_state_storage_module(runner)
     test_config_module(runner)
+    test_enforcement_mode(runner)
     test_project_has_config(runner)
     test_bootstrap_reexec_plan(runner)
     test_lazy_dev_ruleset(runner)
     test_lazy_dev_flag_default(runner)
     test_session_start_ladder_block(runner)
     test_lazy_ladder_marker(runner)
+    test_phase_nudge(runner)
+    test_conductor_surfaces_loop_and_conditionals(runner)
     test_subagent_ladder(runner)
     test_write_local_config(runner)
     test_write_project_config(runner)
@@ -13504,6 +13741,7 @@ def main():
     test_enhanced_doctor_check_functions(runner)
     test_doctor_plugin_hooks_checks(runner)
     test_hook_behavior(runner)
+    test_nudge_mode_allows(runner)
     test_checklist_rendering(runner)
 
     # New hook tests
@@ -13512,6 +13750,7 @@ def main():
     test_session_start_hook(runner)
     test_session_start_json_format(runner)
     test_stop_hook(runner)
+    test_stop_hook_nudge_mode(runner)
     test_session_end_hook(runner)
     test_session_end_finalizes_metrics(runner)
     test_session_end_no_synthetic_metrics(runner)

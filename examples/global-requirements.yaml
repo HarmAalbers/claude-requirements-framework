@@ -10,31 +10,36 @@ enabled: true
 
 # Default requirements (disabled by default - projects opt-in)
 requirements:
-  # Commit Plan Requirement
-  # Ensures a commit plan exists before making code changes
-  commit_plan:
+  # Validate Team Gate
+  # The architecture-review team (adr-guardian, solid-reviewer, tdd-validator,
+  # commit-planner, refactor-advisor, backward-compatibility-checker) satisfies
+  # ONE gate on completion. Replaces the old commit_plan / adr_reviewed /
+  # tdd_planned / solid_reviewed sub-gates (all owned by arch-review).
+  plan_validated:
     enabled: true
     type: blocking
     scope: session  # Resets each session (forces daily planning)
-    description: "Ensures an atomic commit strategy exists before implementation."
+    description: "Ensures the plan passed the architecture-review team (ADR alignment, SOLID, TDD-readiness, commit plan)."
     trigger_tools:
       - Edit
       - Write
       - MultiEdit
     auto_resolve_skill: "requirements-framework:arch-review"
+    satisfied_by_skill: 'requirements-framework:arch-review'
     message: |
-      ## Blocked: commit_plan
+      ## Blocked: plan_validated
 
       **Execute**: `/{auto_resolve_skill}`
 
-      Team-based architecture review with commit planning and cross-validation.
+      Team-based architecture review: ADR alignment, SOLID, TDD-readiness, and commit planning, cross-validated.
 
       ---
-      Fallback: `req satisfy commit_plan`
+      Fallback: `req satisfy plan_validated`
     checklist:
-      - "Identified the changes needed for this feature/fix"
-      - "Determined atomic commit boundaries (each commit is reviewable)"
-      - "Planned commit sequence and dependencies"
+      - "Plan reviewed against ADRs"
+      - "SOLID principles checked (Single Responsibility, Open/Closed, Dependency Inversion)"
+      - "TDD strategy documented (tests-first per feature)"
+      - "Atomic commit boundaries planned"
 
   # GitHub Ticket Requirement
   # Links work to GitHub issue tracking (disabled by default - opt-in)
@@ -59,83 +64,6 @@ requirements:
     checklist:
       - "Created GitHub issue for this work"
       - "Issue number linked to branch"
-
-  # ADR Review Requirement
-  # Ensures architectural decisions are reviewed before code changes
-  adr_reviewed:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures changes align with Architecture Decision Records."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: adr_reviewed
-
-      **Execute**: `/{auto_resolve_skill}`
-
-      Team-based ADR review with cross-validation against breaking changes and testability.
-
-      ---
-      Fallback: `req satisfy adr_reviewed`
-    checklist:
-      - "Searched for ADRs related to this change"
-      - "Confirmed approach aligns with existing ADRs"
-
-  # TDD Planning Requirement
-  # Ensures the plan includes a TDD strategy and test cases per feature
-  tdd_planned:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures the plan includes TDD strategy and test cases per feature."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: tdd_planned
-
-      **Execute**: `/{auto_resolve_skill}`
-
-      Team-based TDD validation with cross-reference against breaking changes.
-
-      ---
-      Fallback: `req satisfy tdd_planned`
-    checklist:
-      - "Plan has a testing strategy section"
-      - "Each feature identifies tests to write first"
-      - "TDD sequence is documented"
-
-  # SOLID Principles Review
-  # Ensures the plan follows SOLID design principles
-  solid_reviewed:
-    enabled: true
-    type: blocking
-    scope: session
-    description: "Ensures the plan follows SOLID principles with Python-specific patterns."
-    trigger_tools:
-      - Edit
-      - Write
-      - MultiEdit
-    auto_resolve_skill: "requirements-framework:arch-review"
-    message: |
-      ## Blocked: solid_reviewed
-
-      **Execute**: `/{auto_resolve_skill}`
-
-      Team-based SOLID review with cross-validation against testability and ADRs.
-
-      ---
-      Fallback: `req satisfy solid_reviewed`
-    checklist:
-      - "Plan reviewed for Single Responsibility (no mixed concerns)"
-      - "Extension points identified where applicable (Open/Closed)"
-      - "Dependencies use abstractions not concretions (Dependency Inversion)"
 
   # Protected Branch Guard
   # Prevents direct edits on protected branches (main/master)
@@ -253,56 +181,33 @@ requirements:
       - "Error handling is adequate"
       - "No obvious bugs or issues"
 
-  # Pre-PR Review Requirement
-  # Ensures comprehensive quality check before creating a PR
-  pre_pr_review:
+  # Review Team Gate (rename of pre_pr_review)
+  # The /deep-review team satisfies this on completion. codex-review is now a
+  # CONDITIONAL side-quest on the Review node (declared under workflow.phases),
+  # not its own gate.
+  pr_reviewed:
     enabled: true
     type: blocking
     scope: single_use  # Must re-satisfy for each PR creation
-    description: "Comprehensive quality review with all review agents before PR creation."
+    description: "Comprehensive quality review with the review team before PR creation."
     trigger_tools:
       - tool: Bash
         command_pattern: "gh\\s+pr\\s+create"
     auto_resolve_skill: "requirements-framework:deep-review"
     satisfied_by_skill: 'requirements-framework:deep-review'
     message: |
-      ## Blocked: pre_pr_review
+      ## Blocked: pr_reviewed
 
       **Execute**: `/{auto_resolve_skill}`
 
       Cross-validated team-based review with agent debate.
 
       ---
-      Fallback: `req satisfy pre_pr_review`
+      Fallback: `req satisfy pr_reviewed`
     checklist:
       - "Code has been reviewed for bugs"
       - "Error handling is complete"
       - "Tests are adequate (if applicable)"
-
-  # Codex AI Review Requirement
-  # AI-powered code review before PR creation
-  codex_reviewer:
-    enabled: true
-    type: blocking
-    scope: single_use  # Must re-satisfy for each PR creation
-    description: "AI-powered code review via OpenAI Codex CLI before PR creation."
-    trigger_tools:
-      - tool: Bash
-        command_pattern: "gh\\s+pr\\s+create"
-    auto_resolve_skill: "requirements-framework:codex-review"
-    satisfied_by_skill: 'requirements-framework:codex-review'
-    message: |
-      ## Blocked: codex_reviewer
-
-      **Execute**: `/{auto_resolve_skill}`
-
-      AI-powered code review via OpenAI Codex CLI.
-
-      ---
-      Fallback: `req satisfy codex_reviewer`
-    checklist:
-      - "Codex CLI installed (npm install -g @openai/codex)"
-      - "AI review completed"
 
   # Pre-Push Verification Requirement
   # Gates `git push` on verification evidence (tests/build), satisfied by the
@@ -311,7 +216,7 @@ requirements:
   # NOTE: command_pattern is a substring regex — any Bash command containing the
   # literal text "git push" (even an echo or grep) also trips this gate, the same
   # naive matching used by the commit/PR gates above.
-  pre_push_verification:
+  verified:
     enabled: true
     type: blocking
     scope: single_use  # Must re-satisfy for each push
@@ -322,14 +227,14 @@ requirements:
     auto_resolve_skill: "requirements-framework:verification-before-completion"
     satisfied_by_skill: 'requirements-framework:verification-before-completion'
     message: |
-      ## Blocked: pre_push_verification
+      ## Blocked: verified
 
       **Execute**: `/{auto_resolve_skill}`
 
       Run tests/build and capture verification evidence before pushing.
 
       ---
-      Fallback: `req satisfy pre_push_verification`
+      Fallback: `req satisfy verified`
     checklist:
       - "Tests/build run and passing"
       - "Verification evidence captured"

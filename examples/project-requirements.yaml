@@ -13,29 +13,19 @@ enabled: true
 
 # Project-specific requirements
 requirements:
-  # Enable commit_plan for this project
-  commit_plan:
+  # Customize the consolidated Validate-team gate for this project. The old
+  # commit_plan / adr_reviewed / tdd_planned / solid_reviewed sub-gates are all
+  # folded into plan_validated (satisfied by the /arch-review team).
+  plan_validated:
     enabled: true
+    scope: session
     checklist:
       - "Plan created via EnterPlanMode and planning agents/skills"
       - "Atomic commits identified (from agent/skill analysis)"
       - "Reviewed relevant ADRs (in /ADR/ directory)"
       - "ADR architectural decisions understood and followed"
       - "TDD approach implemented in todo list/plan"
-      - "Plan reviewed by appropriate agents/skills (code-reviewer, etc.)"
+      - "SOLID principles checked"
       - "Linting/formatting/typecheck commands known and documented"
       - "New branch created (not on main/master)"
       - "Considered if new ADRs or ADR updates are required"
-
-  # Enable ADR review for cclv2 (as per your CLAUDE.md)
-  adr_reviewed:
-    enabled: true
-    scope: session
-    message: |
-      📚 **Working in cclv2 - Have you reviewed relevant ADRs?**
-
-      ADRs are in: /Users/harm/Work/cclv2/ADR/
-
-      Before making code changes, check if any ADRs are relevant to your work.
-
-      **To satisfy**: `req satisfy adr_reviewed` after reviewing
