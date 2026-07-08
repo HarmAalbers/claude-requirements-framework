@@ -1,5 +1,11 @@
 # ADR Reviewed Requirement - Technical Documentation
 
+> ⚠️ **SUPERSEDED — historical reference only.** The `adr_reviewed` gate was retired
+> in the ADR-022 workflow re-cut (~11 → 7 gates); its concern is now folded into
+> **`plan_validated`** (the Validate-team gate, satisfied by `/arch-review`). This
+> document describes a gate that no longer exists. For the current gate vocabulary
+> see `CLAUDE.md` and `docs/adr/ADR-022-workflow-phase-recut-typed-backbone.md`.
+
 ## Overview
 
 The `adr_reviewed` requirement is a **blocking requirement** that ensures Architecture Decision Records (ADRs) have been reviewed before code changes are made. It acts as an architectural governance checkpoint to maintain consistency with established decisions documented in ADRs.

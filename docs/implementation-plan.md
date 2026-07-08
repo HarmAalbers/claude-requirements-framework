@@ -1,5 +1,11 @@
 # Unified Requirements Framework - Implementation Plan v2.0
 
+> 🗄️ **ARCHIVED — historical design artifact (2025-12-08).** This is the original
+> build plan, kept for provenance. It predates the uv standardization (ADR-021),
+> the plugin-owned runtime (no more `~/.claude/hooks`/`sync.sh`), and the ADR-022
+> gate re-cut. Do **not** treat it as current guidance — see `CLAUDE.md` and
+> `DEVELOPMENT.md` for how the framework actually works today.
+
 **Document Version**: 2.0 (Revised Architecture)
 **Created**: 2025-12-08
 **Status**: Ready for Implementation

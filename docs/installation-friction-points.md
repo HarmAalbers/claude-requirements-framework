@@ -1,5 +1,11 @@
 # Installation Friction Points Found
 
+> 🗄️ **ARCHIVED — historical fix-log.** Records issues from an early `install.sh` /
+> `sync.sh` / `~/.claude/hooks` install model that no longer exists — the framework
+> is now a self-contained plugin (hooks register via
+> `plugins/requirements-framework/hooks/hooks.json`). Kept for provenance only; for
+> current install steps see `docs/PLUGIN-INSTALLATION.md`.
+
 ## Issues Discovered During Fresh Reinstallation
 
 ### 1. ✅ FIXED: Missing Hook Files in install.sh
