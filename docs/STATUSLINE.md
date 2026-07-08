@@ -13,7 +13,7 @@ instead of asking the model.
 | Field      | Meaning                                                      |
 |------------|--------------------------------------------------------------|
 | `⏸ paused` | Shown ONLY when this session has paused the framework (`/req-pause`). Prefixes the line so the gates-off state is never silently forgotten. Absent otherwise. |
-| `phase`    | Derived workflow phase: `design`, `plan-write`, `plan-validate`, `implement`, `review`, `ship`, or `?` when outside a git repo |
+| `phase`    | Derived workflow phase: `design`, `plan`, `validate`, `build`, `review`, `verify`, `ship`, or `?` when outside a git repo |
 | `ctx N%`   | Input-side context window usage reported by Claude Code     |
 | `$cost`    | Session cost in USD                                          |
 | `N req⬜`   | Count of triggered-but-unsatisfied requirements             |
@@ -26,19 +26,29 @@ matches the marker key. Fail-open: any error → no pause field.
 
 ## Phase derivation
 
-`hooks/lib/derive_phase.py` walks an ordered list of gating requirements and
-returns the first that is *not* satisfied:
+`hooks/lib/derive_phase.py` walks the ordered list of gating requirements
+(the ADR-022 typed 7-node backbone in `WORKFLOW_DEFAULTS`, `hooks/lib/config.py`)
+and returns the first phase whose gate is *not* satisfied:
 
-| Phase           | Gating requirement       |
-|-----------------|--------------------------|
-| `design`        | `design_approved`        |
-| `plan-write`    | `plan_written`           |
-| `plan-validate` | `solid_reviewed`         |
-| `implement`     | *(none — advisory)*      |
-| `review`        | `pre_pr_review`          |
-| `ship`          | everything above satisfied |
+| Phase      | Gating requirement                          | Skill/command                                                             |
+|------------|---------------------------------------------|---------------------------------------------------------------------------|
+| `design`   | `design_approved`                           | `/brainstorming`                                                          |
+| `plan`     | `plan_written`                              | `/writing-plans`                                                         |
+| `validate` | `plan_validated`                            | `/arch-review`                                                           |
+| `build`    | `implementation_done`                       | `/executing-plans` (loop: `/pre-commit` → `pre_commit_review` per commit) |
+| `review`   | `pr_reviewed`                               | `/deep-review`                                                           |
+| `verify`   | `verified`                                  | `/verification-before-completion`                                       |
+| `ship`     | *(gateless — everything above satisfied)*   | `/finishing-a-development-branch`                                        |
 
-Planning is split into two phases because two skills are needed to clear all planning gates: `/write-plan` flips `plan_written` (advances `plan-write` → `plan-validate`), then `/arch-review` flips `commit_plan` / `adr_reviewed` / `tdd_planned` / `solid_reviewed` together (advances `plan-validate` → `implement`).
+`ship` carries no gate, so it is transparent to derivation: the phase resolves
+to `ship` only once every gate above is satisfied.
+
+Planning is split into two phases because two skills clear the two planning
+gates: `/writing-plans` flips `plan_written` (advances `plan` → `validate`),
+then the `/arch-review` team flips `plan_validated` (advances `validate` →
+`build`). Under ADR-022 the former four validate-phase gates
+(`commit_plan` / `adr_reviewed` / `tdd_planned` / `solid_reviewed`) are
+consolidated into the single `plan_validated` gate.
 
 The statusline runs without a session ID, so a requirement counts as
 "satisfied" if **any session** has satisfied it, *or* if there is a

@@ -1,199 +1,119 @@
 # Requirements Framework
 
-A powerful, standalone requirements management system for Claude Code that enforces workflow policies before code modifications.
+A standalone requirements-management system for Claude Code that nudges (and, where you want it, enforces) a development workflow before code lands. It ships as a self-contained Claude Code **plugin**: install it once and its lifecycle hooks, `req` CLI, agents, commands, and skills come along.
 
 ## Overview
 
-The Requirements Framework allows you to define and enforce workflow requirements (like commit planning, ADR reviews, GitHub ticket linking) before Claude can modify files in your projects.
+The framework lets you define workflow **gates** — design approved, plan written, plan validated, code reviewed, work verified — and have Claude Code observe them as you move through a change. Gates are satisfied by running the matching skill/command (mostly automatically) or, when needed, by hand via the `req` CLI.
 
-**Key Features:**
-- ✅ Session-scoped, branch-scoped, or permanent requirements
-- ✅ Zero external dependencies (pure Python stdlib)
-- ✅ Per-project configuration (versioned and code-reviewed)
-- ✅ Local state management (never committed)
-- ✅ Fail-open design (errors don't block work)
-- ✅ Plan file whitelisting (no chicken-and-egg problems)
+**Key features**
+- Typed 7-node workflow backbone (Design → Plan → Validate → Build → Review → Verify → Ship) — see ADR-022.
+- Session-, branch-, permanent-, and single-use-scoped requirements.
+- Three-layer config cascade (global → project → local); a local-only project is fully recognized.
+- Fail-open by default: an error in a hook never blocks your work. (An opt-in strict mode inverts this — see below.)
+- Plan files are whitelisted, so writing a plan is never blocked by a gate that requires the plan.
+- Plugin-owned runtime: no manual hook deployment, no `sync.sh`.
 
-## Architecture
+## Runtime model (plugin-owned)
+
+The framework runs entirely from the installed plugin. Hook registration is the plugin's responsibility: the single source of truth is
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Claude Code Session                    │
-│                                                           │
-│  ┌─────────────┐    ┌──────────────────────────────┐   │
-│  │   Edit/     │───▶│  PreToolUse Hook             │   │
-│  │   Write/    │    │  (check-requirements.py)     │   │
-│  │   MultiEdit │    └──────────────┬───────────────┘   │
-│  └─────────────┘                   │                    │
-│                                     ▼                    │
-│                    ┌────────────────────────────┐       │
-│                    │  Requirements Manager      │       │
-│                    │  (~/.claude/hooks/lib/)    │       │
-│                    └──────┬──────────────┬──────┘       │
-│                           │              │               │
-│             ┌─────────────▼───┐    ┌────▼──────────┐   │
-│             │  Local State    │    │  Project      │   │
-│             │  (.git/req/)    │    │  Config       │   │
-│             └─────────────────┘    │  (.claude/)   │   │
-│                                     └───────────────┘   │
-└─────────────────────────────────────────────────────────┘
+plugins/requirements-framework/hooks/hooks.json
 ```
 
-## Quick Start
+which registers every lifecycle hook via `${CLAUDE_PLUGIN_ROOT}`. There is **no** copy of hooks under `~/.claude/hooks/` and **no** `sync.sh` deploy step — those are legacy. Install (or update) the plugin and the hooks are live.
 
-### 1. Check Status
+### Install
+
+```
+/plugin marketplace add HarmAalbers/claude-requirements-framework
+/plugin install requirements-framework@requirements-framework
+```
+
+Enable per-marketplace auto-update so pushes to `master` land at session startup.
+
+### `uv` is required (ADR-021)
+
+Every Python entrypoint — the `req` CLI, the hooks, and all build/test tooling — resolves its interpreter and dependencies through **`uv`** (single source of truth: `pyproject.toml` + `uv.lock`). Nothing relies on the ambient `python3`.
+
+```bash
+uv sync                                   # materialize the managed .venv
+uv run python hooks/test_requirements.py  # run the test suite
+uv run ruff check .                        # lint (pinned ruff, matches CI)
+```
+
+At runtime the hooks self-bootstrap: if the ambient Python lacks `PyYAML` and `uv` is on PATH, they re-exec once under `uv run --no-project --with PyYAML` (zero overhead when deps are already present).
+
+## The workflow: typed 7-node backbone (ADR-022)
+
+The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a typed backbone, not a flat list. Each node carries a `type` and, where relevant, a `loop` or `conditionals`.
+
+```
+Design → Plan → Validate → Build → Review → Verify → Ship
+[spine] [spine] [TEAM]    [spine] [TEAM]   [spine] [spine]
+                                   +loop (per commit, in Build)
+```
+
+| Node       | Type   | Gate                  | Skill / Command                                  |
+|------------|--------|-----------------------|--------------------------------------------------|
+| `design`   | spine  | `design_approved`     | `/brainstorming`                                 |
+| `plan`     | spine  | `plan_written`        | `/writing-plans`                                 |
+| `validate` | team   | `plan_validated`      | `/arch-review` *(conditional: `/codex-review`)*  |
+| `build`    | spine  | `implementation_done` | `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
+| `review`   | team   | `pr_reviewed`         | `/deep-review` *(conditional: `/codex-review`)*  |
+| `verify`   | spine  | `verified`            | `/verification-before-completion`                |
+| `ship`     | spine  | — (gateless)          | `/finishing-a-development-branch`                 |
+
+**Node types**
+- **spine** nudges one skill; its gate is auto-satisfied when that skill completes.
+- **team** nudges one orchestrating command that fans out its agents and satisfies exactly one gate on completion. Phase derivation walks by gate, so team-vs-spine is transparent.
+- A **loop** is a `single_use` gate declared on a node (Build's `pre_commit_review`) and re-armed after each triggering command by the `clear-single-use` hook.
+- **conditionals** are optional side-quests surfaced as "available here" — no gate, no auto-fire (e.g. `/codex-review`).
+
+### Current gate vocabulary
+
+Only these gates exist in the default backbone:
+
+```
+design_approved, plan_written, plan_validated,
+implementation_done, pr_reviewed, verified
+```
+
+(plus the Build loop's `pre_commit_review`). Ship is gateless.
+
+**Consolidated / retired gates.** Earlier versions used a larger, flatter set. These names are gone — there are **no backward-compat aliases**. A config that still names one of them produces a validation error pointing at the replacement:
+
+| Retired gate                                        | Replacement                          |
+|-----------------------------------------------------|--------------------------------------|
+| `commit_plan`, `adr_reviewed`, `tdd_planned`, `solid_reviewed` | folded into `plan_validated` (Validate team) |
+| `pre_pr_review`                                      | `pr_reviewed`                        |
+| `pre_push_verification`                             | `verified`                           |
+| `codex_reviewer`                                    | removed as a gate — now a conditional side-quest |
+
+**YAML footgun.** Inside a `loop`, quote the trigger key (`"on": commit`); a bare `on:` parses as boolean `True` under YAML 1.1.
+
+## Quick start
 
 ```bash
 cd /your/project
-req status
+req status                 # see current gate state for this session/branch
+req satisfy plan_validated # mark a gate satisfied by hand (usually automatic)
 ```
 
-### 2. Satisfy Requirement
+In normal use you don't satisfy gates by hand — you run the matching skill/command and the corresponding `PostToolUse` hook auto-satisfies the gate. `req satisfy` is the manual escape hatch.
 
-```bash
-req satisfy commit_plan
-```
+## Configuration cascade
 
-### 3. Continue Working
+Three layers merge, later layers winning:
 
-Claude can now edit files - requirement is satisfied for this session.
+1. **Global** — `~/.claude/requirements.yaml`
+2. **Project** — `.claude/requirements.yaml` (version-controlled, code-reviewed)
+3. **Local** — `.claude/requirements.local.yaml` (gitignored, personal overrides)
 
-## File Structure
+Local wins over project, which wins over global. A project that has **only** a `.claude/requirements.local.yaml` is fully recognized — the CLI and hooks treat it as configured (`project_has_config()`), so `/req-init` scaffolding a local-only file is enough.
 
-```
-~/.claude/hooks/
-├── check-requirements.py        # PreToolUse hook (entry point)
-├── requirements-cli.py           # CLI tool (req command)
-└── lib/                          # Framework libraries
-    ├── __init__.py
-    ├── requirements.py           # Core BranchRequirements class
-    ├── config.py                 # Configuration loader
-    ├── state_storage.py          # State file I/O
-    ├── git_utils.py              # Git operations
-    └── session.py                # Session ID management
-```
-
-## Per-Project Setup
-
-### Using `req init`
-
-The `req init` command provides an interactive wizard to set up requirements for your project:
-
-```bash
-# Interactive wizard (recommended for first-time setup)
-cd /your/project
-req init
-
-# Non-interactive mode (for scripts/automation)
-req init --yes
-
-# Choose a specific preset
-req init --preset strict    # commit_plan + protected_branch
-req init --preset relaxed   # commit_plan only (default)
-req init --preset minimal   # framework enabled, no requirements
-
-# Create local config only (personal overrides)
-req init --local
-
-# Preview config without writing files
-req init --preview
-```
-
-### Presets
-
-| Preset | Requirements | Use Case |
-|--------|--------------|----------|
-| `advanced` | All 7 requirements (blocking, guard, dynamic, single-use) | Global config showcase (recommended for ~/.claude/) |
-| `inherit` | Empty, sets inherit: true | Projects using global config (recommended) |
-| `relaxed` | commit_plan only (session scope) | Standalone projects, trying the framework |
-| `strict` | commit_plan + protected_branch guard | Teams with strict workflow policies |
-| `minimal` | Framework enabled, no requirements | "I'll configure it myself" |
-
-**Context-Aware Defaults:**
-- Running `req init` in `~/.claude/` → Defaults to `advanced`
-- Running in project with global config → Defaults to `inherit`
-- Running in project without global → Defaults to `relaxed`
-
-### Automatic Detection
-
-When you start a Claude Code session in a project without `.claude/requirements.yaml`, the SessionStart hook will suggest:
-
-```
-💡 **No requirements config found for this project**
-
-To set up the requirements framework, run:
-  `req init`
-
-Or create `.claude/requirements.yaml` manually.
-See `req init --help` for options.
-```
-
-This only appears on fresh session startup, not on resume/compact.
-
-### Interactive Flow
-
-Example of the interactive wizard:
-
-```
-$ req init
-
-🚀 Requirements Framework Setup
-──────────────────────────────────────────────────
-
-Detecting project:
-  ✓ Git repository at /Users/harm/my-project
-  ○ .claude/ directory will be created
-
-Which configuration file to create?
-  > Project config (.claude/requirements.yaml) - shared with team
-    Local config (.claude/requirements.local.yaml) - personal only
-
-Choose a preset profile:
-  > relaxed - Light touch: commit_plan only (recommended)
-    strict - Full enforcement: commit_plan + protected_branch
-    minimal - Framework enabled, no requirements (configure later)
-
-Preview:
-──────────────────────────────────────────────────
-version: "1.0"
-enabled: true
-requirements:
-  commit_plan:
-    enabled: true
-    scope: session
-    ...
-
-Create requirements.yaml? (Y/n): y
-
-✅ Created project config (relaxed preset)
-   .claude/requirements.yaml
-
-💡 Next steps:
-   • Run 'req status' to see your requirements
-   • Make changes - you'll be prompted to satisfy requirements
-   • Edit requirements.yaml to customize
-```
-
-## Configuration
-
-### Global Defaults (`~/.claude/requirements.yaml`)
-
-```yaml
-version: "1.0"
-enabled: true
-
-requirements:
-  commit_plan:
-    enabled: false  # Disabled globally, projects opt-in
-    type: blocking
-    scope: session
-    trigger_tools: [Edit, Write, MultiEdit]
-    message: |
-      📋 No commit plan found for this session
-      Create a plan before making changes.
-```
-
-### Project Config (`.claude/requirements.yaml`)
+### Example project config
 
 ```yaml
 version: "1.0"
@@ -201,368 +121,136 @@ inherit: true
 enabled: true
 
 requirements:
-  commit_plan:
-    enabled: true  # Enable for this project
-    checklist:  # NEW in v2.0 - Optional reminder checklist
-      - "Plan created via EnterPlanMode"
-      - "Atomic commits identified"
-      - "TDD approach documented"
-      - "Linting/typecheck commands known"
-```
-
-## Checklist Feature (v2.0)
-
-### Overview
-
-Requirements can now include optional **checklists** that display as visual reminders when a requirement blocks Claude.
-
-### Checklist Display
-
-When Claude is blocked, the checklist appears in the error message:
-
-```
-📋 **No commit plan found for this session**
-
-Before making code changes, you should plan your commits.
-
-**Checklist**:
-⬜ 1. Plan created via EnterPlanMode
-⬜ 2. Atomic commits identified
-⬜ 3. Reviewed relevant ADRs
-⬜ 4. TDD approach documented
-
-**Current session**: `abc12345`
-
-💡 **To satisfy from terminal**:
-```bash
-req satisfy commit_plan --session abc12345
-```
-```
-
-### Adding Checklists
-
-Add a `checklist` array to any requirement:
-
-```yaml
-requirements:
-  commit_plan:
+  plan_validated:
     enabled: true
+    type: blocking
+    scope: session
+    trigger_tools: [Edit, Write, MultiEdit]
+    satisfied_by_skill: requirements-framework:arch-review
     checklist:
-      - "First item"
-      - "Second item"
-      - "Third item"
+      - Plan reviewed against ADRs
+      - SOLID principles checked
+      - TDD strategy documented
+      - Atomic commit boundaries planned
 ```
 
-### Best Practices
+## Requirement scopes
 
-- **Keep items concise**: 5-10 words per item
-- **Make actionable**: Each item should be verifiable
-- **Order logically**: Steps should flow naturally
-- **Limit quantity**: 5-10 items maximum
-- **Project-specific**: Customize for team workflows
+| Scope        | Behavior                                                        |
+|--------------|----------------------------------------------------------------|
+| `session`    | Cleared when the Claude Code session ends.                     |
+| `branch`     | Persists across sessions on the same branch.                  |
+| `permanent`  | Never auto-cleared (until you clear it).                       |
+| `single_use` | Cleared after its trigger command completes (loop gates re-arm). |
 
-### Configuration Inheritance
+## Presets (`req init`)
 
-Checklists follow the same cascade as other config:
-- Global config defines default checklist
-- Project config can override entire checklist
-- Local config can override again
-- Set `checklist: []` to remove inherited checklist
+`req init` scaffolds a config. It is context-aware and offers presets:
 
-## Key Components
+| Preset     | Contents                                                                                          | Use case                                         |
+|------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------|
+| `advanced` | `plan_validated` + `protected_branch` guard + `branch_size_limit` (dynamic) + `pr_reviewed` (+ optional `github_ticket`) | Global showcase of every requirement type        |
+| `strict`   | `plan_validated` (blocking, session) + `protected_branch` guard; Stop-hook verification on        | Teams wanting enforcement                        |
+| `relaxed`  | `plan_validated` only (session scope)                                                             | Standalone projects / trying the framework       |
+| `minimal`  | Framework enabled, no requirements                                                                | "I'll configure it myself"                        |
+| `inherit`  | Empty, `inherit: true`                                                                            | Projects deferring to global config              |
 
-### 1. Session Management (`lib/session.py`)
-- Generates stable session IDs using parent PID
-- Registry tracks active sessions per project/branch
-- Auto-cleanup of stale sessions
-
-### 2. State Storage (`lib/state_storage.py`)
-- State files in `.git/requirements/` (gitignored)
-- Atomic writes with file locking
-- Per-branch, per-session tracking
-
-### 3. Requirements Manager (`lib/requirements.py`)
-- `is_satisfied()` - Check if requirement met (with TTL support)
-- `satisfy()` - Mark requirement satisfied
-- `clear()` - Clear requirement
-- `cleanup_stale_branches()` - Remove old state
-
-### 4. PreToolUse Hook (`check-requirements.py`)
-- Intercepts Edit/Write/MultiEdit operations
-- Checks requirements before allowing modifications
-- **CRITICAL**: Whitelists plan files to prevent chicken-and-egg problems
-- Fail-open design (errors logged but don't block)
-
-## Plan File Whitelisting
-
-**Problem**: Claude needs to write plan files, but hook blocks Write operations until `commit_plan` is satisfied.
-
-**Solution**: The `should_skip_plan_file()` function automatically whitelists:
-- `~/.claude/plans/*` - Global plan directory
-- `{project}/.claude/plans/*` - Project plan directories
-- Any path containing `/.claude/plans/`
-
-**Why This Matters**:
-- Plans can be created BEFORE satisfying `commit_plan`
-- No chicken-and-egg blocking
-- Plan mode works seamlessly with requirements framework
-
-## CLI Commands
+**Context-aware defaults:** running `req init` in `~/.claude/` defaults to `advanced`; in a project with a global config it defaults to `inherit`; in a project without a global config it defaults to `relaxed`.
 
 ```bash
-# Show status
-req status
-
-# Satisfy requirement
-req satisfy commit_plan
-req satisfy commit_plan --session abc123  # Explicit session
-
-# Satisfy multiple at once
-req satisfy commit_plan --session abc123 && req satisfy adr_reviewed --session abc123
-
-# Clear requirement
-req clear commit_plan
-req clear --all
-
-# List tracked branches
-req list
-
-# List active sessions
-req sessions
-
-# Cleanup stale state
-req prune
-
-# Cross-project feature upgrade
-req upgrade scan               # Scan machine for projects
-req upgrade status             # Show feature status for current project
-req upgrade status --all       # Show all tracked projects
-req upgrade recommend          # Generate YAML for missing features
+req init                    # interactive wizard
+req init --yes              # non-interactive
+req init --preset strict
+req init --local            # write .claude/requirements.local.yaml only
+req init --preview          # print config, write nothing
 ```
 
-## Scope Types
+Note that `advanced` disables the deprecated `pre_commit_review` requirement — the `/pre-commit` command remains available for voluntary use and as the Build-loop skill, but is not an enforced gate.
 
-| Scope | Duration | Use Case |
-|-------|----------|----------|
-| **session** | Current Claude session only | Commit planning (fresh each session) |
-| **branch** | Until branch deleted | GitHub ticket (once per feature) |
-| **permanent** | Forever (until cleared) | One-time setup tasks |
-
-## Workflow Example
+## `req` CLI (the user interface)
 
 ```bash
-# 1. Start work on feature branch
-git checkout -b feature/add-auth
+req status                       # gate state for this session/branch
+req satisfy <gate>               # mark a gate satisfied (manual)
+req satisfy <gate> --session ID  # target an explicit session
+req enable <req>                 # enable a configured requirement
+req clear <gate> | req clear --all
+req approve <guard>              # one-session override of a guard (e.g. protected_branch)
+req list                         # tracked branches
+req sessions                     # active sessions
+req prune                        # clean up stale state
 
-# 2. Start Claude Code
-claude
-
-# 3. Claude tries to edit file
-# → Hook blocks: "commit_plan not satisfied"
-
-# 4. User creates plan (satisfies requirement)
-req satisfy commit_plan
-
-# 5. Claude can now edit files
-# → Hook allows edits (requirement satisfied)
-
-# 6. Continue working...
-# All edits proceed without prompts
-
-# 7. New session tomorrow
-claude
-# → Hook blocks again (session-scoped requirement expired)
+req logging --level debug --local          # configure logging
+req messages validate [--fix]              # validate externalized messages
+req upgrade scan | status | recommend      # cross-project feature adoption
+req pause / req resume                      # pause/resume blocking gates (session only)
 ```
 
-## Error Handling
+Some gates are safe for Claude to run itself (`req pause`, `req enable`); satisfying a gate by hand is the manual escape hatch when a skill's auto-satisfaction didn't fire.
 
-The framework uses **fail-open** design:
-- Syntax errors → Log error, allow operation
-- Config errors → Log error, allow operation
-- Timeout → Log error, allow operation
-- Corrupted state → Rebuild state, allow operation
+## Checklists
 
-**Logs are written to**: `~/.claude/requirements.log`
+Any requirement may carry an optional `checklist`. When a blocking requirement holds up an edit, the checklist renders inside the block message as a visual reminder. Checklists follow the same cascade as the rest of config — a later layer can override the whole list, and `checklist: []` removes an inherited one. Keep items short (5–10 words), actionable, and few (5–10 max).
 
-Console output (warnings/notices) is configurable via `.claude/requirements.yaml`.
-All structured logs still live in `~/.claude/requirements.log`:
+## Auto-satisfaction (skills → gates)
+
+Running a workflow skill or command completes its gate automatically. The `auto-satisfy-skills.py` `PostToolUse` hook maps completed skills to gates; the built-in mappings track the ADR-022 vocabulary (e.g. `/arch-review` → `plan_validated`, `/deep-review` → `pr_reviewed`). You can wire your own project skill to a requirement with `satisfied_by_skill: <skill-name>`.
+
+## Plan-file whitelisting
+
+Writing a plan must never be blocked by a gate that requires that plan. The PreToolUse check therefore whitelists plan paths (`~/.claude/plans/*`, `<project>/.claude/plans/*`, anything under `/.claude/plans/`) so plan authoring proceeds regardless of gate state — no chicken-and-egg deadlock.
+
+## Fail-open by default; strict mode is opt-in
+
+The library is **fail-open**: syntax errors, config errors, timeouts, or corrupted state are logged and the operation is allowed. A hook bug can never block your work.
+
+An **opt-in, fail-closed strict preflight** (ADR-020) inverts this for adoption enforcement. When `strict_preflight: true` is set in the **global** config, a globally-installed plugin blocks all edits/bash in any non-compliant project until it's fixed or opted out. Compliance requires a valid local config with ≥1 enabled requirement, a structurally valid Langfuse env block (if tracing), and `uv` on PATH. It is **off by default** and inert until enabled. Escapes always take precedence: `/req-init` to scaffold, `/req-optout` to make a project inert, and the `RF_STRICT_OFF=true` emergency kill-switch.
+
+Structured logs are written to `~/.claude/requirements.log`. Console output is silent by default and configurable per project:
 
 ```yaml
 console:
   level: warning
   destinations: [stderr]
-  file: ~/.claude/requirements-console.log
 ```
 
-Defaults are silent (no console output); enable `stderr` if you want inline warnings.
+## Permission precedence
 
-Debugging example (write verbose logs to file and surface warnings locally):
-
-```yaml
-logging:
-  level: debug
-  destinations: [file]
-console:
-  level: warning
-  destinations: [stderr]
-```
-
-## Permission Precedence
-
-**IMPORTANT**: Claude Code's permission system has precedence:
+Claude Code applies `permissions.allow` **before** hooks:
 
 ```
 permissions.allow > hooks > user approval
 ```
 
-If you have wildcard permissions like `Edit(*)` or `Write(*)` in `~/.claude/settings.local.json`, they will **bypass the hook entirely**.
+A wildcard like `Edit(*)` or `Write(*)` in `~/.claude/settings.local.json` bypasses the framework's hooks entirely. Remove such wildcards if you want gates to run.
 
-**Solution**: Remove wildcard permissions from `permissions.allow` if you want hooks to run.
+## Session lifecycle
 
-## Testing
-
-### Test Hook Manually
-
-```bash
-# Test with plan file (should skip)
-echo '{"tool_name":"Write","tool_input":{"file_path":"~/.claude/plans/test.md"}}' \
-  | python3 ~/.claude/hooks/check-requirements.py
-
-# Test with regular file (should check requirements)
-echo '{"tool_name":"Write","tool_input":{"file_path":"/project/src/index.ts"}}' \
-  | python3 ~/.claude/hooks/check-requirements.py
-```
-
-### Test CLI
-
-```bash
-# Test in project directory
-cd /your/project
-req status
-req satisfy test_req
-req status  # Should show satisfied
-```
+The plugin registers a full set of lifecycle hooks (SessionStart context injection, UserPromptSubmit nudges, PreToolUse gate checks, PostToolUse auto-satisfaction and single-use clearing, Stop-time verification, SessionEnd cleanup, plus team/idle, compaction, and observability hooks). See the top-level `CLAUDE.md` for the exhaustive hook-by-hook reference.
 
 ## Troubleshooting
 
-### Requirements Not Blocking
+**Gates not blocking**
+1. Confirm the plugin is installed and enabled (`/plugin`).
+2. Check for wildcard permissions in `~/.claude/settings.local.json`.
+3. Confirm the project has config: `.claude/requirements.yaml` **or** `.claude/requirements.local.yaml`.
+4. Confirm you're on a feature branch, not `main`/`master` (guards target protected branches).
+5. Inspect `~/.claude/requirements.log`.
 
-1. Check hook is registered: `cat ~/.claude/settings.json | grep check-requirements`
-2. Check no wildcard permissions: `cat ~/.claude/settings.local.json | grep "Edit(\*)\|Write(\*)"`
-3. Check project has config: `ls .claude/requirements.yaml`
-4. Check branch is not main/master: `git branch --show-current`
-5. Check errors: `tail ~/.claude/requirements.log`
+**Plan files still blocked** — verify the path contains `/.claude/plans/`.
 
-### Plan Files Still Blocked
+**Gate won't clear / wrong session** — `req sessions` to find the session id, then `req satisfy <gate> --session <id>`.
 
-1. Verify path contains `.claude/plans/`: `echo "/path/to/file"`
-2. Test whitelisting: `python3 -c "from check-requirements import should_skip_plan_file; print(should_skip_plan_file('/your/path'))"`
-3. Check hook syntax: `python3 -m py_compile ~/.claude/hooks/check-requirements.py`
+## Further reading
 
-### Session Not Found
-
-1. Check session registry: `req sessions`
-2. Use explicit session: `req satisfy commit_plan --session <id>`
-3. Hook updates registry before checking requirements (automatic bootstrap)
-
-## Advanced Features
-
-### Auto-Satisfy with Skills (v2.3)
-
-Connect project skills to auto-satisfy requirements when they complete:
-
-```yaml
-# .claude/requirements.yaml
-requirements:
-  architecture_review:
-    enabled: true
-    type: blocking
-    scope: single_use
-    trigger_tools:
-      - tool: Bash
-        command_pattern: 'gh\s+pr\s+create'
-    satisfied_by_skill: 'architecture-guardian'  # Skill name from frontmatter
-    message: |
-      🏗️ Run the architecture-guardian skill before creating PR
-```
-
-**Workflow**:
-1. Create a skill in your project (`.claude/skills/architecture-guardian.md`)
-2. Add `satisfied_by_skill: 'skill-name'` to your requirement config
-3. When the skill completes, `auto-satisfy-skills.py` hook auto-satisfies the requirement
-4. Trigger action (e.g., `gh pr create`) is now allowed
-
-**Built-in Mappings** (for framework skills):
-- `requirements-framework:pre-commit` → `pre_commit_review` (deprecated since v2.6)
-- `requirements-framework:deep-review` → `pre_pr_review`
-- `requirements-framework:codex-review` → `codex_reviewer`
-
-### Auto-Satisfy with Branch Patterns (Future)
-
-Automatically satisfy requirements based on branch naming patterns:
-
-```yaml
-requirements:
-  github_ticket:
-    enabled: true
-    auto_satisfy:
-      - type: branch_name_pattern
-        pattern: '(\d+)-'
-        extract: ticket
-        prefix: '#'
-```
-
-Branch `feature/1234-auth` would auto-extract ticket `#1234`.
-
-### Requirement Dependencies (Phase 4 - Future)
-
-```yaml
-requirements:
-  tests_passing:
-    enabled: true
-    depends_on: [commit_plan]
-```
-
-## Design Principles
-
-1. **Framework in `~/.claude`** - User-level installation, not per-project
-2. **Projects opt-in via config** - Minimal footprint, versioned config
-3. **State is local** - Never committed, per-branch tracking
-4. **Dependencies** - Python stdlib + PyYAML for YAML config parsing
-5. **Fail-open** - Errors don't block work
-6. **Plan files whitelisted** - No chicken-and-egg problems
-
-## Version History
-
-- **v2.4** - **Cross-project feature upgrade** - `req upgrade` command for discovering and adopting new features across projects
-- **v2.3** - **`satisfied_by_skill` field** - Connect project skills to auto-satisfy requirements
-- **v2.2** - Full session lifecycle hooks (SessionStart, Stop, SessionEnd)
-- **v2.1** - Message deduplication for parallel tool calls
-- **v2.0** - Checklists feature, dynamic requirements, guard types
-- **v1.4** - **Plan file whitelisting** (critical fix)
-- **v1.3** - Permission bypass fix and session bootstrap fix
-- **v1.2** - Enhanced error messages with session context
-- **v1.1** - Session registry and auto-detection
-- **v1.0** - Initial MVP with commit_plan requirement
-
-## Contributing
-
-Framework code lives in `~/.claude/hooks/`. To update:
-
-1. Modify Python files in `~/.claude/hooks/` or `~/.claude/hooks/lib/`
-2. Test with `python3 -m py_compile <file>`
-3. Test manually with hook invocation
-4. Update documentation in this README
-5. Update plan in `~/.claude/plans/unified-requirements-framework-v2.md`
-
-## Links
-
-- **Plan**: `~/.claude/plans/unified-requirements-framework-v2.md`
-- **Progress**: `~/.claude/requirements-framework-progress.json`
-- **Log File**: `~/.claude/requirements.log`
-- **Session Registry**: `~/.claude/sessions.json`
-- **Project Registry**: `~/.claude/project_registry.json`
+- Top-level `CLAUDE.md` — full hook reference, build/test commands, and subsystem docs.
+- `docs/adr/` — architecture decision records, including:
+  - ADR-011 — externalized YAML messages
+  - ADR-012 — agent teams integration
+  - ADR-020 — strict global preflight
+  - ADR-022 — typed 7-node workflow backbone (this workflow model)
+- `plugins/requirements-framework/README.md` — plugin architecture (agents, commands, skills).
 
 ---
 
-**Built with ❤️ for better Claude Code workflows**
+**Built for better Claude Code workflows.**

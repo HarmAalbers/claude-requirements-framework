@@ -1,174 +1,162 @@
 # Plugin Installation Guide
 
-> **Note**: This guide covers the Requirements Framework **plugin** installation. For hook installation, see the [main README](../README.md#installation).
+> **The plugin is self-contained.** Installing the plugin activates the entire
+> runtime — hooks, agents, commands, and skills — from a single bundle. There is
+> **no** separate hook deploy step (`sync.sh` / `~/.claude/hooks/` are legacy).
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Installation Methods](#installation-methods)
-3. [Verification](#verification)
-4. [Troubleshooting](#troubleshooting)
-5. [Plugin vs. Hooks](#plugin-vs-hooks)
-6. [Development Mode](#development-mode)
-7. [Configuration](#configuration)
-8. [Related Documentation](#related-documentation)
+2. [Prerequisites](#prerequisites)
+3. [Installation Methods](#installation-methods)
+4. [Verification](#verification)
+5. [Troubleshooting](#troubleshooting)
+6. [How Hooks + Plugin Work Together](#how-hooks--plugin-work-together)
+7. [Development Mode](#development-mode)
+8. [Configuration](#configuration)
+9. [Related Documentation](#related-documentation)
 
 ---
 
 ## Overview
 
-The Requirements Framework plugin extends Claude Code with workflow automation and code review capabilities.
+The Requirements Framework plugin extends Claude Code with a gated development
+workflow and a suite of code-review agents, commands, and skills.
 
-**What's Included:**
-- **10 specialized review agents** - ADR Guardian, Tool Validator, Code Reviewer, Silent Failure Hunter, Test Analyzer, Type Design Analyzer, Comment Analyzer, Code Simplifier, Backward Compatibility Checker, Codex Review Agent
-- **2 orchestrator commands** - `/requirements-framework:pre-commit`, `/requirements-framework:deep-review`
-- **5 management skills** - Status reporting, usage help, framework building, development workflow, Codex review
+**What's Included (plugin v4.29.1):**
+- **24 review/workflow agents** — code-reviewer, tool-validator, silent-failure-hunter,
+  test-analyzer, type-design-analyzer, comment-analyzer, backward-compatibility-checker,
+  adr-guardian, solid-reviewer, tdd-validator, commit-planner, refactor-advisor,
+  codex-review-agent, codex-arch-reviewer, tenant-isolation-auditor, appsec-auditor,
+  compliance-auditor, frontend-reviewer, and the refactor-orchestration trio
+  (refactor-executor / refactor-investigator / refactor-analyzer), among others.
+- **16 commands** — including `/requirements-framework:deep-review`,
+  `/requirements-framework:arch-review`, `/requirements-framework:pre-commit`,
+  `/requirements-framework:codex-review`, `/requirements-framework:refactor-orchestrate`,
+  and the `req`-workflow conductor commands.
+- **21 skills** — status/usage/builder/development helpers plus the workflow
+  skill library (brainstorming, writing-plans, executing-plans, verification,
+  finishing-a-branch, etc.).
+- **16 lifecycle hooks** — registered via the plugin's `hooks/hooks.json`
+  (see [How Hooks + Plugin Work Together](#how-hooks--plugin-work-together)).
 
-**Installation Location:** `~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/`
-**Plugin Version:** 2.0.5
-**Component Details:** See [Plugin Components](../README.md#plugin-components) in main README
+**Key point:** hooks are part of the plugin bundle. When the plugin loads, its
+`hooks/hooks.json` registers every lifecycle hook through `${CLAUDE_PLUGIN_ROOT}`.
+You do **not** copy anything into `~/.claude/hooks/`, and `install.sh` does **not**
+write a `hooks` block into `~/.claude/settings.json`.
+
+**Component Details:** See [Plugin Components](../README.md#plugin-components) and
+`plugins/requirements-framework/README.md`.
+
+---
+
+## Prerequisites
+
+**`uv` is required (ADR-021).** Every Python entrypoint — the `req` CLI, the
+lifecycle hooks, and all build/test tooling — resolves its interpreter and
+dependencies through `uv`. Nothing relies on the ambient `python3`.
+
+```bash
+# Install uv if it isn't already on PATH
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# (see https://docs.astral.sh/uv/ for other install methods)
+```
+
+`install.sh` aborts early if `uv` is not found. At runtime the hooks and CLI
+self-bootstrap under `uv` (`hooks/lib/_bootstrap.py`), so they work even when the
+ambient `python3` on PATH lacks `PyYAML`.
 
 ---
 
 ## Installation Methods
 
-### Method 1: CLI Flag (Recommended for Testing)
+### Method 1: GitHub Marketplace (Recommended for Users)
 
-**Official, zero-risk method** for testing plugin components:
-
-```bash
-# Launch Claude Code with plugin temporarily loaded
-claude --plugin-dir ~/.claude/plugins/requirements-framework
-```
-
-**When to use:**
-- ✅ First-time testing to verify plugin structure
-- ✅ Development work with live reload
-- ✅ Quick verification without system modifications
-- ✅ Before committing to persistent installation
-
-**Benefits:**
-- Zero risk - no system file modifications
-- Official, documented Claude Code feature
-- Live reload - changes immediately available
-- Can test multiple plugins simultaneously
-
-**Limitations:**
-- ⚠️ Must use CLI flag every launch
-- ⚠️ Not persistent across sessions
-- ⚠️ May not work with UI-launched Claude Code
-
-**Verification:**
-```
-# In Claude Code session
-Type: /requirements-framework:
-# Should show: pre-commit, deep-review, codex-review
-```
-
-### Method 2: GitHub Marketplace (Recommended for Users)
-
-**For users who want to install the plugin without cloning the repo:**
+Install the plugin straight from GitHub — no local clone needed. This activates
+hooks, agents, commands, and skills together.
 
 ```
-# In Claude Code session:
-/plugin marketplace add https://github.com/HarmAalbers/claude-requirements-framework
+# In a Claude Code session:
+/plugin marketplace add HarmAalbers/claude-requirements-framework
 /plugin install requirements-framework@requirements-framework
 ```
 
-**To update:**
+Enable per-marketplace auto-update so `master` pushes land at session startup
+(UI toggle, or `extraKnownMarketplaces.<name>.autoUpdate: true` in
+`~/.claude/settings.json`).
+
+**To update manually:**
 ```
 /plugin marketplace update requirements-framework
 /plugin uninstall requirements-framework@requirements-framework
 /plugin install requirements-framework@requirements-framework
 ```
 
-**Note:** This method installs the plugin only. For hooks (workflow enforcement), clone the repo and run `./install.sh`.
+> **Optional — the `req` CLI and statusline.** The plugin activates the runtime
+> on its own. If you also want the `req` command on your PATH, the phase-aware
+> statusline, and the `ENABLE_TOOL_SEARCH=true` shell env, clone the repo and run
+> `./install.sh` (see [Method 3](#method-3-local-clone--install-sh-cli--statusline)).
+> `install.sh` does **not** install hooks — the plugin does.
 
-### Method 3: Local Marketplace (Recommended for Developers)
+### Method 2: Development / Live Reload (`--plugin-dir`)
 
-**For developers who have cloned the repo:**
+Load the plugin directly from a local clone with live reload — best for
+developing agents, commands, skills, or hooks.
 
-**Step 1:** Run install.sh to set up hooks and local marketplace
+```bash
+claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
+```
+
+**When to use:**
+- Developing plugin components (changes are picked up on reload, no reinstall)
+- Verifying plugin structure before a persistent install
+- Testing multiple plugins simultaneously
+
+**Limitations:**
+- Must pass the flag every launch (not persistent)
+- May not apply to UI-launched Claude Code sessions
+
+### Method 3: Local Clone + `install.sh` (CLI + Statusline)
+
+For contributors who have cloned the repo and want the `req` CLI, the statusline,
+and shell env configured. This is **complementary** to installing the plugin — it
+does not install hooks.
 
 ```bash
 cd ~/Tools/claude-requirements-framework
 ./install.sh
 ```
 
-**Step 2:** Register the local marketplace in Claude Code
+`install.sh`:
+- Verifies `uv` is on PATH (aborts if missing).
+- Runs `uv sync` to materialize the project's `.venv`.
+- Symlinks the `req` CLI to `~/.local/bin/req` (self-bootstraps under `uv`).
+- Installs a global config to `~/.claude/requirements.yaml` (only if absent).
+- Registers the phase-aware statusline in `~/.claude/settings.json` (only if you
+  don't already have a custom `statusLine`).
+- Offers to add `~/.local/bin` to PATH and `ENABLE_TOOL_SEARCH=true` to your
+  shell rc (both idempotent).
+
+It does **not** copy hook scripts anywhere or edit a `hooks` block in
+`settings.json`. To activate hooks, install the plugin (Method 1) or launch with
+`--plugin-dir` (Method 2). You can also register the local clone as a marketplace:
 
 ```
-# In Claude Code session
 /plugin marketplace add ~/Tools/claude-requirements-framework
-```
-
-**Step 3:** Install the plugin from marketplace
-
-```
 /plugin install requirements-framework@requirements-framework
 ```
-
-**Step 4:** Verify installation
-
-```
-/requirements-framework:pre-commit
-```
-
-**What gets installed:**
-- Local marketplace registered with Claude Code
-- Plugin copied to cache directory
-- Persistent across Claude Code sessions
-- Updates via reinstall command
-
-**To update:**
-```
-/plugin uninstall requirements-framework@requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-### Method 4: Manual Symlink (Deprecated)
-
-> **⚠️ DEPRECATED:** This method is no longer recommended. Use Method 2 (GitHub Marketplace) for persistent installation or Method 1 (CLI Flag) for development.
-
-**Note:** Symlink installation has been deprecated in v2.0.5 because it conflicts with marketplace installation and causes version tracking issues.
-
-If you have an existing symlink at `~/.claude/plugins/requirements-framework/`, remove it and use marketplace installation instead:
-
-```bash
-# Remove deprecated symlink
-rm -rf ~/.claude/plugins/requirements-framework
-
-# Use marketplace installation (Method 2)
-```
-
-**For development with live reload**, use the `--plugin-dir` flag (Method 1) instead of creating a symlink
 
 ---
 
 ## Verification
 
-After installation, verify the plugin loaded successfully:
+### Step 1: Check the Plugin Loaded
 
-### Step 1: Check Plugin Installation
-
-```bash
-# In Claude Code session
+```
 /plugin list
 ```
 
-**Expected output:**
-```
-requirements-framework@2.0.5 (requirements-framework)
-```
-
-**Verify via filesystem:**
-```bash
-# Check cache directory exists
-ls ~/.claude/plugins/cache/requirements-framework/requirements-framework/
-
-# Check plugin manifest
-cat ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json | head -5
-```
+**Expected:** an entry like `requirements-framework@4.29.1 (requirements-framework)`.
 
 ### Step 2: Test Commands
 
@@ -177,289 +165,154 @@ In Claude Code, test command autocomplete:
 ```
 Type: /requirements-framework:
 
-Should autocomplete to:
-  • /requirements-framework:pre-commit [aspects]
+Should include:
   • /requirements-framework:deep-review
+  • /requirements-framework:arch-review
+  • /requirements-framework:pre-commit
+  • /requirements-framework:codex-review
 ```
 
-**Run a command:**
+Run one:
 ```
-/requirements-framework:pre-commit tools
-```
-
-**Expected:** Tool validator agent runs, checks pyright/ruff/eslint
-
-### Step 3: Test Skills
-
-In Claude Code, trigger a skill:
-
-```
-You: "Show requirements framework status"
+/requirements-framework:pre-commit
 ```
 
-**Expected:** `requirements-framework-status` skill triggers and displays status report
+### Step 3: Test Skills (natural language)
 
-**Other skill triggers:**
+- "Show requirements framework status" → `requirements-framework-status`
 - "How to use requirements framework" → `requirements-framework-usage`
 - "Extend requirements framework" → `requirements-framework-builder`
-- "Fix requirements framework bug" → `requirements-framework-development`
-- "Run Codex review" → `codex-review`
 
-### Step 4: Check Plugin Manifest
+### Step 4: Confirm Hooks Are Active
+
+Hooks come from the plugin bundle. The simplest confirmation is behavioral: with a
+gated config in place, editing a file surfaces a requirement briefing/block at
+`SessionStart` and on `Edit`/`Write`. You can also inspect the source of truth:
 
 ```bash
-cat ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json
+cat plugins/requirements-framework/hooks/hooks.json
 ```
 
-**Expected fields:**
-```json
-{
-  "name": "requirements-framework",
-  "version": "2.0.5",
-  "description": "Claude Code Requirements Framework - Enforces development workflow...",
-  "skills": [...],
-  "commands": [...],
-  "agents": [...]
-}
-```
+All 16 lifecycle hooks are registered there via `${CLAUDE_PLUGIN_ROOT}`.
 
-**Verify:**
-- Version is `2.0.5`
-- 5 skills listed
-- 6 commands listed
-- 15 agents listed
+### Step 5 (optional): Run the Test Suite
+
+Requires a local clone. Always run Python through `uv` — never bare `python3`:
+
+```bash
+cd ~/Tools/claude-requirements-framework
+uv run python hooks/test_requirements.py
+uv run ruff check .
+```
 
 ---
 
 ## Troubleshooting
 
-### Plugin Not Appearing
+### Plugin / Commands / Skills Not Appearing
 
-**Symptom:** Commands don't autocomplete, skills don't trigger
-
-**Diagnosis:**
-```bash
-# Check if plugin is installed
-/plugin list
-
-# Check cache directory
-ls ~/.claude/plugins/cache/requirements-framework/requirements-framework/
-
-# Check if manifest exists
-test -f ~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/.claude-plugin/plugin.json && echo "Manifest found" || echo "Missing"
-```
+**Symptom:** Commands don't autocomplete, skills don't trigger, no requirement
+briefing at session start.
 
 **Solutions:**
 
-1. **Plugin not installed** → Install via marketplace:
-   ```bash
-   /plugin marketplace add ~/Tools/claude-requirements-framework
+1. **Plugin not installed** → install it:
+   ```
+   /plugin marketplace add HarmAalbers/claude-requirements-framework
    /plugin install requirements-framework@requirements-framework
    ```
-2. **Old version cached** → Reinstall:
-   ```bash
-   /plugin uninstall requirements-framework@requirements-framework
-   /plugin marketplace update requirements-framework
-   /plugin install requirements-framework@requirements-framework
+2. **Stale cache / old version** → update and reinstall:
    ```
-3. **Manifest missing** → Update repo and reinstall:
-   ```bash
-   cd ~/Tools/claude-requirements-framework
-   git pull
    /plugin marketplace update requirements-framework
    /plugin uninstall requirements-framework@requirements-framework
    /plugin install requirements-framework@requirements-framework
    ```
-4. **Plugin not loading** → Restart Claude Code session
+3. **Not loading at all** → restart the Claude Code session (plugins load at
+   session start).
 
-### Conflicting Installation (Symlink + Marketplace)
+### `uv` Not Found
 
-**Symptom:** Plugin behaves unexpectedly, wrong version shown
+**Symptom:** `install.sh` aborts with "'uv' not found on PATH", or hooks/CLI fail
+to run.
 
-**Cause:** Both a symlink AND marketplace installation exist
-
-**Fix:**
+**Fix:** install `uv` and re-run:
 ```bash
-# Remove deprecated symlink if it exists
-rm -rf ~/.claude/plugins/requirements-framework
-
-# Verify only marketplace installation remains
-ls ~/.claude/plugins/
-# Should NOT show "requirements-framework" directory
-
-# Check plugin via marketplace
-/plugin list
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Permission Errors
+### `req` Command Not Found
 
-**Symptom:** "Permission denied" when installing plugin
+**Symptom:** `req: command not found` after `install.sh`.
 
-**Diagnosis:**
-```bash
-ls -la ~/.claude/
-ls -la ~/.claude/plugins/
-```
+**Fix:** ensure `~/.local/bin` is on PATH (the installer offers to add it), then
+restart your shell or `source ~/.zshrc`.
 
-**Fix:**
-```bash
-# Fix ownership
-sudo chown -R $(whoami) ~/.claude/
+### Skills Don't Trigger (but commands work)
 
-# Reinstall
-/plugin uninstall requirements-framework@requirements-framework
-/plugin install requirements-framework@requirements-framework
-```
-
-### Commands Work But Skills Don't
-
-**Cause:** Skills use natural language triggering based on description patterns
-
-**Verify skill descriptions:**
-```bash
-cat ~/.claude/plugins/requirements-framework/skills/requirements-framework-status/skill.md
-```
-
-**Use exact trigger phrases:**
+Skills trigger on natural-language description patterns. Use exact trigger phrases:
 - ✅ "Show requirements framework status"
-- ✅ "How to use requirements framework"
 - ❌ "Show me status" (too vague)
-- ❌ "Framework status" (missing trigger words)
 
-**Check skill frontmatter:**
-```yaml
----
-description: This skill should be used when the user asks to "requirements framework status", "show requirements project context"...
----
-```
+### Hooks Seem Inactive
 
-Use phrases from the `description` field.
-
-### Plugin Version Mismatch
-
-**Symptom:** Plugin version doesn't match expected or doesn't update
-
-**Cause:** Marketplace cache may be stale, or repo needs updating
-
-**Fix:**
-```bash
-# Update repo
-cd ~/Tools/claude-requirements-framework
-git pull
-
-# Sync version numbers
-./sync-versions.sh --verify
-
-# Update marketplace and reinstall
-/plugin marketplace update requirements-framework
-/plugin uninstall requirements-framework@requirements-framework
-/plugin install requirements-framework@requirements-framework
-
-# Verify version
-/plugin list
-```
-
-**Expected:** Version should match what's in `plugins/requirements-framework/.claude-plugin/plugin.json`
-
-### Plugin Directory Not Found
-
-**Symptom:** install.sh says "Plugin directory not found at ..."
-
-**Cause:** Old repo version or missing plugin files
-
-**Fix:**
-```bash
-cd ~/Tools/claude-requirements-framework
-git pull
-git log --oneline -5 plugins/requirements-framework/
-
-# Verify directory exists
-ls -la plugins/requirements-framework/.claude-plugin/plugin.json
-```
-
-**If missing:**
-```bash
-# Ensure you're on correct branch
-git status
-git checkout master  # or main
-
-# Pull latest
-git pull origin master
-```
+Hooks are owned by the plugin's `hooks.json`, not `~/.claude/settings.json` and
+not `~/.claude/hooks/`. If hooks appear inactive:
+- Confirm the plugin is actually installed/loaded (`/plugin list`).
+- If developing via `--plugin-dir`, confirm the flag pointed at
+  `plugins/requirements-framework` and reload the session.
+- There is nothing to "deploy" — `sync.sh`/`~/.claude/hooks` are legacy and no
+  longer part of the runtime.
 
 ---
 
-## Plugin vs. Hooks
+## How Hooks + Plugin Work Together
 
-The Requirements Framework has two complementary components:
+The plugin bundles both the enforcement layer (hooks) and the satisfaction layer
+(agents/commands/skills). All 16 lifecycle hooks register from one file —
+`plugins/requirements-framework/hooks/hooks.json` — using `${CLAUDE_PLUGIN_ROOT}`:
 
-### Hooks (Core Runtime Enforcement)
+- **PreToolUse** (`check-requirements.py`) — checks gates on
+  Edit/Write/MultiEdit/Bash/EnterPlanMode/ExitPlanMode/MCP; blocks until satisfied.
+- **PostToolUse** (`auto-satisfy-skills.py`, `clear-single-use.py`,
+  `handle-git-events.py`, `handle-plan-enter.py`, `handle-plan-exit.py`) —
+  auto-satisfy gates on review completion, re-arm single-use loops, track git.
+- **SessionStart / Stop / SessionEnd / PreCompact** — briefing injection,
+  verification, cleanup, state saving (Stop also runs `langfuse-trace.py`).
+- **UserPromptSubmit / SubagentStart / PostToolUseFailure / PermissionRequest /
+  TeammateIdle / TaskCompleted** — context injection, safety, team lifecycle.
 
-**Location:** `~/.claude/hooks/`
-**Purpose:** Enforce requirements by blocking file edits until satisfied
-**Components:**
-- `check-requirements.py` (PreToolUse hook)
-- `handle-session-start.py`, `handle-stop.py`, `handle-session-end.py` (lifecycle hooks)
-- `auto-satisfy-skills.py`, `clear-single-use.py` (PostToolUse hooks)
-- `lib/` modules (core logic)
-- `req` CLI command
-
-**Installed by:** Copied to `~/.claude/hooks/` by `install.sh`
-
-### Plugin (Workflow Automation Tools)
-
-**Location:** `~/.claude/plugins/cache/requirements-framework/requirements-framework/2.0.5/`
-**Purpose:** Provide agents, commands, and skills to satisfy requirements
-**Components:**
-- 15 agents (code review, workflow enforcement)
-- 6 commands (pre-commit, deep-review, codex-review, commit-checks, session-reflect)
-- 5 skills (management and status)
-
-**Installed by:** Marketplace installation (copied to cache)
-
-### How They Work Together
+**The satisfaction flow:**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  User tries to Edit/Write file                             │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  HOOKS (check-requirements.py)                              │
-│  • Check if pre_commit_review requirement satisfied         │
-│  • If NOT satisfied → Block edit with message               │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  User runs: /requirements-framework:pre-commit              │
-│  (PLUGIN command)                                           │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Command completes → PostToolUse hook                       │
-│  (auto-satisfy-skills.py)                                   │
-│  • Detects pre-commit command finished                      │
-│  • Auto-satisfies pre_commit_review requirement             │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  User can now Edit/Write files                              │
-│  (requirement satisfied)                                    │
-└─────────────────────────────────────────────────────────────┘
+User tries to Edit/Write
+        │
+        ▼
+PreToolUse (check-requirements.py) — gate unsatisfied → BLOCK with guidance
+        │
+        ▼
+User runs a review command (e.g. /requirements-framework:deep-review)
+        │
+        ▼
+PostToolUse (auto-satisfy-skills.py) — maps the command → satisfies its gate
+        │
+        ▼
+Edit/Write is now unblocked
 ```
 
-**Key Integration:** `auto-satisfy-skills.py` (PostToolUse hook) maps plugin commands to requirements:
+**Command → gate mapping** (ADR-022 gate vocabulary):
 
-| Plugin Command | Satisfies Requirement |
-|----------------|----------------------|
-| `/requirements-framework:pre-commit` | `pre_commit_review` (deprecated) |
-| `/requirements-framework:deep-review` | `pre_pr_review` |
+| Command | Satisfies gate |
+|---------|----------------|
+| `/requirements-framework:brainstorm` (brainstorming skill) | `design_approved` |
+| `/requirements-framework:write-plan` (writing-plans skill) | `plan_written` |
+| `/requirements-framework:arch-review` | `plan_validated` |
+| `/requirements-framework:pre-commit` | `implementation_done` (per-commit loop) |
+| `/requirements-framework:deep-review` | `pr_reviewed` |
+| verification-before-completion skill | `verified` |
 
-**See:** `~/.claude/hooks/auto-satisfy-skills.py` for mapping logic
+The current gate set is `design_approved`, `plan_written`, `plan_validated`,
+`implementation_done`, `pr_reviewed`, `verified`. See the "Workflow Phase Backbone
+(ADR-022)" section in `CLAUDE.md` for the full typed 7-node backbone.
 
 ---
 
@@ -467,162 +320,86 @@ The Requirements Framework has two complementary components:
 
 ### Live Editing Workflow
 
-For development, use the `--plugin-dir` flag to load the plugin directly from the repo:
+Load the plugin from your clone with `--plugin-dir` and edit in place:
 
 ```bash
-# Launch Claude Code with plugin loaded from repo
 claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-framework
 ```
 
-Changes to plugin files are immediately available (live reload):
+Edit a component and reload the session to pick up changes — no reinstall, no
+hook deploy:
 
 ```bash
-# 1. Edit agent in repo
-vim ~/Tools/claude-requirements-framework/plugins/requirements-framework/agents/code-reviewer.md
+# 1. Edit a component in the repo
+$EDITOR plugins/requirements-framework/agents/code-reviewer.md
 
-# 2. Changes are live immediately (--plugin-dir loads from repo)
-# No restart needed - Claude Code auto-reloads plugins
+# 2. Reload the Claude Code session (or restart) to pick it up
 
-# 3. Test in Claude Code
-/requirements-framework:pre-commit code
+# 3. Test it
+/requirements-framework:pre-commit
+```
 
-# 4. Commit changes
+### Testing Framework Changes
+
+Run tests and lint through `uv` (matches CI):
+
+```bash
 cd ~/Tools/claude-requirements-framework
-git add plugins/requirements-framework/agents/code-reviewer.md
-git commit -m "feat(agent): enhance code-reviewer detection"
+uv run python hooks/test_requirements.py
+uv run ruff check .
 ```
 
-### Testing Changes
-
-**Agent changes:**
-```bash
-# Edit agent
-vim plugins/requirements-framework/agents/test-analyzer.md
-
-# Test via command (agents invoked by commands)
-/requirements-framework:pre-commit tests
-```
-
-**Command changes:**
-```bash
-# Edit command
-vim plugins/requirements-framework/commands/pre-commit.md
-
-# Test directly
-/requirements-framework:pre-commit all
-```
-
-**Skill changes:**
-```bash
-# Edit skill
-vim plugins/requirements-framework/skills/requirements-framework-status/skill.md
-
-# Test via natural language
-"Show requirements framework status"
-```
+> **Plugin version bump:** any change to plugin files (agents, commands, skills,
+> hooks, or `plugin.json`) must bump the version in
+> `plugins/requirements-framework/.claude-plugin/plugin.json` in the same commit.
 
 ### Development vs Production
 
-**Development (--plugin-dir flag):**
-- Changes to plugin files are immediately available
-- No reinstall needed - Claude Code auto-reloads
+**Development (`--plugin-dir`):** edits are picked up on session reload.
 
-**Production (Marketplace installation):**
-- Changes require reinstall via marketplace commands:
-  ```bash
-  /plugin marketplace update requirements-framework
-  /plugin uninstall requirements-framework@requirements-framework
-  /plugin install requirements-framework@requirements-framework
-  ```
-
-**Hooks:** Always require sync (copied to `~/.claude/hooks/`)
-```bash
-./sync.sh status   # Check sync status
-./sync.sh deploy   # Deploy hooks
+**Production (marketplace):** changes require a reinstall:
+```
+/plugin marketplace update requirements-framework
+/plugin uninstall requirements-framework@requirements-framework
+/plugin install requirements-framework@requirements-framework
 ```
 
 ---
 
 ## Configuration
 
-The plugin respects the same configuration cascade as hooks:
-
-### Configuration Files
+The plugin respects the standard configuration cascade (same as the hooks it
+bundles):
 
 1. **`~/.claude/requirements.yaml`** (Global)
-2. **`.claude/requirements.yaml`** (Project)
-3. **`.claude/requirements.local.yaml`** (Local overrides)
+2. **`.claude/requirements.yaml`** (Project, version-controlled)
+3. **`.claude/requirements.local.yaml`** (Local overrides, gitignored)
 
-See [Configuration System](../README.md#configuration-system) for details.
+Priority: **local > project > global**.
 
-### Enabling Plugin-Related Requirements
-
-To use plugin commands as requirement satisfaction mechanisms:
-
-**~/.claude/requirements.yaml:**
-```yaml
-requirements:
-  # NOTE: pre_commit_review is deprecated since v2.6.
-  # Use /pre-commit voluntarily or /deep-review for enforced review.
-  pre_pr_review:
-    scope: single_use
-    message: "Run /requirements-framework:deep-review before creating PR"
-```
-
-**How it works:**
-1. Requirement enabled → Blocks edits
-2. User runs plugin command → Command completes
-3. PostToolUse hook (auto-satisfy-skills.py) → Auto-satisfies requirement
-4. Edit unblocked
-
-**See:** [Plugin Components](../README.md#plugin-components) for command details
+Scaffold a project config with `req init` (or the `/req-init` command). See
+[Configuration System](../README.md#configuration-system) for details and
+`examples/` for reference configs.
 
 ---
 
 ## Related Documentation
 
-### Main Documentation
-- **[Main README](../README.md)** - Framework overview and quick start
-- **[Plugin Components](../README.md#plugin-components)** - Detailed agent/command/skill descriptions
-- **[Plugin README](../plugins/requirements-framework/README.md)** - Plugin-specific usage guide
-
-### Architecture
-- **[ADR-006: Plugin Architecture](./adr/ADR-006-plugin-architecture-code-review.md)** - Design decisions for plugin system
-
-### Development
-- **[Requirements Framework Development](../README.md#development)** - Contributing to the framework
-- **[Sync Guide](../CLAUDE.md)** - Hook deployment and sync workflow
-
-### Configuration
-- **[Configuration System](../README.md#configuration-system)** - Configuration cascade and customization
-- **[Examples](../examples/)** - Example configurations
+- **[Main README](../README.md)** — framework overview and quick start
+- **[Plugin README](../plugins/requirements-framework/README.md)** — plugin usage guide
+- **[CLAUDE.md](../CLAUDE.md)** — operational essentials: stacked-git workflow,
+  uv build/test, config cascade, the ADR-022 workflow backbone (ADR-021 uv). The
+  full hook lifecycle (17 hook commands across 12 events) lives in `DEVELOPMENT.md`.
+- **ADRs** (`docs/adr/`):
+  - ADR-011 — externalized messages
+  - ADR-012 — Agent Teams integration
+  - ADR-020 — strict global preflight (opt-in, fail-closed adoption gate)
+  - ADR-022 — typed 7-node workflow backbone / gate consolidation
 
 ---
 
 ## Support
 
-### Self-Service
-
-1. **Check this troubleshooting guide** - [Troubleshooting](#troubleshooting) section above
-2. **Run diagnostics:**
-   ```bash
-   req doctor --repo ~/Tools/claude-requirements-framework
-   ```
-3. **Test hooks:**
-   ```bash
-   python3 ~/.claude/hooks/test_requirements.py
-   ```
-
-### Get Help
-
-- **Issues:** https://github.com/HarmAalbers/claude-requirements-framework/issues
-- **Discussions:** https://github.com/HarmAalbers/claude-requirements-framework/discussions
-
----
-
-## Version History
-
-- **v2.0.5** - Current stable release with 10 agents, 3 commands, 5 skills
-  - Plugin installation via install.sh
-  - Auto-satisfy mechanism for requirements
-  - Comprehensive code review suite
+1. Check the [Troubleshooting](#troubleshooting) section above.
+2. Run the test suite from a clone: `uv run python hooks/test_requirements.py`.
+3. **Issues:** https://github.com/HarmAalbers/claude-requirements-framework/issues
