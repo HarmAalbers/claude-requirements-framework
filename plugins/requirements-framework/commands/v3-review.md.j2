@@ -3,7 +3,7 @@ name: v3-review
 description: "SDK fan-out code review (V3) — structured-output review workers + aggregator, rendered as an ADR-013 report. Additive opt-in alternative to /deep-review (see ADR-018)."
 argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash"]
-git_hash: b03be42
+git_hash: db81f75
 ---
 
 > **Workflow position**: an opt-in SDK alternative to the team-based `/deep-review` (ADR-012). Both satisfy `pre_pr_review`; choose the substrate you want.

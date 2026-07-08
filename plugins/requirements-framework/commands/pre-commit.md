@@ -3,7 +3,7 @@ name: pre-commit
 description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: b03be42
+git_hash: db81f75
 ---
 
 > **Workflow position**: lightweight pre-commit alternative to `/req review`. Run directly before each commit.
