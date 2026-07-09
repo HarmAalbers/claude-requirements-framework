@@ -4593,6 +4593,7 @@ def test_guard_hook_integration(runner: TestRunner):
             "version": "1.0",
             "enabled": True,
             "inherit": False,
+            "enforcement": "block",
             "requirements": {
                 "protected_branch": {
                     "enabled": True,
@@ -7726,6 +7727,7 @@ def test_plan_mode_triggers(runner):
 
         config_content = """version: "1.0"
 enabled: true
+enforcement: block
 requirements:
   adr_plan_validation:
     enabled: true
