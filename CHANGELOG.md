@@ -5,6 +5,38 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] — 2026-07-09
+
+The nudge-by-default release: the framework stops denying work. A new top-level
+`enforcement: block | nudge` config axis defaults to **nudge** — gates surface
+advisories instead of blocking — and every remaining hard deny/reject hook has
+been removed. Covers the 4.28–4.33 development span (no intermediate releases
+were logged).
+
+### Changed
+
+- **`enforcement` defaults to `nudge`; `block` is opt-in.** In nudge mode the
+  PreToolUse and Stop hooks allow the operation and surface an advisory instead
+  of denying. The SessionStart briefing is enforcement-aware, and the shipped
+  example configs default to nudge. Set `enforcement: block` (any cascade level)
+  to restore blocking gates.
+
+### Removed
+
+- **PermissionRequest hook** (`handle-permission-request.py`) — auto-denied
+  dangerous Bash patterns (`rm` on root, force push, SQL DROP, …). Claude Code's
+  native permission dialog already gates these commands, and the hook's deny
+  could not carry a reason. The `hooks.permission_request.auto_deny_dangerous`
+  key is gone; a leftover key in user configs is silently ignored.
+- **TaskCompleted and TeammateIdle team hooks, plus the entire
+  `hooks.agent_teams` config section** (`enabled`, `keep_working_on_idle`,
+  `validate_task_completion`). Their exit-2 reject branches were opt-in-off dead
+  code and `team_progress.log` had no readers. The team **commands and agents
+  remain** (ADR-012 amended in place). Leftover config keys are silently ignored.
+- **`SessionMetrics.record_agent_use()` and the `agents_used` summary field** —
+  orphaned by the team-hook removal; the count was always 0 for every consumer.
+- Net effect on registration: **14 hooks across 9 lifecycle events** (was 17/12).
+
 ## [4.27.0] — 2026-07-07
 
 Removed the `verification_evidence` requirement default — the auto-satisfied
