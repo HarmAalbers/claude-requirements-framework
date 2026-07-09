@@ -88,7 +88,7 @@ Priority: **local > project > global**.
 ### Session lifecycle (hook events, in order)
 
 ```
-SessionStart → UserPromptSubmit → PreToolUse → PermissionRequest →
+SessionStart → UserPromptSubmit → PreToolUse →
 PostToolUse → PostToolUseFailure → SubagentStart → PreCompact →
 Stop → SessionEnd → TeammateIdle → TaskCompleted
 ```

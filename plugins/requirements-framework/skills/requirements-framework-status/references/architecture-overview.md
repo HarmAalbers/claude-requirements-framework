@@ -41,7 +41,7 @@ Repository (source of truth)
 
 ### Hook Execution Order
 
-Registered hooks span 12 lifecycle events (see `hooks.json` for the concrete
+Registered hooks span 11 lifecycle events (see `hooks.json` for the concrete
 script → event wiring):
 
 ```
@@ -54,9 +54,6 @@ UserPromptSubmit (handle-prompt-submit.py)
 PreToolUse (check-requirements.py) - on Edit/Write/Bash/EnterPlanMode/ExitPlanMode
    → Load config (global → project → local cascade)
    → Check requirements against session/branch state; allow or block
-
-PermissionRequest (handle-permission-request.py)
-   → Auto-deny dangerous command patterns (rm -rf, force push, …)
 
 PostToolUse (multiple hooks)
    → auto-satisfy-skills.py: auto-satisfy gates when workflow skills complete

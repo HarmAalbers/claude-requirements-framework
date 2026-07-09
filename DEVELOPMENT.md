@@ -217,7 +217,6 @@ for the concrete strategy modules.
 │   ├── check-requirements.py          # PreToolUse: requirement enforcement
 │   ├── handle-session-start.py        # SessionStart: context injection, registry
 │   ├── handle-prompt-submit.py        # UserPromptSubmit: compact status, brainstorm nudge
-│   ├── handle-permission-request.py   # PermissionRequest: auto-deny dangerous commands
 │   ├── handle-plan-enter.py           # PostToolUse(EnterPlanMode): brainstorm auto-invoke
 │   ├── handle-plan-exit.py            # PostToolUse(ExitPlanMode): status surfacing
 │   ├── auto-satisfy-skills.py         # PostToolUse(Skill): auto-satisfy gates

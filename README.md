@@ -264,9 +264,9 @@ hooks:
     clear_session_state: false # OFF by default
 ```
 
-## Session Lifecycle (17 hooks across 12 events)
+## Session Lifecycle (16 hooks across 11 events)
 
-The plugin registers 17 hook commands across 12 events via `plugins/requirements-framework/hooks/hooks.json` (the authoritative source). The core gating flow:
+The plugin registers 16 hook commands across 11 events via `plugins/requirements-framework/hooks/hooks.json` (the authoritative source). The core gating flow:
 
 ```
 🚀 SessionStart ──► clean stale sessions, inject full requirement status
@@ -286,7 +286,7 @@ The plugin registers 17 hook commands across 12 events via `plugins/requirements
 | Stop            | Claude about to finish     | Yes       | Verify session-scoped requirements             |
 | SessionEnd      | Session ends               | No        | Cleanup                                        |
 
-The full set also includes `UserPromptSubmit`, `PermissionRequest`, several `PostToolUse` hooks (auto-satisfy skills, clear single-use, git events, plan enter/exit), `PostToolUseFailure`, `SubagentStart`, `PreCompact`, a second `Stop` hook (Langfuse trace, opt-in), `TeammateIdle`, and `TaskCompleted`. See `DEVELOPMENT.md` for the complete hook lifecycle.
+The full set also includes `UserPromptSubmit`, several `PostToolUse` hooks (auto-satisfy skills, clear single-use, git events, plan enter/exit), `PostToolUseFailure`, `SubagentStart`, `PreCompact`, a second `Stop` hook (Langfuse trace, opt-in), `TeammateIdle`, and `TaskCompleted`. See `DEVELOPMENT.md` for the complete hook lifecycle.
 
 ### Stop hook behavior
 
