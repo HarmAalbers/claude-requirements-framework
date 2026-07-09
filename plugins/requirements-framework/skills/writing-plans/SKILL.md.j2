@@ -1,7 +1,7 @@
 ---
 name: writing-plans
 description: Use when there is a spec or requirements for a multi-step task, before touching code
-git_hash: 4b624f2
+git_hash: 54fa3c3
 ---
 
 # Writing Plans
