@@ -37,7 +37,7 @@ workflow and a suite of code-review agents, commands, and skills.
 - **21 skills** — status/usage/builder/development helpers plus the workflow
   skill library (brainstorming, writing-plans, executing-plans, verification,
   finishing-a-branch, etc.).
-- **16 lifecycle hooks** — registered via the plugin's `hooks/hooks.json`
+- **15 lifecycle hooks** — registered via the plugin's `hooks/hooks.json`
   (see [How Hooks + Plugin Work Together](#how-hooks--plugin-work-together)).
 
 **Key point:** hooks are part of the plugin bundle. When the plugin loads, its
@@ -193,7 +193,7 @@ gated config in place, editing a file surfaces a requirement briefing/block at
 cat plugins/requirements-framework/hooks/hooks.json
 ```
 
-All 16 lifecycle hooks are registered there via `${CLAUDE_PLUGIN_ROOT}`.
+All 15 lifecycle hooks are registered there via `${CLAUDE_PLUGIN_ROOT}`.
 
 ### Step 5 (optional): Run the Test Suite
 
@@ -268,7 +268,7 @@ not `~/.claude/hooks/`. If hooks appear inactive:
 ## How Hooks + Plugin Work Together
 
 The plugin bundles both the enforcement layer (hooks) and the satisfaction layer
-(agents/commands/skills). All 16 lifecycle hooks register from one file —
+(agents/commands/skills). All 15 lifecycle hooks register from one file —
 `plugins/requirements-framework/hooks/hooks.json` — using `${CLAUDE_PLUGIN_ROOT}`:
 
 - **PreToolUse** (`check-requirements.py`) — checks gates on
@@ -279,7 +279,7 @@ The plugin bundles both the enforcement layer (hooks) and the satisfaction layer
 - **SessionStart / Stop / SessionEnd / PreCompact** — briefing injection,
   verification, cleanup, state saving (Stop also runs `langfuse-trace.py`).
 - **UserPromptSubmit / SubagentStart / PostToolUseFailure /
-  TeammateIdle / TaskCompleted** — context injection, safety, team lifecycle.
+  TeammateIdle** — context injection, safety, team lifecycle.
 
 **The satisfaction flow:**
 
@@ -389,7 +389,7 @@ Scaffold a project config with `req init` (or the `/req-init` command). See
 - **[Plugin README](../plugins/requirements-framework/README.md)** — plugin usage guide
 - **[CLAUDE.md](../CLAUDE.md)** — operational essentials: stacked-git workflow,
   uv build/test, config cascade, the ADR-022 workflow backbone (ADR-021 uv). The
-  full hook lifecycle (16 hook commands across 11 events) lives in `DEVELOPMENT.md`.
+  full hook lifecycle (15 hook commands across 10 events) lives in `DEVELOPMENT.md`.
 - **ADRs** (`docs/adr/`):
   - ADR-011 — externalized messages
   - ADR-012 — Agent Teams integration

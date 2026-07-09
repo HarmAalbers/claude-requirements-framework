@@ -423,7 +423,6 @@ hooks:
   agent_teams:
     enabled: true           # Enabled by default
     keep_working_on_idle: false  # Exit 2 on TeammateIdle to re-engage idle teammates
-    validate_task_completion: false  # Validate task output on TaskCompleted
 
   # Session Learning - analyzes sessions to improve future efficiency
   session_learning:

@@ -228,7 +228,6 @@ for the concrete strategy modules.
 │   ├── handle-stop.py                 # Stop: requirement verification
 │   ├── handle-session-end.py          # SessionEnd: registry cleanup
 │   ├── handle-teammate-idle.py        # TeammateIdle: team progress (ADR-012)
-│   ├── handle-task-completed.py       # TaskCompleted: team task gates (ADR-012)
 │   ├── langfuse-trace.py              # Stop-hook Langfuse wrapper (ADR-019)
 │   ├── _langfuse_hook.py              # VENDORED upstream Langfuse hook
 │   ├── requirements-cli.py            # `req` command implementation

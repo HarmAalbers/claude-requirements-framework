@@ -90,7 +90,7 @@ Priority: **local > project > global**.
 ```
 SessionStart → UserPromptSubmit → PreToolUse →
 PostToolUse → PostToolUseFailure → SubagentStart → PreCompact →
-Stop → SessionEnd → TeammateIdle → TaskCompleted
+Stop → SessionEnd → TeammateIdle
 ```
 
 (For the current concrete hook scripts, use the `ls hooks/*.py` line above rather
