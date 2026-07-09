@@ -7,6 +7,12 @@ Amended (2026-02-16): /pre-commit upgraded to team-based with subagent fallback
 Amended (2026-02-17): /deep-review overhaul — all agents always run, no max_teammates cap, code-simplifier as teammate
 Amended (2026-05-20): Prohibition against removing /plan-review and /quality-check superseded by [[ADR-015]] — the /req conductor provides equivalent lightweight UX at no user-facing cost. Both commands removed in plugin v4.0.0.
 
+> **Amendment (2026-07-09):** The runtime hooks this ADR introduced
+> (`TeammateIdle`, `TaskCompleted`) and the `hooks.agent_teams` config
+> section were removed with the nudge-by-default overhaul. Their reject
+> branches were opt-in-off, and `team_progress.log` had no readers. The
+> team commands and agents remain.
+
 ## Context
 
 The requirements framework currently uses subagents (Task tool) for all review orchestration. Commands like `/pre-commit`, `/quality-check`, and `/plan-review` launch specialized agents that report results back to a single orchestrator, which then aggregates findings and produces a verdict.

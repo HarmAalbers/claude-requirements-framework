@@ -101,18 +101,6 @@
         ]
       }
     ],
-    "TeammateIdle": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-teammate-idle.py",
-            "statusMessage": "Processing teammate idle event..."
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "matcher": "*",

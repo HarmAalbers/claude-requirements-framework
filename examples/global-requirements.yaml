@@ -419,11 +419,6 @@ hooks:
   stop:
     verify_requirements: true  # Block session end if requirements unsatisfied
 
-  # Agent Teams - team-based review with cross-validation (ADR-012)
-  agent_teams:
-    enabled: true           # Enabled by default
-    keep_working_on_idle: false  # Exit 2 on TeammateIdle to re-engage idle teammates
-
   # Session Learning - analyzes sessions to improve future efficiency
   session_learning:
     enabled: false  # Set to true to enable session learning

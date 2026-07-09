@@ -41,7 +41,7 @@ Repository (source of truth)
 
 ### Hook Execution Order
 
-Registered hooks span 10 lifecycle events (see `hooks.json` for the concrete
+Registered hooks span 9 lifecycle events (see `hooks.json` for the concrete
 script → event wiring):
 
 ```
@@ -77,9 +77,6 @@ Stop (handle-stop.py)
 
 SessionEnd (handle-session-end.py)
    → Remove session from registry; optional state cleanup
-
-TeammateIdle (handle-teammate-idle.py)
-   → Agent-team progress hook (ADR-012); exit-2 re-engage off by default
 ```
 
 ---
