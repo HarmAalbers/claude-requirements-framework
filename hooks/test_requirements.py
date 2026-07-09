@@ -3176,7 +3176,6 @@ def test_session_end_finalizes_metrics(runner: TestRunner):
             "git": {"commits": [], "files_changed": 0, "lines_added": 0, "lines_removed": 0},
             "skills": [],
             "commands": [],
-            "agents": [],
             "learnings": {"patterns_detected": [], "improvements_made": [], "user_feedback": None},
         }))
 
@@ -8481,14 +8480,6 @@ def test_session_metrics_module(runner: TestRunner):
         loaded = load_metrics("sess5678", tmpdir)
         runner.test("SessionMetrics records skill use",
                    len(loaded.get('skills', [])) == 1)
-
-        # Test 9: SessionMetrics - record_agent_use
-        sm.record_agent_use("code-reviewer")
-        sm.save()
-
-        loaded = load_metrics("sess5678", tmpdir)
-        runner.test("SessionMetrics records agent use",
-                   len(loaded.get('agents', [])) == 1)
 
         # Test 10: SessionMetrics - record_error
         sm.record_error("blocked", message="Test error", requirement="commit_plan")

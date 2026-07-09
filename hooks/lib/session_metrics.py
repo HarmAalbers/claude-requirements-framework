@@ -133,9 +133,6 @@ def create_empty_metrics(session_id: str, project_dir: str, branch: str) -> dict
         "skills": [],
         "commands": [],
 
-        # Agents invoked
-        "agents": [],
-
         # Learning annotations (added by /session-reflect)
         "learnings": {
             "patterns_detected": [],
@@ -506,31 +503,6 @@ class SessionMetrics:
         except Exception as e:
             get_logger().warning(f"Failed to record skill use: {e}")
 
-    def record_agent_use(self, agent_name: str) -> None:
-        """
-        Record an agent invocation.
-
-        Args:
-            agent_name: Name of the agent (e.g., 'code-reviewer', 'test-analyzer')
-        """
-        try:
-            self._ensure_loaded()
-
-            agents = self._metrics.setdefault('agents', [])
-            agents.append({
-                'name': agent_name,
-                'timestamp': int(time.time())
-            })
-
-            # Keep only last 50 agents
-            if len(agents) > 50:
-                self._metrics['agents'] = agents[-50:]
-
-            self._dirty = True
-
-        except Exception as e:
-            get_logger().warning(f"Failed to record agent use: {e}")
-
     def finalize_session(self) -> None:
         """
         Finalize session metrics with end time and duration.
@@ -575,8 +547,7 @@ class SessionMetrics:
                     1 for r in reqs.values() if r.get('satisfied_at')
                 ),
                 'error_count': len(self._metrics.get('errors', [])),
-                'skills_used': len(self._metrics.get('skills', [])),
-                'agents_used': len(self._metrics.get('agents', []))
+                'skills_used': len(self._metrics.get('skills', []))
             }
         except Exception as e:
             get_logger().warning(f"Failed to get summary: {e}")
@@ -613,7 +584,6 @@ if __name__ == "__main__":
         metrics.record_requirement_trigger("commit_plan", blocked=True)
         metrics.record_requirement_satisfied("commit_plan", "skill")
         metrics.record_skill_use("pre-commit")
-        metrics.record_agent_use("code-reviewer")
         metrics.record_error("blocked", message="Requirement not satisfied", requirement="commit_plan")
         metrics.save()
 
