@@ -30,7 +30,7 @@ workflow and a suite of code-review agents, commands, and skills.
   codex-review-agent, codex-arch-reviewer, tenant-isolation-auditor, appsec-auditor,
   compliance-auditor, frontend-reviewer, and the refactor-orchestration trio
   (refactor-executor / refactor-investigator / refactor-analyzer), among others.
-- **16 commands** — including `/requirements-framework:deep-review`,
+- **15 commands** — including `/requirements-framework:deep-review`,
   `/requirements-framework:arch-review`, `/requirements-framework:pre-commit`,
   `/requirements-framework:codex-review`, `/requirements-framework:refactor-orchestrate`,
   and the `req`-workflow conductor commands.

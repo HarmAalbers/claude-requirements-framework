@@ -270,7 +270,7 @@ The framework includes process skills that guide the full development lifecycle:
 | `requesting-code-review` | Dispatching review agents |
 | `writing-skills` | TDD-for-documentation (meta-skill) |
 
-Use `/brainstorm`, `/write-plan`, `/execute-plan` commands to invoke process skills directly.
+Use `/brainstorming`, `/write-plan`, `/execute-plan` to invoke process skills directly.
 
 For large multi-layer refactors that exceed a single session, use `/requirements-framework:refactor-orchestrate` — multi-layer top-down refactor workflow (produces plan + orchestrator-prompt for fresh-session execution).
 

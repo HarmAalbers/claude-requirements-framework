@@ -98,7 +98,7 @@ Design → Plan → Validate → Build → Review → Verify → Ship
 ## Deeper Documentation
 
 - `DEVELOPMENT.md` — comprehensive development guide (hooks lifecycle, lib modules, internals).
-- `plugins/requirements-framework/README.md` — the 24 agents / 16 commands / 21 skills.
+- `plugins/requirements-framework/README.md` — the 24 agents / 15 commands / 21 skills.
 - `docs/adr/` — design records. Load-bearing ones:
   - ADR-011 message externalization · ADR-012 agent teams · ADR-014 refactor orchestration
   - ADR-019 Stop-hook observability (Langfuse) · ADR-020 strict global preflight · ADR-022 workflow backbone

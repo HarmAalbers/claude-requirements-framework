@@ -10554,7 +10554,7 @@ def test_plugin_command_files_exist(runner: TestRunner):
     if not commands_dir.exists():
         commands_dir = Path.home() / 'Tools' / 'claude-requirements-framework' / 'plugins' / 'requirements-framework' / 'commands'
 
-    new_commands = ['brainstorm.md', 'write-plan.md', 'execute-plan.md']
+    new_commands = ['write-plan.md', 'execute-plan.md']
 
     for cmd_file in new_commands:
         filepath = commands_dir / cmd_file
@@ -10572,6 +10572,12 @@ def test_plugin_command_files_exist(runner: TestRunner):
     runner.test("Deprecated /quality-check removed in 4.0.0",
                not quality_check_path.exists(),
                f"File should be deleted: {quality_check_path}")
+
+    # Absence test: /brainstorm command shim removed in plugin v6.0.0
+    brainstorm_cmd_path = commands_dir / 'brainstorm.md'
+    runner.test("Command shim /brainstorm removed in 6.0.0",
+               not brainstorm_cmd_path.exists(),
+               f"File should be deleted: {brainstorm_cmd_path}")
 
 
 def test_plan_enter_hook(runner: TestRunner):

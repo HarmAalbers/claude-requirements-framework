@@ -284,7 +284,7 @@ for the concrete strategy modules.
 │   ├── .claude-plugin/plugin.json     # Plugin manifest (version lives here)
 │   ├── hooks/                         # BUILD-COPY of hooks/ + hooks.json (registration)
 │   ├── agents/                        # 24 agents (<name>.md.j2 + rendered <name>.md)
-│   ├── commands/                      # 16 commands (.md.j2 + .md)
+│   ├── commands/                      # 15 commands (.md.j2 + .md)
 │   └── skills/                        # 21 skills (<name>/SKILL.md)
 ├── scripts/                           # Build & ops tooling
 │   ├── build_plugin_hooks.py          # Rebuild plugin hooks/ from hooks/
@@ -322,7 +322,7 @@ uv run python scripts/build_plugin_hooks.py --check
 
 ## Plugin Prompt Authoring (.md.j2 → .md)
 
-Every dispatched plugin prompt — **24 agents**, **16 commands**, and **21 skills** — uses a
+Every dispatched plugin prompt — **24 agents**, **15 commands**, and **21 skills** — uses a
 two-file pattern:
 
 | File           | Role                                                        | Edit it?             |

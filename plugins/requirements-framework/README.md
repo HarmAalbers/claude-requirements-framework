@@ -15,7 +15,7 @@ each step.
 **What's inside (verified on disk):**
 
 - **24 agents** — reviewers, auditors, and refactor workers invoked by commands or Agent Teams.
-- **16 commands** — orchestrators for each workflow phase plus `req` management.
+- **15 commands** — orchestrators for each workflow phase plus `req` management.
 - **21 skills** — natural-language capabilities: the workflow phase skills, framework help, and session learning.
 
 ### Runtime model (self-contained)
@@ -66,7 +66,7 @@ Design → Plan → Validate → Build → Review → Verify → Ship
 
 | Node     | Type  | Gate                  | Skill / Command                                             |
 |----------|-------|-----------------------|------------------------------------------------------------|
-| design   | spine | `design_approved`     | `/brainstorm` (`brainstorming` skill)                      |
+| design   | spine | `design_approved`     | `/brainstorming` (skill)                                   |
 | plan     | spine | `plan_written`        | `/write-plan` (`writing-plans` skill)                      |
 | validate | team  | `plan_validated`      | `/arch-review` *(cond: `/codex-review`)*                   |
 | build    | spine | `implementation_done` | `/execute-plan` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
@@ -94,7 +94,6 @@ the current phase and dispatches to the matching skill or command.
 | Command | Description |
 |---------|-------------|
 | `/req` | Workflow conductor — derives the current phase and dispatches to the matching skill/command. Run bare to be guided, or pass an explicit phase. |
-| `/brainstorm` | Design-first development: explore requirements before implementation (satisfies `design_approved`). |
 | `/write-plan` | Create a detailed implementation plan from requirements or a spec (satisfies `plan_written`). |
 | `/arch-review` | Multi-perspective team-based architecture review with agent debate and commit planning (satisfies `plan_validated`). |
 | `/execute-plan` | Execute an implementation plan with batch checkpoints and review (satisfies `implementation_done`). |

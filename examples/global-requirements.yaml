@@ -264,7 +264,7 @@ requirements:
     message: |
       ## Blocked: design_approved
 
-      **Execute**: `/brainstorm`
+      **Execute**: `/brainstorming`
 
       Explore requirements, propose approaches, and get design approval before writing code.
 

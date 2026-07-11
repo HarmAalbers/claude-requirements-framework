@@ -11,7 +11,7 @@ A hook-based system for enforcing a development workflow in Claude Code. It ship
 - **🎯 Four scopes**: `session`, `branch`, `permanent`, `single_use`
 - **⚡ `req` CLI**: One command to inspect and drive requirements (`req status`, `req satisfy`, `req enable`, …)
 - **📦 Config cascade**: global → project → local, with `local` winning
-- **🔌 Rich plugin**: 24 agents, 16 commands, 21 skills for review, planning, and orchestration
+- **🔌 Rich plugin**: 24 agents, 15 commands, 21 skills for review, planning, and orchestration
 - **🧪 Comprehensive test suite** run under `uv`
 
 ## Runtime Model: Self-Contained Plugin
@@ -294,13 +294,13 @@ Enabled by default. Checks session-scoped requirements, uses a `stop_hook_active
 
 ## Plugin Components
 
-The plugin bundles **24 agents, 16 commands, and 21 skills**.
+The plugin bundles **24 agents, 15 commands, and 21 skills**.
 
 > **Authoring note:** plugin agents/commands use a two-file pattern — `<name>.md.j2` (Jinja2 source you edit) and `<name>.md` (rendered output Claude Code dispatches). Run `uv run python scripts/render_prompts.py` after editing a `.md.j2`. See DEVELOPMENT.md.
 
 ### Key commands
 
-- `/requirements-framework:brainstorm` — design-first exploration (Design phase)
+- `/brainstorming` (skill) — design-first exploration (Design phase)
 - `/requirements-framework:write-plan` — produce an executable plan (Plan phase)
 - `/requirements-framework:arch-review` — team-based architecture review; satisfies `plan_validated` (Validate phase)
 - `/requirements-framework:execute-plan` — execute a plan with checkpoints (Build phase)

@@ -24,7 +24,7 @@ This is the **built-in default** that applies when a project has no `workflow:` 
 
 | Phase | When | Run |
 |-------|------|-----|
-| design | `design_approved` unsatisfied | `/brainstorm` |
+| design | `design_approved` unsatisfied | `/brainstorming` |
 | plan | `plan_written` unsatisfied | `/write-plan` |
 | validate | `plan_validated` unsatisfied (after plan_written) | `/arch-review` (optional `/codex-review`) |
 | build | `implementation_done` unsatisfied | `/execute-plan` (loops `/pre-commit` per commit) |
@@ -36,7 +36,7 @@ This is the ADR-022 typed 7-node backbone: Design → Plan → Validate → Buil
 
 ## Common transitions (default workflow)
 
-- After `/brainstorm` → `design_approved` flips → next phase: **plan**
+- After `/brainstorming` → `design_approved` flips → next phase: **plan**
 - After `/write-plan` → `plan_written` flips → next phase: **validate**
 - After `/arch-review` → `plan_validated` flips → next phase: **build**
 - After `/execute-plan` → `implementation_done` flips → next phase: **review**
