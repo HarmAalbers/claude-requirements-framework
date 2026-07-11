@@ -10833,6 +10833,13 @@ def test_brainstorm_lib(runner: TestRunner):
     runner.test("brainstorm_directive is skill-agnostic",
                "/writing-plans" in custom, f"Got: {custom[:120]}")
 
+    # v5.1.0: the directive is mode-agnostic — artifact rules live in the skill.
+    for banned in ("plan mode", "plan file", "Do NOT create"):
+        runner.test(f"brainstorm_directive has no mode-specific phrasing: {banned!r}",
+                   banned not in directive, f"Got: {directive}")
+    runner.test("brainstorm_directive mentions tier triage",
+               "triage" in directive.lower(), f"Got: {directive}")
+
     # Dedup marker round-trips; fresh sessions are independent
     with tempfile.TemporaryDirectory() as tmpdir:
         runner.test("nudge not shown before mark",

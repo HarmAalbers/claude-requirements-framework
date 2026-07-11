@@ -36,19 +36,18 @@ def brainstorm_directive(skill: str) -> str:
 
     The slash form drops the plugin prefix: ``requirements-framework:brainstorming``
     → ``/brainstorming``. Skill-agnostic so a custom brainstorm phase dispatches
-    its own configured skill.
+    its own configured skill. Mode-agnostic: artifact rules live in the skill, so
+    the directive never mentions plan files, design documents, or git.
     """
     command = '/' + skill.split(':')[-1]
     return f"""\
 ## Brainstorm Before Planning
 
-Before writing your implementation plan, invoke the brainstorming skill to design the approach first.
+Before implementing (or writing an implementation plan), invoke the brainstorming skill to design the approach first.
 
 **Action**: Invoke `{command}` now.
 
-The brainstorm will help you explore the problem, ask clarifying questions, propose approaches, and validate the design — all inside plan mode.
-
-**Important**: Write the design output directly into the plan file. Do NOT create a separate design document or attempt git commits during brainstorming."""
+The skill starts with a triage step so the design ceremony matches the task's size, then asks clarifying questions, proposes approaches, and gets the design approved. Follow its artifact rules for what to capture where."""
 
 
 def resolve_brainstorm_phase(config) -> tuple[str, str]:
