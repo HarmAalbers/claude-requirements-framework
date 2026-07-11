@@ -6280,6 +6280,22 @@ def test_logger_module(runner: TestRunner):
     except (json.JSONDecodeError, KeyError):
         runner.test("Timestamp format check", False, "Could not parse log output")
 
+    # Test 11: configured file path with ~ is expanded (not treated as a
+    # relative dir literally named "~" under the cwd)
+    from logger import _build_handlers
+    with tempfile.TemporaryDirectory() as tmpdir:
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            handlers = _build_handlers({"file": "~/.claude/requirements.log"})
+            path = handlers[0].path
+            runner.test("File path ~ is expanded",
+                       "~" not in str(path) and path.is_absolute())
+            runner.test("No literal ~ dir created in cwd",
+                       not (Path(tmpdir) / "~").exists())
+        finally:
+            os.chdir(old_cwd)
+
 
 def test_registry_client(runner: TestRunner):
     """Test RegistryClient module."""

@@ -157,7 +157,7 @@ def _build_handlers(logging_config: dict) -> list[Handler]:
                 Path.home() / ".claude" / "requirements.log",
             )
             try:
-                handlers.append(FileHandler(Path(file_path)))
+                handlers.append(FileHandler(Path(file_path).expanduser()))
             except Exception:
                 continue
 
