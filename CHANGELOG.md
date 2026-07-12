@@ -5,6 +5,51 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] — 2026-07-12
+
+Brainstorming skill v2: the design phase gets a tiered triage router with
+on-demand playbooks, and the `/brainstorm` command shim is removed — the
+skill's slash form `/brainstorming` is the single entry point.
+
+### Added
+
+- **Brainstorming skill v2** — a tiered triage router (small / standard / deep)
+  that sizes the design ceremony to the task, plus 5 on-demand `references/`
+  playbooks loaded per flow step: `triage.md`, `approaches.md`, `interview.md`,
+  `design-writeup.md`, `domain-modeling.md`.
+
+### Changed
+
+- **Brainstorm nudge directive is mode-agnostic and approaches-first** — it no
+  longer mentions plan mode, plan files, or design documents (artifact rules
+  live in the skill), and it describes the flow as proposing 2–3 approaches
+  before asking clarifying questions driven by their trade-offs, matching the
+  skill's own invariant.
+
+### Removed
+
+- **Command `/brainstorm`** — a 3-line delegation wrapper nothing programmatic
+  referenced. Nudges emit `/brainstorming` while YAML messages and docs said
+  `/brainstorm` — two slugs for one action. No compatibility shim.
+
+### Fixed
+
+- Stale pre-ADR-022 phase vocabulary in `req.md`, `req-phase`,
+  `skill-catalog.md`, and `PLUGIN-INSTALLATION.md`; the wrong gate attributed
+  to `/pre-commit`; the false claim that `test-driven-development` still
+  auto-satisfies the retired `tdd_planned` gate; leftover `/brainstorm` slugs
+  in the externalized `design_approved` message and the README.
+
+### Migration
+
+Update muscle memory and any local scripts:
+
+| Old | New |
+|---|---|
+| `/brainstorm` | `/brainstorming` — same behavior; the command only delegated to the skill |
+
+There is no compatibility shim.
+
 ## [5.0.0] — 2026-07-09
 
 The nudge-by-default release: the framework stops denying work. A new top-level

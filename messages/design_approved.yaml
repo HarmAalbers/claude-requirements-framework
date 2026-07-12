@@ -3,7 +3,7 @@ version: "1.0"
 blocking_message: |
   ## Blocked: Design Approval Required
 
-  **Execute**: `/brainstorm`
+  **Execute**: `/brainstorming`
 
   Explore requirements, propose approaches, and get design approval before writing code.
 
@@ -19,6 +19,6 @@ success_message: "Design brainstormed and approved"
 
 header: "Design Approval"
 
-action_label: "Run `/brainstorm`"
+action_label: "Run `/brainstorming`"
 
 fallback_text: "req satisfy design_approved"

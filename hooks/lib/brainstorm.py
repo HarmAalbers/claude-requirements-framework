@@ -47,7 +47,7 @@ Before implementing (or writing an implementation plan), invoke the brainstormin
 
 **Action**: Invoke `{command}` now.
 
-The skill starts with a triage step so the design ceremony matches the task's size, then asks clarifying questions, proposes approaches, and gets the design approved. Follow its artifact rules for what to capture where."""
+The skill starts with a triage step so the design ceremony matches the task's size, then proposes 2–3 approaches, asks clarifying questions driven by their trade-offs, and gets the design approved. Follow its artifact rules for what to capture where."""
 
 
 def resolve_brainstorm_phase(config) -> tuple[str, str]:

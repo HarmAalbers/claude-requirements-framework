@@ -7,8 +7,8 @@ framework. ~30 lines of actual logic.
 
 Inputs:
     phase        — string from `hooks/lib/derive_phase.py` (one of the
-                   configured workflow phase names: design, plan-write,
-                   plan-validate, implement, review, refactor, ship by
+                   configured workflow phase names: design, plan, validate,
+                   build, review, verify, ship by
                    default; a project may reorder/rename/add phases).
     unsatisfied  — list of unsatisfied requirement names.
     phases       — optional list of phase descriptors ({name, description,

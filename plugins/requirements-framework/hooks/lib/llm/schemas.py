@@ -90,8 +90,8 @@ class HandoffResult(BaseModel):
 
     `target` is one of the CONFIGURED workflow phase names — the per-project
     `workflow:` phase vocabulary surfaced by `config.get_workflow_phases()`
-    and matched 1:1 to `derive_phase`'s output (design, plan-write,
-    plan-validate, implement, review, refactor, ship by default; a project may
+    and matched 1:1 to `derive_phase`'s output (design, plan, validate,
+    build, review, verify, ship by default; a project may
     reorder/rename/add phases). It is an open `str` rather than a `Literal`
     precisely because that vocabulary is no longer fixed.
 

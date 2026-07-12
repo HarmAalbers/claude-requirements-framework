@@ -10547,7 +10547,7 @@ def test_session_start_bootstrap_removed(runner: TestRunner):
 
 
 def test_plugin_command_files_exist(runner: TestRunner):
-    """Test that the 3 new command files exist."""
+    """Pin the plugin command inventory: surviving commands exist, removed commands stay absent."""
     print("\n🎯 Testing plugin command files exist...")
 
     commands_dir = Path(__file__).parent.parent / 'plugins' / 'requirements-framework' / 'commands'
@@ -10839,10 +10839,10 @@ def test_brainstorm_lib(runner: TestRunner):
     runner.test("brainstorm_directive is skill-agnostic",
                "/writing-plans" in custom, f"Got: {custom[:120]}")
 
-    # v5.1.0: the directive is mode-agnostic — artifact rules live in the skill.
-    for banned in ("plan mode", "plan file", "Do NOT create"):
+    # v6.0.0: the directive is mode-agnostic — artifact rules live in the skill.
+    for banned in ("plan mode", "plan file", "do not create", "design document"):
         runner.test(f"brainstorm_directive has no mode-specific phrasing: {banned!r}",
-                   banned not in directive, f"Got: {directive}")
+                   banned not in directive.lower(), f"Got: {directive}")
     runner.test("brainstorm_directive mentions tier triage",
                "triage" in directive.lower(), f"Got: {directive}")
 

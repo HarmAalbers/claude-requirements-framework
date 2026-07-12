@@ -24,7 +24,7 @@ Complete list of available skills organized by type and purpose.
 
 | Command | Purpose |
 |---------|---------|
-| `/brainstorming` | Invoke brainstorming skill for design-first development |
+| `/brainstorming` | Invoke brainstorming skill (skill slash-form) for design-first development |
 | `/write-plan` | Create detailed implementation plan from requirements |
 | `/execute-plan` | Execute plan with batch checkpoints |
 | `/pre-commit` | Code review before committing |

@@ -18,7 +18,7 @@ Read `references/triage.md`. Run its vagueness check, classify the task into a t
 
 | Tier | Fits when | Interview | Artifact | Terminal |
 |------|-----------|-----------|----------|----------|
-| **small** | Localized, reversible, few files | 1–2 questions max | A few sentences, inline in conversation | User OK → proceed directly |
+| **small** | Localized, reversible, few files | 1–2 questions max | A few sentences, inline in conversation | User OK → proceed directly to implementation |
 | **standard** | Feature-sized | Full flow | Design doc, committed | Invoke writing-plans |
 | **deep** | Multi-subsystem / architectural | Full flow + decomposition check | Design doc, committed; user reviews the file | Invoke writing-plans (per sub-design) |
 
@@ -34,7 +34,7 @@ Work through these in order, loading each playbook when you reach it:
 4. **Interview, write-as-you-go** — one question per message; settled answers land in the artifact immediately (`references/interview.md`, `references/design-writeup.md`)
 5. **Self-review** — inline checklist, fix inline (`references/design-writeup.md`)
 6. **Approval** — small: inline OK; standard: per-section; deep: user also reviews the written file
-7. **Terminal** — small: proceed directly; standard/deep: invoke `requirements-framework:writing-plans`, telling it the tier
+7. **Terminal** — small: proceed directly to implementation; standard/deep: invoke `requirements-framework:writing-plans`, telling it the tier
 
 For object-oriented / domain-heavy designs, also work through `references/domain-modeling.md`.
 

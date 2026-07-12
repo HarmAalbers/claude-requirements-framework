@@ -8,7 +8,7 @@ Ask questions the approach comparison actually raises: "A and B diverge on X —
 
 - One question per message. Break compound topics into a sequence.
 - Multiple choice preferred, with your recommended option marked; open-ended when choices would bias the answer.
-- Every settled answer lands in the artifact immediately (see `design-writeup.md`).
+- Every settled answer lands in the artifact immediately (see `references/design-writeup.md`).
 - Explore code between questions only when the next question needs grounding.
 
 ## Concern modes
@@ -16,7 +16,7 @@ Ask questions the approach comparison actually raises: "A and B diverge on X —
 Match the question style to the concern:
 - **Product / requirements** — purpose, users, success criteria, non-goals.
 - **Technical** — constraints, integration points, performance/compat budgets, failure modes.
-- **Domain modeling** — switch to `domain-modeling.md` when the design shapes domain objects.
+- **Domain modeling** — switch to `references/domain-modeling.md` when the design shapes domain objects.
 
 ## Stop conditions
 

@@ -19,8 +19,8 @@ CLI usage:
         prints the phase name to stdout.
     python3 derive_phase.py <state-file-path> --with-skill
         prints "<phase>\t<resolver_skill>" (tab-separated); the skill is the
-        configured ``skill`` for that phase (empty when the phase has none,
-        e.g. ship).
+        configured ``skill`` for that phase (empty when a phase declares no
+        skill).
     python3 derive_phase.py <state-file-path> --with-skill --phase <name>
         resolves the resolver skill for an explicitly named phase instead of
         deriving — used by ``/req <phase>`` to dispatch a gateless phase.
@@ -220,7 +220,7 @@ def derive_phase_and_skill(state_file: Path) -> tuple[str, str]:
     """Return ``(derived_phase, resolver_skill)`` for the project at *state_file*.
 
     The skill is the configured ``skill`` for the derived phase — empty when the
-    phase has no skill (e.g. ship) or when config can't be resolved (the constant
+    phase declares no skill or when config can't be resolved (the constant
     fallback list carries no skills). Phase and skill are read from the SAME
     resolved phase list, so they never disagree. Never raises.
     """
