@@ -6,7 +6,7 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelet
 git_hash: 003cffb
 ---
 
-> **Workflow position**: invoked by `/req plan-validate` (the Validate team node). Run directly to override the conductor.
+> **Workflow position**: invoked by `/req validate` (the Validate team node). Run directly to override the conductor.
 
 # Architecture Review — Team-Based Multi-Perspective Assessment
 

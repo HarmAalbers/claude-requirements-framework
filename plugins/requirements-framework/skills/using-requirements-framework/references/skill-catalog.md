@@ -45,10 +45,11 @@ Complete list of available skills organized by type and purpose.
 
 When a skill completes, it automatically satisfies its corresponding requirement:
 - `brainstorming` → satisfies `design_approved`
-- `writing-plans` → satisfies `plan_written` and `commit_plan`
-- `test-driven-development` → satisfies `tdd_planned`
+- `writing-plans` → satisfies `plan_written`
 - `systematic-debugging` → satisfies `debugging_systematic`
 - `requesting-code-review` → satisfies `pre_commit_review`
+- `executing-plans` → satisfies `implementation_done`
+- `verification-before-completion` → satisfies `verified`
 
 This means you don't need to manually run `req satisfy` — just use the skill and the requirement clears automatically.
 

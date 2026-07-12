@@ -11,8 +11,8 @@
 #   req-phase --with-skill --phase <name>
 #                                   → prints "<name>\t<resolver_skill>" for an
 #                                     explicitly named (possibly gateless) phase
-# Default output: one of design | plan-write | plan-validate | implement |
-# review | ship (or any phase from the project's configured `workflow:`).
+# Default output: one of design | plan | validate | build | review | verify |
+# ship (or any phase from the project's configured `workflow:`).
 # All arguments are forwarded verbatim to derive_phase.py.
 
 set -uo pipefail

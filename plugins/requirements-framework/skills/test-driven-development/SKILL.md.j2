@@ -380,4 +380,4 @@ No exceptions without your human partner's permission.
 
 ## Requirements Integration
 
-When this skill completes, it auto-satisfies the `tdd_planned` requirement. This means tools that require TDD planning will no longer be blocked.
+This skill is advisory and owns no workflow gate — the former `tdd_planned` requirement was retired under ADR-022. Completing it does not auto-satisfy anything.

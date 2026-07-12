@@ -303,16 +303,17 @@ Edit/Write is now unblocked
 
 | Command | Satisfies gate |
 |---------|----------------|
-| `/requirements-framework:brainstorm` (brainstorming skill) | `design_approved` |
+| `/requirements-framework:brainstorming` (skill) | `design_approved` |
 | `/requirements-framework:write-plan` (writing-plans skill) | `plan_written` |
 | `/requirements-framework:arch-review` | `plan_validated` |
-| `/requirements-framework:pre-commit` | `implementation_done` (per-commit loop) |
+| `/requirements-framework:pre-commit` | `pre_commit_review` (per-commit loop) |
 | `/requirements-framework:deep-review` | `pr_reviewed` |
 | verification-before-completion skill | `verified` |
 
 The current gate set is `design_approved`, `plan_written`, `plan_validated`,
-`implementation_done`, `pr_reviewed`, `verified`. See the "Workflow Phase Backbone
-(ADR-022)" section in `CLAUDE.md` for the full typed 7-node backbone.
+`implementation_done`, `pre_commit_review`, `pr_reviewed`, `verified`. See the
+"Workflow Phase Backbone (ADR-022)" section in `CLAUDE.md` for the full typed
+7-node backbone.
 
 ---
 
