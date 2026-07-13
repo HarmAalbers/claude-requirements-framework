@@ -1662,6 +1662,43 @@ def test_tier_marker_rejects_unknown_value(runner: TestRunner):
         runner.test("rejected tier records nothing", reqs.get_tier() is None)
 
 
+def test_derive_phase_any_session_vs_gating_current_session_asymmetry(runner: TestRunner):
+    """Pin decision E's asymmetry (design doc §E, 2026-07-13 workflow-map-and-critique):
+    `derive_phase._is_satisfied` counts ANY session's satisfaction (the session-less
+    statusline has no session context), while `BranchRequirements.is_satisfied(session)`
+    checks the CURRENT session. After decision B the only backbone gate still
+    session-scoped is `implementation_done`; fixing this asymmetry is deliberately
+    out of scope. Also pins that SessionEnd does NOT delete session entries
+    (session_end.clear_session_state defaults False, config.py:904)."""
+    print("\n📦 Testing derive_phase any-session vs gating current-session asymmetry (E)...")
+    from requirements import BranchRequirements
+    from derive_phase import _is_satisfied
+    from config import RequirementsConfig
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+
+        # session-one satisfies a SESSION-scoped gate.
+        reqs_one = BranchRequirements("e/branch", "sess-one", tmpdir)
+        reqs_one.satisfy("implementation_done", "session", method="skill")
+
+        # derive_phase view (any-session): satisfied.
+        reqs_two = BranchRequirements("e/branch", "sess-two", tmpdir)
+        req_state = reqs_two._state["requirements"]["implementation_done"]
+        runner.test("derive_phase._is_satisfied counts any session's satisfaction",
+                    _is_satisfied(req_state) is True)
+
+        # gating view (current session sess-two): NOT satisfied.
+        runner.test("BranchRequirements.is_satisfied(session) is per-current-session",
+                    reqs_two.is_satisfied("implementation_done", "session") is False)
+
+        # SessionEnd default preserves session entries (does not clear state).
+        cfg = RequirementsConfig(tmpdir)
+        # No explicit default → falls through to the built-in HOOK_DEFAULTS.
+        runner.test("session_end.clear_session_state defaults False (state preserved)",
+                    cfg.get_hook_config("session_end", "clear_session_state") is False)
+
+
 def test_cli_commands(runner: TestRunner):
     """Test CLI commands."""
     print("\n📦 Testing CLI commands...")
@@ -13474,6 +13511,7 @@ def main():
     test_branch_scoped_gate_survives_session_change(runner)
     test_tier_marker_roundtrip_and_branch_persistence(runner)
     test_tier_marker_rejects_unknown_value(runner)
+    test_derive_phase_any_session_vs_gating_current_session_asymmetry(runner)
     test_cli_commands(runner)
     test_cli_recognizes_local_yaml(runner)
     test_cli_status_modes(runner)
