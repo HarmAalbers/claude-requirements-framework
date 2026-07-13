@@ -3,7 +3,7 @@ name: codex-review
 description: "AI-powered code review using OpenAI Codex"
 argument-hint: "[focus]"
 allowed-tools: ["Bash", "Task"]
-git_hash: 54f7ab3
+git_hash: a9add9d
 ---
 
 > **Workflow position**: a conditional side-quest on the Validate and Review team nodes (ADR-022) — surfaced as *available here*, with no gate of its own. Run directly any time for an independent external AI check.

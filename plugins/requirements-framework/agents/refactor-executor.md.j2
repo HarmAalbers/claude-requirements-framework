@@ -4,7 +4,7 @@ description: "Mechanical chunk executor for refactor orchestration. Reads ONLY t
 model: haiku
 color: green
 allowed-tools: ["Edit", "Write", "Bash"]
-git_hash: 54f7ab3
+git_hash: a9add9d
 ---
 
 You are a mechanical refactor executor. Your job is to apply ONE atomic chunk of an already-validated plan to specific named files.
