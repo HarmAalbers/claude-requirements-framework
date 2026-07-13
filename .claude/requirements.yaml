@@ -11,7 +11,7 @@ requirements:
   plan_validated:
     enabled: true
     type: blocking
-    scope: session
+    scope: branch
     description: "Ensures the plan passed the architecture-review team (ADR alignment, SOLID, TDD-readiness, commit plan)."
     trigger_tools:
     - Edit

@@ -150,8 +150,8 @@ requirements:
 | Preset     | Contents                                                                                          | Use case                                         |
 |------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------|
 | `advanced` | `plan_validated` + `protected_branch` guard + `branch_size_limit` (dynamic) + `pr_reviewed` (+ optional `github_ticket`) | Global showcase of every requirement type        |
-| `strict`   | `plan_validated` (blocking, session) + `protected_branch` guard; Stop-hook verification on        | Teams wanting enforcement                        |
-| `relaxed`  | `plan_validated` only (session scope)                                                             | Standalone projects / trying the framework       |
+| `strict`   | `plan_validated` (blocking, branch) + `protected_branch` guard; Stop-hook verification on         | Teams wanting enforcement                        |
+| `relaxed`  | `plan_validated` only (branch scope)                                                              | Standalone projects / trying the framework       |
 | `minimal`  | Framework enabled, no requirements                                                                | "I'll configure it myself"                        |
 | `inherit`  | Empty, `inherit: true`                                                                            | Projects deferring to global config              |
 

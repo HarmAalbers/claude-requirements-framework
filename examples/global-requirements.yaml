@@ -22,7 +22,7 @@ requirements:
   plan_validated:
     enabled: true
     type: blocking
-    scope: session  # Resets each session (forces daily planning)
+    scope: branch  # Persists across sessions on the same branch
     description: "Ensures the plan passed the architecture-review team (ADR alignment, SOLID, TDD-readiness, commit plan)."
     trigger_tools:
       - Edit
@@ -253,7 +253,7 @@ requirements:
   design_approved:
     enabled: true
     type: blocking
-    scope: session
+    scope: branch
     description: "Ensures a design has been brainstormed and approved before implementation."
     trigger_tools:
       - Edit
@@ -284,7 +284,7 @@ requirements:
   plan_written:
     enabled: true
     type: blocking
-    scope: session
+    scope: branch
     description: "Ensures a detailed implementation plan exists before coding."
     trigger_tools:
       - Edit

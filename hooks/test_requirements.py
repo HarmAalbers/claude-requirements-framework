@@ -10096,8 +10096,8 @@ def test_new_requirement_definitions(runner: TestRunner):
             da = reqs['design_approved']
             runner.test("design_approved is blocking type",
                        da.get('type') == 'blocking')
-            runner.test("design_approved has session scope",
-                       da.get('scope') == 'session')
+            runner.test("design_approved has branch scope",
+                       da.get('scope') == 'branch')
             runner.test("design_approved triggers on Edit",
                        'Edit' in da.get('trigger_tools', []))
             runner.test("design_approved satisfied by brainstorming",

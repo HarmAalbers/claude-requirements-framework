@@ -22,7 +22,7 @@ requirements:
   # folded into plan_validated (satisfied by the /arch-review team).
   plan_validated:
     enabled: true
-    scope: session
+    scope: branch
     checklist:
       - "Plan created via EnterPlanMode and planning agents/skills"
       - "Atomic commits identified (from agent/skill analysis)"
