@@ -1565,6 +1565,66 @@ def test_branch_level_override_with_ttl(runner: TestRunner):
             runner.test("Branch override expires after TTL", not reqs1.is_satisfied("commit_plan", "session"))
 
 
+def test_branch_scoped_gate_survives_session_change(runner: TestRunner):
+    """Decision B (ADR-023): a gate satisfied with scope=branch is satisfied for a
+    DIFFERENT session on the same branch, and the nudge resolver does NOT re-nudge
+    that phase on day 2. Pins the inverse for session scope so the distinction holds."""
+    print("\n📦 Testing branch-scoped gate survives session change (decision B)...")
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+    from brainstorm import resolve_current_phase
+
+    config_content = {
+        "version": "1.0",
+        "enabled": True,
+        "requirements": {
+            "design_approved": {"enabled": True, "scope": "branch"},
+            "session_gate": {"enabled": True, "scope": "session"},
+        },
+        "workflow": {
+            "phases": [
+                {"name": "design", "gate": "design_approved",
+                 "skill": "requirements-framework:brainstorming"},
+            ],
+            "ship_phase": "ship",
+        },
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+        config = RequirementsConfig(tmpdir)
+
+        # Branch scope: satisfied in session one...
+        reqs_one = BranchRequirements("recut/branch", "sess-one", tmpdir)
+        reqs_one.satisfy("design_approved", scope="branch", method="skill")
+        runner.test("Branch gate satisfied for satisfying session",
+                    reqs_one.is_satisfied("design_approved", "branch"))
+
+        # ...still satisfied for a DIFFERENT session on the same branch.
+        reqs_two = BranchRequirements("recut/branch", "sess-two", tmpdir)
+        runner.test("Branch gate survives session change",
+                    reqs_two.is_satisfied("design_approved", "branch"),
+                    "Day-2 session must not see design_approved as unsatisfied")
+
+        # And the nudge resolver must NOT return 'design' for the new session.
+        phase, _skill, _cfg = resolve_current_phase(config, reqs_two)
+        runner.test("Nudge resolver skips branch-satisfied design phase",
+                    phase != "design",
+                    f"resolve_current_phase returned {phase!r}, expected the ship fallback")
+
+        # Inverse: session scope does NOT survive a session change.
+        reqs_one.satisfy("session_gate", scope="session", method="skill")
+        runner.test("Session gate satisfied for satisfying session",
+                    reqs_one.is_satisfied("session_gate", "session"))
+        reqs_three = BranchRequirements("recut/branch", "sess-three", tmpdir)
+        runner.test("Session gate does NOT survive session change",
+                    not reqs_three.is_satisfied("session_gate", "session"),
+                    "Session-scoped satisfaction must be per-session")
+
+
 def test_cli_commands(runner: TestRunner):
     """Test CLI commands."""
     print("\n📦 Testing CLI commands...")
@@ -13223,6 +13283,7 @@ def main():
     test_requirements_manager(runner)
     test_branch_level_override(runner)
     test_branch_level_override_with_ttl(runner)
+    test_branch_scoped_gate_survives_session_change(runner)
     test_cli_commands(runner)
     test_cli_recognizes_local_yaml(runner)
     test_cli_status_modes(runner)
