@@ -813,6 +813,36 @@ class WorkflowValidator:
                     "or null"
                 )
 
+            if "loop" in entry:
+                return (
+                    f"workflow phase {name!r} uses removed key 'loop'; "
+                    "use 'loops' (a list of {gate, skill, on} mappings)"
+                )
+            loops = entry.get("loops")
+            if loops is not None:
+                if not isinstance(loops, list):
+                    return f"workflow phase {name!r} loops must be a list"
+                for lidx, loop_entry in enumerate(loops):
+                    if not isinstance(loop_entry, Mapping):
+                        return (
+                            f"workflow phase {name!r} loops[{lidx}] must be "
+                            "a mapping"
+                        )
+                    lskill = loop_entry.get("skill")
+                    if not isinstance(lskill, str) or not lskill:
+                        return (
+                            f"workflow phase {name!r} loops[{lidx}] needs a "
+                            "non-empty 'skill'"
+                        )
+                    lgate = loop_entry.get("gate")
+                    if lgate is not None and (
+                        not isinstance(lgate, str) or lgate not in requirements
+                    ):
+                        return (
+                            f"workflow phase {name!r} loops[{lidx}] gate "
+                            f"{lgate!r} is not a defined requirement"
+                        )
+
         default_phase = workflow.get("default_phase")
         if default_phase is not None and (
             not isinstance(default_phase, str) or default_phase not in names

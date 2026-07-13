@@ -12509,6 +12509,55 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
                         "implementation_done", "pr_reviewed", "verified"])) == "ship")
 
 
+def test_workflow_validator_loops(runner: TestRunner):
+    """WorkflowValidator: `loops` list replaces the removed singular `loop` key
+    (ADR-023, breaking — no compat shim). Validate schema + error messages."""
+    print("\n📦 Testing WorkflowValidator loops schema...")
+    from config import WorkflowValidator
+
+    v = WorkflowValidator()
+    reqs = {"g": {}, "x": {}, "y": {}}
+
+    # Legacy singular `loop` key must hard-error and point at `loops`.
+    legacy = {"phases": [{"name": "build", "gate": "g",
+                          "loop": {"gate": "x", "skill": "s", "on": "commit"}}]}
+    legacy_err = v.validate(legacy, reqs)
+    runner.test("legacy 'loop' key rejected", legacy_err is not None,
+                "old singular loop must hard-error")
+    runner.test("legacy error points at 'loops'",
+                legacy_err is not None and "loops" in legacy_err)
+
+    # A well-formed loops list validates.
+    good = {"phases": [{"name": "build", "gate": "g", "loops": [
+        {"gate": "x", "skill": "s", "on": "commit"},
+        {"gate": "y", "skill": "t", "on": "push"}]}]}
+    runner.test("well-formed loops list accepted", v.validate(good, reqs) is None)
+
+    # loops must be a list.
+    not_list = {"phases": [{"name": "build", "gate": "g",
+                            "loops": {"gate": "x", "skill": "s"}}]}
+    runner.test("loops must be a list",
+                (v.validate(not_list, reqs) or "").find("must be a list") != -1)
+
+    # Each entry must be a mapping.
+    bad_entry = {"phases": [{"name": "build", "gate": "g", "loops": ["nope"]}]}
+    runner.test("loop entry must be a mapping",
+                "must be a mapping" in (v.validate(bad_entry, reqs) or ""))
+
+    # Each entry needs a non-empty skill.
+    no_skill = {"phases": [{"name": "build", "gate": "g",
+                            "loops": [{"gate": "x", "on": "commit"}]}]}
+    runner.test("loop entry needs a skill",
+                "skill" in (v.validate(no_skill, reqs) or ""))
+
+    # A loop gate, when present, must be a defined requirement.
+    bad_gate = {"phases": [{"name": "build", "gate": "g",
+                            "loops": [{"gate": "nope", "skill": "s"}]}]}
+    bad_gate_err = v.validate(bad_gate, reqs)
+    runner.test("loop gate must be a defined requirement",
+                bad_gate_err is not None and "not a defined requirement" in bad_gate_err)
+
+
 def test_supervisor_config_driven(runner: TestRunner):
     """Supervisor routing mirrors config: str target, config-rendered menu, clamp."""
     print("\n📦 Testing config-driven req-supervisor...")
@@ -13481,6 +13530,7 @@ def main():
     test_derive_phase(runner)
     test_workflow_config(runner)
     test_workflow_defaults_descriptions(runner)
+    test_workflow_validator_loops(runner)
     test_supervisor_config_driven(runner)
     test_derive_phase_workflow(runner)
     test_derive_phase_with_skill(runner)
