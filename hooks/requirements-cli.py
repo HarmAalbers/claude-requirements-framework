@@ -707,6 +707,30 @@ def cmd_resume(args) -> int:
     return 0
 
 
+def cmd_tier(args) -> int:
+    """Record the brainstorming triage tier for the current branch.
+
+    Claude MAY run this (like `req pause`): it only annotates branch state; the
+    auto-satisfy hook decides what a small tier means (ADR-023 decision C). With
+    no tier argument, prints the current marker.
+    """
+    project_dir = get_project_dir()
+    if not is_git_repo(project_dir):
+        out(error("❌ Not in a git repository"), file=sys.stderr)
+        return 1
+    branch = get_current_branch(project_dir)
+    session_id = _resolve_pause_session(args)
+    reqs = BranchRequirements(branch, session_id or 'cli', project_dir)
+    if not getattr(args, 'tier', None):
+        out(reqs.get_tier() or "no tier recorded")
+        return 0
+    if reqs.set_tier(args.tier, session_id=session_id):
+        out(success(f"Tier recorded: {args.tier}"))
+        return 0
+    out(error(f"❌ Invalid tier {args.tier!r} (small|standard|deep)"), file=sys.stderr)
+    return 1
+
+
 def cmd_list(args) -> int:
     """
     List all tracked branches.
@@ -3589,6 +3613,12 @@ Environment Variables:
     resume_parser = subparsers.add_parser('resume', help='Resume blocking gates for this session')
     resume_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
 
+    # tier (branch-level brainstorming triage marker; Claude-runnable like pause)
+    tier_parser = subparsers.add_parser('tier', help='Record brainstorming triage tier (small|standard|deep)')
+    tier_parser.add_argument('tier', nargs='?', choices=['small', 'standard', 'deep'],
+                             help='Tier to record; omit to print the current marker')
+    tier_parser.add_argument('--session', '-s', metavar='ID', help='Explicit session ID (8 chars)')
+
     # list
     subparsers.add_parser('list', help='List tracked branches')
 
@@ -3776,6 +3806,7 @@ Environment Variables:
         'clear': cmd_clear,
         'pause': cmd_pause,
         'resume': cmd_resume,
+        'tier': cmd_tier,
         'list': cmd_list,
         'prune': cmd_prune,
         'sessions': cmd_sessions,
