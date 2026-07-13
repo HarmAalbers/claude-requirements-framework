@@ -64,28 +64,31 @@ uv run python scripts/build_plugin_hooks.py      # rebuild the plugin bundle (a 
 | `permanent` | Never auto-cleared |
 | `single_use` | Cleared after the trigger command completes |
 
-## Workflow Phase Backbone (typed 7-node — ADR-022)
+## Workflow Phase Backbone (typed 6-node — ADR-023, amends ADR-022)
 
-The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a typed 7-node backbone:
+The default workflow (`WORKFLOW_DEFAULTS` in `hooks/lib/config.py`) is a typed 6-node backbone. Verify is no longer a spine node — it is a per-push loop on **build** (ADR-023):
 
 ```
-Design → Plan → Validate → Build → Review → Verify → Ship
-[spine] [spine] [TEAM]    [spine] [TEAM]   [spine] [spine]
+Design → Plan → Validate → Build ─────────────→ Review → Ship
+[spine] [spine] [TEAM]    [spine]                [TEAM]   [spine]
+                          loop: pre_commit_review (on: commit)
+                          loop: verified          (on: push)
 ```
 
-| Node | Type | Gate | Skill / Command |
+| Node | Type | Gate (scope) | Skill / Command |
 |------|------|------|-----------------|
-| design   | spine | `design_approved`     | `/brainstorming` |
-| plan     | spine | `plan_written`        | `/writing-plans` |
-| validate | team  | `plan_validated`      | `/arch-review` *(cond: `/codex-review`)* |
-| build    | spine | `implementation_done` | `/executing-plans` *(loop: `/pre-commit` → `pre_commit_review` per commit)* |
-| review   | team  | `pr_reviewed`         | `/deep-review` *(cond: `/codex-review`)* |
-| verify   | spine | `verified`            | `/verification-before-completion` |
-| ship     | spine | — (gateless)          | `/finishing-a-development-branch` |
+| design   | spine | `design_approved` (**branch**)  | `/brainstorming` |
+| plan     | spine | `plan_written` (**branch**)     | `/writing-plans` |
+| validate | team  | `plan_validated` (**branch**)   | `/arch-review` *(cond: `/codex-review`)* |
+| build    | spine | `implementation_done` (session) | `/executing-plans` *(loops: `/pre-commit` → `pre_commit_review` per commit; `/verification-before-completion` → `verified` per push)* |
+| review   | team  | `pr_reviewed` (single_use)      | `/deep-review` *(cond: `/codex-review`)* |
+| ship     | spine | — (gateless)                    | `/finishing-a-development-branch` |
 
-- **spine** nudges one skill (its gate auto-satisfied by that skill); **team** nudges an orchestrating command that fans out agents and satisfies one gate; a **loop** is a `single_use` gate re-armed by `clear-single-use`; **conditionals** are optional side-quests (no gate, no auto-fire).
-- Gate vocabulary consolidated ~11 → 7 (ADR-022). No compat shims — a config naming an old gate errors and points at the new name.
-- YAML footgun: in a `loop`, quote the trigger key (`"on": commit`) — a bare `on:` parses as boolean `True` under YAML 1.1.
+- **spine** nudges one skill (its gate auto-satisfied by that skill); **team** nudges an orchestrating command that fans out agents and satisfies one gate; a **loop** is a `single_use` gate re-armed on its trigger; **conditionals** are optional side-quests (no gate, no auto-fire).
+- Gate vocabulary is 7 (unchanged by ADR-023 — only the verify *node* was removed; the `verified` gate lives on as build's per-push loop). No compat shims — a config naming an old gate errors and points at the new name.
+- Decision B (ADR-023): the three early gates (`design_approved` / `plan_written` / `plan_validated`) are **branch-scoped** so day-2 sessions on the same branch don't re-nudge an approved design/plan.
+- Schema change (ADR-023, breaking): a build node lists its loops under **`loops`** (a list); the old singular `loop` key hard-errors and points at `loops`.
+- YAML footgun: in a `loops` entry, quote the trigger key (`"on": commit`) — a bare `on:` parses as boolean `True` under YAML 1.1.
 - Skill auto-satisfactions are **per-branch** — run workflow skills *after* `git checkout -b`, else the new branch re-blocks.
 
 ## Development Principles
@@ -101,5 +104,5 @@ Design → Plan → Validate → Build → Review → Verify → Ship
 - `plugins/requirements-framework/README.md` — the 24 agents / 15 commands / 21 skills.
 - `docs/adr/` — design records. Load-bearing ones:
   - ADR-011 message externalization · ADR-012 agent teams · ADR-014 refactor orchestration
-  - ADR-019 Stop-hook observability (Langfuse) · ADR-020 strict global preflight · ADR-022 workflow backbone
+  - ADR-019 Stop-hook observability (Langfuse) · ADR-020 strict global preflight · ADR-022 workflow backbone · ADR-023 6-node backbone re-cut
 - **Opt-in features** (off by default; details in their ADR / `DEVELOPMENT.md`): Langfuse tracing (ADR-019), strict global preflight (ADR-020), Obsidian session logging, session learning (`/session-reflect`), cross-project upgrade (`req upgrade`), message externalization (`req messages`, ADR-011), refactor orchestration (`/refactor-orchestrate`, ADR-014), Serena MCP, `ENABLE_TOOL_SEARCH`.
