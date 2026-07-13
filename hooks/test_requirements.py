@@ -1625,6 +1625,43 @@ def test_branch_scoped_gate_survives_session_change(runner: TestRunner):
                     "Session-scoped satisfaction must be per-session")
 
 
+def test_tier_marker_roundtrip_and_branch_persistence(runner: TestRunner):
+    """Decision C (ADR-023): the triage tier is a branch-level marker — it
+    round-trips and is visible to a DIFFERENT session on the same branch."""
+    print("\n📦 Testing tier marker roundtrip + branch persistence...")
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        reqs = BranchRequirements("tier/branch", "sess-one", tmpdir)
+        runner.test("no tier initially", reqs.get_tier() is None)
+        runner.test("set_tier('small') succeeds",
+                    reqs.set_tier("small", session_id="sess-one") is True)
+        runner.test("get_tier round-trips", reqs.get_tier() == "small")
+
+        # A different session on the same branch sees the tier (branch-level fact).
+        reqs_two = BranchRequirements("tier/branch", "sess-two", tmpdir)
+        runner.test("tier visible to a new session on the same branch",
+                    reqs_two.get_tier() == "small")
+
+        # A different branch does NOT.
+        reqs_other = BranchRequirements("other/branch", "sess-one", tmpdir)
+        runner.test("tier is per-branch", reqs_other.get_tier() is None)
+
+
+def test_tier_marker_rejects_unknown_value(runner: TestRunner):
+    """set_tier rejects anything outside small|standard|deep and records nothing."""
+    print("\n📦 Testing tier marker rejects unknown value...")
+    from requirements import BranchRequirements
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        reqs = BranchRequirements("tier/branch", "sess-one", tmpdir)
+        runner.test("set_tier('gigantic') returns False",
+                    reqs.set_tier("gigantic") is False)
+        runner.test("rejected tier records nothing", reqs.get_tier() is None)
+
+
 def test_cli_commands(runner: TestRunner):
     """Test CLI commands."""
     print("\n📦 Testing CLI commands...")
@@ -13376,6 +13413,8 @@ def main():
     test_branch_level_override(runner)
     test_branch_level_override_with_ttl(runner)
     test_branch_scoped_gate_survives_session_change(runner)
+    test_tier_marker_roundtrip_and_branch_persistence(runner)
+    test_tier_marker_rejects_unknown_value(runner)
     test_cli_commands(runner)
     test_cli_recognizes_local_yaml(runner)
     test_cli_status_modes(runner)

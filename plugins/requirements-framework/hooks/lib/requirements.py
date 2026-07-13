@@ -44,6 +44,11 @@ except ImportError:
     from git_utils import get_all_branches
 
 
+# Valid brainstorming triage tiers (ADR-023 decision C). A branch-level marker,
+# not a requirement — set via `req tier`, read by the auto-satisfy hook.
+VALID_TIERS: tuple[str, ...] = ('small', 'standard', 'deep')
+
+
 class BranchRequirements:
     """
     Requirements manager for a specific branch.
@@ -423,6 +428,34 @@ class BranchRequirements:
                     req_state['expires_at'] = now + ttl
                 else:
                     req_state['expires_at'] = None
+
+    def set_tier(self, tier: str, session_id: Optional[str] = None) -> bool:
+        """Record the brainstorming triage tier as a branch-level marker.
+
+        The tier lives at the top level of the branch state file (a branch fact,
+        like `satisfied` for a branch-scoped gate), so any session on the branch
+        can read it. Returns False (recording nothing) for an unknown tier.
+
+        Args:
+            tier: One of ``VALID_TIERS`` (small | standard | deep)
+            session_id: Session that recorded it (informational — WHY it flipped)
+
+        Returns:
+            True if the tier was recorded, False if ``tier`` is not valid.
+        """
+        if tier not in VALID_TIERS:
+            return False
+        with self.transaction():
+            self._state['tier'] = {
+                'value': tier,
+                'session': session_id or self.session_id,
+            }
+        return True
+
+    def get_tier(self) -> Optional[str]:
+        """Return the recorded branch triage tier, or None if unset/malformed."""
+        tier = self._state.get('tier')
+        return tier.get('value') if isinstance(tier, dict) else None
 
     def clear(self, req_name: str) -> None:
         """
