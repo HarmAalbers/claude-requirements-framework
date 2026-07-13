@@ -2632,13 +2632,22 @@ def test_conductor_surfaces_loop_and_conditionals(runner: TestRunner):
     build_cfg = {
         "name": "build", "type": "spine", "gate": "implementation_done",
         "skill": "requirements-framework:executing-plans",
-        "loop": {"gate": "pre_commit_review",
-                 "skill": "requirements-framework:pre-commit", "on": "commit"},
+        "loops": [
+            {"gate": "pre_commit_review",
+             "skill": "requirements-framework:pre-commit", "on": "commit"},
+            {"gate": "verified",
+             "skill": "requirements-framework:verification-before-completion",
+             "on": "push"},
+        ],
     }
     build_txt = phase_directive(
         "build", "requirements-framework:executing-plans", build_cfg)
     runner.test("build directive surfaces the pre-commit loop",
                 "/pre-commit" in build_txt and "before each commit" in build_txt,
+                f"Got: {build_txt!r}")
+    runner.test("build directive surfaces the per-push verification loop",
+                "/verification-before-completion" in build_txt
+                and "before each push" in build_txt,
                 f"Got: {build_txt!r}")
 
     # Validate (team + conditionals): team note + conditional side-quests.
@@ -12169,17 +12178,17 @@ def test_workflow_config(runner: TestRunner):
         runner.test("no workflow → default phase names",
                     [p["name"] for p in wf["phases"]] ==
                     ["design", "plan", "validate", "build",
-                     "review", "verify", "ship"])
+                     "review", "ship"])
         runner.test("no workflow → default gates",
                     [p["gate"] for p in wf["phases"]] ==
                     ["design_approved", "plan_written", "plan_validated",
-                     "implementation_done", "pr_reviewed", "verified", None])
+                     "implementation_done", "pr_reviewed", None])
         runner.test("no workflow → every default phase carries a description",
                     all(isinstance(p.get("description"), str) and p["description"]
                         for p in wf["phases"]))
         runner.test("no workflow → only ship is gateless at the tail",
                     [(p["name"], p["gate"]) for p in wf["phases"][-2:]] ==
-                    [("verify", "verified"), ("ship", None)])
+                    [("review", "pr_reviewed"), ("ship", None)])
         runner.test("no workflow → resolver skill names",
                     wf["phases"][0]["skill"] == "requirements-framework:brainstorming"
                     and wf["phases"][2]["skill"] == "requirements-framework:arch-review")
@@ -12220,7 +12229,7 @@ def test_workflow_config(runner: TestRunner):
         runner.test("undefined gate → workflow dropped → default names",
                     [p["name"] for p in wf["phases"]] ==
                     ["design", "plan", "validate", "build",
-                     "review", "verify", "ship"])
+                     "review", "ship"])
         runner.test("undefined gate → validation error recorded",
                     any("workflow" in e for e in config.get_validation_errors()))
 
@@ -12232,7 +12241,7 @@ def test_workflow_config(runner: TestRunner):
         wf = config.get_workflow_phases()
         runner.test("phases not a list → dropped → default_phase=design",
                     wf["default_phase"] == "design"
-                    and len(wf["phases"]) == 7)
+                    and len(wf["phases"]) == 6)
 
     # 5. get_workflow_phases is fail-safe even on raw garbage (bypassing the
     #    validator) — exercises the accessor's own defensive normalization.
@@ -12271,9 +12280,7 @@ def test_derive_phase_workflow(runner: TestRunner):
         (["design_approved", "plan_written", "plan_validated",
           "implementation_done"], "review"),
         (["design_approved", "plan_written", "plan_validated",
-          "implementation_done", "pr_reviewed"], "verify"),
-        (["design_approved", "plan_written", "plan_validated",
-          "implementation_done", "pr_reviewed", "verified"], "ship"),
+          "implementation_done", "pr_reviewed"], "ship"),
     ]
     for satisfied, expected in transitions:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -12375,7 +12382,7 @@ def test_derive_phase_with_skill(runner: TestRunner):
     with tempfile.TemporaryDirectory() as tmpdir:
         sp = _setup(tmpdir, _WORKFLOW_DEFAULT_GATES,
                     ["design_approved", "plan_written", "plan_validated",
-                     "implementation_done", "pr_reviewed", "verified"])
+                     "implementation_done", "pr_reviewed"])
         phase, skill = derive_phase_and_skill(sp)
         runner.test("with-skill: ship → finishing-a-development-branch",
                     phase == "ship" and skill == "requirements-framework:finishing-a-development-branch")
@@ -12506,7 +12513,7 @@ def test_workflow_defaults_descriptions(runner: TestRunner):
         runner.test("derive_phase unchanged: all gates → ship",
                     derive_phase(_state(tmpdir, [
                         "design_approved", "plan_written", "plan_validated",
-                        "implementation_done", "pr_reviewed", "verified"])) == "ship")
+                        "implementation_done", "pr_reviewed"])) == "ship")
 
 
 def test_workflow_validator_loops(runner: TestRunner):
@@ -12556,6 +12563,42 @@ def test_workflow_validator_loops(runner: TestRunner):
     bad_gate_err = v.validate(bad_gate, reqs)
     runner.test("loop gate must be a defined requirement",
                 bad_gate_err is not None and "not a defined requirement" in bad_gate_err)
+
+
+def test_default_workflow_is_six_nodes_with_two_build_loops(runner: TestRunner):
+    """ADR-023: verify spine node is gone; the default backbone is 6 nodes and
+    build carries two loops (pre_commit_review on commit, verified on push)."""
+    print("\n📦 Testing 6-node default backbone with two build loops...")
+    from config import RequirementsConfig
+
+    phases = RequirementsConfig.WORKFLOW_DEFAULTS["phases"]
+    runner.test("default backbone is 6 nodes (no verify)",
+                [p["name"] for p in phases] ==
+                ["design", "plan", "validate", "build", "review", "ship"])
+    build = next(p for p in phases if p["name"] == "build")
+    runner.test("build has no legacy singular 'loop' key", "loop" not in build)
+    runner.test("build carries two loops in order",
+                [(loop["gate"], loop["on"]) for loop in build["loops"]] ==
+                [("pre_commit_review", "commit"), ("verified", "push")])
+
+
+def test_phase_directive_renders_multiple_loops(runner: TestRunner):
+    """phase_directive renders every entry in a `loops` list (ADR-023)."""
+    print("\n📦 Testing phase_directive renders multiple loops...")
+    from brainstorm import phase_directive
+
+    cfg = {"loops": [
+        {"gate": "pre_commit_review",
+         "skill": "requirements-framework:pre-commit", "on": "commit"},
+        {"gate": "verified",
+         "skill": "requirements-framework:verification-before-completion",
+         "on": "push"}]}
+    text = phase_directive("build", "requirements-framework:executing-plans", cfg)
+    runner.test("directive renders the pre-commit commit loop",
+                "/pre-commit` before each commit" in text, f"Got: {text!r}")
+    runner.test("directive renders the verification push loop",
+                "/verification-before-completion` before each push" in text,
+                f"Got: {text!r}")
 
 
 def test_supervisor_config_driven(runner: TestRunner):
@@ -12612,12 +12655,12 @@ def test_supervisor_config_driven(runner: TestRunner):
     runner.test("clamp: empty phase vocab → input phase (fail-open)",
                 _resolve_target("anything", [], "review") == "review")
 
-    # Default menu (phases=None path) mirrors WORKFLOW_DEFAULTS: 7 names, with
-    # refactor + ship routable (not clamped).
+    # Default menu (phases=None path) mirrors WORKFLOW_DEFAULTS: 6 names, with
+    # ship routable (not clamped).
     default_phases = _default_phases()
     default_names = {p["name"] for p in default_phases}
-    runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (7)",
-                len(default_phases) == 7
+    runner.test("default supervisor menu = WORKFLOW_DEFAULTS phase names (6)",
+                len(default_phases) == 6
                 and {"design", "validate", "ship"} <= default_names)
     runner.test("clamp: 'ship' is routable under the default vocab",
                 _resolve_target("ship", default_phases, "design") == "ship")
@@ -13531,6 +13574,8 @@ def main():
     test_workflow_config(runner)
     test_workflow_defaults_descriptions(runner)
     test_workflow_validator_loops(runner)
+    test_default_workflow_is_six_nodes_with_two_build_loops(runner)
+    test_phase_directive_renders_multiple_loops(runner)
     test_supervisor_config_driven(runner)
     test_derive_phase_workflow(runner)
     test_derive_phase_with_skill(runner)

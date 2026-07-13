@@ -970,11 +970,18 @@ class RequirementsConfig:
                 "type": "spine",
                 "gate": "implementation_done",
                 "skill": "requirements-framework:executing-plans",
-                "loop": {
-                    "gate": "pre_commit_review",
-                    "skill": "requirements-framework:pre-commit",
-                    "on": "commit",
-                },
+                "loops": [
+                    {
+                        "gate": "pre_commit_review",
+                        "skill": "requirements-framework:pre-commit",
+                        "on": "commit",
+                    },
+                    {
+                        "gate": "verified",
+                        "skill": "requirements-framework:verification-before-completion",
+                        "on": "push",
+                    },
+                ],
                 "description": "build: implement the plan",
             },
             {
@@ -984,13 +991,6 @@ class RequirementsConfig:
                 "skill": "requirements-framework:deep-review",
                 "conditionals": ["requirements-framework:codex-review"],
                 "description": "review: code review team",
-            },
-            {
-                "name": "verify",
-                "type": "spine",
-                "gate": "verified",
-                "skill": "requirements-framework:verification-before-completion",
-                "description": "verify: capture test/build evidence",
             },
             {
                 "name": "ship",

@@ -35,14 +35,14 @@ from typing import Any, Optional
 # Order matters: first unsatisfied wins. These constants are the fail-open
 # fallback used when config cannot be resolved; they are kept byte-for-byte in
 # sync with config.RequirementsConfig.WORKFLOW_DEFAULTS. This is the GATED
-# subset of the 7-node backbone — ship is gateless and therefore omitted.
+# subset of the 6-node backbone — ship is gateless and therefore omitted, and
+# verify is a per-push loop on build (ADR-023), not a gated node.
 PHASE_GATES: list[tuple[str, str]] = [
     ("design", "design_approved"),
     ("plan", "plan_written"),
     ("validate", "plan_validated"),
     ("build", "implementation_done"),
     ("review", "pr_reviewed"),
-    ("verify", "verified"),
 ]
 SHIP_PHASE = "ship"
 DEFAULT_PHASE = "design"

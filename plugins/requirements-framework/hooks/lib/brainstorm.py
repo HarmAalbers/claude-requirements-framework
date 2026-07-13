@@ -132,21 +132,24 @@ def phase_directive(phase: str, skill: str, phase_cfg: Any = None) -> str:
     (``requirements-framework:writing-plans`` → ``/writing-plans``).
 
     ``phase_cfg`` (the resolved phase dict, optional) surfaces the typed-node
-    metadata of the 7-node backbone: a ``team`` node notes it fans out a review
-    team; a ``loop`` (e.g. Build's per-commit pre-commit) is surfaced as a
-    recurring step; declared ``conditionals`` are listed as optional side-quests.
-    Absent/malformed ``phase_cfg`` degrades to the plain base directive.
+    metadata of the 6-node backbone: a ``team`` node notes it fans out a review
+    team; each entry in ``loops`` (e.g. Build's per-commit pre-commit and
+    per-push verification) is surfaced as a recurring step; declared
+    ``conditionals`` are listed as optional side-quests. Absent/malformed
+    ``phase_cfg`` degrades to the plain base directive.
     """
     command = '/' + skill.split(':')[-1]
     cfg = phase_cfg if isinstance(phase_cfg, dict) else {}
     extra: list[str] = []
     if cfg.get('type') == 'team':
         extra.append(f"`{command}` runs a review team (agents fan out in parallel).")
-    loop = cfg.get('loop')
-    if isinstance(loop, dict) and loop.get('skill'):
-        loop_cmd = '/' + str(loop['skill']).split(':')[-1]
-        trigger = loop.get('on') or 'commit'
-        extra.append(f"Loop: run `{loop_cmd}` before each {trigger}.")
+    loops = cfg.get('loops')
+    if isinstance(loops, list):
+        for loop in loops:
+            if isinstance(loop, dict) and loop.get('skill'):
+                loop_cmd = '/' + str(loop['skill']).split(':')[-1]
+                trigger = loop.get('on') or 'commit'
+                extra.append(f"Loop: run `{loop_cmd}` before each {trigger}.")
     conditionals = cfg.get('conditionals')
     if isinstance(conditionals, (list, tuple)) and conditionals:
         listed = ', '.join(

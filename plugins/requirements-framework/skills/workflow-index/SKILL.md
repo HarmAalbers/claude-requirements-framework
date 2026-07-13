@@ -27,12 +27,11 @@ This is the **built-in default** that applies when a project has no `workflow:` 
 | design | `design_approved` unsatisfied | `/brainstorming` |
 | plan | `plan_written` unsatisfied | `/write-plan` |
 | validate | `plan_validated` unsatisfied (after plan_written) | `/arch-review` (optional `/codex-review`) |
-| build | `implementation_done` unsatisfied | `/execute-plan` (loops `/pre-commit` per commit) |
+| build | `implementation_done` unsatisfied | `/execute-plan` (loops: `/pre-commit` per commit, `/verification-before-completion` per push) |
 | review | `pr_reviewed` unsatisfied | `/deep-review` (optional `/codex-review`) |
-| verify | `verified` unsatisfied | `verification-before-completion` |
 | ship | all gates satisfied (gateless) | `finishing-a-development-branch` |
 
-This is the ADR-022 typed 7-node backbone: Design → Plan → Validate → Build → Review → Verify → Ship. Planning is split across two phases: `/write-plan` produces a plan (flips `plan_written`), and `/arch-review` validates it (flips `plan_validated`).
+This is the ADR-023 typed 6-node backbone: Design → Plan → Validate → Build → Review → Ship. Build carries two loops — `/pre-commit` (satisfies `pre_commit_review` per commit) and `/verification-before-completion` (satisfies `verified` per push). Planning is split across two phases: `/write-plan` produces a plan (flips `plan_written`), and `/arch-review` validates it (flips `plan_validated`).
 
 ## Common transitions (default workflow)
 
@@ -40,8 +39,8 @@ This is the ADR-022 typed 7-node backbone: Design → Plan → Validate → Buil
 - After `/write-plan` → `plan_written` flips → next phase: **validate**
 - After `/arch-review` → `plan_validated` flips → next phase: **build**
 - After `/execute-plan` → `implementation_done` flips → next phase: **review**
-- After `/deep-review` → `pr_reviewed` flips → next phase: **verify**
-- After `verification-before-completion` → `verified` flips → next phase: **ship**
+- After `/deep-review` → `pr_reviewed` flips → next phase: **ship**
+- (loop) `/verification-before-completion` → `verified` flips per `git push` while on **build**
 
 ## How to use this index
 

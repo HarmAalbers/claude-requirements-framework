@@ -1,6 +1,6 @@
 ---
 name: req
-description: "Workflow conductor — derives the current requirements-framework phase and dispatches to the matching skill/command. Run with no arguments to be guided, or pass an explicit phase. The default phases are design, plan, validate, build, review, verify, ship (these are the default phases; a project may configure others — run `req-phase` to see the current phase)."
+description: "Workflow conductor — derives the current requirements-framework phase and dispatches to the matching skill/command. Run with no arguments to be guided, or pass an explicit phase. The default phases are design, plan, validate, build, review, ship (these are the default phases; a project may configure others — run `req-phase` to see the current phase)."
 argument-hint: "[phase]"
 allowed-tools: ["Bash", "Read", "Skill"]
 git_hash: f1f120e
@@ -53,8 +53,9 @@ Act on the `<phase>\t<skill>` line from Step 1:
 > | validate | `requirements-framework:arch-review`                     |
 > | build    | `requirements-framework:executing-plans`                 |
 > | review   | `requirements-framework:deep-review`                     |
-> | verify   | `requirements-framework:verification-before-completion`  |
 > | ship     | `requirements-framework:finishing-a-development-branch`  |
+>
+> Verify is not a phase — it is a per-push loop on **build** (`/verification-before-completion`, satisfies `verified` on each `git push`).
 
 ## Step 3 — After dispatch
 
