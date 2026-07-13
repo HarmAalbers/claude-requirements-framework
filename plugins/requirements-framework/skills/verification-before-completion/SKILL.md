@@ -122,7 +122,7 @@ NEVER: Trust agent report blindly
 
 ## Requirements Integration
 
-This skill is guidance-only: it does **not** auto-satisfy any requirement. Invoke it whenever you are about to claim work is complete — the discipline stands on its own, independent of any gate.
+Completing this skill auto-satisfies the `verified` gate (`single_use` — it re-arms after every `git push`, so run it before each push). In the default workflow (ADR-023) it is the build node's per-push loop, not a standalone phase. The discipline still stands on its own — invoke it whenever you are about to claim work is complete, gate or no gate.
 
 ## The Bottom Line
 
