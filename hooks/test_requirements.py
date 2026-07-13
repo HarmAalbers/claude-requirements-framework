@@ -10114,6 +10114,65 @@ def test_process_skill_auto_satisfy_mappings(runner: TestRunner):
                'requirements-framework:quality-check' not in mappings)
 
 
+def test_tier_shortcut_on_brainstorm_completion(runner: TestRunner):
+    """ADR-023 C: on a tier=small branch, brainstorming completion also satisfies
+    plan_written + plan_validated (method 'tier'); other tiers/skills do not."""
+    print("\n🎯 Testing small-tier auto-satisfy shortcut...")
+    import importlib.util
+    auto_satisfy_path = Path(__file__).parent / 'auto-satisfy-skills.py'
+    spec = importlib.util.spec_from_file_location("auto_satisfy_tier", auto_satisfy_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    from requirements import BranchRequirements
+    from config import RequirementsConfig
+
+    config_content = {
+        "version": "1.0", "enabled": True,
+        "requirements": {
+            "plan_written": {"enabled": True, "scope": "branch"},
+            "plan_validated": {"enabled": True, "scope": "branch"},
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(f"{tmpdir}/.git")
+        os.makedirs(f"{tmpdir}/.claude")
+        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
+            json.dump(config_content, f)
+        config = RequirementsConfig(tmpdir)
+
+        # Small tier + brainstorming → both plan gates satisfied via method 'tier'.
+        reqs = BranchRequirements("tier/sc-branch", "sess-one", tmpdir)
+        reqs.set_tier("small")
+        satisfied = mod.apply_tier_shortcut(
+            config, reqs, 'requirements-framework:brainstorming')
+        runner.test("small tier satisfies both plan gates",
+                    set(satisfied) == {"plan_written", "plan_validated"})
+        runner.test("plan_written now satisfied (branch scope)",
+                    reqs.is_satisfied("plan_written", "branch"))
+        runner.test("recorded with method 'tier'",
+                    reqs._state['requirements']['plan_written'].get('satisfied_by') == 'tier')
+
+        # Non-brainstorming skill on a small-tier branch → no shortcut.
+        reqs2 = BranchRequirements("tier/sc-branch2", "sess-one", tmpdir)
+        reqs2.set_tier("small")
+        runner.test("non-brainstorming skill → no shortcut",
+                    mod.apply_tier_shortcut(
+                        config, reqs2, 'requirements-framework:writing-plans') == [])
+
+        # Standard tier + brainstorming → no shortcut.
+        reqs3 = BranchRequirements("tier/sc-branch3", "sess-one", tmpdir)
+        reqs3.set_tier("standard")
+        runner.test("standard tier → no shortcut",
+                    mod.apply_tier_shortcut(
+                        config, reqs3, 'requirements-framework:brainstorming') == [])
+
+        # No tier recorded → no shortcut.
+        reqs4 = BranchRequirements("tier/sc-branch4", "sess-one", tmpdir)
+        runner.test("no tier → no shortcut",
+                    mod.apply_tier_shortcut(
+                        config, reqs4, 'requirements-framework:brainstorming') == [])
+
+
 def test_new_requirement_definitions(runner: TestRunner):
     """Test that new requirement definitions in example config are valid."""
     print("\n🎯 Testing new requirement definitions...")
@@ -13577,6 +13636,7 @@ def main():
 
     # Process skill absorption tests
     test_process_skill_auto_satisfy_mappings(runner)
+    test_tier_shortcut_on_brainstorm_completion(runner)
     test_new_requirement_definitions(runner)
     test_process_skill_message_files(runner)
     test_plugin_hooks_bundle_fresh(runner)

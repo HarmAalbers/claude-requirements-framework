@@ -98,6 +98,32 @@ def get_skill_requirement_mappings(config: RequirementsConfig) -> dict[str, list
     return mappings
 
 
+# Gates the small-tier design shortcut satisfies alongside design_approved.
+TIER_SHORTCUT_GATES: tuple[str, ...] = ('plan_written', 'plan_validated')
+
+
+def apply_tier_shortcut(config, reqs, skill_name) -> list[str]:
+    """Small-tier design shortcut (ADR-023 decision C).
+
+    When `brainstorming` completes on a branch marked ``tier=small``, the
+    plan/validate gates are satisfied too — recorded with method ``'tier'`` so
+    state shows WHY they flipped (not a skill, not manual). Returns the list of
+    gates satisfied (empty for any other skill or a non-small tier).
+    """
+    if skill_name != 'requirements-framework:brainstorming':
+        return []
+    if reqs.get_tier() != 'small':
+        return []
+    satisfied = []
+    for gate in TIER_SHORTCUT_GATES:
+        if not config.is_requirement_enabled(gate):
+            continue
+        reqs.satisfy(gate, config.get_scope(gate), method='tier',
+                     metadata={'tier': 'small'})
+        satisfied.append(gate)
+    return satisfied
+
+
 def main() -> int:
     """
     Hook entry point.
@@ -209,6 +235,13 @@ def main() -> int:
 
             # Record requirement satisfaction in metrics
             metrics.record_requirement_satisfied(req_name, f'skill:{skill_name}')
+
+        # Small-tier design shortcut (ADR-023): brainstorming completion on a
+        # tier=small branch also satisfies the plan/validate gates, so a trivial
+        # one-file fix doesn't get nudged through /writing-plans + /arch-review.
+        for gate in apply_tier_shortcut(config, reqs, skill_name):
+            metrics.record_requirement_satisfied(gate, 'tier:small')
+            satisfied_reqs.append(gate)
 
         # Output success message (visible to user) before metrics save
         # so a metrics.save() failure doesn't suppress the log
