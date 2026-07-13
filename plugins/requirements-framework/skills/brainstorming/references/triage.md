@@ -22,3 +22,5 @@ Score the task on four axes; the highest axis wins. When in doubt, round up one 
 ## Announce and route
 
 Announce the tier and why in ONE line, then follow the tier's row in the router table. Re-tiering upward mid-flow is normal — announce it the same way.
+
+Right after announcing, record the tier as a branch marker: `req tier <small|standard|deep> --session <session-id>` (you MAY run this — like `req pause`, it only annotates state). This is what lets a **small** tier skip the plan/validate nudges: on brainstorming completion the framework reads the marker and, for `small`, also satisfies `plan_written` + `plan_validated` (ADR-023). If you re-tier upward mid-flow, re-run `req tier` with the new tier so the marker stays honest.
