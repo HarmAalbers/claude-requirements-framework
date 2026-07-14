@@ -31,7 +31,7 @@ Mis-tiering is recoverable: if the problem grows mid-flow, re-triage upward, ann
 Work through these in order, loading each playbook when you reach it:
 
 1. **Triage** — vagueness check + tier (`references/triage.md`)
-2. **Anchor peek** — read just enough code to sketch credible approaches; not an exploration spree. Deeper reads happen later, on demand.
+2. **Anchor peek** — read just enough code to sketch credible approaches; not an exploration spree. Deeper reads happen later, on demand. If the project declares a `sentry:` block in its requirements.yaml, also query Sentry (MCP) for unresolved issues in the area being changed — known production errors are design input.
 3. **Approaches early** — 2–3 candidates with a recommendation (`references/approaches.md`)
 4. **Interview, write-as-you-go** — one question per message; settled answers land in the artifact immediately (`references/interview.md`, `references/design-writeup.md`)
 5. **Self-review** — inline checklist, fix inline (`references/design-writeup.md`)
