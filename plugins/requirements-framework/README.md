@@ -14,7 +14,7 @@ each step.
 
 **What's inside (verified on disk):**
 
-- **24 agents** — reviewers, auditors, and refactor workers invoked by commands or Agent Teams.
+- **25 agents** — reviewers, auditors, and refactor workers invoked by commands or Agent Teams.
 - **15 commands** — orchestrators for each workflow phase plus `req` management.
 - **21 skills** — natural-language capabilities: the workflow phase skills, framework help, and session learning.
 
@@ -119,7 +119,7 @@ the current phase and dispatches to the matching skill or command.
 | `/req-pause` | Pause the framework's blocking gates for this session only (auto-resumes at session end). |
 | `/req-resume` | Resume the framework's blocking gates for this session (undo `/req-pause`). |
 
-## Agents (24)
+## Agents (25)
 
 Agents are invoked by the orchestrator commands (often as Agent Teams that
 cross-validate findings) or on demand via the Agent tool.
@@ -133,6 +133,7 @@ cross-validate findings) or on demand via the Agent tool.
 | `tdd-validator` | Validates TDD readiness of a plan — testing strategy, test types per feature. |
 | `commit-planner` | Builds an atomic commit strategy from a validated plan. |
 | `refactor-advisor` | Identifies preparatory refactoring that makes the planned change easier ("first make the change easy, then make the easy change"). |
+| `sentry-triage` | Checks Sentry for unresolved issues in files a plan touches; conditional teammate in `/arch-review`, skips when unconfigured. |
 
 ### Code review & quality
 
@@ -185,6 +186,19 @@ cross-validate findings) or on demand via the Agent tool.
 
 Requires the Codex CLI for `codex-review-agent` / `codex-arch-reviewer`:
 `npm install -g @openai/codex`.
+
+### Sentry integration (optional)
+
+Declare the project's Sentry mapping to enable the `sentry-triage` teammate in `/arch-review` and the design-time Sentry hint in brainstorming:
+
+```yaml
+# .claude/requirements.yaml (or .local.yaml)
+sentry:
+  org: your-org-slug
+  project: your-project-slug
+```
+
+`project` is optional — omit it to search org-wide. Requires the Sentry MCP server in the session. No block (or no MCP) → the check is skipped silently.
 
 ## Skills (21)
 

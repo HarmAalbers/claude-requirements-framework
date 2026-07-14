@@ -194,6 +194,11 @@ Config is merged across three layers, local winning:
 2. **Project**: `.claude/requirements.yaml` (version controlled)
 3. **Local**: `.claude/requirements.local.yaml` (gitignored — highest priority)
 
+Unknown top-level keys pass through the cascade untouched — the Python loader never
+interprets them. The `sentry:` block (shape: `sentry: {org, project}`; `project` optional — org-wide search when omitted) relies on this:
+it is consumed only at the prompt layer (the `sentry-triage` teammate, the `/arch-review`
+HAS_SENTRY probe, and the brainstorming design hint), never by the loader.
+
 ### Requirement scopes
 
 | Scope        | Behavior                                            |
