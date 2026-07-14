@@ -65,10 +65,12 @@ If ADR_DIR found, list the ADR files for teammate context. Otherwise note "No AD
 
 ```bash
 which codex 2>/dev/null
+cat .claude/requirements.yaml .claude/requirements.local.yaml 2>/dev/null | grep -qE '^sentry:' && echo HAS_SENTRY
 ```
 
-Set flag:
+Set flags:
 - **HAS_CODEX** = true if `which codex` succeeds (exit code 0)
+- **HAS_SENTRY** = true if a top-level `sentry:` block exists in `.claude/requirements.yaml` or `.claude/requirements.local.yaml` (MCP availability is checked by the agent itself — it skips gracefully)
 
 ### Step 3: Create Architecture Team
 
@@ -89,7 +91,8 @@ Create tasks on the shared task list:
 5. **Task**: "Preparatory refactoring analysis" — assigned to refactor-advisor
 6. **Task**: "Atomic commit strategy" — assigned to commit-planner
 7. **Task**: "Codex architecture analysis" — assigned to codex-arch-reviewer, ONLY if HAS_CODEX is true
-8. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
+8. **Task**: "Sentry issue triage" — assigned to sentry-triage, ONLY if HAS_SENTRY is true
+9. **Task**: "Synthesize architectural assessment" — blocked by all above, assigned to lead
 
 ### Step 4: Spawn Teammates
 
@@ -137,13 +140,19 @@ For each review task (NOT the synthesis task), spawn a teammate:
 - `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
   "Analyze the architecture of the code changes on this branch using OpenAI Codex CLI. The plan file is at `$PLAN_FILE`. Focus on coupling/cohesion, module dependencies, API surface design, scalability, and separation of concerns. Share findings via SendMessage with severity levels. Mark task complete when done."
 
+**sentry-triage teammate** (ONLY if HAS_SENTRY is true):
+- `subagent_type`: "requirements-framework:sentry-triage"
+- `name`: "sentry-triage"
+- `prompt`: Pass the plan file path `$PLAN_FILE` and instruction:
+  "Read the plan from `$PLAN_FILE`. Check Sentry for unresolved issues in the files this plan modifies, per your agent instructions. Share findings via SendMessage with severity levels. Mark task complete when done — including when you skip."
+
 Launch all teammates in a SINGLE message (parallel execution).
 
 ### Step 5: Wait for Reviews
 
 Monitor task list until all review tasks complete:
 - Use TaskList periodically
-- Allow up to 120 seconds per teammate
+- Allow up to 120 seconds per teammate (240 for sentry-triage — it makes remote Sentry MCP queries)
 - If a teammate times out, note the gap and proceed
 
 ### Step 6: Synthesis (Lead)
@@ -174,7 +183,12 @@ Read all teammate findings. Perform architectural synthesis:
    - If codex-arch-reviewer identifies issue AND no other agent flagged the same region: keep as standalone with "verify manually — external AI unique finding" note
    - If codex-arch-reviewer flags separation of concerns AND refactor-advisor suggests restructuring for same code: corroborate — "AI and refactoring analysis agree on structural issue"
 
-6. **Produce unified verdict**:
+6. **Cross-reference Sentry triage findings** (only if sentry-triage participated):
+   - If sentry-triage flags an unresolved issue in a region another agent also flags: escalate to CRITICAL — "Production evidence confirms the concern"
+   - If sentry-triage flags a CRITICAL issue in a touched file no other agent flagged: keep as standalone IMPORTANT — "Known production error in code being modified — plan should fix or consciously defer it"
+   - If sentry-triage reports SKIPPED or CLEAN: note the status; no escalation
+
+7. **Produce unified verdict**:
    - **APPROVED**: Plan aligns with ADRs, breaking changes are acceptable and tested
    - **BLOCKED**: Unresolvable ADR violations or untested breaking changes
    - **ADR_REQUIRED**: Plan introduces new patterns needing documented decisions
@@ -216,6 +230,7 @@ If verdict is APPROVED, the framework's PostToolUse hook (`auto-satisfy-skills.p
 - refactor-advisor: [status]
 - commit-planner: [status]
 - codex-arch-reviewer: [status or "skipped (CLI not available)"]
+- sentry-triage: [status or "skipped (<reason>)"]
 
 ## ADR Compliance
 [Findings from adr-guardian, cross-referenced with other agents]
@@ -234,6 +249,9 @@ If verdict is APPROVED, the framework's PostToolUse hook (`auto-satisfy-skills.p
 
 ## Codex Architecture Analysis
 [Findings from codex-arch-reviewer, cross-referenced with other agents, or "skipped (CLI not available)"]
+
+## Known Production Issues (Sentry)
+[Findings from sentry-triage, cross-referenced with other agents, or "skipped (<reason>)"]
 
 ## Cross-Validated Findings
 - [Findings confirmed or disputed across agents]
