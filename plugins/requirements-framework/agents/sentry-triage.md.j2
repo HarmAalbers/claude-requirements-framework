@@ -22,7 +22,7 @@ description: |
   </commentary>
   </example>
 color: orange
-git_hash: a9add9d
+git_hash: 1615603
 ---
 
 # Sentry Triage Agent
