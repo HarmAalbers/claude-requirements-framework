@@ -1,7 +1,7 @@
 ---
 name: verification-before-completion
 description: Use when about to claim work is complete, fixed, or passing, before committing, creating PRs, or moving to the next task
-git_hash: d10a79f
+git_hash: 3d6507b
 ---
 
 # Verification Before Completion

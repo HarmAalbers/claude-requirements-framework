@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-usage
 description: This skill should be used when the user asks about "using requirements framework", "how to configure requirements", "add requirement checklist", "customize requirements", "requirements not working", "bypass requirements", "satisfy requirements", or needs help with the requirements framework CLI (req command). Also triggers on questions about requirement scopes, session management, or troubleshooting hooks.
-git_hash: d10a79f
+git_hash: 3d6507b
 ---
 
 # Requirements Framework Usage

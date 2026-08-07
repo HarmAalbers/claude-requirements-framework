@@ -49,7 +49,7 @@ Custom field updates require project item editing via gh or GraphQL, which the a
 
 color: cyan
 tools: ["Bash", "Read", "Write", "Grep", "Glob"]
-git_hash: d10a79f
+git_hash: 3d6507b
 ---
 
 You are a GitHub Issues Management specialist. You handle the complete lifecycle of GitHub issues with deep integration into GitHub Projects v2.
