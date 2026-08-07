@@ -45,6 +45,20 @@ def _fail(msg: str) -> int:
     return 1
 
 
+def _find_uv() -> str | None:
+    """which() with a probe of uv's default install dir as fallback.
+
+    GUI-launched Claude sessions (desktop app, kitty spawned by launchd)
+    inherit a bare PATH without ~/.local/bin, where the official uv
+    installer puts the binary.
+    """
+    uv = shutil.which("uv")
+    if uv is not None:
+        return uv
+    candidate = Path.home() / ".local" / "bin" / "uv"
+    return str(candidate) if os.access(candidate, os.X_OK) else None
+
+
 def main() -> int:
     if _env("TRACE_TO_LANGFUSE") != "true":
         return 0  # gate closed: silent, dependency-free
@@ -55,9 +69,9 @@ def main() -> int:
     except Exception as e:
         return _fail(f"failed to read hook payload: {e!r}")
 
-    uv = shutil.which("uv")
+    uv = _find_uv()
     if uv is None:
-        return _fail("TRACE_TO_LANGFUSE=true but `uv` not found on PATH")
+        return _fail("TRACE_TO_LANGFUSE=true but `uv` not found on PATH or in ~/.local/bin")
 
     try:
         timeout = int(_env("CC_LANGFUSE_TIMEOUT_SECONDS") or DEFAULT_TIMEOUT_SECONDS)

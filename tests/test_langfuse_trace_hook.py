@@ -117,6 +117,18 @@ def main():
         r.test("uv missing: exit 1", p.returncode == 1, f"rc={p.returncode}")
         r.test("uv missing: stderr names uv", "uv" in p.stderr, f"err={p.stderr!r}")
 
+    # 3b. Gate open, uv missing from PATH but present in $HOME/.local/bin →
+    # fallback probe finds it (GUI-launched sessions inherit a bare PATH)
+    with tempfile.TemporaryDirectory() as home:
+        rec = Path(home) / "rec"
+        rec.mkdir()
+        local_bin = Path(home) / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        make_fake_uv(local_bin, exit_code=0, record_to=rec)
+        p = run_wrapper({"TRACE_TO_LANGFUSE": "true", "HOME": home}, path_dirs=[])
+        r.test("~/.local/bin fallback: exit 0", p.returncode == 0, f"rc={p.returncode} err={p.stderr}")
+        r.test("~/.local/bin fallback: uv spawned", (rec / "args.txt").exists(), "args.txt missing")
+
     # 4. Gate open, uv missing, FAIL_OPEN → silent exit 0
     with tempfile.TemporaryDirectory() as empty:
         p = run_wrapper({"TRACE_TO_LANGFUSE": "true", "CC_LANGFUSE_FAIL_OPEN": "true"}, path_dirs=[empty])
