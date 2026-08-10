@@ -36,6 +36,22 @@ digraph when_to_use {
 - Two-stage review after each task: spec compliance first, then code quality
 - Faster iteration (no human-in-loop between tasks)
 
+## Before Dispatching: Seams Exploration
+
+Before writing the first task brief, map the exact integration points the plan touches:
+dispatch an Explore agent for the signatures, file:line anchors, and behavioral facts
+(how are handlers registered, what does the state API look like, which helpers exist).
+Feed those verified facts into every implementer brief's "Verified codebase facts"
+section, and spell out judgment-heavy decision logic literally, branch by branch.
+
+This is what makes cheap-model implementers reliable: the brief carries the judgment,
+the subagent carries the mechanics. Add the standing instruction "if the codebase
+contradicts these facts, STOP and ask" — it turns silent guessing into questions.
+
+**Model choice:** mechanical tasks → cheap model + tight brief. Judgment-heavy tasks →
+either pre-chew the decision logic in the brief (preferred) or use a stronger model.
+When a review fails twice on the same task, escalate the model — don't retry blind.
+
 ## The Process
 
 ```dot
@@ -90,6 +106,32 @@ See the `references/` directory for dispatch templates:
 - `spec-reviewer-prompt.md` — Dispatch spec compliance reviewer subagent
 - `code-quality-reviewer-prompt.md` — Dispatch code quality reviewer subagent
 
+## Review the Diff, Not the Report
+
+Whoever reviews (subagent or orchestrator), the review is grounded in the repo, never
+in the implementer's report. Reports routinely read "no deviations, all checks pass"
+while the diff contains real bugs, formatter churn, or committed build artifacts.
+Non-negotiable review moves, every task:
+
+- Re-run the test suite and lint checks yourself; compare with the report's claims.
+- Read the FULL `git diff --stat` for the task's commit range — unscoped. Out-of-scope
+  files (build artifacts, formatter reflow of unrelated code, tool droppings) are findings.
+- Run `git status`: leftover uncommitted or untracked files are findings.
+- Verify the task's commit actually exists with the agreed message.
+- Then read the actual diff of the claimed changes against the spec.
+
+**Reviewer variant — orchestrator-as-reviewer:** two reviewer subagents per task is the
+default (fresh eyes, no anchoring). The orchestrator MAY do both review stages itself
+when it already holds the plan and seams context and the diff is small enough to read
+inline — faster and cheaper, at the cost of fresh eyes. If you take this route, the
+moves above still apply in full; the moment a diff feels too large to actually read,
+fall back to reviewer subagents.
+
+**Real-world verification:** after a task that integrates with an external system
+(feeds, third-party APIs, OS state, live services), verify against the real thing —
+run the code against real data once, not only the mocked tests. Mocked tests encode
+the plan's assumptions; the real environment is where wrong assumptions surface.
+
 ## Advantages
 
 **vs. Manual execution:**
@@ -123,6 +165,11 @@ See the `references/` directory for dispatch templates:
 - Accept "close enough" on spec compliance
 - **Start code quality review before spec compliance is approved** (wrong order)
 - Move to next task while either review has open issues
+- Accept a report's "all checks pass" without re-running the checks yourself
+- Review only the paths the task was scoped to (the full diff-stat catches
+  committed build artifacts and formatter churn the scoped view hides)
+- Treat a delivered report as proof of a commit — verify the commit exists
+- Assume an idle subagent reported: chase the report, it's part of the task
 
 **If subagent asks questions:**
 - Answer clearly and completely

@@ -20,16 +20,24 @@ Task tool (general-purpose):
 
     ## CRITICAL: Do Not Trust the Report
 
-    The implementer finished suspiciously quickly. Their report may be incomplete,
-    inaccurate, or optimistic. You MUST verify everything independently.
+    Review the DIFF, not the report — always, no matter how thorough or plausible
+    the report reads. Reports routinely claim "no deviations" and "all checks pass"
+    while the diff says otherwise.
 
     **DO NOT:**
     - Take their word for what they implemented
     - Trust their claims about completeness
+    - Trust pasted-looking test/lint claims without re-running them
     - Accept their interpretation of requirements
 
     **DO:**
     - Read the actual code they wrote
+    - Re-run the test suite and lint checks yourself; compare with the claims
+    - Run `git status` (leftover uncommitted/untracked files?) and the FULL
+      `git diff --stat` for the task's commit range — not just the paths the task
+      was scoped to. Out-of-scope files in the diff (build artifacts, formatter
+      churn in unrelated files, editor/tool droppings) are findings.
+    - Verify a commit actually exists for the task
     - Compare actual implementation to requirements line by line
     - Check for missing pieces they claimed to implement
     - Look for extra features they didn't mention

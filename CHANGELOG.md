@@ -5,6 +5,19 @@ All notable changes to the requirements-framework plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **subagent-driven-development hardened from a live 7-milestone Haiku-executor
+  session** (2026-08-10): implementer template gains HARD RULES (no formatters,
+  explicit-path `git add`, status/diff-stat before commit, mandatory report
+  delivery, pasted command output instead of claims) and a "Verified codebase
+  facts" section; skill gains a pre-dispatch seams-exploration step with model-
+  choice guidance, a "Review the Diff, Not the Report" section (re-run checks,
+  unscoped diff-stat, commit-existence check, orchestrator-as-reviewer variant,
+  real-world verification), and four new red flags. Reviewer templates drop the
+  conditional "suspiciously quickly" framing for unconditional diff-grounding.
+
 ## [6.0.0] — 2026-07-12
 
 Brainstorming skill v2: the design phase gets a tiered triage router with

@@ -16,6 +16,28 @@ Task tool (general-purpose):
 
     [Scene-setting: where this fits, dependencies, architectural context]
 
+    ## Verified codebase facts
+
+    [Exact API signatures, file:line anchors, and behavioral facts the orchestrator
+    has verified (e.g. from a seams exploration). The implementer treats these as
+    ground truth. For judgment-heavy tasks: spell out the decision logic literally,
+    branch by branch — do not leave design decisions to the implementer.]
+
+    If the codebase contradicts any fact above: STOP and ask. Do not guess.
+
+    ## Hard Rules
+
+    - NEVER run a formatter or auto-fixer (`ruff format`, `prettier`, `--fix`, ...)
+      unless the task explicitly asks for it. Lint-CHECK commands are fine.
+      Touch only the lines your task needs.
+    - Stage files by explicit path: `git add <file> <file>`. NEVER `git add -A`,
+      `git add .`, or glob-adds. Before committing, run `git status` and
+      `git diff --stat`; if anything you did not expect shows up, leave it
+      unstaged and mention it in your report.
+    - Commit your work. A task without its commit is not done.
+    - Your task is not finished until your report is DELIVERED (final message, or
+      the channel the orchestrator named). Going idle without reporting is a failure.
+
     ## Before You Begin
 
     If you have questions about:
@@ -71,8 +93,11 @@ Task tool (general-purpose):
 
     When done, report:
     - What you implemented
-    - What you tested and test results
-    - Files changed
+    - Test and lint results: PASTE the actual final output lines of the commands
+      (e.g. `512 passed in 1.4s`, the linter's summary line). A claim like
+      "all checks pass" without pasted output counts as unverified.
+    - Files changed (and any unexpected files you saw in `git status`)
+    - Commit hash(es)
     - Self-review findings (if any)
-    - Any issues or concerns
+    - Any issues, concerns, or deviations from the spec
 ```

@@ -27,7 +27,8 @@ Task tool (requirements-framework:code-reviewer or general-purpose):
 
     ## Your Job
 
-    Review the implementation for code quality:
+    Review the implementation for code quality. Base every judgement on the actual
+    diff and on commands you ran yourself — never on the implementer's report.
 
     **Correctness:**
     - Does the code actually do what it claims?
