@@ -3,7 +3,7 @@ name: test-analyzer
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 4acd4ca
+git_hash: 238f03d
 description: "Use this agent to review test coverage quality and completeness before committing. This agent should be invoked when tests have been added or modified to ensure they adequately cover functionality and edge cases.\n\n<example>\nContext: User has written new tests.\nuser: \"I've created the tests. Can you check if they're thorough?\"\nassistant: \"I'll use the test-analyzer agent to review the test coverage.\"\n</example>\n\n<example>\nContext: Checking tests before commit.\nuser: \"Are my tests sufficient?\"\nassistant: \"Let me analyze your tests to ensure adequate coverage.\"\n</example>\n\n<example>\nContext: TDD workflow check.\nuser: \"check test coverage\"\nassistant: \"I'll use the test-analyzer agent to review test coverage quality.\"\n</example>"
 ---
 

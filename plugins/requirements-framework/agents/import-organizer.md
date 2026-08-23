@@ -3,7 +3,7 @@ name: import-organizer
 model: haiku
 color: yellow
 allowed-tools: ["Read", "Edit", "Glob", "Grep", "Bash"]
-git_hash: 4acd4ca
+git_hash: 238f03d
 description: "Use this agent to automatically organize imports in staged Python files. Moves imports to the top of the file and groups them by stdlib, third-party, and local. Auto-fixes issues by editing files directly.\n\nExamples:\n<example>\nContext: User wants imports organized.\nuser: \"Organize the imports in my Python files\"\nassistant: \"I'll use the import-organizer agent to automatically sort and group imports in your staged Python files.\"\n<commentary>\nUse for automatic import organization.\n</commentary>\n</example>\n<example>\nContext: Imports are scattered throughout the file.\nuser: \"Move all imports to the top\"\nassistant: \"I'll use the import-organizer agent to move imports to the top and group them properly.\"\n<commentary>\nImport-organizer auto-fixes by editing files directly.\n</commentary>\n</example>"
 ---
 

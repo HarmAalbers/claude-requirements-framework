@@ -3,7 +3,7 @@ name: silent-failure-hunter
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 4acd4ca
+git_hash: 238f03d
 description: "Use this agent to check error handling before committing code that involves try-catch blocks, error callbacks, fallback logic, or any code that could potentially suppress errors. This agent should be invoked proactively after completing a logical chunk of work that involves error handling.\n\n<example>\nContext: User has implemented error handling.\nuser: \"I've added error handling to the API client. Check it before I commit.\"\nassistant: \"I'll use the silent-failure-hunter agent to examine the error handling.\"\n</example>\n\n<example>\nContext: Code with try-catch blocks.\nuser: \"audit try/catch\"\nassistant: \"I'll use the silent-failure-hunter agent to check for silent failures.\"\n</example>\n\n<example>\nContext: After refactoring error handling.\nuser: \"I've updated the error handling in the auth module\"\nassistant: \"Let me use the silent-failure-hunter agent to ensure no silent failures were introduced.\"\n</example>"
 ---
 

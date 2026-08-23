@@ -3,7 +3,7 @@ name: code-reviewer
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 4acd4ca
+git_hash: 238f03d
 description: "Use this agent to review code before committing for adherence to project guidelines, style guides, and best practices. This agent should be used proactively after writing or modifying code, especially before committing changes. It will check for style violations, potential issues, and ensure code follows the established patterns in CLAUDE.md. The agent needs to know which files to focus on - by default it reviews unstaged changes from git diff.\n\nExamples:\n<example>\nContext: The user has just implemented a new feature.\nuser: \"I've finished the authentication feature. Check my code before I commit.\"\nassistant: \"I'll use the code-reviewer agent to review your changes before committing.\"\n<commentary>\nSince the user wants to review before committing, use the code-reviewer agent.\n</commentary>\n</example>\n<example>\nContext: The assistant has just written new code.\nuser: \"Create a function to validate email addresses\"\nassistant: \"Here's the email validation function:\"\nassistant: \"Now I'll use the code-reviewer agent to review this implementation before you commit.\"\n<commentary>\nProactively use the code-reviewer agent after writing new code.\n</commentary>\n</example>\n<example>\nContext: Quick pre-commit check.\nuser: \"review before commit\"\nassistant: \"I'll use the code-reviewer agent to ensure all code meets our standards before committing.\"\n<commentary>\nTrigger on common pre-commit review phrases.\n</commentary>\n</example>"
 ---
 
