@@ -91,6 +91,17 @@ jobs:
           chmod +x ./update-plugin-versions.sh
           ./update-plugin-versions.sh
 
+      # marketplace.json carries the version Claude Code installs from, and
+      # nothing here was updating it: every auto-bump left it one release
+      # behind plugin.json, so `claude plugin update` kept resolving the
+      # previous version. sync-versions.sh reads plugin.json as the source of
+      # truth. It exits 0 even when a target has drifted, which matters under
+      # `set -e` -- a version sync must not be able to fail the publish.
+      - name: Sync marketplace + docs to the plugin version
+        run: |
+          chmod +x ./sync-versions.sh
+          ./sync-versions.sh
+
       - name: Commit and push version updates
         run: |
           git config user.name "github-actions[bot]"
