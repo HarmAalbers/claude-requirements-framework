@@ -60,7 +60,11 @@ The same logic is reusable from Python: `derive_phase(Path(state_file))`.
 ## Performance
 
 Warm execution runs in ~200–300ms on macOS, dominated by Python interpreter
-startup (`statusline_data.py` collapses two CLI calls into one). This is
+startup (`statusline_data.py` collapses two CLI calls into one). Since ADR-024
+that file also calls `_bootstrap.ensure()`, which re-execs under `uv` when the
+ambient `python3` cannot import PyYAML — measured at +44ms, and skipped
+entirely when PyYAML is already importable. Provisioning the interpreter the
+statusline actually uses removes that cost. This is
 below the perceptible-lag threshold for a statusline that refreshes on a
 timer; it is comfortably above the aspirational 100ms target named in the
 original plan. Switching to pure jq would cut runtime to ~50ms at the cost
@@ -75,13 +79,21 @@ same mapping is needed in Python for the `/req` conductor.
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/requirements-framework/statusline.sh"
+    "command": "<repo>/plugins/requirements-framework/statusline.sh"
   }
 }
 ```
 
-The installer only writes this when `statusLine` is absent — your custom
-statusline, if any, is preserved.
+The path points into your clone, not into `~/.claude/plugins/`. Claude Code
+loads plugins from a versioned cache directory (`~/.claude/plugins/cache/
+requirements-framework/requirements-framework/<version>/`) whose name the
+installer cannot know, and the unversioned `~/.claude/plugins/<name>/` layout
+it used to write is no longer created — a `command` pointing there silently
+renders no statusline at all. Installs still carrying that old path are
+repointed automatically.
+
+The installer only writes this when `statusLine` is absent or still carries
+that old path — your custom statusline, if any, is preserved.
 
 ## Customization
 

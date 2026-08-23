@@ -376,7 +376,7 @@ display_marketplace_instructions
 # Register the phase-aware statusline in settings.json. Hook registration is
 # NOT done here — the plugin's hooks/hooks.json is the single source of truth.
 configure_statusline() {
-    python3 << 'PYTHON_SCRIPT'
+    REPO_DIR="$REPO_DIR" python3 << 'PYTHON_SCRIPT'
 import json
 import os
 import sys
@@ -394,14 +394,30 @@ try:
         print("   Creating new settings.json...")
 
     # Register the phase-aware statusline, but never clobber a user's
-    # existing statusLine — only fill it in when absent or empty.
-    STATUSLINE_CMD = "~/.claude/plugins/requirements-framework/statusline.sh"
+    # existing statusLine — only fill it in when absent, empty, or still
+    # pointing at the path this installer used to write.
+    repo_dir = os.environ.get("REPO_DIR", "")
+    if not repo_dir:
+        print("   ⚠️  REPO_DIR unset — skipping statusline registration",
+              file=sys.stderr)
+        raise SystemExit(0)
+    STATUSLINE_CMD = f"{repo_dir}/plugins/requirements-framework/statusline.sh"
+
+    # Claude Code loads plugins from ~/.claude/plugins/cache/<name>/<name>/<version>/,
+    # a versioned directory this installer cannot name. Older runs wrote a path
+    # under ~/.claude/plugins/<name>/ instead, which the plugin system no longer
+    # creates — so that command silently produces no statusline at all.
+    STALE = "/.claude/plugins/requirements-framework/statusline.sh"
+
     existing_status = settings.get("statusLine") or {}
     existing_cmd = existing_status.get("command", "")
     if not existing_cmd:
         settings["statusLine"] = {"type": "command", "command": STATUSLINE_CMD}
         print("   ✅ Statusline registered")
-    elif "requirements-framework/statusline.sh" in existing_cmd:
+    elif existing_cmd.replace("~", "", 1).endswith(STALE):
+        settings["statusLine"] = {"type": "command", "command": STATUSLINE_CMD}
+        print("   ✅ Statusline repointed off the removed ~/.claude/plugins path")
+    elif existing_cmd == STATUSLINE_CMD:
         print("   ✅ Statusline already registered")
     else:
         print("   ℹ️  Existing statusLine preserved (custom command detected)")
