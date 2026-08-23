@@ -8,6 +8,7 @@ errors and provides opt-in configuration for destinations and verbosity.
 Defaults are silent unless explicitly enabled in config.
 """
 
+import atexit
 import json
 import sys
 from dataclasses import dataclass
@@ -174,18 +175,49 @@ def emit_json(payload: dict, stream: Optional[TextIO] = None) -> None:
     emit_text(json.dumps(payload), stream=stream)
 
 
-def emit_hook_context(hook_event_name: str, context_text: str,
-                      stream: Optional[TextIO] = None) -> None:
-    """Write structured hookSpecificOutput JSON for context injection.
+_pending_context: "dict[str, list[str]]" = {}
+_flush_registered = False
 
-    Uses the Claude Code hook protocol's additionalContext field so that
-    the injected text reliably appears as a system-reminder in the
-    conversation, regardless of terminal environment.
-    """
-    payload = {
+
+def _context_payload(hook_event_name: str, context_text: str) -> dict:
+    return {
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
             "additionalContext": context_text,
         }
     }
-    emit_json(payload, stream=stream)
+
+
+def flush_hook_context(stream: Optional[TextIO] = None) -> None:
+    """Emit the buffered context as one JSON document per hook event."""
+    for event_name, fragments in list(_pending_context.items()):
+        emit_json(_context_payload(event_name, "\n\n".join(fragments)), stream=stream)
+    _pending_context.clear()
+
+
+def emit_hook_context(hook_event_name: str, context_text: str,
+                      stream: Optional[TextIO] = None) -> None:
+    """Buffer structured hookSpecificOutput JSON for context injection.
+
+    Uses the Claude Code hook protocol's additionalContext field so that
+    the injected text reliably appears as a system-reminder in the
+    conversation, regardless of terminal environment.
+
+    The output is buffered and flushed once at exit. Claude Code parses a
+    hook's stdout as a single JSON document, so two calls in one run produced
+    two documents, failed JSON.parse, and fell back to plain text -- the
+    context still arrived, but as raw JSON in the model's window. Measured
+    23 Aug 2026 in ~/.claude/debug: handle-prompt-submit.py has five call
+    sites and handle-session-start.py three.
+
+    Passing an explicit ``stream`` writes immediately and skips the buffer.
+    """
+    if stream is not None:
+        emit_json(_context_payload(hook_event_name, context_text), stream=stream)
+        return
+
+    global _flush_registered
+    _pending_context.setdefault(hook_event_name, []).append(context_text)
+    if not _flush_registered:
+        atexit.register(flush_hook_context)
+        _flush_registered = True

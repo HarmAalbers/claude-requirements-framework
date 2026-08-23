@@ -13814,6 +13814,102 @@ def test_prompt_submit_pause_banner(runner: TestRunner):
                     f"Got: {r.stdout}")
 
 
+def test_hook_context_is_one_json_document(runner: TestRunner):
+    """Claude Code parses a hook's stdout as ONE JSON document.
+
+    Measured 23 Aug 2026 in ~/.claude/debug: handle-prompt-submit.py calls
+    emit_hook_context at five sites and handle-session-start.py at three. Two
+    firing in one run produced two documents, so JSON.parse failed and Claude
+    fell back to plain text — the context still arrived, but as raw JSON in
+    the model's window. Silent degradation, every prompt.
+    """
+    print("\n📄 Testing hook context is a single JSON document...")
+    import io
+    import console
+
+    def capture(fn):
+        buf = io.StringIO()
+        real, sys.stdout = sys.stdout, buf
+        try:
+            fn()
+            console.flush_hook_context()
+        finally:
+            sys.stdout = real
+        return buf.getvalue()
+
+    console._pending_context.clear()
+    out = capture(lambda: (
+        console.emit_hook_context("UserPromptSubmit", "eerste"),
+        console.emit_hook_context("UserPromptSubmit", "tweede"),
+    ))
+    try:
+        payload = json.loads(out)
+        parsed, err = True, ""
+    except json.JSONDecodeError as exc:
+        payload, parsed, err = {}, False, f"{exc} — got: {out!r}"
+    runner.test("two calls parse as one document", parsed, err)
+    ctx = payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+    runner.test("both fragments survive the merge",
+                "eerste" in ctx and "tweede" in ctx, f"Got: {ctx!r}")
+
+    console._pending_context.clear()
+    out = capture(lambda: console.emit_hook_context("SessionStart", "alleen"))
+    runner.test("single call unchanged",
+                json.loads(out)["hookSpecificOutput"] == {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": "alleen"},
+                f"Got: {out!r}")
+
+    console._pending_context.clear()
+    runner.test("no calls emit nothing", capture(lambda: None) == "")
+
+    # Een expliciete stream schrijft direct — anders zou stderr-diagnostiek pas
+    # bij exit verschijnen, precies waar je hem niet wilt.
+    buf = io.StringIO()
+    console.emit_hook_context("SessionStart", "nu", stream=buf)
+    runner.test("explicit stream bypasses the buffer",
+                json.loads(buf.getvalue())["hookSpecificOutput"]["additionalContext"] == "nu"
+                and console._pending_context == {},
+                f"Got: {buf.getvalue()!r}")
+
+
+def test_prompt_submit_emits_at_most_one_context(runner: TestRunner):
+    """End-to-end: the real hook never puts two JSON documents on stdout."""
+    print("\n📄 Testing handle-prompt-submit.py stdout shape...")
+    hook_path = Path(__file__).parent / "handle-prompt-submit.py"
+    if not hook_path.exists():
+        runner.test("handle-prompt-submit.py exists", False, "missing")
+        return
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init"], cwd=tmp, capture_output=True)
+        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmp, capture_output=True)
+        os.makedirs(f"{tmp}/.claude")
+        with open(f"{tmp}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+
+        # Een prompt die zowel de lazy-dev-regel als de brainstorm-directive raakt.
+        prompt_input = json.dumps({
+            "session_id": "ctx12345",
+            "prompt": "implement a new feature to build the export pipeline",
+            "cwd": tmp,
+        })
+        r = subprocess.run(["python3", str(hook_path)], input=prompt_input,
+                           cwd=tmp, capture_output=True, text=True)
+        count = r.stdout.count('"hookSpecificOutput"')
+        runner.test("at most one hookSpecificOutput document",
+                    count <= 1, f"Got {count} documents: {r.stdout[:400]!r}")
+        if count == 1:
+            start = r.stdout.index("{")
+            try:
+                json.loads(r.stdout[start:])
+                ok, err = True, ""
+            except json.JSONDecodeError as exc:
+                ok, err = False, f"{exc} — got: {r.stdout[start:][:400]!r}"
+            runner.test("that document parses", ok, err)
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -14087,6 +14183,10 @@ def main():
     test_stop_pause(runner)
     test_session_end_clears_pause(runner)
     test_prompt_submit_pause_banner(runner)
+
+    # Hook context is one JSON document (measured 23 Aug 2026)
+    test_hook_context_is_one_json_document(runner)
+    test_prompt_submit_emits_at_most_one_context(runner)
 
     return runner.summary()
 
