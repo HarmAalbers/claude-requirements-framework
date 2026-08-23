@@ -3,7 +3,7 @@ name: tdd-validator
 model: sonnet
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
-git_hash: 42b42b4
+git_hash: aed5c49
 description: "Use this agent when reviewing a plan to validate TDD readiness. Checks that the plan includes a testing strategy section, identifies test types per feature/component, and describes a TDD sequence (tests written first). This is a BLOCKING agent - plans should not proceed without TDD elements.\n\nExamples:\n\n<example>\nContext: User has created a plan and needs TDD validation\nuser: \"Review my plan for TDD readiness\"\nassistant: \"I'll use the tdd-validator agent to check the plan includes testing strategy and TDD elements.\"\n<commentary>\nPlan needs TDD validation before implementation can begin.\n</commentary>\n</example>\n\n<example>\nContext: Plan review command running TDD step\nuser: \"Run plan review\"\nassistant: \"After ADR validation passes, I'll use the tdd-validator agent to verify TDD readiness in the plan.\"\n<commentary>\nTDD validation is a blocking gate in the arch-review workflow.\n</commentary>\n</example>"
 ---
 

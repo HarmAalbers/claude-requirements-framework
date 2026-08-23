@@ -3,7 +3,7 @@ name: session-analyzer
 model: sonnet
 color: magenta
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 42b42b4
+git_hash: aed5c49
 description: "Analyzes session metrics to identify patterns, friction points, and improvement opportunities. This agent reviews tool usage, requirement satisfaction, errors, and workflows to suggest improvements to memories, skills, and commands for future sessions.\n\nExamples:\n<example>\nContext: User wants to review their session for learning opportunities.\nuser: \"Analyze this session to improve future sessions\"\nassistant: \"I'll use the session-analyzer agent to identify patterns and improvement opportunities.\"\n<commentary>\nSession analyzer finds workflow patterns and friction points from session metrics.\n</commentary>\n</example>\n<example>\nContext: Session-reflect command invokes the analyzer.\ncommand: \"/session-reflect\"\nassistant: \"Running session analyzer to review your session data...\"\n<commentary>\nThe session-reflect command automatically invokes this agent.\n</commentary>\n</example>"
 ---
 

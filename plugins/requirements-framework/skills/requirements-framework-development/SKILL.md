@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-development
 description: This skill should be used when the user asks to "develop requirements framework", "fix requirements framework bug", "rebuild the plugin bundle", "update framework code", "test framework changes", or needs help with the framework development workflow including the hooks/ → bundle build, live-reload testing, TDD for the framework itself, and contributing changes.
-git_hash: 1d41301
+git_hash: aed5c49
 ---
 
 # Requirements Framework Development

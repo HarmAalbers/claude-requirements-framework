@@ -3,7 +3,7 @@ name: codex-review-agent
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 42b42b4
+git_hash: aed5c49
 description: "Orchestrates OpenAI Codex code review workflow. Use this agent for AI-powered code review using OpenAI's Codex CLI for advanced static analysis.\n\nExamples:\n<example>\nContext: User wants an external AI code review.\nuser: \"Run a Codex review on my changes\"\nassistant: \"I'll use the codex-review-agent to orchestrate an OpenAI Codex code review.\"\n<commentary>\nUse when the user explicitly requests Codex review.\n</commentary>\n</example>\n<example>\nContext: User wants comprehensive AI analysis.\nuser: \"Get a second opinion on this code from another AI\"\nassistant: \"I'll use the codex-review-agent to get an independent AI review from OpenAI Codex.\"\n<commentary>\nCodex provides a different perspective from Claude's review.\n</commentary>\n</example>"
 ---
 
