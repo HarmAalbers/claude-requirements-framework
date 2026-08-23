@@ -29,9 +29,28 @@ uses PEP-723 script metadata for its heavier, isolated dep set).
 import os
 import shutil
 import sys
+from pathlib import Path
 
 _GUARD_ENV = "RF_UV_BOOTSTRAPPED"
 _CORE_PACKAGES = ("PyYAML>=6.0",)
+
+
+def _find_uv():
+    """``which("uv")``, falling back to a probe of uv's default install dir.
+
+    GUI-launched sessions (the desktop app, a terminal spawned by launchd)
+    inherit a bare PATH without ``~/.local/bin``, which is where the official
+    uv installer puts the binary. Without this probe the self-heal silently
+    never fires on exactly the machines whose ambient python is broken.
+
+    Mirrors ``hooks/langfuse-trace.py::_find_uv``; that file stays a
+    self-contained PEP-723 script and cannot import this module.
+    """
+    uv = shutil.which("uv")
+    if uv is not None:
+        return uv
+    candidate = Path.home() / ".local" / "bin" / "uv"
+    return str(candidate) if os.access(candidate, os.X_OK) else None
 
 
 def _plan_reexec(packages, *, yaml_present, uv_path, already_bootstrapped, argv):
@@ -59,7 +78,7 @@ def ensure(packages=_CORE_PACKAGES):
     plan = _plan_reexec(
         packages,
         yaml_present=yaml_present,
-        uv_path=shutil.which("uv"),
+        uv_path=_find_uv(),
         already_bootstrapped=os.environ.get(_GUARD_ENV) == "1",
         argv=sys.argv,
     )

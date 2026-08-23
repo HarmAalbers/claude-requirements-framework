@@ -12923,6 +12923,119 @@ def test_statusline_bundled_libs_present(runner: TestRunner):
                     f"missing: {bundled / name}")
 
 
+def test_bootstrap_find_uv_probes_local_bin(runner: TestRunner):
+    """_find_uv falls back to ~/.local/bin/uv when PATH does not carry it.
+
+    GUI-launched sessions (desktop app, a terminal spawned by launchd) inherit
+    a bare PATH without ~/.local/bin, which is where the official uv installer
+    puts the binary. Without the probe the statusline's re-exec silently never
+    happens on exactly the machines that need it most.
+    """
+    print("\n📦 Testing _bootstrap uv discovery...")
+    from _bootstrap import _find_uv
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        home = Path(tmpdir)
+        local_bin = home / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        fake_uv = local_bin / "uv"
+        fake_uv.write_text("#!/bin/sh\nexit 0\n")
+        fake_uv.chmod(0o755)
+
+        empty = home / "empty-path"
+        empty.mkdir()
+
+        saved = {k: os.environ.get(k) for k in ("HOME", "PATH")}
+        try:
+            os.environ["HOME"] = str(home)
+            os.environ["PATH"] = str(empty)
+            runner.test("finds uv in ~/.local/bin when absent from PATH",
+                        _find_uv() == str(fake_uv),
+                        f"Got: {_find_uv()!r}")
+
+            fake_uv.chmod(0o644)
+            runner.test("a non-executable ~/.local/bin/uv is not used",
+                        _find_uv() is None,
+                        f"Got: {_find_uv()!r}")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+
+def test_statusline_resolves_config_without_ambient_pyyaml(runner: TestRunner):
+    """statusline_data.py must honour a custom workflow: from a bare python3.
+
+    Both statuslines invoke this file with whatever python3 is first on PATH.
+    When that interpreter has no PyYAML, derive_phase's config lookup fails and
+    falls back to the PHASE_GATES constants -- so a project that renamed its
+    phases sees the default name in its statusline, with nothing to indicate
+    why. _bootstrap.ensure() closes that by re-execing under uv.
+
+    Deliberately run under `uv run --no-project python`, an isolated env that
+    genuinely lacks PyYAML: the runner's own venv must not be able to satisfy
+    this guard.
+    """
+    print("\n📦 Testing statusline config resolution without PyYAML...")
+    repo_root = Path(__file__).resolve().parent.parent
+    lib = repo_root / "hooks" / "lib"
+
+    uv = shutil.which("uv")
+    if uv is None:
+        runner.test("uv available for the no-PyYAML statusline probe", True)
+        print("     (skipped: uv not on PATH)")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project = Path(tmpdir)
+        (project / ".claude").mkdir()
+        # A single phase whose name exists nowhere in the fallback constants,
+        # so the assertion can only pass if config was actually read.
+        (project / ".claude" / "requirements.yaml").write_text(
+            "requirements:\n"
+            "  design_approved:\n"
+            "    type: blocking\n"
+            "    scope: branch\n"
+            "    message: \"Approve the design.\"\n"
+            "workflow:\n"
+            "  default_phase: discovery\n"
+            "  ship_phase: ship\n"
+            "  phases:\n"
+            "    - name: discovery\n"
+            "      type: spine\n"
+            "      gate: design_approved\n"
+            "    - name: ship\n"
+            "      type: spine\n"
+        )
+        # _resolve_workflow derives the project root as state_file.parents[2],
+        # so the state file has to sit at <root>/.git/requirements/<branch>.json.
+        state_dir = project / ".git" / "requirements"
+        state_dir.mkdir(parents=True)
+        state = state_dir / "wip.json"
+        state.write_text(json.dumps(
+            {"requirements": {"design_approved": {"triggered": True}}}))
+
+        env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+               if k in os.environ}
+        env["PYTHONPATH"] = str(lib)
+        env.pop("RF_UV_BOOTSTRAPPED", None)
+
+        # cwd is the throwaway project, NOT the repo: `uv run --no-project`
+        # still adopts a .venv it finds next to the working directory, and the
+        # repo's has PyYAML -- which would make this guard pass either way.
+        result = subprocess.run(
+            [uv, "run", "--no-project", "--isolated", "python",
+             str(lib / "statusline_data.py"), str(state)],
+            capture_output=True, text=True, env=env, timeout=180, cwd=str(project),
+        )
+        phase = result.stdout.split()[0] if result.stdout.split() else ""
+        runner.test("statusline reads the configured phase without ambient PyYAML",
+                    phase == "discovery",
+                    f"Got {phase!r} (stdout={result.stdout!r} stderr={result.stderr[-400:]!r})")
+
+
 def test_statusline_script_end_to_end(runner: TestRunner):
     """statusline.sh must render real phase/count, not the fail-open placeholder.
 
@@ -13786,6 +13899,8 @@ def main():
     test_derive_phase_with_skill(runner)
     test_count_unsatisfied(runner)
     test_statusline_bundled_libs_present(runner)
+    test_bootstrap_find_uv_probes_local_bin(runner)
+    test_statusline_resolves_config_without_ambient_pyyaml(runner)
     test_statusline_script_end_to_end(runner)
 
     test_llm_package_scaffold(runner)

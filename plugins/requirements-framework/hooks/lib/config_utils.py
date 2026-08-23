@@ -93,12 +93,13 @@ def load_yaml(path: Path) -> dict:
     try:
         import yaml
     except ImportError:
-        # Callers that need config go through hooks/lib/_bootstrap.py, which
-        # re-execs under `uv run --with PyYAML`. Whatever reaches this line is a
-        # best-effort reader — the statusline, which already falls back to the
-        # zero-config defaults in derive_phase. At error level this wrote three
-        # lines per statusline render: 85k lines between June and August, in a
-        # log nobody reads. The fallback is by design, so note it and move on.
+        # Every caller that needs config goes through hooks/lib/_bootstrap.py,
+        # which re-execs under `uv run --with PyYAML` — including the statusline
+        # since ADR-024. So this line is only reached when uv is missing too,
+        # and the caller already has a working fallback (derive_phase's
+        # zero-config defaults). At error level it wrote three lines per
+        # statusline render: 85k lines between June and August, in a log nobody
+        # reads. The degradation is by design, so note it and move on.
         get_logger().debug(
             "PyYAML unavailable; using zero-config defaults", path=str(path)
         )
