@@ -1,28 +1,10 @@
 ---
 name: backward-compatibility-checker
 model: sonnet
-description: Detect breaking changes in schemas, APIs, and contracts that break existing tests. Use this agent when modifying Pydantic models, database schemas, or API contracts to ensure changes don't break existing code.
-
-Examples:
-<example>
-Context: User modified a Pydantic model.
-user: "I renamed a field in the User model. Will this break anything?"
-assistant: "I'll use the backward-compatibility-checker agent to find code that depends on the old field name."
-<commentary>
-Use when schema or model changes might break existing code.
-</commentary>
-</example>
-<example>
-Context: User is adding a database migration.
-user: "Check if my schema changes need a migration"
-assistant: "I'll use the backward-compatibility-checker agent to analyze your schema changes and verify migration coverage."
-<commentary>
-Use for database schema evolution analysis.
-</commentary>
-</example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 3d6507b
+description: "Detect breaking changes in schemas, APIs, and contracts that break existing tests. Use this agent when modifying Pydantic models, database schemas, or API contracts to ensure changes don't break existing code.\n\nExamples:\n<example>\nContext: User modified a Pydantic model.\nuser: \"I renamed a field in the User model. Will this break anything?\"\nassistant: \"I'll use the backward-compatibility-checker agent to find code that depends on the old field name.\"\n<commentary>\nUse when schema or model changes might break existing code.\n</commentary>\n</example>\n<example>\nContext: User is adding a database migration.\nuser: \"Check if my schema changes need a migration\"\nassistant: \"I'll use the backward-compatibility-checker agent to analyze your schema changes and verify migration coverage.\"\n<commentary>\nUse for database schema evolution analysis.\n</commentary>\n</example>"
 ---
 
 # Backward Compatibility Checker Agent

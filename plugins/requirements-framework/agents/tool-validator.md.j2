@@ -1,28 +1,10 @@
 ---
 name: tool-validator
 model: sonnet
-description: Execute linting and type-checking tools on staged changes to catch CI errors locally. Use this agent to run pyright, ruff, eslint, and other CI tools before committing to catch errors early.
-
-Examples:
-<example>
-Context: User wants to check if their code will pass CI.
-user: "Run the linters before I commit"
-assistant: "I'll use the tool-validator agent to run pyright and ruff on your staged changes."
-<commentary>
-Use tool-validator when the user wants objective tool validation before committing.
-</commentary>
-</example>
-<example>
-Context: User is about to commit and wants to avoid CI failures.
-user: "Will this pass CI?"
-assistant: "I'll use the tool-validator agent to run the same tools CI uses and check for errors."
-<commentary>
-Tool-validator provides deterministic results matching CI tools.
-</commentary>
-</example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 3d6507b
+description: "Execute linting and type-checking tools on staged changes to catch CI errors locally. Use this agent to run pyright, ruff, eslint, and other CI tools before committing to catch errors early.\n\nExamples:\n<example>\nContext: User wants to check if their code will pass CI.\nuser: \"Run the linters before I commit\"\nassistant: \"I'll use the tool-validator agent to run pyright and ruff on your staged changes.\"\n<commentary>\nUse tool-validator when the user wants objective tool validation before committing.\n</commentary>\n</example>\n<example>\nContext: User is about to commit and wants to avoid CI failures.\nuser: \"Will this pass CI?\"\nassistant: \"I'll use the tool-validator agent to run the same tools CI uses and check for errors.\"\n<commentary>\nTool-validator provides deterministic results matching CI tools.\n</commentary>\n</example>"
 ---
 
 # Tool Validator Agent
