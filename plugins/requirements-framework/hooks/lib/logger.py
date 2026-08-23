@@ -1,9 +1,17 @@
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+
+# A fail-open log on a hot path is a leak, not diagnostics: nothing here ever
+# raises, so a single noisy line runs unnoticed until the file is unusable.
+# ~/.claude/requirements.log reached 20MB / 106k lines that way, and the 85k
+# identical PyYAML lines buried the 5k that mattered. Same threshold and
+# single-generation scheme the pes hooks use in _trace.py.
+MAX_BYTES = 5 * 1024 * 1024
 
 LEVELS = {
     "debug": 10,
@@ -43,17 +51,42 @@ class StdoutHandler(Handler):
 
 
 class FileHandler(Handler):
-    """Handler that appends JSON log records to a file."""
+    """Handler that appends JSON log records to a file, rotating at *max_bytes*.
 
-    def __init__(self, path: Path):
+    One generation is kept: at the threshold the live file becomes
+    ``<path>.1``, replacing any previous ``.1``. That bounds the log at roughly
+    ``2 * max_bytes`` while still leaving the most recent history readable.
+    Pass ``max_bytes=0`` to disable rotation.
+    """
+
+    def __init__(self, path: Path, max_bytes: int = MAX_BYTES):
         self.path = path
+        self.max_bytes = max_bytes
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
 
+    def _rotate_if_needed(self) -> None:
+        """Move the live file aside once it exceeds *max_bytes*.
+
+        Fail-open in its own right: a rotation we cannot perform (read-only
+        mount, racing process) must never cost the caller its record, so the
+        emit that follows proceeds either way.
+        """
+        if self.max_bytes <= 0:
+            return
+        try:
+            if self.path.stat().st_size > self.max_bytes:
+                os.replace(self.path, str(self.path) + ".1")
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
     def emit(self, record: dict) -> None:
         try:
+            self._rotate_if_needed()
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
         except Exception as e:

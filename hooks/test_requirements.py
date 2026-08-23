@@ -6377,6 +6377,74 @@ def test_logger_module(runner: TestRunner):
             content = log_file.read_text()
             runner.test("FileHandler writes JSON", len(content) > 0 and "file test message" in content)
 
+    # Test 6b: FileHandler rotates instead of growing without bound
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "rotate.log"
+        rotated = Path(str(log_file) + ".1")
+        handler = FileHandler(log_file, max_bytes=200)
+        logger = JsonLogger(level="info", handlers=[handler])
+
+        logger.info("first record")
+        runner.test("FileHandler does not rotate below the threshold",
+                   not rotated.exists() and log_file.exists())
+
+        # One oversized record puts the live file past max_bytes. Rotation is
+        # checked before each write, so exactly the next emit rotates -- any
+        # loop here would rotate repeatedly and lose "first record" from .1.
+        logger.info("padding " + "x" * 250)
+        logger.info("record after rotation")
+
+        runner.test("FileHandler rotates to .1 once past max_bytes", rotated.exists())
+        if log_file.exists():
+            live = log_file.read_text()
+            runner.test("FileHandler keeps writing after rotation",
+                       "record after rotation" in live)
+            runner.test("FileHandler truncates the live file on rotation",
+                       len(live) < 200 * 3, f"live file is {len(live)} bytes")
+        if rotated.exists():
+            runner.test("FileHandler moves old records into .1",
+                       "first record" in rotated.read_text())
+
+    # Test 6c: only one generation is kept -- .1 is overwritten, never .2
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "twice.log"
+        handler = FileHandler(log_file, max_bytes=120)
+        logger = JsonLogger(level="info", handlers=[handler])
+        for i in range(30):
+            logger.info(f"record {i} " + "y" * 60)
+
+        runner.test("FileHandler keeps exactly one rotated generation",
+                   not (Path(str(log_file) + ".2")).exists()
+                   and Path(str(log_file) + ".1").exists())
+
+    # Test 6d: max_bytes=0 disables rotation (opt-out stays possible)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "unbounded.log"
+        handler = FileHandler(log_file, max_bytes=0)
+        logger = JsonLogger(level="info", handlers=[handler])
+        for i in range(20):
+            logger.info(f"record {i} " + "z" * 60)
+
+        runner.test("max_bytes=0 disables rotation",
+                   not (Path(str(log_file) + ".1")).exists())
+
+    # Test 6e: a rotation that cannot happen must not cost us the record
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = Path(tmpdir) / "failing.log"
+        handler = FileHandler(log_file, max_bytes=50)
+        logger = JsonLogger(level="info", handlers=[handler])
+        logger.info("padding " + "q" * 80)
+
+        original_replace = os.replace
+        try:
+            os.replace = lambda *a, **k: (_ for _ in ()).throw(OSError("read-only fs"))
+            logger.info("record despite failed rotation")
+        finally:
+            os.replace = original_replace
+
+        runner.test("failed rotation still writes the record",
+                   "record despite failed rotation" in log_file.read_text())
+
     # Test 7: Multiple handlers work together
     output = io.StringIO()
     stdout_handler = StdoutHandler(stream=output)
