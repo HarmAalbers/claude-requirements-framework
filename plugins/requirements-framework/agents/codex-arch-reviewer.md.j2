@@ -23,7 +23,7 @@ description: |
   </example>
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: 3d6507b
+git_hash: 1d41301
 ---
 
 # Codex Architecture Review Agent

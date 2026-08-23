@@ -3,7 +3,7 @@ name: commit-planner
 model: sonnet
 color: green
 allowed-tools: ["Read", "Edit", "Glob", "Grep"]
-git_hash: 3d6507b
+git_hash: 42b42b4
 description: "Use this agent after a plan has been created and validated by adr-guardian. Creates an atomic commit strategy by analyzing the plan structure, identifying logical commit boundaries, and appending the commit sequence to the plan file. Ensures each commit is independently reviewable and follows dependency ordering.\n\nExamples:\n\n<example>\nContext: Plan has been validated and user needs commit strategy\nuser: \"The plan is approved, now create a commit strategy\"\nassistant: \"I'll use the commit-planner agent to analyze the plan and create an atomic commit sequence.\"\n<commentary>\nAfter plan validation, use commit-planner to define how the implementation should be committed in logical, reviewable chunks.\n</commentary>\n</example>\n\n<example>\nContext: User wants to start implementing after planning\nuser: \"Let's start coding\"\nassistant: \"Before we implement, let me use the commit-planner agent to create a commit strategy that ensures each change is atomic and reviewable.\"\n<commentary>\nCommit planning before implementation helps maintain clean git history and enables easier code review.\n</commentary>\n</example>"
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: brainstorming
 description: "Use when facing any creative work - creating features, building components, adding functionality, or modifying behavior, before any implementation begins"
-git_hash: 3d6507b
+git_hash: 1d41301
 ---
 
 # Brainstorming Ideas Into Designs
