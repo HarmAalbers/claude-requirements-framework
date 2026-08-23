@@ -79,21 +79,37 @@ same mapping is needed in Python for the `/req` conductor.
 {
   "statusLine": {
     "type": "command",
-    "command": "<repo>/plugins/requirements-framework/statusline.sh"
+    "command": "bash ~/.claude/rf-statusline.sh"
   }
 }
 ```
 
-The path points into your clone, not into `~/.claude/plugins/`. Claude Code
-loads plugins from a versioned cache directory (`~/.claude/plugins/cache/
-requirements-framework/requirements-framework/<version>/`) whose name the
-installer cannot know, and the unversioned `~/.claude/plugins/<name>/` layout
-it used to write is no longer created — a `command` pointing there silently
-renders no statusline at all. Installs still carrying that old path are
-repointed automatically.
+That file is a launcher the installer generates. It carries no framework logic
+— it reads `~/.claude/plugins/installed_plugins.json`, finds the installed
+plugin and `exec`s its `statusline.sh`:
 
-The installer only writes this when `statusLine` is absent or still carries
-that old path — your custom statusline, if any, is preserved.
+```bash
+root=$(jq -r '.plugins["requirements-framework@requirements-framework"][]?.installPath // empty' \
+          "$registry" 2>/dev/null |
+       while IFS= read -r candidate; do
+           if [ -f "$candidate/statusline.sh" ]; then printf '%s' "$candidate"; break; fi
+       done)
+[ -n "$root" ] && exec bash "$root/statusline.sh" "$@"
+cat > /dev/null 2>&1   # not installed: render nothing rather than error
+```
+
+The indirection exists because neither obvious path works. Claude Code installs
+plugins into a **version-numbered** directory
+(`~/.claude/plugins/cache/requirements-framework/requirements-framework/<version>/`)
+that moves on every update, so a path written at install time goes stale. And a
+path into your **clone** would render whatever branch happens to be checked
+out, including unfinished edits, and only works on a machine that cloned the
+repo. The launcher is the one path that stays valid, because it resolves the
+other two at run time.
+
+The installer writes this when `statusLine` is absent, or when it still names
+either superseded path (the old `~/.claude/plugins/<name>/` layout, or a clone).
+Anything else is treated as your own statusline and left alone.
 
 ## Customization
 
