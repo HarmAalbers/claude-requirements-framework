@@ -1,8 +1,14 @@
 # ADR-024: The Statusline Bootstraps Under uv
 
-**Status:** Accepted
+**Status:** Amended by ADR-025
 **Date:** 2026-08-23
 **Related:** ADR-021 (uv standardization) — extends the self-heal to the one entrypoint it had skipped
+
+> **Amended the same day by [ADR-025](ADR-025-workflow-cache-in-state-file.md).** The diagnosis and
+> measurements below stand, and the `_find_uv` probe still matters for every other entrypoint. What
+> changed is the mechanism: the alternative this ADR called *"genuinely the better end state"* and
+> then declined to build was built. The unconditional re-exec is now a cache-miss fallback, and the
+> statusline's common path costs 27ms rather than 79ms.
 
 ## Context
 

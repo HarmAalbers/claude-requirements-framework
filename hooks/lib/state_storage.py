@@ -257,6 +257,30 @@ def load_state(branch: str, project_dir: str) -> dict:
         return create_empty_state(branch, project_dir)
 
 
+def _stamp_workflow_cache(state: dict, project_dir: str) -> None:
+    """Record the resolved workflow phase order into the state being written.
+
+    The statusline runs ``statusline_data.py`` under whatever ``python3`` is
+    first on PATH, which routinely has no PyYAML — so it cannot parse the
+    config cascade and used to fall back to the built-in phase order, silently
+    showing the wrong phase to any project that renamed its phases (ADR-024).
+    A writer is a hook process that has already parsed that config, so stamping
+    the answer here keeps YAML off the read path entirely (ADR-025).
+
+    Fail-open: on any failure the previous stamp is left untouched and readers
+    fall back exactly as before. A stale stamp is corrected by the next write,
+    which is any hook that touches requirement state.
+    """
+    try:
+        from derive_phase import WORKFLOW_CACHE_KEY, build_workflow_cache
+
+        cache = build_workflow_cache(project_dir)
+        if cache is not None:
+            state[WORKFLOW_CACHE_KEY] = cache
+    except Exception:
+        pass
+
+
 def save_state(branch: str, project_dir: str, state: dict) -> None:
     """
     Save state atomically.
@@ -270,6 +294,7 @@ def save_state(branch: str, project_dir: str, state: dict) -> None:
     """
     path = get_state_path(branch, project_dir)
     state['updated_at'] = int(time.time())
+    _stamp_workflow_cache(state, project_dir)
 
     # Atomic, corruption-safe write via a unique temp + os.replace.
     # Note: this writes the state as given. Serializing the full

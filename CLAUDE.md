@@ -105,5 +105,5 @@ Design → Plan → Validate → Build ─────────────�
 - `docs/adr/` — design records. Load-bearing ones:
   - ADR-011 message externalization · ADR-012 agent teams · ADR-014 refactor orchestration
   - ADR-019 Stop-hook observability (Langfuse) · ADR-020 strict global preflight · ADR-022 workflow backbone · ADR-023 6-node backbone re-cut
-  - ADR-024 statusline bootstraps under uv (why `statusline_data.py` costs a re-exec)
+  - ADR-024 statusline bootstraps under uv (amended by ADR-025) · ADR-025 workflow cache in the state file (keeps YAML off the statusline path)
 - **Opt-in features** (off by default; details in their ADR / `DEVELOPMENT.md`): Langfuse tracing (ADR-019), strict global preflight (ADR-020), Obsidian session logging, session learning (`/session-reflect`), cross-project upgrade (`req upgrade`), message externalization (`req messages`, ADR-011), refactor orchestration (`/refactor-orchestrate`, ADR-014), Serena MCP, `ENABLE_TOOL_SEARCH`.

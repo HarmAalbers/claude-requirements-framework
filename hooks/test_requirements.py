@@ -13036,6 +13036,169 @@ def test_statusline_resolves_config_without_ambient_pyyaml(runner: TestRunner):
                     f"Got {phase!r} (stdout={result.stdout!r} stderr={result.stderr[-400:]!r})")
 
 
+def _custom_workflow_project(root: Path) -> Path:
+    """A throwaway project whose workflow: renames the first phase to 'discovery'.
+
+    The name exists nowhere in the PHASE_GATES fallback, so any assertion that
+    sees it proves config was genuinely resolved rather than defaulted.
+    Returns the state file path.
+    """
+    (root / ".claude").mkdir(parents=True, exist_ok=True)
+    (root / ".claude" / "requirements.yaml").write_text(
+        "requirements:\n"
+        "  design_approved:\n"
+        "    type: blocking\n"
+        "    scope: branch\n"
+        "    message: \"Approve the design.\"\n"
+        "workflow:\n"
+        "  default_phase: discovery\n"
+        "  ship_phase: ship\n"
+        "  phases:\n"
+        "    - name: discovery\n"
+        "      type: spine\n"
+        "      gate: design_approved\n"
+        "      skill: some:skill\n"
+        "    - name: ship\n"
+        "      type: spine\n"
+    )
+    state_dir = root / ".git" / "requirements"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state = state_dir / "wip.json"
+    state.write_text(json.dumps(
+        {"requirements": {"design_approved": {"triggered": True}}}))
+    return state
+
+
+def test_workflow_cache_build_and_read(runner: TestRunner):
+    """build_workflow_cache trims config to what a YAML-less reader needs."""
+    print("\n📦 Testing workflow cache build/read...")
+    from derive_phase import build_workflow_cache, cached_workflow
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        state = _custom_workflow_project(root)
+
+        cache = build_workflow_cache(str(root))
+        runner.test("build_workflow_cache resolves the custom workflow",
+                    cache is not None and cache.get("default_phase") == "discovery",
+                    f"Got: {cache!r}")
+        if cache:
+            names = [p.get("name") for p in cache["phases"]]
+            runner.test("cached phases keep name/gate order",
+                        names == ["discovery", "ship"], f"Got: {names}")
+            runner.test("cached phases keep the resolver skill",
+                        cache["phases"][0].get("skill") == "some:skill",
+                        f"Got: {cache['phases'][0]!r}")
+            # Only the keys derive_phase actually reads are stored -- the cache
+            # is a projection, not a second copy of the config.
+            extra = set(cache["phases"][0]) - {"name", "gate", "skill"}
+            runner.test("cached phases carry no unread config keys",
+                        not extra, f"Unexpected keys: {sorted(extra)}")
+
+        runner.test("cached_workflow returns None when nothing is stamped",
+                    cached_workflow(state) is None,
+                    f"Got: {cached_workflow(state)!r}")
+
+        data = json.loads(state.read_text())
+        data["workflow_cache"] = cache
+        state.write_text(json.dumps(data))
+        runner.test("cached_workflow reads a stamped cache back",
+                    cached_workflow(state) == (cache["phases"], "discovery", "ship"),
+                    f"Got: {cached_workflow(state)!r}")
+
+    # A malformed stamp must never win over the fallback.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bad = Path(tmpdir) / "bad.json"
+        for junk in ({"workflow_cache": {}},
+                     {"workflow_cache": {"phases": []}},
+                     {"workflow_cache": {"phases": [{"name": "x"}]}},
+                     {"workflow_cache": "not-a-dict"}):
+            bad.write_text(json.dumps(junk))
+            if cached_workflow(bad) is not None and junk.get("workflow_cache") != {
+                    "phases": [{"name": "x"}]}:
+                runner.test("malformed workflow_cache is ignored", False, f"accepted {junk!r}")
+                break
+        else:
+            runner.test("malformed workflow_cache is ignored", True)
+
+
+def test_save_state_stamps_workflow_cache(runner: TestRunner):
+    """Writers stamp the resolved workflow so readers never need PyYAML."""
+    print("\n📦 Testing save_state stamps the workflow cache...")
+    from state_storage import save_state
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        _custom_workflow_project(root)
+        save_state("wip", str(root),
+                   {"requirements": {"design_approved": {"triggered": True}}})
+
+        written = json.loads((root / ".git" / "requirements" / "wip.json").read_text())
+        cache = written.get("workflow_cache")
+        runner.test("save_state stamps workflow_cache",
+                    isinstance(cache, dict) and cache.get("default_phase") == "discovery",
+                    f"Got: {cache!r}")
+
+
+def test_statusline_uses_cache_without_pyyaml_or_uv(runner: TestRunner):
+    """The whole point: the right phase with neither PyYAML nor uv reachable.
+
+    ADR-024 made statusline_data re-exec under uv to read the config. That is
+    correct but pays for it on every render, and it only works where uv exists.
+    With the workflow stamped into the state file the statusline needs stdlib
+    json and nothing else, so this runs with no PyYAML in the interpreter AND
+    no uv on PATH or in ~/.local/bin -- if the answer is still right, the cache
+    did the work and nothing re-execed.
+    """
+    print("\n📦 Testing statusline cache path without PyYAML or uv...")
+    repo_root = Path(__file__).resolve().parent.parent
+    lib = repo_root / "hooks" / "lib"
+
+    uv = shutil.which("uv")
+    if uv is None:
+        runner.test("uv available to launch the no-uv probe", True)
+        print("     (skipped: uv not on PATH)")
+        return
+
+    def run_in_bare_env(state: Path, home: Path, cwd: Path) -> str:
+        # uv is invoked by absolute path, but the CHILD gets a PATH without it
+        # and a HOME without ~/.local/bin/uv, so _find_uv() comes up empty.
+        env = {"PATH": "/usr/bin:/bin", "HOME": str(home),
+               "PYTHONPATH": str(lib)}
+        result = subprocess.run(
+            [uv, "run", "--no-project", "--isolated", "python",
+             str(lib / "statusline_data.py"), str(state)],
+            capture_output=True, text=True, env=env, timeout=180, cwd=str(cwd))
+        return result.stdout.split()[0] if result.stdout.split() else ""
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "project"
+        home = Path(tmpdir) / "home"
+        home.mkdir()
+        state = _custom_workflow_project(root)
+
+        # Stamp the cache the way a hook would.
+        from derive_phase import build_workflow_cache
+        data = json.loads(state.read_text())
+        data["workflow_cache"] = build_workflow_cache(str(root))
+        state.write_text(json.dumps(data))
+
+        runner.test("statusline reads the cached phase with no PyYAML and no uv",
+                    run_in_bare_env(state, home, root) == "discovery",
+                    f"Got {run_in_bare_env(state, home, root)!r}")
+
+    # Cache miss in the same bare environment: nothing to read and no uv to
+    # re-exec under, so the documented fail-open fallback is the only outcome.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "project"
+        home = Path(tmpdir) / "home"
+        home.mkdir()
+        state = _custom_workflow_project(root)
+        runner.test("an unstamped state falls back to the default phase",
+                    run_in_bare_env(state, home, root) == "design",
+                    f"Got {run_in_bare_env(state, home, root)!r}")
+
+
 def test_statusline_script_end_to_end(runner: TestRunner):
     """statusline.sh must render real phase/count, not the fail-open placeholder.
 
@@ -13901,6 +14064,9 @@ def main():
     test_statusline_bundled_libs_present(runner)
     test_bootstrap_find_uv_probes_local_bin(runner)
     test_statusline_resolves_config_without_ambient_pyyaml(runner)
+    test_workflow_cache_build_and_read(runner)
+    test_save_state_stamps_workflow_cache(runner)
+    test_statusline_uses_cache_without_pyyaml_or_uv(runner)
     test_statusline_script_end_to_end(runner)
 
     test_llm_package_scaffold(runner)

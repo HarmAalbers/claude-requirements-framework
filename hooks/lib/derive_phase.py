@@ -89,17 +89,88 @@ def _phase_name_and_gate(entry: object) -> tuple[Optional[str], Optional[str]]:
     return name, gate
 
 
+WORKFLOW_CACHE_KEY = "workflow_cache"
+
+# The only phase keys derive_phase's helpers read. The cache is a projection of
+# the config, not a second copy of it: anything else would drift silently.
+_CACHED_PHASE_KEYS = ("name", "gate", "skill")
+
+
+def build_workflow_cache(project_dir: str) -> Optional[dict]:
+    """The project's resolved workflow, trimmed to what a reader needs.
+
+    Writers call this while they already hold a parsed config, so the phase
+    order can be stamped into the JSON state file and read back without PyYAML
+    (ADR-025). Returns ``None`` on any failure — the caller then stamps nothing
+    and readers fall back exactly as they did before.
+    """
+    try:
+        lib_dir = str(Path(__file__).resolve().parent)
+        if lib_dir not in sys.path:
+            sys.path.insert(0, lib_dir)
+        from config import RequirementsConfig
+
+        workflow = RequirementsConfig(str(project_dir)).get_workflow_phases()
+        phases = workflow["phases"]
+        if not isinstance(phases, list) or not phases:
+            return None
+        trimmed = []
+        for entry in phases:
+            if not isinstance(entry, dict):
+                return None
+            trimmed.append({k: entry[k] for k in _CACHED_PHASE_KEYS if entry.get(k)})
+        return {
+            "phases": trimmed,
+            "default_phase": workflow["default_phase"],
+            "ship_phase": workflow["ship_phase"],
+        }
+    except Exception:
+        return None
+
+
+def cached_workflow(state_file: Path) -> Optional[tuple[list[Any], str, str]]:
+    """``(phases, default_phase, ship_phase)`` stamped into *state_file*, or None.
+
+    stdlib ``json`` only — this is the path that has to work on an interpreter
+    without PyYAML, which is the whole reason the cache exists. Every field is
+    re-validated rather than trusted: a truncated or hand-edited stamp must lose
+    to the fallback, not silently drive the phase.
+    """
+    try:
+        data = json.loads(Path(state_file).read_text())
+        cache = data.get(WORKFLOW_CACHE_KEY)
+        if not isinstance(cache, dict):
+            return None
+        phases = cache.get("phases")
+        if not isinstance(phases, list) or not phases:
+            return None
+        if not any(_phase_name_and_gate(entry) != (None, None) for entry in phases):
+            return None
+        default_phase = cache.get("default_phase")
+        ship_phase = cache.get("ship_phase")
+        if not isinstance(default_phase, str) or not default_phase:
+            return None
+        if not isinstance(ship_phase, str) or not ship_phase:
+            return None
+        return phases, default_phase, ship_phase
+    except Exception:
+        return None
+
+
 def _resolve_workflow(
     state_file: Path,
 ) -> Optional[tuple[list[Any], str, str]]:
     """Best-effort config-driven phase order for the project at *state_file*.
 
-    Returns ``(phases, default_phase, ship_phase)`` from the project's
-    ``workflow:`` config, or ``None`` on ANY failure so the caller falls back to
-    the module constants. Lazily imports RequirementsConfig (kept off the import
-    hot path) and swallows every exception — the statusline depends on this
-    never raising.
+    Prefers the stamp a writer left in the state file, which needs no PyYAML;
+    only on a miss does it fall through to parsing the config cascade. Returns
+    ``None`` on ANY failure so the caller falls back to the module constants.
+    Lazily imports RequirementsConfig (kept off the import hot path) and
+    swallows every exception — the statusline depends on this never raising.
     """
+    cached = cached_workflow(state_file)
+    if cached is not None:
+        return cached
     try:
         # state_file is <repo>/.git/requirements/<branch>.json, so parents[2]
         # is the repository root that RequirementsConfig expects.
