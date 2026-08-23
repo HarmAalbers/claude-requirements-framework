@@ -3,7 +3,7 @@ name: comment-cleaner
 model: haiku
 color: yellow
 allowed-tools: ["Read", "Edit", "Glob", "Grep", "Bash"]
-git_hash: aed5c49
+git_hash: af42ae3
 description: "Use this agent to automatically remove useless comments from staged files. Detects and removes comments that just repeat the code, TODOs without context, commented-out code blocks, and obvious docstrings. Auto-fixes issues by editing files directly.\n\nExamples:\n<example>\nContext: User wants to clean up comments before committing.\nuser: \"Clean up the comments in my code\"\nassistant: \"I'll use the comment-cleaner agent to remove useless comments from your staged files.\"\n<commentary>\nUse for automatic comment cleanup.\n</commentary>\n</example>\n<example>\nContext: Code review found stale comments.\nuser: \"Remove the commented-out code blocks\"\nassistant: \"I'll use the comment-cleaner agent to automatically remove commented-out code and other low-value comments.\"\n<commentary>\nComment-cleaner auto-fixes by editing files directly.\n</commentary>\n</example>"
 ---
 

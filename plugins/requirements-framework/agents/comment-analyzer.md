@@ -3,7 +3,7 @@ name: comment-analyzer
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: aed5c49
+git_hash: af42ae3
 description: "Use this agent to check comment accuracy before committing. This includes verifying that comments accurately reflect the code they describe, identifying comment rot or technical debt, and ensuring documentation completeness.\n\n<example>\nContext: User has added documentation.\nuser: \"I've added documentation to these functions. Can you check if the comments are accurate?\"\nassistant: \"I'll use the comment-analyzer agent to verify the comments.\"\n</example>\n\n<example>\nContext: Checking comments before commit.\nuser: \"verify my comments\"\nassistant: \"Let me use the comment-analyzer agent to check comment accuracy.\"\n</example>\n\n<example>\nContext: Reviewing documentation.\nuser: \"check documentation\"\nassistant: \"I'll use the comment-analyzer agent to review the documentation.\"\n</example>"
 ---
 

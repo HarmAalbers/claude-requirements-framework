@@ -1,7 +1,7 @@
 ---
 name: using-requirements-framework
 description: Use when starting any conversation to establish skill discovery and invocation practices
-git_hash: aed5c49
+git_hash: af42ae3
 ---
 
 <EXTREMELY-IMPORTANT>

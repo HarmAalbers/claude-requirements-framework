@@ -3,7 +3,7 @@ name: type-design-analyzer
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: aed5c49
+git_hash: af42ae3
 description: "Use this agent to analyze type design before committing new types. Specifically use it when introducing a new type to ensure it follows best practices for encapsulation and invariant expression, or when refactoring existing types. The agent provides ratings on encapsulation, invariant expression, usefulness, and enforcement.\n\n<example>\nContext: User has created a new type.\nuser: \"I've just created a new UserAccount type\"\nassistant: \"I'll use the type-design-analyzer agent to review the type design.\"\n</example>\n\n<example>\nContext: Reviewing types before commit.\nuser: \"review my types\"\nassistant: \"Let me use the type-design-analyzer agent to analyze the type design.\"\n</example>\n\n<example>\nContext: Checking type invariants.\nuser: \"check type invariants\"\nassistant: \"I'll use the type-design-analyzer agent to evaluate the type invariants.\"\n</example>"
 ---
 
