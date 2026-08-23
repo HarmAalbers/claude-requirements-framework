@@ -95,9 +95,13 @@ jobs:
       # nothing here was updating it: every auto-bump left it one release
       # behind plugin.json, so `claude plugin update` kept resolving the
       # previous version. sync-versions.sh reads plugin.json as the source of
-      # truth. It exits 0 even when a target has drifted, which matters under
-      # `set -e` -- a version sync must not be able to fail the publish.
-      - name: Sync marketplace + docs to the plugin version
+      # truth and reads the result back before reporting success.
+      #
+      # It exits non-zero if the manifest is missing, carries no entry for this
+      # plugin, or does not hold the new version afterwards. That is deliberate:
+      # each of those means the release being published cannot be installed, so
+      # failing here is better than shipping it.
+      - name: Sync marketplace version
         run: |
           chmod +x ./sync-versions.sh
           ./sync-versions.sh
