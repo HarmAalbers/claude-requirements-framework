@@ -3,7 +3,7 @@ name: tool-validator
 model: sonnet
 color: blue
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
-git_hash: af42ae3
+git_hash: 4acd4ca
 description: "Execute linting and type-checking tools on staged changes to catch CI errors locally. Use this agent to run pyright, ruff, eslint, and other CI tools before committing to catch errors early.\n\nExamples:\n<example>\nContext: User wants to check if their code will pass CI.\nuser: \"Run the linters before I commit\"\nassistant: \"I'll use the tool-validator agent to run pyright and ruff on your staged changes.\"\n<commentary>\nUse tool-validator when the user wants objective tool validation before committing.\n</commentary>\n</example>\n<example>\nContext: User is about to commit and wants to avoid CI failures.\nuser: \"Will this pass CI?\"\nassistant: \"I'll use the tool-validator agent to run the same tools CI uses and check for errors.\"\n<commentary>\nTool-validator provides deterministic results matching CI tools.\n</commentary>\n</example>"
 ---
 
