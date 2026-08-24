@@ -1,7 +1,7 @@
 ---
 name: requirements-framework-status
 description: This skill should be used when the user asks to "requirements framework status", "show requirements project context", "what's the state of requirements framework", "requirements framework overview", or wants a comprehensive status report of the requirements framework implementation and current state.
-git_hash: 238f03d
+git_hash: 2389595
 ---
 
 # Requirements Framework — Status Report
