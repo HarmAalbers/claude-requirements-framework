@@ -11507,7 +11507,7 @@ def test_handle_git_events(runner: TestRunner):
         base_input = {
             "tool_name": "Bash",
             "tool_input": {"command": "git commit -m 'test'"},
-            "tool_result": {"stdout": "", "stderr": ""},
+            "tool_response": {"stdout": "", "stderr": ""},
             "session_id": "gitevents-test"
         }
 
@@ -11552,7 +11552,7 @@ def test_handle_git_events(runner: TestRunner):
         pr_input = {
             **base_input,
             "tool_input": {"command": "gh pr create --title 'test'"},
-            "tool_result": {"stdout": "https://github.com/user/repo/pull/42\n"}
+            "tool_response": {"stdout": "https://github.com/user/repo/pull/42\n"}
         }
         result = run_hook(pr_input, tmpdir)
         runner.test("Handles gh pr create without error", result.returncode == 0)
@@ -11564,6 +11564,42 @@ def test_handle_git_events(runner: TestRunner):
             cwd=tmpdir, capture_output=True, text=True
         )
         runner.test("Handles malformed JSON", result.returncode == 0)
+
+
+def test_handle_git_events_records_pr_url_from_tool_response(runner: TestRunner):
+    """gh pr create: the PR url is read from tool_response, the field Claude Code sends."""
+    print("\n📦 Testing GitEvents reads tool_response...")
+    hook_path = Path(__file__).parent / "handle-git-events.py"
+
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as repo:
+        subprocess.run(["git", "init", "-q"], cwd=repo)
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/pr"], cwd=repo)
+        os.makedirs(f"{repo}/.claude")
+        with open(f"{repo}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}, "hooks": {"wip_tracking": {"enabled": True}}}, f)
+        project_dir = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=repo,
+                                     capture_output=True, text=True).stdout.strip()
+        wip_path = Path(home) / ".claude" / "wip_projects.json"
+        wip_path.parent.mkdir(parents=True)
+        from wip_tracker import WipTracker
+        WipTracker(wip_path=wip_path).upsert_entry(project_dir, "feature/pr", {})
+
+        payload = {
+            "session_id": "gitevents-pr", "cwd": repo, "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "gh pr create --title 'x'"},
+            "tool_response": {"stdout": "https://github.com/user/repo/pull/42\n",
+                              "stderr": "", "interrupted": False},
+        }
+        subprocess.run(["python3", str(hook_path)], input=json.dumps(payload), cwd=repo,
+                       capture_output=True, text=True, env={**os.environ, "HOME": home})
+
+        entry = WipTracker(wip_path=wip_path).get_entry(project_dir, "feature/pr") or {}
+        runner.test("PR url from tool_response.stdout is recorded",
+                    entry.get("git_metrics", {}).get("pr_url")
+                    == "https://github.com/user/repo/pull/42",
+                    f"git_metrics={entry.get('git_metrics')}")
 
 
 def test_obsidian_client(runner: TestRunner):
@@ -14142,6 +14178,7 @@ def main():
 
     # Git events hook tests
     test_handle_git_events(runner)
+    test_handle_git_events_records_pr_url_from_tool_response(runner)
 
     # Obsidian CLI integration tests
     test_obsidian_client(runner)

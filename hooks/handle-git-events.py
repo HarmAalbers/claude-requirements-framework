@@ -10,7 +10,7 @@ Input (stdin):
     {
         "tool_name": "Bash",
         "tool_input": {"command": "git commit -m 'feat: add auth'"},
-        "tool_result": {"stdout": "...", "stderr": "..."},
+        "tool_response": {"stdout": "...", "stderr": "..."},
         "session_id": "abc12345"
     }
 
@@ -106,9 +106,9 @@ def _handle_git_push(tracker, project_dir: str, branch: str, logger) -> None:
 
 
 def _handle_pr_create(tracker, project_dir: str, branch: str,
-                      tool_result: dict, logger) -> None:
+                      tool_response: dict, logger) -> None:
     """Handle gh pr create: extract PR URL from output."""
-    stdout = tool_result.get("stdout", "")
+    stdout = tool_response.get("stdout", "")
     # gh pr create outputs the PR URL on the last line
     pr_url = None
     for line in stdout.splitlines():
@@ -177,8 +177,8 @@ def main() -> int:
         elif re.match(r'git\s+push\b', command):
             _handle_git_push(tracker, project_dir, branch, logger)
         elif re.match(r'gh\s+pr\s+create\b', command):
-            tool_result = input_data.get('tool_result', {})
-            _handle_pr_create(tracker, project_dir, branch, tool_result, logger)
+            tool_response = input_data.get('tool_response') or {}
+            _handle_pr_create(tracker, project_dir, branch, tool_response, logger)
 
     except Exception as e:
         # Fail silently - never block on tracking errors
