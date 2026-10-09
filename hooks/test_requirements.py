@@ -8737,6 +8737,21 @@ def test_session_metrics_module(runner: TestRunner):
                    second == 2 and loaded.get('compaction_count') == 2,
                    f"Got: return={second}, persisted={loaded.get('compaction_count')}")
 
+        # Test 10c: SessionMetrics - record_tool_failure (regression: the
+        # PostToolUseFailure hook wrote to a nonexistent metrics.data attribute
+        # and read its count from a summary key that never existed).
+        first = sm.record_tool_failure("Edit")
+        second = sm.record_tool_failure("Edit")
+        other = sm.record_tool_failure("Bash")
+        sm.save()
+        loaded = load_metrics("sess5678", tmpdir)
+        runner.test("record_tool_failure counts per tool",
+                   (first, second, other) == (1, 2, 1),
+                   f"Got: {(first, second, other)}")
+        runner.test("record_tool_failure persists failure_counts",
+                   loaded.get('failure_counts') == {"Edit": 2, "Bash": 1},
+                   f"Got: {loaded.get('failure_counts')}")
+
         # Test 11: SessionMetrics - get_summary
         summary = sm.get_summary()
         runner.test("get_summary returns dict",
@@ -11635,6 +11650,34 @@ def test_handle_plan_exit_records_plan_path_from_tool_response(runner: TestRunne
                     entry.get("plan_path") == plan_file, f"entry={entry}")
 
 
+def test_handle_tool_failure_hints_after_repeated_edit_failures(runner: TestRunner):
+    """The third failed Edit in one session suggests /pre-commit; the count survives across hook runs."""
+    print("\n📦 Testing ToolFailure repeated-failure hint...")
+    hook_path = Path(__file__).parent / "handle-tool-failure.py"
+
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as repo:
+        subprocess.run(["git", "init", "-q"], cwd=repo)
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/fail"], cwd=repo)
+        os.makedirs(f"{repo}/.claude")
+        with open(f"{repo}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {}}, f)
+        payload = {"session_id": "toolfail1", "cwd": repo,
+                   "hook_event_name": "PostToolUseFailure", "tool_name": "Edit",
+                   "tool_input": {"file_path": f"{repo}/x.py"},
+                   "error": "old_string not found", "is_interrupt": False}
+
+        outputs = [subprocess.run(["python3", str(hook_path)], input=json.dumps(payload),
+                                  cwd=repo, capture_output=True, text=True,
+                                  env={**os.environ, "HOME": home}).stdout
+                   for _ in range(3)]
+
+        runner.test("No hint on the first two Edit failures",
+                    "Repeated Edit failures" not in outputs[0] + outputs[1], f"outputs={outputs[:2]}")
+        runner.test("Hint on the third Edit failure",
+                    "Repeated Edit failures" in outputs[2], f"output={outputs[2]!r}")
+
+
 def test_obsidian_client(runner: TestRunner):
     """Test ObsidianClient CLI wrapper."""
     print("\n📦 Testing Obsidian client module...")
@@ -14213,6 +14256,7 @@ def main():
     test_handle_git_events(runner)
     test_handle_git_events_records_pr_url_from_tool_response(runner)
     test_handle_plan_exit_records_plan_path_from_tool_response(runner)
+    test_handle_tool_failure_hints_after_repeated_edit_failures(runner)
 
     # Obsidian CLI integration tests
     test_obsidian_client(runner)

@@ -85,19 +85,8 @@ def main() -> int:
         # Record failure in session metrics
         metrics = SessionMetrics(session_id, project_dir, branch)
         metrics.record_tool_use(tool_name, blocked=False, file=None)
-
-        # Track failure count for this tool type
-        summary = metrics.get_summary()
-        # Use a simple counter based on existing metrics
-        failure_key = f'failures_{tool_name}'
-        failures = summary.get(failure_key, 0) + 1
-
-        # Store updated failure count
-        try:
-            metrics.data.setdefault('failure_counts', {})[tool_name] = failures
-            metrics.save()
-        except Exception as e:
-            logger.debug("Failed to save failure count", error=str(e))
+        failures = metrics.record_tool_failure(tool_name)
+        metrics.save()
 
         logger.info(
             "Tool failure recorded",

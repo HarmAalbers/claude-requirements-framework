@@ -381,6 +381,28 @@ class SessionMetrics:
             get_logger().warning(f"Failed to record compaction: {e}")
             return 0
 
+    def record_tool_failure(self, tool_name: str) -> int:
+        """
+        Record a failed tool call and increment that tool's failure counter.
+
+        Args:
+            tool_name: Name of the tool that failed
+
+        Returns:
+            The new failure count for this tool (0 if recording failed).
+        """
+        try:
+            self._ensure_loaded()
+
+            counts = self._metrics.setdefault('failure_counts', {})
+            counts[tool_name] = counts.get(tool_name, 0) + 1
+            self._dirty = True
+            return counts[tool_name]
+
+        except Exception as e:
+            get_logger().warning(f"Failed to record tool failure: {e}")
+            return 0
+
     def record_requirement_trigger(self, req_name: str, blocked: bool = True) -> None:
         """
         Record when a requirement is triggered.
