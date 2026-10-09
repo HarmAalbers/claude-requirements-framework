@@ -9,7 +9,7 @@ Input (stdin JSON):
 {
     "tool_name": "ExitPlanMode",
     "tool_input": {...},
-    "tool_result": {...},
+    "tool_response": {"plan": "...", "filePath": "..."},
     "session_id": "abc123",
     "cwd": "/path/to/project"
 }
@@ -176,7 +176,7 @@ def main() -> int:
                 updates = {"status": "wip"}
 
                 # Auto-generate summary from plan path if available
-                plan_path = input_data.get('tool_result', {}).get('plan_path', '')
+                plan_path = (input_data.get('tool_response') or {}).get('filePath') or ''
                 if plan_path:
                     updates["plan_path"] = plan_path
                     # Extract readable name from filename

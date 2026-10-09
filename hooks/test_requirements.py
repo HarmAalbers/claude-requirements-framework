@@ -10876,7 +10876,7 @@ def test_plan_enter_hook(runner: TestRunner):
         base_input = {
             "tool_name": "EnterPlanMode",
             "tool_input": {},
-            "tool_result": {},
+            "tool_response": {},
             "session_id": "planenter-test"
         }
 
@@ -11222,7 +11222,7 @@ def test_prompt_submit_brainstorm_nudge(runner: TestRunner):
                    "Brainstorm Before Planning" in ctx6,
                    f"Got: {result6.stdout[:300]}")
         plan_input = {
-            "tool_name": "EnterPlanMode", "tool_input": {}, "tool_result": {},
+            "tool_name": "EnterPlanMode", "tool_input": {}, "tool_response": {},
             "session_id": "ps-6", "cwd": tmpdir,
         }
         result6b = run_hook(plan_hook, plan_input, tmpdir)
@@ -11600,6 +11600,39 @@ def test_handle_git_events_records_pr_url_from_tool_response(runner: TestRunner)
                     entry.get("git_metrics", {}).get("pr_url")
                     == "https://github.com/user/repo/pull/42",
                     f"git_metrics={entry.get('git_metrics')}")
+
+
+def test_handle_plan_exit_records_plan_path_from_tool_response(runner: TestRunner):
+    """ExitPlanMode: the WIP plan path is tool_response.filePath, the field Claude Code sends."""
+    print("\n📦 Testing PlanExit reads tool_response.filePath...")
+    hook_path = Path(__file__).parent / "handle-plan-exit.py"
+
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as repo:
+        subprocess.run(["git", "init", "-q"], cwd=repo)
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/plan"], cwd=repo)
+        os.makedirs(f"{repo}/.claude")
+        with open(f"{repo}/.claude/requirements.yaml", "w") as f:
+            json.dump({"version": "1.0", "enabled": True, "inherit": False,
+                       "requirements": {"commit_plan": {"enabled": True, "scope": "session",
+                                                        "message": "Plan!"}},
+                       "hooks": {"wip_tracking": {"enabled": True}}}, f)
+        project_dir = repo  # plan-exit keys the WIP entry on the payload cwd as given
+
+        plan_file = f"{home}/.claude/plans/auth-redesign.md"
+        payload = {
+            "session_id": "planexit-wip", "cwd": repo, "hook_event_name": "PostToolUse",
+            "tool_name": "ExitPlanMode", "tool_input": {},
+            "tool_response": {"plan": "# Auth redesign", "isAgent": False,
+                              "filePath": plan_file},
+        }
+        subprocess.run(["python3", str(hook_path)], input=json.dumps(payload), cwd=repo,
+                       capture_output=True, text=True, env={**os.environ, "HOME": home})
+
+        from wip_tracker import WipTracker
+        entry = WipTracker(wip_path=Path(home) / ".claude" / "wip_projects.json") \
+            .get_entry(project_dir, "feature/plan") or {}
+        runner.test("WIP plan_path is tool_response.filePath",
+                    entry.get("plan_path") == plan_file, f"entry={entry}")
 
 
 def test_obsidian_client(runner: TestRunner):
@@ -14179,6 +14212,7 @@ def main():
     # Git events hook tests
     test_handle_git_events(runner)
     test_handle_git_events_records_pr_url_from_tool_response(runner)
+    test_handle_plan_exit_records_plan_path_from_tool_response(runner)
 
     # Obsidian CLI integration tests
     test_obsidian_client(runner)
