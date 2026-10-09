@@ -235,7 +235,6 @@ for the concrete strategy modules.
 │       ├── preflight.py               # Strict global preflight (ADR-020)
 │       ├── pause.py                   # req pause/resume
 │       ├── ruleset_marker.py          # Ruleset markers
-│       ├── wip_tracker.py             # WIP tracking
 │       ├── statusline_data.py         # Statusline data provider
 │       ├── brainstorm.py              # Brainstorm nudge logic
 │       ├── strategy_registry.py       # Strategy dispatch

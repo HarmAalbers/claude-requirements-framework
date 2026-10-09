@@ -912,13 +912,6 @@ class RequirementsConfig:
         "lazy_dev": {
             "enabled": True,
         },
-        "wip_tracking": {
-            "enabled": False,
-            "prompt_on_stop": True,
-            "inject_on_start": True,
-            "auto_detect_merged": True,
-            "exclude_branches": ["main", "master", "develop"],
-        },
         "obsidian": {
             "enabled": False,
             "vault": None,
