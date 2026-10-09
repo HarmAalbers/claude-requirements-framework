@@ -31,11 +31,6 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/clear-single-use.py",
             "statusMessage": "Updating requirement state..."
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-git-events.py",
-            "statusMessage": "Tracking git events..."
           }
         ]
       },

@@ -2255,7 +2255,7 @@ def test_doctor_plugin_hooks_checks(runner: TestRunner):
             "PostToolUse": [
                 {"matcher": "Bash", "hooks": [
                     {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/clear-single-use.py"},
-                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-git-events.py"},
+                    {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handle-tool-failure.py"},
                 ]},
                 {"matcher": "Skill", "hooks": [
                     {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-satisfy-skills.py"}
@@ -2269,7 +2269,7 @@ def test_doctor_plugin_hooks_checks(runner: TestRunner):
         scripts == [
             "check-requirements.py",
             "clear-single-use.py",
-            "handle-git-events.py",
+            "handle-tool-failure.py",
             "auto-satisfy-skills.py",
         ],
         str(scripts),
@@ -10493,8 +10493,7 @@ def test_plugin_hooks_json_self_contained(runner: TestRunner):
     """hooks.json is plugin-root-relative, not deploy-path-bound.
 
     Asserts every command uses ${CLAUDE_PLUGIN_ROOT}, none references the
-    deployed ~/.claude/hooks location, every referenced script is bundled, and
-    handle-git-events.py is registered.
+    deployed ~/.claude/hooks location, every referenced script is bundled.
     """
     print("\n🎯 Testing plugin hooks.json is self-contained...")
 
@@ -10531,10 +10530,6 @@ def test_plugin_hooks_json_self_contained(runner: TestRunner):
                if not (hooks_dir / c.rsplit('/', 1)[-1]).exists()]
     runner.test("every referenced hook script exists in the bundle",
                 not missing, f"missing scripts: {missing}")
-
-    # (d) handle-git-events.py is registered
-    runner.test("handle-git-events.py is registered in hooks.json",
-                any(c.endswith('handle-git-events.py') for c in commands))
 
 
 def test_plugin_skill_files_exist(runner: TestRunner):
@@ -11494,160 +11489,6 @@ def test_should_skip_plan_file(runner: TestRunner):
             not should_skip(""),
             ""
         )
-
-
-def test_handle_git_events(runner: TestRunner):
-    """Test handle-git-events.py PostToolUse hook behavior."""
-    print("\n📦 Testing GitEvents hook...")
-
-    hook_path = Path(__file__).parent / "handle-git-events.py"
-
-    if not hook_path.exists():
-        runner.test("GitEvents hook exists", False, "Hook file not found")
-        return
-
-    def run_hook(input_data, cwd, env=None):
-        return subprocess.run(
-            ["python3", str(hook_path)],
-            input=json.dumps(input_data),
-            cwd=cwd, capture_output=True, text=True,
-            env={**os.environ, **(env or {})}
-        )
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Initialize git repo with feature branch
-        subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
-        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=tmpdir, capture_output=True)
-
-        base_input = {
-            "tool_name": "Bash",
-            "tool_input": {"command": "git commit -m 'test'"},
-            "tool_response": {"stdout": "", "stderr": ""},
-            "session_id": "gitevents-test"
-        }
-
-        # Test 1: Skips non-Bash tool
-        non_bash_input = {**base_input, "tool_name": "Edit"}
-        result = run_hook(non_bash_input, tmpdir)
-        runner.test("Skips non-Bash tool", result.returncode == 0)
-
-        # Test 2: Skips when no config exists (WIP not enabled)
-        result = run_hook(base_input, tmpdir)
-        runner.test("Skips when WIP not enabled",
-                   result.returncode == 0 and result.stdout.strip() == "")
-
-        # Test 3: Skips empty command
-        empty_cmd_input = {**base_input, "tool_input": {}}
-        result = run_hook(empty_cmd_input, tmpdir)
-        runner.test("Skips empty command", result.returncode == 0)
-
-        # Test 4: Skips excluded branches
-        subprocess.run(["git", "checkout", "-b", "main"], cwd=tmpdir, capture_output=True)
-        os.makedirs(f"{tmpdir}/.claude")
-        config = {
-            "version": "1.0",
-            "enabled": True,
-            "inherit": False,
-            "requirements": {},
-            "hooks": {"wip_tracking": {"enabled": True}}
-        }
-        with open(f"{tmpdir}/.claude/requirements.yaml", 'w') as f:
-            json.dump(config, f)
-        result = run_hook(base_input, tmpdir)
-        runner.test("Skips excluded branches (main)",
-                   result.returncode == 0 and result.stdout.strip() == "")
-
-        # Test 5: Handles git push command pattern
-        subprocess.run(["git", "checkout", "feature/test"], cwd=tmpdir, capture_output=True)
-        push_input = {**base_input, "tool_input": {"command": "git push -u origin feature/test"}}
-        result = run_hook(push_input, tmpdir)
-        runner.test("Handles git push without error", result.returncode == 0)
-
-        # Test 6: Handles gh pr create command pattern
-        pr_input = {
-            **base_input,
-            "tool_input": {"command": "gh pr create --title 'test'"},
-            "tool_response": {"stdout": "https://github.com/user/repo/pull/42\n"}
-        }
-        result = run_hook(pr_input, tmpdir)
-        runner.test("Handles gh pr create without error", result.returncode == 0)
-
-        # Test 7: Handles malformed JSON gracefully
-        result = subprocess.run(
-            ["python3", str(hook_path)],
-            input="not json",
-            cwd=tmpdir, capture_output=True, text=True
-        )
-        runner.test("Handles malformed JSON", result.returncode == 0)
-
-
-def test_handle_git_events_records_pr_url_from_tool_response(runner: TestRunner):
-    """gh pr create: the PR url is read from tool_response, the field Claude Code sends."""
-    print("\n📦 Testing GitEvents reads tool_response...")
-    hook_path = Path(__file__).parent / "handle-git-events.py"
-
-    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as repo:
-        subprocess.run(["git", "init", "-q"], cwd=repo)
-        subprocess.run(["git", "checkout", "-q", "-b", "feature/pr"], cwd=repo)
-        os.makedirs(f"{repo}/.claude")
-        with open(f"{repo}/.claude/requirements.yaml", "w") as f:
-            json.dump({"version": "1.0", "enabled": True, "inherit": False,
-                       "requirements": {}, "hooks": {"wip_tracking": {"enabled": True}}}, f)
-        project_dir = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=repo,
-                                     capture_output=True, text=True).stdout.strip()
-        wip_path = Path(home) / ".claude" / "wip_projects.json"
-        wip_path.parent.mkdir(parents=True)
-        from wip_tracker import WipTracker
-        WipTracker(wip_path=wip_path).upsert_entry(project_dir, "feature/pr", {})
-
-        payload = {
-            "session_id": "gitevents-pr", "cwd": repo, "hook_event_name": "PostToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "gh pr create --title 'x'"},
-            "tool_response": {"stdout": "https://github.com/user/repo/pull/42\n",
-                              "stderr": "", "interrupted": False},
-        }
-        subprocess.run(["python3", str(hook_path)], input=json.dumps(payload), cwd=repo,
-                       capture_output=True, text=True, env={**os.environ, "HOME": home})
-
-        entry = WipTracker(wip_path=wip_path).get_entry(project_dir, "feature/pr") or {}
-        runner.test("PR url from tool_response.stdout is recorded",
-                    entry.get("git_metrics", {}).get("pr_url")
-                    == "https://github.com/user/repo/pull/42",
-                    f"git_metrics={entry.get('git_metrics')}")
-
-
-def test_handle_plan_exit_records_plan_path_from_tool_response(runner: TestRunner):
-    """ExitPlanMode: the WIP plan path is tool_response.filePath, the field Claude Code sends."""
-    print("\n📦 Testing PlanExit reads tool_response.filePath...")
-    hook_path = Path(__file__).parent / "handle-plan-exit.py"
-
-    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as repo:
-        subprocess.run(["git", "init", "-q"], cwd=repo)
-        subprocess.run(["git", "checkout", "-q", "-b", "feature/plan"], cwd=repo)
-        os.makedirs(f"{repo}/.claude")
-        with open(f"{repo}/.claude/requirements.yaml", "w") as f:
-            json.dump({"version": "1.0", "enabled": True, "inherit": False,
-                       "requirements": {"commit_plan": {"enabled": True, "scope": "session",
-                                                        "message": "Plan!"}},
-                       "hooks": {"wip_tracking": {"enabled": True}}}, f)
-        project_dir = repo  # plan-exit keys the WIP entry on the payload cwd as given
-
-        plan_file = f"{home}/.claude/plans/auth-redesign.md"
-        payload = {
-            "session_id": "planexit-wip", "cwd": repo, "hook_event_name": "PostToolUse",
-            "tool_name": "ExitPlanMode", "tool_input": {},
-            "tool_response": {"plan": "# Auth redesign", "isAgent": False,
-                              "filePath": plan_file},
-        }
-        subprocess.run(["python3", str(hook_path)], input=json.dumps(payload), cwd=repo,
-                       capture_output=True, text=True, env={**os.environ, "HOME": home})
-
-        from wip_tracker import WipTracker
-        entry = WipTracker(wip_path=Path(home) / ".claude" / "wip_projects.json") \
-            .get_entry(project_dir, "feature/plan") or {}
-        runner.test("WIP plan_path is tool_response.filePath",
-                    entry.get("plan_path") == plan_file, f"entry={entry}")
 
 
 def test_handle_tool_failure_hints_after_repeated_edit_failures(runner: TestRunner):
@@ -14252,10 +14093,6 @@ def main():
     # WIP tracker module tests
     test_wip_tracker_module(runner)
 
-    # Git events hook tests
-    test_handle_git_events(runner)
-    test_handle_git_events_records_pr_url_from_tool_response(runner)
-    test_handle_plan_exit_records_plan_path_from_tool_response(runner)
     test_handle_tool_failure_hints_after_repeated_edit_failures(runner)
 
     # Obsidian CLI integration tests

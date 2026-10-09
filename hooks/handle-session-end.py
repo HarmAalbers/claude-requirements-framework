@@ -32,7 +32,7 @@ import _bootstrap
 _bootstrap.ensure()  # re-exec under `uv run` if ambient python lacks PyYAML
 
 from requirements import BranchRequirements
-from session import remove_session_from_registry, normalize_session_id, get_registry_path
+from session import remove_session_from_registry, normalize_session_id
 from logger import get_logger
 from hook_utils import early_hook_setup
 
@@ -85,17 +85,6 @@ def main() -> int:
         except Exception:
             pass
 
-        # 0. Read session start time before registry removal (for WIP time tracking)
-        session_started_at = None
-        try:
-            from registry_client import RegistryClient
-            reg_client = RegistryClient(get_registry_path())
-            reg_data = reg_client.read()
-            session_entry = reg_data.get("sessions", {}).get(session_id, {})
-            session_started_at = session_entry.get("started_at")
-        except Exception:
-            pass
-
         # 1. Remove session from registry
         removed = remove_session_from_registry(session_id)
         if removed:
@@ -115,28 +104,6 @@ def main() -> int:
                         logger.debug("Cleared session requirement", requirement=req_name)
                     except Exception as e:
                         logger.error("Failed to clear requirement", requirement=req_name, error=str(e))
-
-        # 3. WIP tracking: accumulate session time
-        try:
-            wip_enabled = config and config.get_hook_config('wip_tracking', 'enabled', False)
-            exclude_branches = (
-                config.get_hook_config('wip_tracking', 'exclude_branches',
-                                       ['main', 'master', 'develop'])
-                if config else ['main', 'master', 'develop']
-            )
-
-            if wip_enabled and branch and branch not in exclude_branches:
-                import time
-                from wip_tracker import WipTracker
-
-                if session_started_at:
-                    elapsed = time.time() - session_started_at
-                    if elapsed > 0:
-                        tracker = WipTracker()
-                        tracker.increment_time(project_dir, branch, elapsed)
-                        logger.debug("WIP time tracked", elapsed_seconds=int(elapsed))
-        except Exception as e:
-            logger.debug("WIP time tracking failed (fail-open)", error=str(e))
 
         # 3.5. Finalize session metrics.
         # finalize_session() sets ended_at + duration_seconds in memory and
