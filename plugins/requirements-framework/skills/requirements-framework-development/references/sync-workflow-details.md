@@ -105,8 +105,8 @@ uv run python scripts/build_plugin_hooks.py
 # 3. Test
 uv run python hooks/test_requirements.py
 
-# 4. Commit (Stacked Git)
-stg new my-change && stg refresh
+# 4. Commit
+git add -p && git commit
 ```
 
 ### Scenario: Editing a Prompt
@@ -141,7 +141,7 @@ uv run python scripts/build_plugin_hooks.py
 uv run python hooks/test_requirements.py   # green = 1544/1551
 
 # 5. Commit
-stg new tdd-change && stg refresh
+git add -p && git commit
 ```
 
 ### Scenario: Merge / Rebase
@@ -225,9 +225,9 @@ uv run python hooks/test_requirements.py
 # 4. Lint like CI (pinned ruff)
 uv run ruff check .
 
-# 5. Commit with Stacked Git — bump plugin.json in the same patch
+# 5. Commit — bump plugin.json in the same commit
 #    when plugin files changed
-stg new my-change && stg refresh
+git add -p && git commit
 ```
 
 ---

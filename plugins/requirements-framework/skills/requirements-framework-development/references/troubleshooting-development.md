@@ -151,19 +151,14 @@ uv run python scripts/render_prompts.py
 
 ## Git Issues
 
-### Never Use git commit — Use Stacked Git
+### Commit Workflow
 
-This project authors every local commit through **Stacked Git (`stg`)**.
+Plain git on a topic branch (jj colocated works too); one logical change per commit.
 
 ```bash
-# Per-branch setup (once)
 git checkout -b feat/your-branch
-stg init
-
-# Atomic patches
-stg new <patch-name>   # opens editor for description
 # ... edit files ...
-stg refresh            # fold working-tree changes into the top patch
+git add -p && git commit -m "..."
 ```
 
 ### Detached HEAD

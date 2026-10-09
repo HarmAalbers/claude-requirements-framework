@@ -88,9 +88,8 @@ uv run python scripts/build_plugin_hooks.py
 # 3. Test
 uv run python hooks/test_requirements.py
 
-# 4. Commit (Stacked Git — see below)
-stg new fix-requirements
-stg refresh
+# 4. Commit (see below)
+git add -p && git commit -m "fix(hooks): ..."
 ```
 
 ### Workflow B: Editing a Prompt Template
@@ -127,29 +126,22 @@ uv run python scripts/build_plugin_hooks.py
 uv run python hooks/test_requirements.py   # passes (green = 1544/1551)
 
 # 5. Commit atomically
-stg new tdd-feature
-stg refresh
+git add -p && git commit -m "feat: ..."
 ```
 
-## Version Control: Stacked Git (stg)
+## Version Control: git (jj optional)
 
-This project authors every local commit through **Stacked Git** — **never
-`git commit` directly**.
+Plain git on a topic branch; jj works too, colocated (`jj git init --colocate`).
 
 ```bash
 git checkout -b feat/your-branch
-stg init                 # per-branch, one time (master already initialized)
-
-stg new <patch-name>     # create a new empty patch (opens editor for description)
 # ... edit files ...
-stg refresh              # fold working-tree changes into the top patch
-stg new <next-patch>     # start the next logical patch on top
+git add -p && git commit -m "..."   # one logical change per commit, as you go
 ```
 
-`git push` works unchanged (stg patches are ordinary git commits). Keep patches
-atomic — one logical change each. When a patch touches plugin files, bump
-`plugins/requirements-framework/.claude-plugin/plugin.json` **inside the same
-patch**.
+Keep commits atomic — one logical change each. When a commit touches plugin files,
+bump `plugins/requirements-framework/.claude-plugin/plugin.json` **in the same
+commit**.
 
 ## Testing
 
@@ -224,7 +216,7 @@ uv run python scripts/build_plugin_hooks.py
 uv run python hooks/test_requirements.py
 
 # 3. Commit
-stg new fix-bug && stg refresh
+git add -p && git commit
 ```
 
 ### Add a Feature
@@ -239,7 +231,7 @@ $EDITOR hooks/lib/FILE.py
 uv run python scripts/build_plugin_hooks.py && uv run python hooks/test_requirements.py
 
 # 3. Commit
-stg new add-feature && stg refresh
+git add -p && git commit
 ```
 
 ### Before Committing
@@ -297,7 +289,7 @@ claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-f
 2. **`--check` before committing** — catch a stale bundle early
 3. **Test after every change** — `uv run python hooks/test_requirements.py`
 4. **Everything via `uv run`** — never bare `python3` (except `statusline.sh`)
-5. **Commit atomically with stg** — one logical change per patch; bump `plugin.json` in the same patch when plugin files change
+5. **Commit atomically** — one logical change per commit; bump `plugin.json` in the same commit when plugin files change
 
 ## Golden Rules
 
@@ -305,7 +297,7 @@ claude --plugin-dir ~/Tools/claude-requirements-framework/plugins/requirements-f
 2. **The bundle is a build artifact** — regenerate it with `build_plugin_hooks.py`
 3. **Prompts are `.md.j2` → `.md`** — edit the template, render with `render_prompts.py`
 4. **`uv run` for all Python** — the synced env guarantees deps (ADR-021)
-5. **Stacked Git for every commit** — `stg new` / `stg refresh`, never `git commit`
+5. **Small atomic commits as you go** — git, or jj colocated
 
 ## Resources
 
