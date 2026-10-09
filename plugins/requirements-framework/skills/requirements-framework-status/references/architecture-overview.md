@@ -58,7 +58,6 @@ PreToolUse (check-requirements.py) - on Edit/Write/Bash/EnterPlanMode/ExitPlanMo
 PostToolUse (multiple hooks)
    → auto-satisfy-skills.py: auto-satisfy gates when workflow skills complete
    → clear-single-use.py:    clear single_use gates after Bash triggers (loop re-arm)
-   → handle-git-events.py:   track git commit/push + gh pr create (WIP metrics)
    → handle-plan-enter.py:   brainstorm auto-invoke on EnterPlanMode
    → handle-plan-exit.py:    show requirement status after ExitPlanMode
 

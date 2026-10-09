@@ -26,7 +26,6 @@ Complete reference for the `req` command-line tool. Verified against `hooks/requ
 | `req learning ...` | Session learning system | subcommands: `list`, `stats`, `rollback`, `disable` |
 | `req upgrade ...` | Cross-project feature upgrade | subcommands: `scan`, `status`, `recommend`, `apply` |
 | `req messages ...` | Externalized message files | subcommands: `validate`, `list` |
-| `req wip ...` | WIP project tracking | subcommands: `list`, `status`, `set`, `clean`, `summary` |
 | `req budget ...` | Token/cost budget reporting | subcommands: `status`, `tail`, `warn-if-over` |
 
 ---
@@ -291,21 +290,6 @@ Manage externalized message files (ADR-011).
 req messages validate         # Validate all message files
 req messages validate --fix   # Generate missing files from templates
 req messages list             # List loaded files and their cascade sources
-```
-
----
-
-## req wip
-
-WIP (work-in-progress) project tracking.
-
-```bash
-req wip list                  # WIP dashboard
-req wip list --status wip     # Filter by status (wip|done|paused|todo)
-req wip status                # Current branch details
-req wip set done              # Set branch status
-req wip clean                 # Remove done entries
-req wip summary "text..."     # Set/update the branch summary
 ```
 
 ---

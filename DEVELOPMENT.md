@@ -209,7 +209,6 @@ for the concrete strategy modules.
 │   ├── handle-plan-exit.py            # PostToolUse(ExitPlanMode): status surfacing
 │   ├── auto-satisfy-skills.py         # PostToolUse(Skill): auto-satisfy gates
 │   ├── clear-single-use.py            # PostToolUse: clear/re-arm single_use gates
-│   ├── handle-git-events.py           # PostToolUse: WIP git metrics tracking
 │   ├── handle-tool-failure.py         # PostToolUseFailure: failure pattern tracking
 │   ├── handle-subagent-start.py       # SubagentStart: review-agent context injection
 │   ├── handle-pre-compact.py          # PreCompact: save state before compaction
