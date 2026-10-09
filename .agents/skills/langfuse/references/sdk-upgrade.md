@@ -62,5 +62,5 @@ Work through each item in order. Skip items that don't apply.
 ## Best Practices
 
 1. **Fetch the migration docs first** — canonical source, may have been updated
-2. **Migrate incrementally** — bump the SDK, fix breaking changes, then adopt new patterns; one stg patch per logical step
+2. **Migrate incrementally** — bump the SDK, fix breaking changes, then adopt new patterns; one commit per logical step
 3. **Tests are the proof** — the fail-open design means runtime won't tell you the migration broke; only the test suite and smoke spike will

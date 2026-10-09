@@ -412,7 +412,7 @@ Key decisions live in `docs/adr/`. Notable: ADR-011 (externalized messages), ADR
 
 ## Contributing
 
-1. Fork and branch (this repo authors commits via Stacked Git — see CLAUDE.md).
+1. Fork and branch (plain git, jj optional — see CLAUDE.md).
 2. Write tests first (TDD).
 3. Rebuild the bundle and test: `uv run python scripts/build_plugin_hooks.py && uv run python hooks/test_requirements.py`
 4. Ensure the bundle is in sync: `uv run python scripts/build_plugin_hooks.py --check`

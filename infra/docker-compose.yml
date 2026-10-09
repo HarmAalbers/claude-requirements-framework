@@ -1,6 +1,6 @@
 # Source: langfuse/langfuse@d06593f6255a616fe391b6a143e8b7342f640890 (tag v3.175.0)
 # Fetched: 2026-05-22
-# Update procedure: re-fetch from a specific SHA/tag, update this header, refresh stg patch.
+# Update procedure: re-fetch from a specific SHA/tag, update this header, commit.
 # Do NOT edit by hand — keep this file diff-clean against the upstream pin.
 # Local OTLP endpoint requires Langfuse v3 >= 3.22.0 (R11); v3.175.0 satisfies this.
 #

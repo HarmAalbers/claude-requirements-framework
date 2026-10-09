@@ -13,25 +13,19 @@ Before anything else, check whether `.claude/handoff.md` exists (gitignored, wri
 
 If absent, don't mention this convention. To hand off to the next session, write `.claude/handoff.md`.
 
-## Version Control: Stacked Git (`stg`)
+## Version Control: git (jj optional)
 
-All local commits go through Stacked Git — **never `git commit` directly**. `stg init` is per-branch (`master` is done; every new branch needs its own).
+Plain git on a topic branch. [jj](https://jj-vcs.github.io/jj/) works too, colocated (`jj git init --colocate`), so git and jj see the same commits.
 
 ```bash
-git checkout -b feat/your-branch && stg init
-stg new <patch-name>     # create an empty patch (use -m "msg" to skip the editor)
+git checkout -b feat/your-branch
 # ...edit files...
-stg refresh              # fold working-tree changes into the top patch (iterate)
-stg new <next-patch>     # start the next atomic patch
+git add -p && git commit -m "fix(hooks): ..."   # one logical change per commit
 ```
 
-Common ops: `stg series` (list), `stg show` (top diff), `stg pop`/`stg push`, `stg edit <patch>`, `stg rename`. `git push` works unchanged (patches are ordinary commits).
-
 Rules:
-- **Never `git commit`** — always `stg new` + `stg refresh`.
-- **One logical change per patch**; do framework work on a **topic branch**, not `master` (gates are per-branch).
-- Any change under `plugins/requirements-framework/` must bump `plugins/requirements-framework/.claude-plugin/plugin.json` (semver) in the **same** patch.
-- Don't `stg repair` after a raw merge — it can reset the master ref to an ancient commit.
+- **One logical change per commit**, committed as you go; do framework work on a **topic branch**, not `master` (gates are per-branch).
+- Any change under `plugins/requirements-framework/` must bump `plugins/requirements-framework/.claude-plugin/plugin.json` (semver) in the **same** commit.
 
 ## Build & Test
 

@@ -56,7 +56,7 @@ At runtime the hooks and CLI **self-bootstrap**: if the ambient python lacks `Py
 
 ## Development Workflow
 
-Edit in the repository, run tests via `uv`, and use Stacked Git for atomic commits.
+Edit in the repository, run tests via `uv`, and commit atomically with git (or jj).
 
 ```bash
 # 1. Make changes in the repository
@@ -69,40 +69,23 @@ uv run python hooks/test_requirements.py
 # 3. Lint (pinned ruff, matches CI)
 uv run ruff check .
 
-# 4. Commit atomically via Stacked Git (see below)
-stg new my-change
-stg refresh
+# 4. Commit atomically (see below)
+git add -p && git commit -m "fix(hooks): ..."
 ```
 
-### Version control: Stacked Git (`stg`)
+### Version control: git (jj optional)
 
-This project uses **Stacked Git** for all local commit authoring — **never `git commit`
-directly**. `stg init` is per-branch (`master` is already initialized); every new topic
-branch needs its own `stg init`.
+Plain git on a topic branch; jj works too, colocated (`jj git init --colocate`), so both
+see the same commits.
 
 ```bash
 git checkout -b feat/your-branch
-stg init
-
-stg new <patch-name>   # create an empty patch (opens editor for the description)
 # ... edit files ...
-stg refresh            # fold working-tree changes into the top patch
-stg new <next-patch>   # start the next logical patch on top
+git add -p && git commit -m "..."   # one logical change per commit, as you go
 ```
 
-| Task                         | Command                  |
-|------------------------------|--------------------------|
-| List patch stack             | `stg series`             |
-| Show top patch diff          | `stg show`               |
-| Pop top patch (keep changes) | `stg pop`                |
-| Re-apply popped patch        | `stg push`               |
-| Amend a non-top patch        | `stg edit <patch>`       |
-| Rename a patch               | `stg rename <old> <new>` |
-| Delete a patch               | `stg delete <patch>`     |
-
-`git push` works unchanged — stg patches are ordinary git commits. Keep patches atomic
-(one logical change each), and when a patch touches plugin files, bump
-`plugins/requirements-framework/.claude-plugin/plugin.json` **inside the same patch**.
+Keep commits atomic (one logical change each), and when a commit touches plugin files, bump
+`plugins/requirements-framework/.claude-plugin/plugin.json` **in the same commit**.
 
 ### Test-Driven Development
 
@@ -119,7 +102,7 @@ $EDITOR hooks/lib/requirements.py
 # 4. Run tests (GREEN — should pass)
 uv run python hooks/test_requirements.py
 
-# 5. Commit via stg once green
+# 5. Commit once green
 ```
 
 ## The Workflow Backbone (ADR-022, typed 7-node)
@@ -349,7 +332,7 @@ scaffolding read at runtime, not dispatched prompts.)
    Idempotent; only writes when content changes.
 3. **Verify freshness**: `uv run python scripts/render_prompts.py --check` — exit 0 means
    every `.md` matches its source.
-4. **Commit both files** (`.md.j2` and `.md`) atomically in the same patch.
+4. **Commit both files** (`.md.j2` and `.md`) atomically in the same commit.
 
 ### Optional pre-commit render guard
 
@@ -388,7 +371,7 @@ frontmatter showing the last commit that modified the file.
 ```
 
 Hash format: `abc1234` (committed clean), `abc1234*` (committed + uncommitted changes),
-`uncommitted` (new file). Keep the `git_hash` churn in its own chore patch.
+`uncommitted` (new file). Keep the `git_hash` churn in its own chore commit.
 
 > **Version bump rule:** every change to the plugin (agents, commands, skills, hooks,
 > `plugin.json`) must bump the version in
@@ -493,14 +476,14 @@ req pause | resume             # pause/resume blocking gates for the session
 
 1. Fork and clone.
 2. `uv sync` (installer: `./install.sh`).
-3. Create a topic branch and `stg init`.
+3. Create a topic branch.
 4. Make changes in `hooks/` (source of truth); rebuild the plugin bundle
    (`uv run python scripts/build_plugin_hooks.py`) and render prompts
    (`uv run python scripts/render_prompts.py`) if you touched them.
 5. Test and lint:
    `uv run python hooks/test_requirements.py && uv run ruff check .`
-6. Bump `plugin.json` if you touched the plugin; keep `git_hash` churn in its own patch.
-7. `stg refresh`, push, open a PR.
+6. Bump `plugin.json` if you touched the plugin; keep `git_hash` churn in its own commit.
+7. Commit, push, open a PR.
 
 ## Summary
 
@@ -513,8 +496,8 @@ req pause | resume             # pause/resume blocking gates for the session
 | Check plugin-hook drift   | `uv run python scripts/build_plugin_hooks.py --check`|
 | Render plugin prompts     | `uv run python scripts/render_prompts.py`            |
 | Check prompt freshness    | `uv run python scripts/render_prompts.py --check`    |
-| Commit (atomic)           | `stg new <name>` → `stg refresh`                     |
+| Commit (atomic)           | `git add -p && git commit` (or jj)                   |
 
 **Golden rules:** edit `hooks/` (never the plugin build-copy), run everything through
-`uv run`, keep patches atomic with `stg`, and bump `plugin.json` whenever the plugin
+`uv run`, keep commits atomic, and bump `plugin.json` whenever the plugin
 changes.

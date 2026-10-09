@@ -388,7 +388,7 @@ Scaffold a project config with `req init` (or the `/req-init` command). See
 
 - **[Main README](../README.md)** — framework overview and quick start
 - **[Plugin README](../plugins/requirements-framework/README.md)** — plugin usage guide
-- **[CLAUDE.md](../CLAUDE.md)** — operational essentials: stacked-git workflow,
+- **[CLAUDE.md](../CLAUDE.md)** — operational essentials: git workflow,
   uv build/test, config cascade, the ADR-022 workflow backbone (ADR-021 uv). The
   full hook lifecycle (14 hook commands across 9 events) lives in `DEVELOPMENT.md`.
 - **ADRs** (`docs/adr/`):
