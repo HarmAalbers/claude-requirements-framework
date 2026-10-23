@@ -14,7 +14,7 @@ Assume they are a skilled developer, but know almost nothing about the toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md` or `.claude/plans/`
+**Save plans to:** the project's docs layout when it has one — a `docs/README.md` that says where plans go, or a CLAUDE.md that names the docs location (which may be outside the code repo, e.g. per ticket `tickets/<KEY>/plans/<topic>/plan.md`). Follow it, including its naming, and keep the plan next to its design. Otherwise `docs/plans/YYYY-MM-DD-<feature-name>.md` or `.claude/plans/`.
 
 The plan should bias toward the least code that works — apply this ladder to every task:
 
@@ -118,7 +118,7 @@ git commit -m "feat: add specific feature"
 
 After saving the plan, offer execution choice:
 
-**"Plan complete and saved to `docs/plans/<filename>.md`. Two execution options:**
+**"Plan complete and saved to `<plan path>`. Two execution options:**
 
 **1. Subagent-Driven (this session)** — I dispatch fresh subagent per task, review between tasks, fast iteration
 

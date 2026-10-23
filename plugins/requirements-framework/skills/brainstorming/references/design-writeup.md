@@ -5,7 +5,7 @@
 Open the artifact at the FIRST settled decision, not after the interview. Each settled answer lands immediately:
 
 - **small** — a running summary in conversation; final form is a few sentences.
-- **standard / deep** — a design doc in the project's plan directory (`docs/plans/YYYY-MM-DD-<topic>-design.md` or `.claude/plans/`), committed when complete.
+- **standard / deep** — a design doc in the project's docs layout, committed when complete. If the project describes one (a `docs/README.md` that says where plans go, or a CLAUDE.md that names the docs location — which may be outside the code repo, e.g. per ticket `tickets/<KEY>/plans/<topic>/`), follow it, including its naming, and commit in the repo that layout belongs to. Otherwise `docs/plans/YYYY-MM-DD-<topic>-design.md` or `.claude/plans/`.
 
 Artifact rules are keyed on tier only — never on editor mode. If file writes are unavailable at that moment, keep the design in conversation and write the doc at the first opportunity.
 
