@@ -247,6 +247,35 @@ def test_review_output_dir_needs_no_caller_vars(r: TestRunner) -> None:
         r.test("review_output_dir needs no caller vars", False, f"{type(exc).__name__}: {exc}")
 
 
+# Commands that run a review and end in a report.
+REVIEW_COMMANDS = ["deep-review"]
+COMMANDS_DIR = REPO_ROOT / "plugins" / "requirements-framework" / "commands"
+
+
+def test_review_commands_resolve_the_review_dir(r: TestRunner) -> None:
+    for name in REVIEW_COMMANDS:
+        source = (COMMANDS_DIR / f"{name}.md.j2").read_text()
+        r.test(
+            f"{name} includes review_output_dir.j2",
+            "{% include 'partials/review_output_dir.j2' %}" in source,
+        )
+        r.test(f"{name} hands its agents a REPORT FILE line", "REPORT FILE:" in source)
+        r.test(f"{name} writes RAPPORT.md", "RAPPORT.md" in source)
+
+
+def test_review_commands_may_write_the_synthesis(r: TestRunner) -> None:
+    for name in REVIEW_COMMANDS:
+        source = (COMMANDS_DIR / f"{name}.md.j2").read_text()
+        tools_line = next(
+            (line for line in source.splitlines() if line.startswith("allowed-tools:")), None
+        )
+        r.test(
+            f"{name} may use Write",
+            tools_line is None or '"Write"' in tools_line,
+            f"got {tools_line!r}",
+        )
+
+
 def test_diff_scope_load_boundary_newlines(r: TestRunner) -> None:
     # Refactor-advisor Gap 1: pin the exact whitespace contract at include
     # boundaries. Without this, a typo in the partial's trailing newline
@@ -344,6 +373,8 @@ def main() -> int:
     test_review_output_dir_follows_the_project_docs_layout(r)
     test_review_output_dir_names_the_files(r)
     test_review_output_dir_needs_no_caller_vars(r)
+    test_review_commands_resolve_the_review_dir(r)
+    test_review_commands_may_write_the_synthesis(r)
     test_nonexistent_partial_raises(r)
     test_partials_compose(r)
 
