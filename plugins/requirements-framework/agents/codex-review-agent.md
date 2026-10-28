@@ -2,7 +2,7 @@
 name: codex-review-agent
 model: sonnet
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 description: "Orchestrates OpenAI Codex code review workflow. Use this agent for AI-powered code review using OpenAI's Codex CLI for advanced static analysis.\n\nExamples:\n<example>\nContext: User wants an external AI code review.\nuser: \"Run a Codex review on my changes\"\nassistant: \"I'll use the codex-review-agent to orchestrate an OpenAI Codex code review.\"\n<commentary>\nUse when the user explicitly requests Codex review.\n</commentary>\n</example>\n<example>\nContext: User wants comprehensive AI analysis.\nuser: \"Get a second opinion on this code from another AI\"\nassistant: \"I'll use the codex-review-agent to get an independent AI review from OpenAI Codex.\"\n<commentary>\nCodex provides a different perspective from Claude's review.\n</commentary>\n</example>"
 ---
@@ -201,3 +201,13 @@ When running as a teammate in `/deep-review` or `/pre-commit`:
 5. Provide actionable summary with clear verdict
 
 Be helpful, thorough, and clear. Your goal is to make AI code review seamless and valuable!
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

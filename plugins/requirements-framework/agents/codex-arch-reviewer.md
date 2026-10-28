@@ -22,7 +22,7 @@ description: |
   </commentary>
   </example>
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 ---
 
@@ -227,3 +227,13 @@ When running as a teammate in `/arch-review`:
 - **Plan-aware**: References plan file for Codex to read, providing architectural intent context
 - **Complements arch-review**: Works alongside ADR guardian, SOLID reviewer, and other architecture agents
 - **Read-only sandbox**: Default Codex sandbox — no file modifications
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

@@ -30,7 +30,7 @@ description: |
   </commentary>
   </example>
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 ---
 
@@ -198,3 +198,5 @@ If no findings: set all counts to 0 and verdict to APPROVED.
 - **Be thorough**: Check all 26 built-in items plus any project checklist items
 - **Filter aggressively**: Quality over quantity — false positives harm credibility
 - **Scope strictly**: Only review frontend files identified in Step 1 — ignore backend code
+
+{% include 'partials/review_report_file.j2' %}

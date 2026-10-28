@@ -168,6 +168,61 @@ def test_review_report_file_needs_no_caller_vars(r: TestRunner) -> None:
         r.test("review_report_file needs no caller vars", False, f"{type(exc).__name__}: {exc}")
 
 
+# Agents that the review commands (deep-review, pre-commit, arch-review,
+# codex-review) dispatch and that end in a findings report.
+REVIEW_AGENTS = [
+    "adr-guardian",
+    "appsec-auditor",
+    "backward-compatibility-checker",
+    "code-reviewer",
+    "codex-arch-reviewer",
+    "codex-review-agent",
+    "comment-analyzer",
+    "compliance-auditor",
+    "frontend-reviewer",
+    "refactor-advisor",
+    "sentry-triage",
+    "silent-failure-hunter",
+    "solid-reviewer",
+    "tdd-validator",
+    "tenant-isolation-auditor",
+    "test-analyzer",
+    "tool-validator",
+    "type-design-analyzer",
+]
+AGENTS_DIR = REPO_ROOT / "plugins" / "requirements-framework" / "agents"
+
+
+def test_review_agents_include_the_report_file_partial(r: TestRunner) -> None:
+    for name in REVIEW_AGENTS:
+        source = (AGENTS_DIR / f"{name}.md.j2").read_text()
+        r.test(
+            f"{name} includes review_report_file.j2",
+            "{% include 'partials/review_report_file.j2' %}" in source,
+        )
+
+
+def test_review_agents_may_write_their_report(r: TestRunner) -> None:
+    # An agent without an allowed-tools line may use every tool already.
+    for name in REVIEW_AGENTS:
+        source = (AGENTS_DIR / f"{name}.md.j2").read_text()
+        tools_line = next(
+            (line for line in source.splitlines() if line.startswith("allowed-tools:")), None
+        )
+        r.test(
+            f"{name} may use Write",
+            tools_line is None or '"Write"' in tools_line,
+            f"got {tools_line!r}",
+        )
+
+
+def test_review_report_file_reply_fits_subagents_and_teammates(r: TestRunner) -> None:
+    # adr-guardian and friends run as plain subagents without SendMessage.
+    out = templates.render("{% include 'partials/review_report_file.j2' %}")
+    r.test("review_report_file covers a final reply", "final message" in out, f"got {out!r}")
+    r.test("review_report_file covers a teammate's SendMessage", "SendMessage" in out)
+
+
 def test_diff_scope_load_boundary_newlines(r: TestRunner) -> None:
     # Refactor-advisor Gap 1: pin the exact whitespace contract at include
     # boundaries. Without this, a typo in the partial's trailing newline
@@ -259,6 +314,9 @@ def main() -> int:
     test_diff_scope_load_boundary_newlines(r)
     test_review_report_file_tells_the_agent_to_write_its_own_report(r)
     test_review_report_file_needs_no_caller_vars(r)
+    test_review_agents_include_the_report_file_partial(r)
+    test_review_agents_may_write_their_report(r)
+    test_review_report_file_reply_fits_subagents_and_teammates(r)
     test_nonexistent_partial_raises(r)
     test_partials_compose(r)
 

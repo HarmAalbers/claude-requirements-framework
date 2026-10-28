@@ -2,7 +2,7 @@
 name: comment-analyzer
 model: sonnet
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 description: "Use this agent to check comment accuracy before committing. This includes verifying that comments accurately reflect the code they describe, identifying comment rot or technical debt, and ensuring documentation completeness.\n\n<example>\nContext: User has added documentation.\nuser: \"I've added documentation to these functions. Can you check if the comments are accurate?\"\nassistant: \"I'll use the comment-analyzer agent to verify the comments.\"\n</example>\n\n<example>\nContext: Checking comments before commit.\nuser: \"verify my comments\"\nassistant: \"Let me use the comment-analyzer agent to check comment accuracy.\"\n</example>\n\n<example>\nContext: Reviewing documentation.\nuser: \"check documentation\"\nassistant: \"I'll use the comment-analyzer agent to review the documentation.\"\n</example>"
 ---
@@ -103,3 +103,13 @@ Use this exact template (see ADR-013):
 If no findings: set all counts to 0 and verdict to APPROVED.
 
 Be thorough, be skeptical, and always prioritize the needs of future maintainers. Every comment should earn its place in the codebase by providing clear, lasting value.
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

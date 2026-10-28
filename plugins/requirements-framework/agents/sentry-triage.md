@@ -116,3 +116,13 @@ When running as a teammate in `/arch-review`: share the report via SendMessage t
 2. **Never block** — any error path ends in a SKIPPED report, not a stall.
 3. **Production evidence only** — do not review code quality; that belongs to the other teammates.
 4. **Always link** — every finding carries its Sentry issue URL so the user can act on it.
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

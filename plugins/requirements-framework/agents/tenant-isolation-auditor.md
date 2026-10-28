@@ -2,7 +2,7 @@
 name: tenant-isolation-auditor
 model: sonnet
 color: red
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 description: "Use this agent to audit code for multi-tenant data leakage vulnerabilities. Specialized for .NET Core + EF Core + Angular + Azure platforms serving multiple tenants. Checks for missing tenant filters on DB queries, shared caches without tenant-scoped keys, global query filter bypasses, cross-tenant background job execution, singleton/DI scope leaks, and Azure storage without tenant partitioning. Should be used when reviewing any code that touches data access, caching, background processing, or service-to-service communication in multi-tenant systems.\n\nExamples:\n<example>\nContext: Code review of a multi-tenant application.\nuser: \"Review this data access layer for tenant isolation issues\"\nassistant: \"I'll use the tenant-isolation-auditor agent to check for data leakage risks.\"\n<commentary>\nMulti-tenant data access code should be audited for missing tenant filters.\n</commentary>\n</example>\n<example>\nContext: Deep review team needs tenant isolation perspective.\nuser: \"/deep-review\"\nassistant: \"The tenant-isolation-auditor teammate will check for cross-tenant data leakage.\"\n<commentary>\nSpawned as a teammate during deep review for specialized tenant isolation analysis.\n</commentary>\n</example>\n<example>\nContext: New background job or Azure Function added.\nuser: \"I added a new background job that processes documents\"\nassistant: \"I'll use the tenant-isolation-auditor to verify tenant boundaries in background processing.\"\n<commentary>\nBackground jobs are high-risk for tenant isolation \u2014 they often run outside request context.\n</commentary>\n</example>"
 ---
@@ -183,3 +183,13 @@ If no findings: set all counts to 0 and verdict to APPROVED.
 - **Context matters**: Understand the project's tenant isolation strategy before flagging — some patterns may be intentionally tenant-agnostic (e.g., shared reference data)
 - **Be specific**: Cite exact code locations and explain the leakage path
 - **Be actionable**: Provide concrete fix suggestions with code examples where possible
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

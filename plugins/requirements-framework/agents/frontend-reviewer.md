@@ -30,7 +30,7 @@ description: |
   </commentary>
   </example>
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 ---
 
@@ -203,3 +203,13 @@ If no findings: set all counts to 0 and verdict to APPROVED.
 - **Be thorough**: Check all 26 built-in items plus any project checklist items
 - **Filter aggressively**: Quality over quantity — false positives harm credibility
 - **Scope strictly**: Only review frontend files identified in Step 1 — ignore backend code
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

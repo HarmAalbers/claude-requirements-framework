@@ -2,7 +2,7 @@
 name: silent-failure-hunter
 model: sonnet
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 description: "Use this agent to check error handling before committing code that involves try-catch blocks, error callbacks, fallback logic, or any code that could potentially suppress errors. This agent should be invoked proactively after completing a logical chunk of work that involves error handling.\n\n<example>\nContext: User has implemented error handling.\nuser: \"I've added error handling to the API client. Check it before I commit.\"\nassistant: \"I'll use the silent-failure-hunter agent to examine the error handling.\"\n</example>\n\n<example>\nContext: Code with try-catch blocks.\nuser: \"audit try/catch\"\nassistant: \"I'll use the silent-failure-hunter agent to check for silent failures.\"\n</example>\n\n<example>\nContext: After refactoring error handling.\nuser: \"I've updated the error handling in the auth module\"\nassistant: \"Let me use the silent-failure-hunter agent to ensure no silent failures were introduced.\"\n</example>"
 ---
@@ -217,3 +217,13 @@ Use this exact template (see ADR-013):
 If no findings: set all counts to 0 and verdict to APPROVED.
 
 Remember: Every silent failure you catch prevents hours of debugging frustration. Be thorough, be skeptical, and never let an error slip through unnoticed.
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

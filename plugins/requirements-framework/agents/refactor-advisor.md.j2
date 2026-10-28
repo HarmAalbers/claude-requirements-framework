@@ -34,7 +34,7 @@ description: |
   </example>
 
 color: yellow
-allowed-tools: ["Read", "Edit", "Glob", "Grep"]
+allowed-tools: ["Read", "Edit", "Write", "Glob", "Grep"]
 git_hash: 307b927
 ---
 
@@ -270,3 +270,5 @@ When running as a teammate in `/arch-review`:
 6. **Python-specific advice** — recommend `Protocol`, `ABC`, `dataclasses`, composition via `__init__` — not Java-style patterns
 7. **Proportional to plan size** — a 2-file change gets 1-2 suggestions max, not a full codebase audit
 8. **BLOCKED is rare** — reserve it for cases where the tech debt is severe and the fix is small
+
+{% include 'partials/review_report_file.j2' %}

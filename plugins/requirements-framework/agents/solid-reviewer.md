@@ -2,7 +2,7 @@
 name: solid-reviewer
 model: sonnet
 color: green
-allowed-tools: ["Read", "Edit", "Glob", "Grep"]
+allowed-tools: ["Read", "Edit", "Write", "Glob", "Grep"]
 git_hash: 307b927
 description: "Use this agent when reviewing a plan to validate SOLID design principles. Checks for Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion violations with Python-specific guidance. Scales strictness proportionally to plan size. This is a BLOCKING agent - plans with egregious SOLID violations should not proceed.\n\nExamples:\n\n<example>\nContext: User has created a plan and needs SOLID validation\nuser: \"Review my plan for SOLID principles\"\nassistant: \"I'll use the solid-reviewer agent to check the plan follows SOLID design principles.\"\n<commentary>\nPlan needs SOLID validation before implementation can begin.\n</commentary>\n</example>\n\n<example>\nContext: Plan review command running SOLID step\nuser: \"Run plan review\"\nassistant: \"After TDD validation passes, I'll use the solid-reviewer agent to verify SOLID adherence in the plan.\"\n<commentary>\nSOLID validation is a blocking gate in the arch-review workflow.\n</commentary>\n</example>"
 ---
@@ -166,3 +166,13 @@ Always structure your response as:
 5. **Python-specific advice** — Recommend `Protocol`, `ABC`, `dataclasses`, composition via `__init__` — not Java-style patterns
 6. **Keep additions concise** — Added SOLID sections should be proportional to the plan's complexity
 7. **Prefer auto-fixing over blocking** — If you can reasonably add SOLID considerations, do so
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

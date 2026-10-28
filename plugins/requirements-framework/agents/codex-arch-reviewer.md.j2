@@ -22,7 +22,7 @@ description: |
   </commentary>
   </example>
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 ---
 
@@ -227,3 +227,5 @@ When running as a teammate in `/arch-review`:
 - **Plan-aware**: References plan file for Codex to read, providing architectural intent context
 - **Complements arch-review**: Works alongside ADR guardian, SOLID reviewer, and other architecture agents
 - **Read-only sandbox**: Default Codex sandbox — no file modifications
+
+{% include 'partials/review_report_file.j2' %}

@@ -34,7 +34,7 @@ description: |
   </example>
 
 color: yellow
-allowed-tools: ["Read", "Edit", "Glob", "Grep"]
+allowed-tools: ["Read", "Edit", "Write", "Glob", "Grep"]
 git_hash: 307b927
 ---
 
@@ -270,3 +270,13 @@ When running as a teammate in `/arch-review`:
 6. **Python-specific advice** — recommend `Protocol`, `ABC`, `dataclasses`, composition via `__init__` — not Java-style patterns
 7. **Proportional to plan size** — a 2-file change gets 1-2 suggestions max, not a full codebase audit
 8. **BLOCKED is rare** — reserve it for cases where the tech debt is severe and the fix is small
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+

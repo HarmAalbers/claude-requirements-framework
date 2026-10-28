@@ -2,7 +2,7 @@
 name: type-design-analyzer
 model: sonnet
 color: blue
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "SendMessage", "TaskUpdate"]
+allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "SendMessage", "TaskUpdate"]
 git_hash: 307b927
 description: "Use this agent to analyze type design before committing new types. Specifically use it when introducing a new type to ensure it follows best practices for encapsulation and invariant expression, or when refactoring existing types. The agent provides ratings on encapsulation, invariant expression, usefulness, and enforcement.\n\n<example>\nContext: User has created a new type.\nuser: \"I've just created a new UserAccount type\"\nassistant: \"I'll use the type-design-analyzer agent to review the type design.\"\n</example>\n\n<example>\nContext: Reviewing types before commit.\nuser: \"review my types\"\nassistant: \"Let me use the type-design-analyzer agent to analyze the type design.\"\n</example>\n\n<example>\nContext: Checking type invariants.\nuser: \"check type invariants\"\nassistant: \"I'll use the type-design-analyzer agent to evaluate the type invariants.\"\n</example>"
 ---
@@ -161,3 +161,13 @@ Always consider:
 - The balance between safety and usability
 
 Think deeply about each type's role in the larger system. Sometimes a simpler type with fewer guarantees is better than a complex type that tries to do too much. Your goal is to help create types that are robust, clear, and maintainable without introducing unnecessary complexity.
+
+## Saving the report
+
+If your prompt contains a line `REPORT FILE: <path>`, write your complete report (every finding and the
+`## Summary`) to that path with the Write tool, creating its directory if needed. Write only that file:
+never edit code or any other file. Then reply to the lead (in your final message, or through SendMessage
+when you are a teammate) with just the path, the counts and the verdict, so nothing is cut off on the way.
+
+If there is no REPORT FILE line, reply with your complete report as before.
+
