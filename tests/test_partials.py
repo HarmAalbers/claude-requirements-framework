@@ -143,6 +143,31 @@ def test_diff_scope_load_needs_no_caller_vars(r: TestRunner) -> None:
         )
 
 
+def test_review_report_file_tells_the_agent_to_write_its_own_report(r: TestRunner) -> None:
+    # Reports sent through SendMessage arrived cut off; an agent that writes its
+    # full report to the path the orchestrator gives loses nothing on the way.
+    out = templates.render("{% include 'partials/review_report_file.j2' %}")
+    r.test("review_report_file names the REPORT FILE line", "REPORT FILE:" in out, f"got {out!r}")
+    r.test("review_report_file says to write the complete report", "complete report" in out)
+    r.test("review_report_file limits writing to that one file", "only that file" in out)
+    r.test(
+        "review_report_file keeps the message short: path, counts, verdict",
+        "path" in out and "counts" in out and "verdict" in out,
+    )
+    r.test(
+        "review_report_file falls back to sending the report when no path is given",
+        "no REPORT FILE" in out,
+    )
+
+
+def test_review_report_file_needs_no_caller_vars(r: TestRunner) -> None:
+    try:
+        templates.render("{% include 'partials/review_report_file.j2' %}")
+        r.test("review_report_file needs no caller vars", True)
+    except Exception as exc:
+        r.test("review_report_file needs no caller vars", False, f"{type(exc).__name__}: {exc}")
+
+
 def test_diff_scope_load_boundary_newlines(r: TestRunner) -> None:
     # Refactor-advisor Gap 1: pin the exact whitespace contract at include
     # boundaries. Without this, a typo in the partial's trailing newline
@@ -232,6 +257,8 @@ def main() -> int:
     test_diff_scope_load_renders_kernel(r)
     test_diff_scope_load_needs_no_caller_vars(r)
     test_diff_scope_load_boundary_newlines(r)
+    test_review_report_file_tells_the_agent_to_write_its_own_report(r)
+    test_review_report_file_needs_no_caller_vars(r)
     test_nonexistent_partial_raises(r)
     test_partials_compose(r)
 
