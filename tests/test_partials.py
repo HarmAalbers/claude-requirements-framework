@@ -248,7 +248,9 @@ def test_review_output_dir_needs_no_caller_vars(r: TestRunner) -> None:
 
 
 # Commands that run a review and end in a report.
-REVIEW_COMMANDS = ["deep-review"]
+REVIEW_COMMANDS = ["arch-review", "codex-review", "deep-review", "pre-commit", "v3-review"]
+# v3-review's workers run in Python (review_cli), not as prompted agents.
+AGENT_DISPATCHING_REVIEW_COMMANDS = [c for c in REVIEW_COMMANDS if c != "v3-review"]
 COMMANDS_DIR = REPO_ROOT / "plugins" / "requirements-framework" / "commands"
 
 
@@ -259,12 +261,15 @@ def test_review_commands_resolve_the_review_dir(r: TestRunner) -> None:
             f"{name} includes review_output_dir.j2",
             "{% include 'partials/review_output_dir.j2' %}" in source,
         )
-        r.test(f"{name} hands its agents a REPORT FILE line", "REPORT FILE:" in source)
         r.test(f"{name} writes RAPPORT.md", "RAPPORT.md" in source)
+    for name in AGENT_DISPATCHING_REVIEW_COMMANDS:
+        source = (COMMANDS_DIR / f"{name}.md.j2").read_text()
+        r.test(f"{name} hands its agents a REPORT FILE line", "REPORT FILE:" in source)
 
 
 def test_review_commands_may_write_the_synthesis(r: TestRunner) -> None:
-    for name in REVIEW_COMMANDS:
+    # v3-review saves its script output with tee, through Bash.
+    for name in AGENT_DISPATCHING_REVIEW_COMMANDS:
         source = (COMMANDS_DIR / f"{name}.md.j2").read_text()
         tools_line = next(
             (line for line in source.splitlines() if line.startswith("allowed-tools:")), None

@@ -2,7 +2,7 @@
 name: arch-review
 description: "Multi-perspective team-based architecture review with agent debate and commit planning"
 argument-hint: "[plan-file-path]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: 307b927
 ---
 
@@ -46,6 +46,12 @@ Pass `$PLAN_FILE` to every teammate / subagent prompt — they should read the p
 `$PLAN_FILE` is already resolved by Step 0. Read its content for use in teammate prompts.
 
 Output: "Found plan file: $PLAN_FILE"
+
+### Step 1b: Resolve the Review Directory
+
+{% include 'partials/review_output_dir.j2' %}
+Here `<name>` is `arch-review`. When the plan already lives in the project's docs layout (for example
+`tickets/<KEY>/plans/<topic>/plan.md`), the review belongs to that same ticket.
 
 ### Step 2: Locate Project ADRs
 
@@ -96,7 +102,11 @@ Create tasks on the shared task list:
 
 ### Step 4: Spawn Teammates
 
-For each review task (NOT the synthesis task), spawn a teammate:
+For each review task (NOT the synthesis task), spawn a teammate. Every prompt below, except the
+commit-planner's (its output goes into `$PLAN_FILE`), ends with its own line
+`REPORT FILE: <REVIEW_DIR>/agents/<agent-name>.md` (`<agent-name>` is the `subagent_type` without the
+`requirements-framework:` prefix), and "Share findings via SendMessage" then means: write the full report
+to that file and send only its path, the counts and the verdict.
 
 **adr-guardian teammate**:
 - `subagent_type`: "requirements-framework:adr-guardian"
@@ -157,7 +167,9 @@ Monitor task list until all review tasks complete:
 
 ### Step 6: Synthesis (Lead)
 
-Read all teammate findings. Perform architectural synthesis:
+Read every teammate's findings from its report file in `<REVIEW_DIR>/agents/` (the commit-planner's from
+`$PLAN_FILE`). If a file is missing, ask that teammate for its report and write the reply there yourself.
+Perform architectural synthesis:
 
 1. **Cross-reference ADR findings with breaking changes**:
    - If ADR guardian flags a decision violation AND compat-checker confirms a breaking change: escalate to CRITICAL
@@ -203,6 +215,9 @@ The persisted file MUST contain:
 - A `## Verdict` section whose body is the actual verdict. Write `APPROVED` **only** when the verdict is genuinely APPROVED, followed by a one-line stamp `Reviewed: <branch> @ <ISO time>` (branch from `git rev-parse --abbrev-ref HEAD`, time from `date -u +%Y-%m-%dT%H:%M:%SZ`). If the verdict is `BLOCKED` or `ADR_REQUIRED`, write that verdict honestly — never write `APPROVED` for a non-approved review — so the plan-evidence gate stays CLOSED until the issues are resolved.
 
 This persisted `## Verdict APPROVED` artifact is what satisfies the requirements-framework `plan_validated` gate; a BLOCKED review intentionally leaves the gate closed.
+
+Also write the report in the Output Format below to `<REVIEW_DIR>/RAPPORT.md` (a re-review adds a dated
+section at the top, see Step 1b).
 
 ### Step 7: Auto-satisfy
 

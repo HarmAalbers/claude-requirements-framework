@@ -2,7 +2,7 @@
 name: codex-review
 description: "AI-powered code review using OpenAI Codex"
 argument-hint: "[focus]"
-allowed-tools: ["Bash", "Task"]
+allowed-tools: ["Bash", "Task", "Read", "Write"]
 git_hash: 307b927
 ---
 
@@ -50,13 +50,18 @@ esac
 
 Store FOCUS_AREA value for Step 2.
 
+### Step 1b: Resolve the Review Directory
+
+{% include 'partials/review_output_dir.j2' %}
+Here `<name>` is `codex-review`.
+
 ### Step 2: Launch Codex Review Agent
 
 Use the Task tool to launch the autonomous codex-review-agent:
 
 **Agent**: codex-review-agent
 **Subagent type**: `codex-review-agent`
-**Prompt to agent**: "Perform Codex code review with focus area: $FOCUS_AREA"
+**Prompt to agent**: "Perform Codex code review with focus area: $FOCUS_AREA\nREPORT FILE: <REVIEW_DIR>/agents/codex-review-agent.md"
 
 The agent will autonomously:
 1. **Check prerequisites**: Verify Codex CLI installed (`which codex`) and authenticated (`codex login --status`)
@@ -69,7 +74,9 @@ The agent will autonomously:
 
 ### Step 3: Report Results
 
-After the agent completes, present its findings to the user.
+After the agent completes, read its report from `<REVIEW_DIR>/agents/codex-review-agent.md` and present the
+findings to the user. Write `<REVIEW_DIR>/RAPPORT.md` with the focus area, the verdict, the counts and the
+path of the agent's report (a re-review adds a dated section at the top, see Step 1b).
 
 If the agent's output indicates the review could **not** actually run — it contains any of:
 - "❌ Codex CLI not found" (prerequisite not met)

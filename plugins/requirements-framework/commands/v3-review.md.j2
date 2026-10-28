@@ -14,12 +14,20 @@ Runs the V3 review workers in parallel over the diff via the Claude Agent SDK, a
 
 **Cost**: roughly $2–12 per run depending on diff size — there is no per-call budget cap yet (Step 17b). Prefer a narrow scope (e.g. a commit range).
 
+## Where the report goes
+
+{% include 'partials/review_output_dir.j2' %}
+Here `<name>` is `v3-review`. The workers run inside the script, not as prompted agents, so there are no
+`agents/` files: the script's output is the whole report.
+
 ## Run
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/v3-review "$ARGUMENTS"
+mkdir -p "<REVIEW_DIR>"
+${CLAUDE_PLUGIN_ROOT}/scripts/v3-review "$ARGUMENTS" | tee "<REVIEW_DIR>/RAPPORT.md"
 ```
 
+For a re-review, first move the existing `RAPPORT.md` content below the new output instead of overwriting it.
 Relay the script's output verbatim — the rendered review plus the trailing `session_id` / cost footer is the deliverable. Do not re-review or summarize it yourself.
 
 ## Notes

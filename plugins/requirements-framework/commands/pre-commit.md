@@ -2,7 +2,7 @@
 name: pre-commit
 description: "Quick code review before committing (code + error handling)"
 argument-hint: "[aspects]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
 git_hash: 307b927
 ---
 
@@ -54,6 +54,35 @@ Then check the result:
 - If /tmp/review_scope.txt is empty: Output "No changes to review" and EXIT
 - Otherwise: Read the file list and continue
 
+### Step 1b: Resolve the Review Directory
+
+## Where the reports go
+
+Before dispatching any agent, resolve one review directory, `REVIEW_DIR`:
+
+1. If the project describes its docs layout, follow it, including its naming. That can be a `docs/README.md`
+   that says where reviews go, or a CLAUDE.md that names the docs location. The location may be outside the
+   code repo, for example per ticket `tickets/<KEY>/reviews/<name>/`. Take the ticket key from the
+   command's argument or from the branch name (such as `ATE-123`). Work that has its own folder in that
+   layout without a key, such as an internal ticket folder, goes in that folder's `reviews/<name>/`. If the
+   layout needs a key and none can be found, ask the user rather than guess.
+2. Otherwise use `docs/reviews/<YYYY-MM-DD>-<branch>/` in the code repo.
+
+`<name>` is `pr-<n>` when a pull request is reviewed, otherwise the command's name (such as `deep-review`).
+
+Inside `REVIEW_DIR`:
+
+- `RAPPORT.md` is the synthesis this command writes at the end, after the final verdict.
+- `agents/<agent-name>.md` is each agent's own report, written by the agent. Give every agent you dispatch
+  the line `REPORT FILE: <REVIEW_DIR>/agents/<agent-name>.md` in its prompt, and read its report from that
+  file instead of from its message.
+
+If `RAPPORT.md` already exists, this is a re-review. Add a dated section at the top of `RAPPORT.md` instead
+of a new folder. The agent files are overwritten, so if the layout's repo is versioned, commit the previous
+round first. When the layout says its docs are committed, commit the review there once it is complete.
+
+Here `<name>` is `pre-commit`.
+
 ### Step 2: Parse Arguments and Set Flags
 
 Arguments received: "$ARGUMENTS"
@@ -97,7 +126,8 @@ Note: the `parallel` argument is accepted for backward compatibility but is a no
 This step uses a subagent (not a teammate) because it runs deterministic linters — no debate value.
 
 If RUN_TOOL_VALIDATOR is true:
-  1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator"
+  1. Use the Task tool to launch subagent_type="requirements-framework:tool-validator", with the line
+     `REPORT FILE: <REVIEW_DIR>/agents/tool-validator.md` in its prompt
   2. Wait for completion
   3. Parse the output for CRITICAL severity issues
   4. If CRITICAL tool errors found (pyright errors, ruff errors, eslint errors):
@@ -149,15 +179,18 @@ You MUST use the standard output format from ADR-013. All findings must use:
 - ### SUGGESTION: [title] — for improvements
 Each finding must have Location, Description, Impact, and Fix fields.
 End with ## Summary containing counts and Verdict (ISSUES FOUND | APPROVED).
-Share your findings via SendMessage to the team lead when done.
+Write your complete report to the REPORT FILE below, then send the team lead
+only its path, your counts and your verdict via SendMessage.
 Mark your task as complete using TaskUpdate.
+REPORT FILE: <REVIEW_DIR>/agents/<agent-name>.md
 ```
 
 Each teammate gets:
 - `team_name`: the team name from Step 5
 - `subagent_type`: matching the agent (e.g., "requirements-framework:code-reviewer")
 - `name`: descriptive name (e.g., "code-reviewer", "error-auditor", "compat-checker", "test-analyzer", "type-analyzer", "comment-analyzer", "frontend-reviewer")
-- `prompt`: Standard preamble + diff context + review focus
+- `prompt`: Standard preamble + diff context + review focus, with `<REVIEW_DIR>` from Step 1b and `<agent-name>`
+  the `subagent_type` without the `requirements-framework:` prefix. Subagents in Step 9 get the same line.
 
 Launch ALL teammates in a SINGLE message with multiple Task tool calls (parallel execution).
 
@@ -174,7 +207,9 @@ If a teammate fails to complete within timeout:
 
 ### Step 8: Cross-Validation Phase (Lead)
 
-Read all teammate findings received via messages. Apply **domain-specific cross-validation rules** (subset of ADR-013, based on active agents):
+Read every teammate's findings from its report file in `<REVIEW_DIR>/agents/` (the message only carries the
+path, counts and verdict). If a file is missing, ask that teammate for its report and write the reply there
+yourself. Apply **domain-specific cross-validation rules** (subset of ADR-013, based on active agents):
 
 **Location matching**: Same file within 10-line proximity = "same location".
 
@@ -233,6 +268,9 @@ Else:
   **Verdict**: "READY TO COMMIT"
   - Code meets quality standards
   - Safe to proceed
+
+Write the report in the Output Format below to `<REVIEW_DIR>/RAPPORT.md` (a re-review adds a dated section at
+the top, see Step 1b), then print it and the path.
 
 ### Step 11: Cleanup
 
