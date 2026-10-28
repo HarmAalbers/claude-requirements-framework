@@ -223,6 +223,30 @@ def test_review_report_file_reply_fits_subagents_and_teammates(r: TestRunner) ->
     r.test("review_report_file covers a teammate's SendMessage", "SendMessage" in out)
 
 
+def test_review_output_dir_follows_the_project_docs_layout(r: TestRunner) -> None:
+    out = templates.render("{% include 'partials/review_output_dir.j2' %}")
+    r.test("review_output_dir reads the project's docs layout", "docs/README.md" in out, f"got {out!r}")
+    r.test("review_output_dir mentions a per-ticket reviews folder", "tickets/<KEY>/reviews/" in out)
+    r.test("review_output_dir falls back to docs/reviews/", "docs/reviews/<YYYY-MM-DD>-<branch>/" in out)
+    r.test("review_output_dir asks when the layout needs a key it cannot find", "ask the user" in out)
+
+
+def test_review_output_dir_names_the_files(r: TestRunner) -> None:
+    out = templates.render("{% include 'partials/review_output_dir.j2' %}")
+    r.test("review_output_dir puts the synthesis in RAPPORT.md", "RAPPORT.md" in out)
+    r.test("review_output_dir gives each agent agents/<agent-name>.md", "agents/<agent-name>.md" in out)
+    r.test("review_output_dir hands each agent a REPORT FILE line", "REPORT FILE:" in out)
+    r.test("review_output_dir treats an existing RAPPORT.md as a re-review", "re-review" in out)
+
+
+def test_review_output_dir_needs_no_caller_vars(r: TestRunner) -> None:
+    try:
+        templates.render("{% include 'partials/review_output_dir.j2' %}")
+        r.test("review_output_dir needs no caller vars", True)
+    except Exception as exc:
+        r.test("review_output_dir needs no caller vars", False, f"{type(exc).__name__}: {exc}")
+
+
 def test_diff_scope_load_boundary_newlines(r: TestRunner) -> None:
     # Refactor-advisor Gap 1: pin the exact whitespace contract at include
     # boundaries. Without this, a typo in the partial's trailing newline
@@ -317,6 +341,9 @@ def main() -> int:
     test_review_agents_include_the_report_file_partial(r)
     test_review_agents_may_write_their_report(r)
     test_review_report_file_reply_fits_subagents_and_teammates(r)
+    test_review_output_dir_follows_the_project_docs_layout(r)
+    test_review_output_dir_names_the_files(r)
+    test_review_output_dir_needs_no_caller_vars(r)
     test_nonexistent_partial_raises(r)
     test_partials_compose(r)
 
