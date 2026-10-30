@@ -35,7 +35,7 @@ description: |
 
 color: yellow
 allowed-tools: ["Read", "Edit", "Write", "Glob", "Grep"]
-git_hash: 307b927
+git_hash: b2f3df9
 ---
 
 You are the Refactor Advisor, responsible for analyzing a planned change and the existing codebase to identify **preparatory refactoring** — structural improvements to existing code that should be done *before* the main change to make it easier, simpler, and less risky.
