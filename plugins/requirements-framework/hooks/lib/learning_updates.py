@@ -36,16 +36,11 @@ def get_history_path(project_dir: str) -> Path:
         Path to learning history JSON file
     """
     try:
-        from .git_utils import get_git_common_dir
+        from .state_storage import get_state_dir
     except ImportError:
-        from git_utils import get_git_common_dir
+        from state_storage import get_state_dir
 
-    common_dir = get_git_common_dir(project_dir)
-
-    if common_dir:
-        return Path(common_dir) / 'requirements' / 'learning_history.json'
-
-    return Path(project_dir) / '.git' / 'requirements' / 'learning_history.json'
+    return get_state_dir(project_dir) / 'learning_history.json'
 
 
 def content_hash(content: str) -> str:

@@ -45,17 +45,11 @@ def get_sessions_dir(project_dir: str) -> Path:
         Path to sessions directory
     """
     try:
-        from .git_utils import get_git_common_dir
+        from .state_storage import get_state_dir
     except ImportError:
-        from git_utils import get_git_common_dir
+        from state_storage import get_state_dir
 
-    common_dir = get_git_common_dir(project_dir)
-
-    if common_dir:
-        return Path(common_dir) / 'requirements' / 'sessions'
-
-    # Fallback for non-git directories
-    return Path(project_dir) / '.git' / 'requirements' / 'sessions'
+    return get_state_dir(project_dir) / 'sessions'
 
 
 def ensure_sessions_dir(project_dir: str) -> None:
