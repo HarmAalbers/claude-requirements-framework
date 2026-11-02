@@ -28,6 +28,7 @@ State File Format (JSON):
 }
 """
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -144,8 +145,16 @@ def get_state_dir(project_dir: str) -> Path:
     if common_dir:
         return Path(common_dir) / 'requirements'
 
-    # Fallback for non-git directories (fail-open)
-    return Path(project_dir) / '.git' / 'requirements'
+    # Not a git repo (a plain dir, a jj workspace without colocated git): never create a
+    # fake <project>/.git — tools that search upward for .git (watchman, git, IDEs) then
+    # take the wrong root; one made watchman watch 2M files (2026-11-02). An existing .git
+    # directory is still used as it is. REQUIREMENTS_STATE_HOME moves the base (tests use it).
+    existing = Path(project_dir) / '.git'
+    if existing.is_dir():
+        return existing / 'requirements'
+    key = hashlib.sha256(os.path.realpath(project_dir).encode()).hexdigest()[:16]
+    base = os.environ.get('REQUIREMENTS_STATE_HOME') or Path.home() / '.claude' / 'requirements-state'
+    return Path(base) / key
 
 
 def ensure_state_dir(project_dir: str) -> None:

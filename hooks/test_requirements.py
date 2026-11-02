@@ -583,11 +583,53 @@ def test_git_common_dir_fallback(runner: TestRunner):
         common_dir = get_git_common_dir(tmpdir)
         runner.test("Non-repo returns None", common_dir is None, f"Got: {common_dir}")
 
-        # State dir should fall back to .git/requirements/
+        # Without a .git, state goes under ~/.claude/requirements-state/, never into a
+        # fake <dir>/.git: a stray .git made watchman watch a whole tree (2026-11-02).
+        from state_storage import ensure_state_dir
+        with tempfile.TemporaryDirectory() as home:
+            home_backup = os.environ.get('HOME')
+            state_home_backup = os.environ.pop('REQUIREMENTS_STATE_HOME', None)
+            os.environ['HOME'] = home
+            try:
+                state_dir = get_state_dir(tmpdir)
+                ensure_state_dir(tmpdir)
+            finally:
+                os.environ['HOME'] = home_backup
+                if state_home_backup is not None:
+                    os.environ['REQUIREMENTS_STATE_HOME'] = state_home_backup
+            runner.test(
+                "Fallback state dir is under ~/.claude/requirements-state",
+                str(state_dir).startswith(os.path.join(home, ".claude", "requirements-state") + os.sep),
+                f"Got {state_dir}"
+            )
+            runner.test("Fallback state dir is created", state_dir.is_dir(), f"Missing {state_dir}")
+        with tempfile.TemporaryDirectory() as state_home:
+            state_home_backup = os.environ.get('REQUIREMENTS_STATE_HOME')
+            os.environ['REQUIREMENTS_STATE_HOME'] = state_home
+            try:
+                runner.test(
+                    "REQUIREMENTS_STATE_HOME moves the fallback",
+                    str(get_state_dir(tmpdir)).startswith(state_home + os.sep),
+                    f"Got {get_state_dir(tmpdir)}"
+                )
+            finally:
+                if state_home_backup is None:
+                    os.environ.pop('REQUIREMENTS_STATE_HOME', None)
+                else:
+                    os.environ['REQUIREMENTS_STATE_HOME'] = state_home_backup
+            runner.test(
+                "Fallback creates no .git in the project",
+                not os.path.exists(os.path.join(tmpdir, ".git")),
+                f"{tmpdir}/.git was created"
+            )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # An existing .git directory (as test fixtures make) is still used as it is
+        os.makedirs(os.path.join(tmpdir, ".git"))
         state_dir = get_state_dir(tmpdir)
         expected = os.path.join(tmpdir, ".git", "requirements")
         runner.test(
-            "Fallback state dir correct",
+            "Existing .git dir is still used",
             str(state_dir) == expected,
             f"Expected {expected}, got {state_dir}"
         )
@@ -13716,6 +13758,9 @@ def main():
     print("=" * 50)
 
     runner = TestRunner()
+    # Tests run in temp dirs without .git; their fallback state must not land in the real
+    # ~/.claude/requirements-state. Subprocess hooks inherit this through os.environ.
+    os.environ['REQUIREMENTS_STATE_HOME'] = tempfile.mkdtemp(prefix='req-state-')
 
     test_session_module(runner)
     test_session_registry(runner)
