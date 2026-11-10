@@ -8,18 +8,15 @@
 
 set -euo pipefail
 
-# Locate diff_scope.py. Search order:
-#   1. $HOME/.claude/hooks/lib            (deployed runtime — every framework user)
-#   2. $script_dir/../../../hooks/lib     (dev mode — running from source repo)
+# diff_scope.py ships inside the plugin, next to this script's directory:
+# <plugin root>/scripts/ and <plugin root>/hooks/lib/ (installed cache and repo alike).
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$HOME/.claude/hooks/lib/diff_scope.py" ]]; then
-  lib_dir="$HOME/.claude/hooks/lib"
-elif [[ -f "$script_dir/../../../hooks/lib/diff_scope.py" ]]; then
-  lib_dir="$(cd "$script_dir/../../../hooks/lib" && pwd)"
-else
-  echo "prepare-diff-scope: cannot find diff_scope.py. Run from the framework repo or install the plugin." >&2
+lib_dir="$script_dir/../hooks/lib"
+if [[ ! -f "$lib_dir/diff_scope.py" ]]; then
+  echo "prepare-diff-scope: cannot find diff_scope.py in $lib_dir" >&2
   exit 3
 fi
+lib_dir="$(cd "$lib_dir" && pwd)"
 
 py="python3"
 

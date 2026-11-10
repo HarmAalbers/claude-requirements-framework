@@ -13752,6 +13752,28 @@ def test_prompt_submit_emits_at_most_one_context(runner: TestRunner):
             runner.test("that document parses", ok, err)
 
 
+def test_prepare_diff_scope_finds_lib_in_installed_plugin(runner: TestRunner):
+    """The wrapper must find diff_scope.py inside an installed plugin copy.
+
+    The marketplace cache holds the plugin as <version>/scripts + <version>/hooks/lib,
+    with no framework repo around it and no ~/.claude/hooks deploy.
+    """
+    print("\n📄 Testing prepare-diff-scope in an installed-plugin layout...")
+    plugin_src = Path(__file__).parent.parent / "plugins" / "requirements-framework"
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = Path(tmp) / "cache" / "7.4.4"
+        shutil.copytree(plugin_src / "scripts", plugin / "scripts")
+        shutil.copytree(plugin_src / "hooks" / "lib", plugin / "hooks" / "lib")
+        home = Path(tmp) / "home"
+        home.mkdir()
+        r = subprocess.run([str(plugin / "scripts" / "prepare-diff-scope"), "--ensure"],
+                           cwd=tmp, capture_output=True, text=True,
+                           env={**os.environ, "HOME": str(home)})
+        runner.test("wrapper locates diff_scope.py in the plugin copy",
+                    "cannot find diff_scope.py" not in r.stderr,
+                    f"exit {r.returncode}: {r.stderr[:300]!r}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -14028,6 +14050,7 @@ def main():
     # Hook context is one JSON document (measured 23 Aug 2026)
     test_hook_context_is_one_json_document(runner)
     test_prompt_submit_emits_at_most_one_context(runner)
+    test_prepare_diff_scope_finds_lib_in_installed_plugin(runner)
 
     return runner.summary()
 
