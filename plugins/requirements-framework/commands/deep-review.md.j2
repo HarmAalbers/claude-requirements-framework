@@ -3,7 +3,7 @@ name: deep-review
 description: "Cross-validated team-based code review with agent debate"
 argument-hint: "[branch | a..b | PR#]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Write", "Task", "TeamCreate", "TeamDelete", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-git_hash: 016e308
+git_hash: 53641f6
 ---
 
 > **Workflow position**: invoked by `/req review`. Run directly to override the conductor.
