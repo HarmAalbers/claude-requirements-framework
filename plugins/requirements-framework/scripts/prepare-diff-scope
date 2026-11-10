@@ -18,7 +18,13 @@ if [[ ! -f "$lib_dir/diff_scope.py" ]]; then
 fi
 lib_dir="$(cd "$lib_dir" && pwd)"
 
-py="python3"
+# Run under uv when available so PyYAML is present: without it base_from_config()
+# silently falls back to the default base and ignores hooks.diff_scope.base.
+if command -v uv >/dev/null 2>&1; then
+  py=(uv run --quiet --no-project --with "PyYAML>=6.0" python3)
+else
+  py=(python3)
+fi
 
 case "${1:-}" in
   --ensure)
@@ -26,7 +32,7 @@ case "${1:-}" in
     if [[ -s /tmp/review_scope.txt && -s /tmp/review.diff ]]; then
       exit 0
     fi
-    "$py" -c "
+    "${py[@]}" -c "
 import sys
 sys.path.insert(0, '$lib_dir')
 from diff_scope import ensure_scope
@@ -36,7 +42,7 @@ print(f'Scope: {s.source} ({len(s.files)} files, base={s.base_ref or \"(none)\"}
     ;;
   *)
     arg="${1:-}"
-    "$py" -c "
+    "${py[@]}" -c "
 import sys
 sys.path.insert(0, '$lib_dir')
 from diff_scope import prepare_diff_scope, base_from_config, DiffScopeError

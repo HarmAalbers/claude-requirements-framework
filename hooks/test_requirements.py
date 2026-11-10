@@ -13774,6 +13774,33 @@ def test_prepare_diff_scope_finds_lib_in_installed_plugin(runner: TestRunner):
                     f"exit {r.returncode}: {r.stderr[:300]!r}")
 
 
+def test_prepare_diff_scope_runs_python_under_uv(runner: TestRunner):
+    """With uv on PATH the wrapper runs diff_scope.py under uv (PyYAML guaranteed),
+    so a configured hooks.diff_scope.base is never silently dropped."""
+    print("\n📄 Testing prepare-diff-scope runs python via uv...")
+    script = (Path(__file__).parent.parent / "plugins" / "requirements-framework"
+              / "scripts" / "prepare-diff-scope")
+    with tempfile.TemporaryDirectory() as tmp:
+        bin_dir = Path(tmp) / "bin"
+        bin_dir.mkdir()
+        marker = Path(tmp) / "uv-called"
+        stub = bin_dir / "uv"
+        stub.write_text(
+            "#!/usr/bin/env bash\n"
+            f"touch {marker}\n"
+            'while [[ $# -gt 0 && "$1" != python3 ]]; do shift; done\n'
+            'shift; exec python3 "$@"\n')
+        stub.chmod(0o755)
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, capture_output=True)
+        r = subprocess.run([str(script)], cwd=repo, capture_output=True,
+                           text=True, env={**os.environ,
+                                           "PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        runner.test("diff_scope.py is run through uv", marker.exists(),
+                    f"exit {r.returncode}: {r.stderr[:300]!r}")
+
+
 def main():
     """Run all tests."""
     print("🧪 Requirements Framework Test Suite")
@@ -14051,6 +14078,7 @@ def main():
     test_hook_context_is_one_json_document(runner)
     test_prompt_submit_emits_at_most_one_context(runner)
     test_prepare_diff_scope_finds_lib_in_installed_plugin(runner)
+    test_prepare_diff_scope_runs_python_under_uv(runner)
 
     return runner.summary()
 
